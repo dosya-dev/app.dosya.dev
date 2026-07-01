@@ -1,0 +1,6 @@
+# Cloudflare Pages configuration for app.dosya.dev
+# Deploy: cd apps/web && npm run build && wrangler pages deploy dist --project-name=dosya-web
+
+name = "dosya-web"
+compatibility_date = "2025-09-06"
+pages_build_output_dir = "dist"
