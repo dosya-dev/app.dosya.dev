@@ -16,6 +16,7 @@ interface BillingData {
     price_yearly: number;
     features: string[];
   };
+  
   usage: {
     used_bytes: number;
     used_label: string;
