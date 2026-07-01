@@ -24,6 +24,7 @@ interface Activity {
   user_avatar: string | null;
 }
 
+
 interface Member { id: string; name: string; email: string; avatar_url: string | null }
 interface Pagination { page: number; per_page: number; total: number; total_pages: number }
 
