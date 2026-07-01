@@ -11,7 +11,7 @@ import {
 import {
   User, Lock, Key, Monitor, Bell, Plug, Building2, Trash2,
   Plus, Copy, Check, Loader2, LogOut, X, Camera, ShieldCheck,
-  Smartphone, Download, RefreshCw, Mail, AlertTriangle,
+  Smartphone, Download, RefreshCw, Mail,
 } from 'lucide-react';
 import { toast } from '@/lib/toast';
 import { timeAgo } from '@/lib/helpers';
@@ -64,7 +64,7 @@ const LANGUAGES = [
 
 // ── API helper (never throws; normalises to { ok, error }) ──
 
-interface OkResult { ok: boolean; error?: string; [k: string]: unknown }
+interface OkResult { ok: boolean; error?: string }
 
 async function req<T extends OkResult = OkResult>(path: string, options?: RequestInit): Promise<T> {
   try {
@@ -513,7 +513,7 @@ function TotpSetupModal({ open, onOpenChange, onEnabled }: { open: boolean; onOp
   useEffect(() => {
     if (!open) { setSecret(''); setUri(''); setCode(''); setCodes(null); return; }
     (async () => {
-      const res = await req<{ ok: boolean; secret?: string; uri?: string }>('/api/me/2fa/setup-totp', { method: 'POST' });
+      const res = await req<{ ok: boolean; secret?: string; uri?: string; error?: string }>('/api/me/2fa/setup-totp', { method: 'POST' });
       if (res.ok && res.secret && res.uri) { setSecret(res.secret); setUri(res.uri); }
       else toast.error('Setup failed', res.error ?? 'Authenticator setup could not be started.');
     })();
