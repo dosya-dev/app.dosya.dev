@@ -8,8 +8,9 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
-      '@pqina/pintura': path.resolve(__dirname, '../../node_modules/@pqina/pintura'),
-      '@pqina/pintura-video': path.resolve(__dirname, '../../node_modules/@pqina/pintura-video'),
+      // NOTE: don't alias @pqina/* to ../../node_modules — that path only exists in the
+      // monorepo (hoisted) and points outside the standalone deploy repo, breaking the CF
+      // build. Standard resolution finds pintura in both layouts.
     },
   },
   server: {
