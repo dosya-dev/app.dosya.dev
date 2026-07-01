@@ -3,13 +3,14 @@ import { Outlet, useNavigate } from 'react-router-dom';
 import { SidebarProvider, SidebarInset } from '@/components/ui/sidebar';
 import { DashboardSidebar } from './dashboard-sidebar';
 import { DashboardTopbar } from './dashboard-topbar';
+import { API_BASE } from '@/api/client';
 
 export function DashboardLayout() {
   const navigate = useNavigate();
   const [authed, setAuthed] = useState<boolean | null>(null);
 
   useEffect(() => {
-    fetch('/api/me', { credentials: 'include' })
+    fetch(`${API_BASE}/api/me`, { credentials: 'include' })
       .then((res) => {
         if (res.ok) {
           setAuthed(true);
