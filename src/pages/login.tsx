@@ -37,8 +37,8 @@ export default function LoginPage() {
     setLoading(false);
   };
 
-  const handleGoogle = () => { window.location.href = '/api/auth/google'; };
-  const handleGithub = () => { window.location.href = '/api/auth/github'; };
+  const handleGoogle = () => { window.location.href = `${API_BASE}/api/auth/google`; };
+  const handleGithub = () => { window.location.href = `${API_BASE}/api/auth/github`; };
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
