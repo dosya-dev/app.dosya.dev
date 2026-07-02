@@ -20,6 +20,7 @@ import LoginPage from '@/pages/login';
 import Login2faPage from '@/pages/login-2fa';
 
 // Admin
+
 import AdminOverviewPage, { AdminLayout } from '@/pages/admin/index';
 import AdminUsersPage from '@/pages/admin/users';
 import {
