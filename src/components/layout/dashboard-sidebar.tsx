@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useLocation, Link } from 'react-router-dom';
+import { useLocation, useNavigate, Link } from 'react-router-dom';
 import {
   Sidebar, SidebarContent, SidebarGroup, SidebarGroupLabel, SidebarGroupContent,
   SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarHeader, SidebarFooter,
@@ -38,13 +38,27 @@ const workspaceItems = [
   { title: 'Settings', url: '/settings', icon: Settings },
 ];
 
+// Fast labels for the built-in roles so the header doesn't flash before the
+// roles list resolves; custom roles fall back to their fetched name.
+const ROLE_LABELS: Record<string, string> = {
+  role_owner: 'Owner',
+  role_admin: 'Admin',
+  role_member: 'Member',
+  role_viewer: 'Viewer',
+};
+
 export function DashboardSidebar() {
   const location = useLocation();
+  const navigate = useNavigate();
   const { activeId, setActiveId } = useWorkspace();
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [storage, setStorage] = useState<StorageInfo | null>(null);
+  const [roleName, setRoleName] = useState<string | null>(null);
 
   const activeWs = workspaces.find((w) => w.id === activeId);
+  const roleLabel = activeWs
+    ? ROLE_LABELS[activeWs.role_id] ?? roleName ?? 'Member'
+    : '';
 
   // Load workspaces
   useEffect(() => {
@@ -72,9 +86,24 @@ export function DashboardSidebar() {
     })();
   }, [activeId]);
 
+  // Resolve the current user's role name (covers custom roles, not just built-ins)
+  useEffect(() => {
+    if (!activeId || !activeWs) { setRoleName(null); return; }
+    if (ROLE_LABELS[activeWs.role_id]) { setRoleName(ROLE_LABELS[activeWs.role_id]); return; }
+    (async () => {
+      try {
+        const data = await api<{ ok: boolean; roles?: { id: string; name: string }[] }>(`/api/roles?workspace_id=${activeId}`);
+        const match = data.roles?.find((r) => r.id === activeWs.role_id);
+        setRoleName(match?.name ?? 'Member');
+      } catch { setRoleName('Member'); }
+    })();
+  }, [activeId, activeWs?.role_id]);
+
   const switchWorkspace = (id: string) => {
+    if (id === activeId) return;
     setActiveId(id);
-    window.location.reload();
+    // Land on the dashboard so it refetches for the new workspace — no hard reload.
+    navigate('/');
   };
 
   const storagePct = storage?.usage.pct ?? 0;
@@ -94,7 +123,7 @@ export function DashboardSidebar() {
                   </div>
                   <div className="flex-1 min-w-0 text-left group-data-[collapsible=icon]:hidden">
                     <p className="text-xs font-semibold truncate">{activeWs.name}</p>
-                    <p className="text-[10px] text-muted-foreground">{activeWs.role_id === 'role_owner' ? 'Owner' : 'Member'}</p>
+                    <p className="text-[11px] text-muted-foreground">{roleLabel}</p>
                   </div>
                   <ChevronDown className="size-3.5 text-muted-foreground shrink-0 group-data-[collapsible=icon]:hidden" />
                 </>
@@ -104,10 +133,10 @@ export function DashboardSidebar() {
             </div>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="w-56">
-            <p className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wider px-2 py-1.5">Your workspaces</p>
+            <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider px-2 py-1.5">Your workspaces</p>
             {workspaces.map((ws) => (
               <DropdownMenuItem key={ws.id} onClick={() => switchWorkspace(ws.id)} className="gap-2.5">
-                <div className="w-6 h-6 rounded-[5px] flex items-center justify-center text-[9px] font-bold text-white shrink-0" style={{ background: ws.icon_color }}>
+                <div className="w-6 h-6 rounded-[5px] flex items-center justify-center text-[10px] font-bold text-white shrink-0" style={{ background: ws.icon_color }}>
                   {ws.icon_initials}
                 </div>
                 <span className="flex-1 truncate text-xs">{ws.name}</span>
@@ -115,14 +144,14 @@ export function DashboardSidebar() {
               </DropdownMenuItem>
             ))}
             <DropdownMenuSeparator />
-            <a href="/create-workspace">
+            <Link to="/create-workspace">
               <DropdownMenuItem className="gap-2">
                 <div className="w-6 h-6 rounded-[5px] bg-muted flex items-center justify-center shrink-0">
                   <Plus className="size-3 text-muted-foreground" />
                 </div>
                 <span className="text-xs text-muted-foreground">Create new workspace</span>
               </DropdownMenuItem>
-            </a>
+            </Link>
           </DropdownMenuContent>
         </DropdownMenu>
       </SidebarHeader>
