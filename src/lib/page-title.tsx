@@ -29,6 +29,10 @@ const TITLES: Record<string, string> = {
   '/admin': 'Admin',
   '/login': 'Sign in',
   '/login/2fa': 'Two-factor authentication',
+  '/sign-up': 'Sign up',
+  '/verify': 'Verify your email',
+  '/forgot-password': 'Reset password',
+  '/reset-password': 'Set a new password',
   '/create-workspace': 'Create workspace',
 };
 

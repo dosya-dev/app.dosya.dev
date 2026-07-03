@@ -227,7 +227,7 @@ export function DashboardTopbar() {
             <Link to="/profile"><DropdownMenuItem><User className="size-3.5 mr-2" /> Profile</DropdownMenuItem></Link>
             <Link to="/settings"><DropdownMenuItem><Settings className="size-3.5 mr-2" /> Settings</DropdownMenuItem></Link>
             <Link to="/billing"><DropdownMenuItem><CreditCard className="size-3.5 mr-2" /> Billing</DropdownMenuItem></Link>
-            <a href="/help"><DropdownMenuItem><HelpCircle className="size-3.5 mr-2" /> Help</DropdownMenuItem></a>
+            <a href="https://dosya.dev/help" target="_blank" rel="noreferrer"><DropdownMenuItem><HelpCircle className="size-3.5 mr-2" /> Help</DropdownMenuItem></a>
             <DropdownMenuSeparator />
             <DropdownMenuItem className="text-destructive" onClick={logout}><LogOut className="size-3.5 mr-2" /> Log out</DropdownMenuItem>
           </DropdownMenuContent>
