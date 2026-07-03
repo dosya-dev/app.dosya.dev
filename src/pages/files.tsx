@@ -726,7 +726,7 @@ export default function FilesPage() {
                         >
                           {isSel && <Check className="size-3 text-primary-foreground" />}
                         </button>
-                        <img src={fileIconSrc(f.name)} alt="" className="w-7 h-7 shrink-0" />
+                        <RowThumbnail fileId={f.id} fileName={f.name} />
                         {cols.map((col) => {
                           if (col.key === 'name') {
                             return (
@@ -1071,6 +1071,26 @@ function FileCard({ file, view, selected, anySelected, active, isFavourite, onCl
       )}
     </div>
   );
+}
+
+// ── Small row thumbnail (table view): preview if image, else icon ──
+
+function RowThumbnail({ fileId, fileName }: { fileId: string; fileName: string }) {
+  const [failed, setFailed] = useState(false);
+
+  if (isImage(fileName) && !failed) {
+    return (
+      <img
+        src={`${API_BASE}/api/files/${fileId}/raw`}
+        alt=""
+        className="w-7 h-7 shrink-0 rounded object-cover bg-muted"
+        loading="lazy"
+        onError={() => setFailed(true)}
+      />
+    );
+  }
+
+  return <img src={fileIconSrc(fileName)} alt="" className="w-7 h-7 shrink-0" />;
 }
 
 // ── File thumbnail with error fallback ─────────────────────
