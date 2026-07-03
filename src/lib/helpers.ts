@@ -43,7 +43,7 @@ export function labelFor(name: string): string {
   return e ? e.toUpperCase() : 'FILE';
 }
 
-const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg']);
+const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'ico']);
 export function isImage(name: string): boolean {
   return IMAGE_EXTS.has(extOf(name));
 }

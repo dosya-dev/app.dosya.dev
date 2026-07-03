@@ -17,7 +17,7 @@ interface HideModalProps {
 
 type HiddenMode = 'none' | 'everyone' | 'users' | 'roles';
 
-interface Member { id: string; name: string; email: string }
+interface Member { user_id: string; name: string; email: string; role_id: string; is_you: boolean }
 interface Role { id: string; name: string }
 
 export function HideModal({ open, target, onClose, onDone }: HideModalProps) {
@@ -91,6 +91,9 @@ export function HideModal({ open, target, onClose, onDone }: HideModalProps) {
     setLoading(false);
   };
 
+  // You can't hide your own files from yourself or your own role — still shown, but disabled.
+  const myRoleId = members.find((m) => m.is_you)?.role_id;
+
   const MODES: { value: HiddenMode; label: string; desc: string; icon: React.ReactNode }[] = [
     { value: 'none', label: 'Visible', desc: 'Everyone can see this', icon: <Eye className="size-4 text-muted-foreground" /> },
     { value: 'everyone', label: 'Hidden from everybody', desc: 'Only you can see this', icon: <EyeOff className="size-4 text-red-500" /> },
@@ -129,12 +132,13 @@ export function HideModal({ open, target, onClose, onDone }: HideModalProps) {
                   <p className="text-xs text-muted-foreground text-center py-3">No members found</p>
                 ) : members.map((m) => (
                   <button
-                    key={m.id}
-                    className={`w-full flex items-center gap-2 px-3 py-2 text-xs border-b last:border-b-0 hover:bg-muted/50 text-left ${selectedTargets.has(m.id) ? 'bg-blue-50 dark:bg-blue-950/30' : ''}`}
-                    onClick={() => toggleTarget(m.id)}
+                    key={m.user_id}
+                    disabled={m.is_you}
+                    className={`w-full flex items-center gap-2 px-3 py-2 text-xs border-b last:border-b-0 text-left ${m.is_you ? 'opacity-50 cursor-not-allowed' : 'hover:bg-muted/50'} ${selectedTargets.has(m.user_id) ? 'bg-blue-50 dark:bg-blue-950/30' : ''}`}
+                    onClick={() => { if (!m.is_you) toggleTarget(m.user_id); }}
                   >
-                    {selectedTargets.has(m.id) && <Check className="size-3 text-blue-600 shrink-0" />}
-                    <span className="flex-1 truncate">{m.name}</span>
+                    {selectedTargets.has(m.user_id) && <Check className="size-3 text-blue-600 shrink-0" />}
+                    <span className="flex-1 truncate">{m.name}{m.is_you && ' (you)'}</span>
                     <span className="text-muted-foreground truncate">{m.email}</span>
                   </button>
                 ))}
@@ -146,16 +150,20 @@ export function HideModal({ open, target, onClose, onDone }: HideModalProps) {
               <div className="border rounded-lg max-h-40 overflow-y-auto">
                 {roles.length === 0 ? (
                   <p className="text-xs text-muted-foreground text-center py-3">No roles found</p>
-                ) : roles.map((r) => (
+                ) : roles.map((r) => {
+                  const isMine = r.id === myRoleId;
+                  return (
                   <button
                     key={r.id}
-                    className={`w-full flex items-center gap-2 px-3 py-2 text-xs border-b last:border-b-0 hover:bg-muted/50 text-left ${selectedTargets.has(r.id) ? 'bg-violet-50 dark:bg-violet-950/30' : ''}`}
-                    onClick={() => toggleTarget(r.id)}
+                    disabled={isMine}
+                    className={`w-full flex items-center gap-2 px-3 py-2 text-xs border-b last:border-b-0 text-left ${isMine ? 'opacity-50 cursor-not-allowed' : 'hover:bg-muted/50'} ${selectedTargets.has(r.id) ? 'bg-violet-50 dark:bg-violet-950/30' : ''}`}
+                    onClick={() => { if (!isMine) toggleTarget(r.id); }}
                   >
                     {selectedTargets.has(r.id) && <Check className="size-3 text-violet-600 shrink-0" />}
-                    <span className="flex-1 truncate">{r.name}</span>
+                    <span className="flex-1 truncate">{r.name}{isMine && ' (your role)'}</span>
                   </button>
-                ))}
+                  );
+                })}
               </div>
             )}
 
