@@ -35,8 +35,17 @@ export function DashboardLayout() {
 
   if (!authed) return null;
 
+  // shadcn writes `sidebar_state=true|false` on every toggle; read it back on
+  // mount so the collapsed/open state survives a page refresh (this SPA has no
+  // SSR to inject defaultOpen). Defaults to open when the cookie is absent.
+  const savedState = document.cookie
+    .split('; ')
+    .find((c) => c.startsWith('sidebar_state='))
+    ?.split('=')[1];
+  const defaultOpen = savedState !== 'false';
+
   return (
-    <SidebarProvider className="h-svh overflow-hidden">
+    <SidebarProvider defaultOpen={defaultOpen} className="h-svh overflow-hidden">
       <DashboardSidebar />
       <SidebarInset className="min-h-0 overflow-hidden">
         <DashboardTopbar />
