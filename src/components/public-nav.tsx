@@ -9,6 +9,7 @@ export function PublicNav({ cta = 'login' }: { cta?: 'login' | 'signup' }) {
   );
   const toggleTheme = () => {
     const isDark = document.documentElement.classList.toggle('dark');
+    localStorage.setItem('theme', isDark ? 'dark' : 'light');
     setDark(isDark);
   };
 
