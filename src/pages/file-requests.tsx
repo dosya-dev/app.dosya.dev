@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { api, API_BASE } from '@/api/client';
+import { FilesSidebar } from '@/components/files-sidebar';
 import { useWorkspace } from '@/stores/workspace';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -61,6 +62,7 @@ interface PickerFolder {
 
 export default function FileRequestsPage() {
   const workspaceId = useWorkspace((s: { activeId: string }) => s.activeId);
+  const navigate = useNavigate();
   const [requests, setRequests] = useState<FileRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -88,7 +90,16 @@ export default function FileRequestsPage() {
   const now = Math.floor(Date.now() / 1000);
 
   return (
-    <div className="p-6 max-w-3xl mx-auto">
+    <div className="flex h-full overflow-hidden">
+      {/* Files sidebar (kept visible on the file-requests page) */}
+      <FilesSidebar
+        onFilterChange={(filter) => navigate(filter ? `/files?filter=${filter}` : '/files')}
+        onFavouriteClick={() => navigate('/files')}
+        onGroupClick={(groupId) => navigate(`/files?group=${groupId}`)}
+      />
+
+      <div className="flex-1 overflow-y-auto">
+        <div className="p-6 max-w-3xl mx-auto">
       {/* Header */}
       <div className="flex items-start justify-between mb-5 gap-4">
         <div>
@@ -170,6 +181,8 @@ export default function FileRequestsPage() {
       {uploadsModal && (
         <UploadsDialog requestId={uploadsModal} onClose={() => setUploadsModal(null)} />
       )}
+        </div>
+      </div>
     </div>
   );
 }

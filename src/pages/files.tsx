@@ -219,7 +219,8 @@ export default function FilesPage() {
     if (search) params.set('q', search);
     if (currentFolderId) params.set('folder_id', currentFolderId);
     if (isDeletedView) params.set('deleted', '1');
-    if (currentFilter && currentFilter !== 'deleted') params.set('filter', currentFilter);
+    if (currentFilter === 'hidden') params.set('hidden', '1');
+    else if (currentFilter && currentFilter !== 'deleted') params.set('filter', currentFilter);
     if (currentGroup) params.set('group_id', currentGroup);
 
     try {

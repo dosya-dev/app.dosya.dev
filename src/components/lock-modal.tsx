@@ -105,7 +105,7 @@ export function LockModal({ open, target, onClose, onDone }: LockModalProps) {
             ))}
 
             {mode === 'full_lock' && (
-              <div className="ml-7">
+              <div>
                 <Input
                   type="password"
                   value={password}
