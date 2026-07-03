@@ -216,7 +216,7 @@ function WorkspaceInfoSection({ data, wsId, regions, onSaved }: { data: WsData; 
           <SettingRow label="Workspace icon" desc="Upload an image or use initials with a color.">
             <div className="flex items-center gap-3">
               {/* Preview */}
-              <div className="size-10 rounded-lg flex items-center justify-center text-sm font-bold text-white shrink-0 overflow-hidden" style={{ background: iconUrl ? '#f3f2ee' : iconColor }}>
+              <div className={`size-10 rounded-lg flex items-center justify-center text-sm font-bold text-white shrink-0 overflow-hidden ${iconUrl ? 'bg-muted' : ''}`} style={iconUrl ? undefined : { background: iconColor }}>
                 {iconUrl ? <img src={iconUrl} alt="" className="w-full h-full object-cover" /> : initials}
               </div>
               <div className="space-y-1.5">

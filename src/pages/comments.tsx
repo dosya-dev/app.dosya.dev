@@ -196,7 +196,7 @@ export default function CommentsPage() {
           <Link to="/files" className="size-8 rounded-md flex items-center justify-center hover:bg-muted shrink-0">
             <ChevronLeft className="size-4 text-muted-foreground" />
           </Link>
-          <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0 overflow-hidden" style={{ background: isImage(fileName) ? '#f3f2ee' : (colorFor(fileName) + '20') }}>
+          <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 overflow-hidden ${isImage(fileName) ? 'bg-muted' : ''}`} style={isImage(fileName) ? undefined : { background: colorFor(fileName) + '20' }}>
             {isImage(fileName) && fileId ? (
               <img src={`${API_BASE}/api/files/${fileId}/raw`} alt="" className="w-full h-full object-cover" />
             ) : (
@@ -309,7 +309,7 @@ export default function CommentsPage() {
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">File details</p>
 
             {/* Preview */}
-            <div className="w-full h-28 rounded-lg flex items-center justify-center overflow-hidden mb-3" style={{ background: isImage(fileName) ? '#f3f2ee' : (colorFor(fileName) + '18') }}>
+            <div className={`w-full h-28 rounded-lg flex items-center justify-center overflow-hidden mb-3 ${isImage(fileName) ? 'bg-muted' : ''}`} style={isImage(fileName) ? undefined : { background: colorFor(fileName) + '18' }}>
               {isImage(fileName) && fileId ? (
                 <img src={`${API_BASE}/api/files/${fileId}/raw`} alt="" className="w-full h-full object-contain" />
               ) : (

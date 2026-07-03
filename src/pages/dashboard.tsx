@@ -134,7 +134,7 @@ export default function DashboardPage() {
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
                   {data.recent_files.map((f) => (
                     <Link key={f.id} to="/files" className="group rounded-lg border bg-muted/50 p-3 hover:shadow-md hover:border-border hover:-translate-y-px transition-all no-underline">
-                      <div className="w-full h-12 rounded-md mb-2.5 flex items-center justify-center text-[10px] font-bold tracking-wide text-white" style={{ background: isImage(f.name) ? '#f3f2ee' : colorFor(f.name) }}>
+                      <div className={`w-full h-12 rounded-md mb-2.5 flex items-center justify-center text-[10px] font-bold tracking-wide text-white ${isImage(f.name) ? 'bg-muted' : ''}`} style={isImage(f.name) ? undefined : { background: colorFor(f.name) }}>
                         {isImage(f.name) ? (
                           <img src={`/api/files/${f.id}/raw`} alt="" className="w-full h-full object-contain rounded-md" loading="lazy" />
                         ) : labelFor(f.name)}
