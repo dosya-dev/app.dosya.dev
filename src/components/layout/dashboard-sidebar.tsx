@@ -10,7 +10,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import {
   LayoutDashboard, FolderOpen, Upload, Share2, Users, Settings,
-  ChevronDown, Plus, Check,
+  ChevronsUpDown, Plus, Check,
 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { api } from '@/api/client';
@@ -112,20 +112,20 @@ export function DashboardSidebar() {
   return (
     <Sidebar collapsible="icon">
       {/* Workspace switcher */}
-      <SidebarHeader className="p-0">
+      <SidebarHeader className="px-2 pt-2 pb-0 group-data-[collapsible=icon]:px-0">
         <DropdownMenu>
-          <DropdownMenuTrigger>
-            <div className="flex items-center gap-2.5 px-3.5 py-3 border-b cursor-pointer hover:bg-sidebar-accent transition-colors w-full group-data-[collapsible=icon]:px-1.5 group-data-[collapsible=icon]:justify-center">
+          <DropdownMenuTrigger className="rounded-md outline-none">
+            <div className="flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 cursor-pointer hover:bg-muted/60 transition-colors group-data-[collapsible=icon]:px-0 group-data-[collapsible=icon]:justify-center">
               {activeWs ? (
                 <>
-                  <div className="w-8 h-8 rounded-lg flex items-center justify-center text-[11px] font-bold text-white shrink-0" style={{ background: activeWs.icon_color }}>
+                  <div className="flex h-8 w-8 items-center justify-center rounded-md text-[11px] font-bold text-white shrink-0" style={{ background: activeWs.icon_color }}>
                     {activeWs.icon_initials}
                   </div>
-                  <div className="flex-1 min-w-0 text-left group-data-[collapsible=icon]:hidden">
-                    <p className="text-xs font-semibold truncate">{activeWs.name}</p>
-                    <p className="text-[11px] text-muted-foreground">{roleLabel}</p>
+                  <div className="min-w-0 flex-1 text-left group-data-[collapsible=icon]:hidden">
+                    <p className="truncate text-sm font-medium leading-tight">{activeWs.name}</p>
+                    <p className="text-[11px] leading-tight text-muted-foreground">{roleLabel}</p>
                   </div>
-                  <ChevronDown className="size-3.5 text-muted-foreground shrink-0 group-data-[collapsible=icon]:hidden" />
+                  <ChevronsUpDown className="h-3.5 w-3.5 text-muted-foreground shrink-0 group-data-[collapsible=icon]:hidden" />
                 </>
               ) : (
                 <p className="text-xs text-muted-foreground">Loading...</p>
@@ -176,8 +176,8 @@ export function DashboardSidebar() {
         </SidebarGroup>
 
         {/* Workspace nav */}
-        <SidebarGroup>
-          <SidebarGroupLabel>Workspace</SidebarGroupLabel>
+        <SidebarGroup className="mt-2">
+          <SidebarGroupLabel className="px-3 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Workspace</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               {workspaceItems.map((item) => (
