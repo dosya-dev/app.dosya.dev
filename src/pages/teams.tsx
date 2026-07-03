@@ -37,6 +37,7 @@ interface Activity {
   meta: { name?: string; email?: string }; created_at: number;
 }
 interface TeamStats { members: number; pending: number; shares_this_week: number }
+interface Role { id: string; name: string; is_builtin?: boolean; is_custom?: boolean }
 
 const ROLE_LABELS: Record<string, string> = { role_owner: 'Owner', role_admin: 'Admin', role_member: 'Member', role_viewer: 'Viewer' };
 const ROLE_COLORS: Record<string, string> = {
@@ -53,6 +54,7 @@ export default function TeamsPage() {
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [invites, setInvites] = useState<Invite[]>([]);
   const [links, setLinks] = useState<InviteLink[]>([]);
+  const [roles, setRoles] = useState<Role[]>([]);
   const [activity, setActivity] = useState<Activity[]>([]);
   const [stats, setStats] = useState<TeamStats | null>(null);
   const [wsName, setWsName] = useState('');
@@ -67,9 +69,10 @@ export default function TeamsPage() {
   const load = useCallback(async () => {
     if (!wsId) return;
     try {
-      const [teamRes, linksRes] = await Promise.all([
+      const [teamRes, linksRes, rolesRes] = await Promise.all([
         api<{ ok: boolean; members: TeamMember[]; invites: Invite[]; activity: Activity[]; stats: TeamStats; workspace?: { name: string } }>(`/api/team?workspace_id=${wsId}`),
         api<{ ok: boolean; links: InviteLink[] }>(`/api/team/invite-link?workspace_id=${wsId}`),
+        api<{ ok: boolean; roles: Role[] }>(`/api/roles?workspace_id=${wsId}`),
       ]);
       if (teamRes.ok) {
         setMembers(teamRes.members); setInvites(teamRes.invites);
@@ -77,6 +80,7 @@ export default function TeamsPage() {
         if (teamRes.workspace) setWsName(teamRes.workspace.name);
       }
       if (linksRes.ok) setLinks(linksRes.links);
+      if (rolesRes.ok) setRoles(rolesRes.roles);
     } catch { /* */ }
     setLoading(false);
   }, [wsId]);
@@ -106,6 +110,9 @@ export default function TeamsPage() {
       load();
     } catch { toast.error('Revoke failed', 'The invite link could not be revoked.'); }
   };
+
+  // Resolve a role id to its display name (built-in or custom).
+  const roleName = (id: string) => roles.find((r) => r.id === id)?.name ?? ROLE_LABELS[id] ?? id;
 
   if (loading) return <TeamSkeleton />;
 
@@ -152,7 +159,7 @@ export default function TeamsPage() {
                       <p className="text-[11px] text-muted-foreground">{m.email}</p>
                     </div>
                   </div>
-                  <div><Badge className={`text-[11px] ${ROLE_COLORS[m.role_id] ?? ROLE_COLORS.role_member}`}>{ROLE_LABELS[m.role_id] ?? m.role_id}</Badge></div>
+                  <div><Badge className={`text-[11px] ${ROLE_COLORS[m.role_id] ?? ROLE_COLORS.role_member}`}>{roleName(m.role_id)}</Badge></div>
                   <span className="text-xs text-muted-foreground">{timeAgo(m.joined_at)}</span>
                   <span className="text-xs text-muted-foreground">&nbsp;</span>
                   <div className="flex justify-end opacity-0 group-hover:opacity-100">
@@ -184,7 +191,7 @@ export default function TeamsPage() {
                       Invited by {inv.invited_by_name ?? 'Unknown'} · expires in {timeUntil(inv.expires_at)}
                     </p>
                   </div>
-                  <Badge variant="secondary" className="text-[10px]">{ROLE_LABELS[inv.role_id] ?? 'Member'}</Badge>
+                  <Badge variant="secondary" className="text-[10px]">{roleName(inv.role_id)}</Badge>
                   <Button variant="outline" size="sm" className="h-7 text-xs text-destructive border-destructive/30" onClick={() => setRevokeTarget({ id: inv.id, email: inv.email })}>
                     Revoke
                   </Button>
@@ -268,7 +275,7 @@ export default function TeamsPage() {
       </div>
 
       {/* Invite modal */}
-      <InviteModal open={inviteOpen} tab={inviteTab} onTabChange={setInviteTab} onClose={() => setInviteOpen(false)} wsId={wsId} onInvited={load} />
+      <InviteModal open={inviteOpen} tab={inviteTab} onTabChange={setInviteTab} onClose={() => setInviteOpen(false)} wsId={wsId} roles={roles} onInvited={load} />
 
       {/* Remove member dialog */}
       <Dialog open={!!removeTarget} onOpenChange={() => setRemoveTarget(null)}>
@@ -299,16 +306,17 @@ export default function TeamsPage() {
 
 // ── Invite Modal ───────────────────────────────────────────
 
-function InviteModal({ open, tab, onTabChange, onClose, wsId, onInvited }: {
-  open: boolean; tab: 'email' | 'link'; onTabChange: (t: 'email' | 'link') => void; onClose: () => void; wsId: string; onInvited: () => void;
+function InviteModal({ open, tab, onTabChange, onClose, wsId, roles, onInvited }: {
+  open: boolean; tab: 'email' | 'link'; onTabChange: (t: 'email' | 'link') => void; onClose: () => void; wsId: string; roles: Role[]; onInvited: () => void;
 }) {
+  const assignable = roles.filter((r) => r.id !== 'role_owner');
   const [email, setEmail] = useState('');
-  const [role, setRole] = useState('Member');
+  const [role, setRole] = useState('role_member');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
 
   // Link tab
-  const [linkRole, setLinkRole] = useState('Member');
+  const [linkRole, setLinkRole] = useState('role_member');
   const [linkMaxUses, setLinkMaxUses] = useState('');
   const [linkExpires, setLinkExpires] = useState('7');
   const [createdLink, setCreatedLink] = useState('');
@@ -372,7 +380,7 @@ function InviteModal({ open, tab, onTabChange, onClose, wsId, onInvited }: {
               <div>
                 <label className="text-xs font-medium text-muted-foreground mb-1 block">Role</label>
                 <select value={role} onChange={(e) => setRole(e.target.value)} className="w-full h-9 text-sm border rounded-md px-3 bg-background">
-                  <option>Member</option><option>Admin</option><option>Viewer</option>
+                  {assignable.map((r) => (<option key={r.id} value={r.id}>{r.name}</option>))}
                 </select>
               </div>
               <Button type="submit" className="w-full" disabled={sending}>
@@ -385,7 +393,7 @@ function InviteModal({ open, tab, onTabChange, onClose, wsId, onInvited }: {
               <div>
                 <label className="text-xs font-medium text-muted-foreground mb-1 block">Role for new members</label>
                 <select value={linkRole} onChange={(e) => setLinkRole(e.target.value)} className="w-full h-9 text-sm border rounded-md px-3 bg-background">
-                  <option>Member</option><option>Admin</option><option>Viewer</option>
+                  {assignable.map((r) => (<option key={r.id} value={r.id}>{r.name}</option>))}
                 </select>
               </div>
               <div className="grid grid-cols-2 gap-3">
