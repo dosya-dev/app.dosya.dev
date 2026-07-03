@@ -1,4 +1,4 @@
-import { createBrowserRouter, Outlet } from 'react-router-dom';
+import { createBrowserRouter, Outlet, Navigate } from 'react-router-dom';
 import { DashboardLayout } from '@/components/layout/dashboard-layout';
 import { RouteTitle } from '@/lib/page-title';
 import DashboardPage from '@/pages/dashboard';
@@ -18,6 +18,12 @@ import RoleCreatePage from '@/pages/role-create';
 import FileRequestDetailPage from '@/pages/file-request-detail';
 import LoginPage from '@/pages/login';
 import Login2faPage from '@/pages/login-2fa';
+import SignUpPage from '@/pages/sign-up';
+import VerifyPage from '@/pages/verify';
+import ForgotPasswordPage from '@/pages/forgot-password';
+import ResetPasswordPage from '@/pages/reset-password';
+import NotFoundPage from '@/pages/not-found';
+import ErrorPage from '@/pages/error-page';
 
 // Admin
 
@@ -42,6 +48,7 @@ function RootLayout() {
 export const router = createBrowserRouter([
   {
     element: <RootLayout />,
+    errorElement: <ErrorPage />,
     children: [
   {
     element: <DashboardLayout />,
@@ -85,7 +92,13 @@ export const router = createBrowserRouter([
   },
   { path: '/login', element: <LoginPage /> },
   { path: '/login/2fa', element: <Login2faPage /> },
+  { path: '/sign-up', element: <SignUpPage /> },
+  { path: '/verify', element: <VerifyPage /> },
+  { path: '/forgot-password', element: <ForgotPasswordPage /> },
+  { path: '/reset-password', element: <ResetPasswordPage /> },
+  { path: '/dashboard', element: <Navigate to="/" replace /> },
   { path: '/create-workspace', element: <CreateWorkspacePage /> },
+  { path: '*', element: <NotFoundPage /> },
     ],
   },
 ]);
