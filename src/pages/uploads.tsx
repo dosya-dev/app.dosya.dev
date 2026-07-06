@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { Progress } from '@/components/ui/progress';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
@@ -305,9 +306,11 @@ const QueueRow = memo(function QueueRow({ item }: { item: QueueItem }) {
         <p className="text-xs font-medium truncate mb-1">{item.fileName}</p>
         <div className="flex items-center gap-2">
           <span className="text-[11px] text-muted-foreground">{humanSize(item.fileSize)}</span>
-          <div className="flex-1 h-1 bg-muted rounded-full overflow-hidden">
-            <div className="h-full rounded-full transition-[width] duration-300" style={{ width: `${item.status === 'error' ? 0 : item.progress}%`, background: item.status === 'error' ? '#ef4444' : '#22c55e' }} />
-          </div>
+          <Progress
+            value={item.status === 'error' ? 0 : item.progress}
+            className="flex-1 **:data-[slot=progress-indicator]:bg-(--bar-color) **:data-[slot=progress-indicator]:duration-300"
+            style={{ '--bar-color': item.status === 'error' ? '#ef4444' : '#22c55e' } as React.CSSProperties}
+          />
           <span className={`text-[11px] font-medium min-w-7 text-right ${item.status === 'error' ? 'text-destructive' : item.status === 'complete' ? 'text-green-600' : 'text-muted-foreground'}`}>
             {item.status === 'complete' ? 'Done' : item.status === 'error' ? 'Error' : item.status === 'uploading' ? `${item.progress}%` : '—'}
           </span>

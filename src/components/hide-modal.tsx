@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Eye, EyeOff, UserMinus, Shield, Loader2, Check } from 'lucide-react';
 import { toast } from '@/lib/toast';
 
@@ -112,18 +113,20 @@ export function HideModal({ open, target, onClose, onDone }: HideModalProps) {
           <div className="flex justify-center py-6"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>
         ) : (
           <div className="space-y-2">
-            {MODES.map((m) => (
-              <label
-                key={m.value}
-                className={`flex items-start gap-3 px-3 py-2.5 rounded-lg border cursor-pointer transition-colors ${mode === m.value ? 'border-foreground bg-muted/50' : 'hover:bg-muted/30'}`}
-              >
-                <input type="radio" name="hidden_mode" value={m.value} checked={mode === m.value} onChange={() => { setMode(m.value); setSelectedTargets(new Set()); }} className="mt-0.5" />
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 text-sm font-medium">{m.icon} {m.label}</div>
-                  <p className="text-xs text-muted-foreground mt-0.5">{m.desc}</p>
-                </div>
-              </label>
-            ))}
+            <RadioGroup value={mode} onValueChange={(v) => { setMode(v as HiddenMode); setSelectedTargets(new Set()); }}>
+              {MODES.map((m) => (
+                <label
+                  key={m.value}
+                  className={`flex items-start gap-3 px-3 py-2.5 rounded-lg border cursor-pointer transition-colors ${mode === m.value ? 'border-foreground bg-muted/50' : 'hover:bg-muted/30'}`}
+                >
+                  <RadioGroupItem value={m.value} className="mt-0.5" />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 text-sm font-medium">{m.icon} {m.label}</div>
+                    <p className="text-xs text-muted-foreground mt-0.5">{m.desc}</p>
+                  </div>
+                </label>
+              ))}
+            </RadioGroup>
 
             {/* User picker */}
             {mode === 'users' && (

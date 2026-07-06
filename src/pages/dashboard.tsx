@@ -4,6 +4,7 @@ import { api } from '@/api/client';
 import { useWorkspace } from '@/stores/workspace';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Upload } from 'lucide-react';
 import {
@@ -55,7 +56,7 @@ export default function DashboardPage() {
   const pct = s.storage_cap_bytes ? Math.min(100, Math.round((s.total_bytes / s.storage_cap_bytes) * 100)) : 0;
 
   return (
-    <div className="p-6 space-y-5 overflow-y-auto">
+    <div className="p-6 space-y-5 overflow-y-auto animate-in fade-in duration-300">
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>
@@ -110,9 +111,11 @@ export default function DashboardPage() {
                     <div key={b.name} className="flex items-center gap-2">
                       <div className="w-2 h-2 rounded-full shrink-0" style={{ background: b.color }} />
                       <span className="text-xs text-muted-foreground flex-1">{b.name}</span>
-                      <div className="flex-[2] h-1 bg-border rounded-full overflow-hidden">
-                        <div className="h-full rounded-full" style={{ width: `${Math.round((b.bytes / max) * 100)}%`, background: b.color }} />
-                      </div>
+                      <Progress
+                        value={Math.round((b.bytes / max) * 100)}
+                        className="flex-[2] **:data-[slot=progress-track]:bg-border **:data-[slot=progress-indicator]:bg-(--bar-color)"
+                        style={{ '--bar-color': b.color } as React.CSSProperties}
+                      />
                       <span className="text-[11px] text-muted-foreground min-w-[36px] text-right">{humanSizeShort(b.bytes)}</span>
                     </div>
                   );

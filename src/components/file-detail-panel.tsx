@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { api, API_BASE } from '@/api/client';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
 import {
   X, Download, Copy, Trash2, Eye, Share2, Lock,
   RotateCcw, Loader2,
@@ -184,13 +185,13 @@ export function FileDetailPanel({ file, onClose, onDownload, onCopy, onDelete, o
               <div className="space-y-2">
                 <p className="text-xs text-muted-foreground">Enter the lock password to access this file.</p>
                 {lockError && <div className="text-xs text-destructive bg-destructive/10 border border-destructive/20 rounded-md px-3 py-2">{lockError}</div>}
-                <input
+                <Input
                   type="password"
                   value={lockPassword}
-                  onChange={(e) => setLockPassword(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleUnlock()}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setLockPassword(e.target.value)}
+                  onKeyDown={(e: React.KeyboardEvent) => e.key === 'Enter' && handleUnlock()}
                   placeholder="Enter password"
-                  className="w-full h-9 border rounded-md px-3 text-sm bg-muted/30 focus:outline-none focus:ring-1 focus:ring-ring"
+                  className="h-9 rounded-md px-3 text-sm bg-muted/30 dark:bg-muted/30"
                   autoFocus
                 />
                 <Button className="w-full" onClick={handleUnlock} disabled={unlocking}>

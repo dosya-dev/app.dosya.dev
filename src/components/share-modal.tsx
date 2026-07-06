@@ -5,6 +5,11 @@ import { Input } from '@/components/ui/input';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@/components/ui/label';
 import { Mail, Link2, X, Loader2, Copy, ChevronDown } from 'lucide-react';
 import { toast } from '@/lib/toast';
 
@@ -18,6 +23,14 @@ interface ShareModalProps {
 type Tab = 'email' | 'link';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+const EXPIRY_OPTIONS = [
+  { value: '0', label: 'Never' },
+  { value: '1', label: '1 day' },
+  { value: '7', label: '7 days' },
+  { value: '30', label: '30 days' },
+  { value: '90', label: '90 days' },
+];
 
 export function ShareModal({ open, fileId, fileName, onClose }: ShareModalProps) {
   const [tab, setTab] = useState<Tab>('email');
@@ -209,7 +222,7 @@ export function ShareModal({ open, fileId, fileName, onClose }: ShareModalProps)
         {/* Email tab */}
         {tab === 'email' && (
           <div>
-            <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Recipients</label>
+            <Label className="text-xs font-medium text-muted-foreground mb-1.5 block">Recipients</Label>
             <div
               className="flex flex-wrap gap-1 min-h-9 border rounded-md px-2 py-1.5 cursor-text focus-within:ring-1 focus-within:ring-ring"
               onClick={() => emailRef.current?.focus()}
@@ -246,18 +259,19 @@ export function ShareModal({ open, fileId, fileName, onClose }: ShareModalProps)
         {/* Expiry */}
         {!resultUrl && (
           <div>
-            <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Expires in</label>
-            <select
-              value={expiry}
-              onChange={(e) => setExpiry(e.target.value)}
-              className="w-full h-9 border rounded-md px-2.5 text-xs bg-background"
-            >
-              <option value="0">Never</option>
-              <option value="1">1 day</option>
-              <option value="7">7 days</option>
-              <option value="30">30 days</option>
-              <option value="90">90 days</option>
-            </select>
+            <Label className="text-xs font-medium text-muted-foreground mb-1.5 block">Expires in</Label>
+            <Select value={expiry} onValueChange={(value) => setExpiry(value ?? '0')} items={EXPIRY_OPTIONS}>
+              <SelectTrigger className="w-full h-9 border rounded-md px-2.5 text-xs bg-background">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {EXPIRY_OPTIONS.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value} className="text-xs">
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         )}
 
@@ -274,9 +288,9 @@ export function ShareModal({ open, fileId, fileName, onClose }: ShareModalProps)
             {showAdvanced && (
               <div className="mt-2 space-y-3">
                 <div>
-                  <label className="text-xs font-medium text-muted-foreground mb-1 block">
+                  <Label className="text-xs font-medium text-muted-foreground mb-1 block">
                     Password <span className="font-normal">(optional)</span>
-                  </label>
+                  </Label>
                   <Input
                     type="password"
                     value={password}
@@ -287,9 +301,9 @@ export function ShareModal({ open, fileId, fileName, onClose }: ShareModalProps)
                   />
                 </div>
                 <div>
-                  <label className="text-xs font-medium text-muted-foreground mb-1 block">
+                  <Label className="text-xs font-medium text-muted-foreground mb-1 block">
                     Title <span className="font-normal">(optional)</span>
-                  </label>
+                  </Label>
                   <Input
                     value={title}
                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => setTitle(e.target.value)}
@@ -299,14 +313,14 @@ export function ShareModal({ open, fileId, fileName, onClose }: ShareModalProps)
                 </div>
                 {tab === 'email' && (
                   <div>
-                    <label className="text-xs font-medium text-muted-foreground mb-1 block">
+                    <Label className="text-xs font-medium text-muted-foreground mb-1 block">
                       Message <span className="font-normal">(optional)</span>
-                    </label>
-                    <textarea
+                    </Label>
+                    <Textarea
                       value={message}
                       onChange={(e) => setMessage(e.target.value)}
                       placeholder="Add a message for the recipient..."
-                      className="w-full h-14 border rounded-md px-2.5 py-2 text-xs bg-background resize-y focus:outline-none focus:ring-1 focus:ring-ring"
+                      className="w-full h-14 min-h-14 rounded-md px-2.5 py-2 text-xs bg-background resize-y"
                     />
                   </div>
                 )}
@@ -318,7 +332,7 @@ export function ShareModal({ open, fileId, fileName, onClose }: ShareModalProps)
         {/* Result */}
         {resultUrl && (
           <div>
-            <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Share link created</label>
+            <Label className="text-xs font-medium text-muted-foreground mb-1.5 block">Share link created</Label>
             <div className="flex items-center gap-2 bg-muted/50 border rounded-md px-3 py-2">
               <span className="flex-1 text-[11px] font-mono text-muted-foreground truncate">{resultUrl}</span>
               <button onClick={handleCopyUrl} className="text-xs font-semibold text-green-600 hover:text-green-700 shrink-0">

@@ -4,6 +4,7 @@ import { api } from '@/api/client';
 import { useWorkspace } from '@/stores/workspace';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
@@ -263,7 +264,7 @@ export function FilesSidebar({ onFilterChange, onFavouriteClick, onGroupClick }:
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Name</label>
+              <Label className="text-xs font-medium text-muted-foreground mb-1.5 block">Name</Label>
               <Input
                 value={newGroupName}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewGroupName(e.target.value)}
@@ -274,7 +275,7 @@ export function FilesSidebar({ onFilterChange, onFavouriteClick, onGroupClick }:
               />
             </div>
             <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Color</label>
+              <Label className="text-xs font-medium text-muted-foreground mb-1.5 block">Color</Label>
               <div className="flex flex-wrap gap-2">
                 {GROUP_COLORS.map((c) => (
                   <button

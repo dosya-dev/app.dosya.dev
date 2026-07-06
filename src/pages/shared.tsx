@@ -9,6 +9,10 @@ import { Skeleton } from '@/components/ui/skeleton';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
+import {
+  Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
+} from '@/components/ui/table';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Search, Copy, Check, X } from 'lucide-react';
 import { humanSize, timeAgo, colorFor, labelFor } from '@/lib/helpers';
 import { toast } from '@/lib/toast';
@@ -103,14 +107,16 @@ export default function SharedPage() {
         {/* Header */}
         <div className="px-8 pt-7 shrink-0">
           <h1 className="text-xl font-bold tracking-tight mb-4">Shared</h1>
-          <div className="flex border-b">
-            <button className="px-4 py-2.5 text-sm font-medium border-b-2 border-foreground text-foreground -mb-px">
-              By me <Badge variant="default" className="ml-1.5 text-[10px]">{links.filter((l) => l.is_mine).length}</Badge>
-            </button>
-            <button className="px-4 py-2.5 text-sm font-medium text-muted-foreground border-b-2 border-transparent -mb-px">
-              With me <Badge variant="secondary" className="ml-1.5 text-[10px]">—</Badge>
-            </button>
-          </div>
+          <Tabs value="by-me">
+            <TabsList variant="line" className="w-full justify-start gap-0 border-b p-0 group-data-horizontal/tabs:h-auto">
+              <TabsTrigger value="by-me" className="flex-none gap-0 rounded-none px-4 py-2.5 text-sm group-data-horizontal/tabs:after:-bottom-px">
+                By me <Badge variant="default" className="ml-1.5 text-[10px]">{links.filter((l) => l.is_mine).length}</Badge>
+              </TabsTrigger>
+              <TabsTrigger value="with-me" className="flex-none gap-0 rounded-none px-4 py-2.5 text-sm group-data-horizontal/tabs:after:-bottom-px">
+                With me <Badge variant="secondary" className="ml-1.5 text-[10px]">—</Badge>
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
         </div>
 
         {/* Toolbar */}
@@ -138,20 +144,20 @@ export default function SharedPage() {
           ) : filtered.length === 0 ? (
             <p className="py-12 text-center text-sm text-muted-foreground">No shared links{filter !== 'all' ? ' with this status' : ''}</p>
           ) : (
-            <table className="w-full mt-1">
-              <thead>
-                <tr className="border-b">
+            <Table className="mt-1">
+              <TableHeader>
+                <TableRow className="hover:bg-transparent">
                   {['File', 'Region', 'Views', 'Expiry', 'Status', ''].map((h, i) => (
-                    <th key={h} className={`text-[10px] font-semibold text-muted-foreground uppercase tracking-wider text-left py-2.5 px-2 ${i === 0 ? 'pl-0' : ''}`}>{h}</th>
+                    <TableHead key={h} className={`h-auto text-[10px] font-semibold text-muted-foreground uppercase tracking-wider py-2.5 px-2 ${i === 0 ? 'pl-0' : ''}`}>{h}</TableHead>
                   ))}
-                </tr>
-              </thead>
-              <tbody>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {filtered.map((l) => (
                   <ShareRow key={l.link_id} link={l} onRevoke={() => setRevokeTarget(l)} />
                 ))}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           )}
         </div>
       </div>
@@ -223,8 +229,8 @@ function ShareRow({ link: l, onRevoke }: { link: ShareLink; onRevoke: () => void
   const isLive = l.status === 'active' || l.status === 'expiring';
 
   return (
-    <tr className="border-b last:border-b-0 hover:bg-muted/50 transition-colors group">
-      <td className="py-3 pr-2">
+    <TableRow className="group">
+      <TableCell className="py-3 pl-0 pr-2">
         <div className="flex items-center gap-2.5">
           <div className="w-8 h-8 rounded-lg flex items-center justify-center text-[8px] font-bold text-white shrink-0" style={{ background: colorFor(l.file_name) }}>{labelFor(l.file_name)}</div>
           <div className="min-w-0">
@@ -232,24 +238,24 @@ function ShareRow({ link: l, onRevoke }: { link: ShareLink; onRevoke: () => void
             <p className="text-[11px] text-muted-foreground">{humanSize(l.size_bytes)} · Shared {timeAgo(l.shared_at)}</p>
           </div>
         </div>
-      </td>
-      <td className="py-3 px-2"><Badge variant="secondary" className="text-[10px]">{l.region}</Badge></td>
-      <td className="py-3 px-2">
+      </TableCell>
+      <TableCell className="py-3 px-2"><Badge variant="secondary" className="text-[10px]">{l.region}</Badge></TableCell>
+      <TableCell className="py-3 px-2">
         <p className="text-sm font-medium">{l.view_count}</p>
         <p className="text-[11px] text-muted-foreground">{l.download_count} download{l.download_count === 1 ? '' : 's'}</p>
-      </td>
-      <td className="py-3 px-2">
+      </TableCell>
+      <TableCell className="py-3 px-2">
         <span className={`text-xs font-medium ${l.status === 'expiring' ? 'text-amber-600' : l.status === 'expired' || l.status === 'revoked' ? 'text-muted-foreground' : ''}`}>
           {expiryText}
         </span>
-      </td>
-      <td className="py-3 px-2">
+      </TableCell>
+      <TableCell className="py-3 px-2">
         <Badge className={`text-[10px] gap-1 ${STATUS_COLORS[l.status] ?? ''}`}>
           <span className={`w-1.5 h-1.5 rounded-full ${DOT_COLORS[l.status] ?? ''}`} />
           {l.status.charAt(0).toUpperCase() + l.status.slice(1)}
         </Badge>
-      </td>
-      <td className="py-3 pl-2">
+      </TableCell>
+      <TableCell className="py-3 pl-2 pr-0">
         <div className="flex gap-1 opacity-0 group-hover:opacity-100">
           {isLive && (
             <>
@@ -262,7 +268,7 @@ function ShareRow({ link: l, onRevoke }: { link: ShareLink; onRevoke: () => void
             </>
           )}
         </div>
-      </td>
-    </tr>
+      </TableCell>
+    </TableRow>
   );
 }

@@ -4,6 +4,7 @@ import { api, API_BASE } from '@/api/client';
 import { useDocumentTitle } from '@/lib/page-title';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   ChevronLeft, Download, Copy, Check, Mail, Clock, Lock,
@@ -102,7 +103,7 @@ export default function FileRequestDetailPage() {
           <h1 className="text-xl font-bold mb-5">File Request Uploads</h1>
 
           {/* Recipients summary */}
-          <div className="rounded-xl border bg-card p-4 mb-5">
+          <Card className="gap-0 py-0 p-4 mb-5">
             <div className="flex items-center gap-2 mb-3">
               <Users className="size-4 text-muted-foreground" />
               <span className="text-sm font-semibold">Recipients ({recipients.length})</span>
@@ -124,10 +125,10 @@ export default function FileRequestDetailPage() {
               <span className="text-green-600 font-medium">{uploadedCount} uploaded</span>
               <span>{pendingCount} pending</span>
             </div>
-          </div>
+          </Card>
 
           {/* Uploads */}
-          <div className="rounded-xl border bg-card overflow-hidden">
+          <Card className="gap-0 py-0 overflow-hidden">
             <div className="px-4 py-3 border-b">
               <span className="text-sm font-semibold">Uploads ({uploads.length})</span>
             </div>
@@ -154,7 +155,7 @@ export default function FileRequestDetailPage() {
                 </div>
               ))
             )}
-          </div>
+          </Card>
         </>
       )}
     </div>

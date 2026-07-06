@@ -9,6 +9,9 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
 import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select';
+import {
   User, Lock, Key, Monitor, Bell, Plug, Building2, Trash2,
   Plus, Copy, Check, Loader2, LogOut, X, Camera, ShieldCheck,
   Smartphone, Download, RefreshCw, Mail,
@@ -336,13 +339,12 @@ function IdentitySection({ user, onSaved }: { user: UserProfile | null; onSaved:
           </SettingRow>
 
           <SettingRow label="Preferred language" desc="Interface language for your account.">
-            <select
-              value={language}
-              onChange={(e) => setLanguage(e.target.value)}
-              className="h-8 text-xs border rounded-md px-2 bg-background w-48"
-            >
-              {LANGUAGES.map((l) => <option key={l.value} value={l.value}>{l.label}</option>)}
-            </select>
+            <Select value={language} onValueChange={(v) => setLanguage(v as string)} items={LANGUAGES}>
+              <SelectTrigger className="h-8 text-xs w-48"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {LANGUAGES.map((l) => <SelectItem key={l.value} value={l.value}>{l.label}</SelectItem>)}
+              </SelectContent>
+            </Select>
           </SettingRow>
         </CardContent>
       </Card>
@@ -754,11 +756,12 @@ function ApiKeysSection({ keys, onChanged }: { keys: ApiKey[]; onChanged: () => 
           <DialogHeader><DialogTitle>Create API key</DialogTitle></DialogHeader>
           <div className="space-y-3">
             <Input placeholder="Key name" value={keyName} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setKeyName(e.target.value)} className="h-9 text-sm" />
-            <select value={keyScope} onChange={(e) => setKeyScope(e.target.value)} className="w-full h-9 text-sm border rounded-md px-3 bg-background">
-              <option value="full">Full access</option>
-              <option value="read">Read only</option>
-              <option value="upload">Upload only</option>
-            </select>
+            <Select value={keyScope} onValueChange={(v) => setKeyScope(v as string)} items={SCOPE_LABELS}>
+              <SelectTrigger className="w-full h-9 text-sm"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {Object.entries(SCOPE_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}
+              </SelectContent>
+            </Select>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>

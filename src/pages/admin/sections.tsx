@@ -3,7 +3,9 @@ import { api } from '@/api/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Search, ChevronLeft, ChevronRight, Loader2, Trash2, X, Check, RefreshCw } from 'lucide-react';
 import { humanSize, timeAgo } from '@/lib/helpers';
@@ -75,7 +77,7 @@ export function AdminFilesPage() {
     <div className="max-w-4xl">
       <AdminHeader title="Files" search={search} setSearch={setSearch} />
       {loading ? <LoadingSkeleton /> : (
-        <div className="rounded-xl border bg-card overflow-hidden">
+        <Card className="gap-0 py-0 overflow-hidden">
           {files.map((f: any) => (
             <div key={f.id} className="flex items-center gap-3 px-4 py-2.5 border-b last:border-b-0 hover:bg-muted/50 text-xs">
               <div className="flex-1 min-w-0">
@@ -87,7 +89,7 @@ export function AdminFilesPage() {
               <Button variant="outline" size="sm" className="h-6 px-2 text-[10px] text-destructive" onClick={() => deleteFile(f.id)}><Trash2 className="size-3" /></Button>
             </div>
           ))}
-        </div>
+        </Card>
       )}
       <Pagination page={page} totalPages={totalPages} setPage={setPage} />
     </div>
@@ -107,7 +109,7 @@ export function AdminSharesPage() {
     <div className="max-w-4xl">
       <AdminHeader title="Shares" search={search} setSearch={setSearch} />
       {loading ? <LoadingSkeleton /> : (
-        <div className="rounded-xl border bg-card overflow-hidden">
+        <Card className="gap-0 py-0 overflow-hidden">
           {shares.map((s: any) => (
             <div key={s.id} className="flex items-center gap-3 px-4 py-2.5 border-b last:border-b-0 hover:bg-muted/50 text-xs">
               <div className="flex-1 min-w-0">
@@ -119,7 +121,7 @@ export function AdminSharesPage() {
               {!s.is_revoked && <Button variant="outline" size="sm" className="h-6 px-2 text-[10px] text-destructive" onClick={() => revoke(s.id)}>Revoke</Button>}
             </div>
           ))}
-        </div>
+        </Card>
       )}
       <Pagination page={page} totalPages={totalPages} setPage={setPage} />
     </div>
@@ -139,7 +141,7 @@ export function AdminSessionsPage() {
     <div className="max-w-4xl">
       <AdminHeader title="Sessions" search={search} setSearch={setSearch} />
       {loading ? <LoadingSkeleton /> : (
-        <div className="rounded-xl border bg-card overflow-hidden">
+        <Card className="gap-0 py-0 overflow-hidden">
           {sessions.map((s: any) => (
             <div key={s.id} className="flex items-center gap-3 px-4 py-2.5 border-b last:border-b-0 hover:bg-muted/50 text-xs">
               <div className="flex-1 min-w-0">
@@ -151,7 +153,7 @@ export function AdminSessionsPage() {
               {s.is_active && <Button variant="outline" size="sm" className="h-6 px-2 text-[10px] text-destructive" onClick={() => revoke(s.id)}>Revoke</Button>}
             </div>
           ))}
-        </div>
+        </Card>
       )}
       <Pagination page={page} totalPages={totalPages} setPage={setPage} />
     </div>
@@ -167,7 +169,7 @@ export function AdminActivityPage() {
     <div className="max-w-4xl">
       <AdminHeader title="Activity" search={search} setSearch={setSearch} />
       {loading ? <LoadingSkeleton /> : (
-        <div className="rounded-xl border bg-card overflow-hidden">
+        <Card className="gap-0 py-0 overflow-hidden">
           {activity.map((a: any) => (
             <div key={a.id} className="flex items-center gap-3 px-4 py-2.5 border-b last:border-b-0 hover:bg-muted/50 text-xs">
               <div className="flex-1 min-w-0">
@@ -177,7 +179,7 @@ export function AdminActivityPage() {
               <span className="text-muted-foreground">{timeAgo(a.created_at)}</span>
             </div>
           ))}
-        </div>
+        </Card>
       )}
       <Pagination page={page} totalPages={totalPages} setPage={setPage} />
     </div>
@@ -203,14 +205,14 @@ export function AdminPaymentsPage() {
         <div className="border rounded-xl p-4"><p className="text-xs text-muted-foreground">Churned</p><p className="text-2xl font-bold text-destructive">{data.stats?.churned ?? 0}</p></div>
       </div>
       {data.revenue_by_plan?.length > 0 && (
-        <div className="rounded-xl border bg-card p-4 mb-5">
+        <Card className="gap-0 py-0 p-4 mb-5">
           <p className="text-sm font-semibold mb-3">Revenue by Plan</p>
           {data.revenue_by_plan.map((p: any) => (
             <div key={p.plan} className="flex justify-between py-1.5 text-xs border-b last:border-b-0">
               <span className="capitalize">{p.plan}</span><span className="font-medium">${(p.revenue_cents / 100).toFixed(2)}</span>
             </div>
           ))}
-        </div>
+        </Card>
       )}
     </div>
   );
@@ -224,7 +226,7 @@ export function AdminEmailsPage() {
     <div className="max-w-4xl">
       <AdminHeader title="Emails" search={search} setSearch={setSearch} />
       {loading ? <LoadingSkeleton /> : (
-        <div className="rounded-xl border bg-card overflow-hidden">
+        <Card className="gap-0 py-0 overflow-hidden">
           {emails.map((e: any) => (
             <div key={e.id} className="flex items-center gap-3 px-4 py-2.5 border-b last:border-b-0 text-xs">
               <div className="flex-1 min-w-0">
@@ -235,7 +237,7 @@ export function AdminEmailsPage() {
               <span className="text-muted-foreground">{timeAgo(e.created_at)}</span>
             </div>
           ))}
-        </div>
+        </Card>
       )}
       <Pagination page={page} totalPages={totalPages} setPage={setPage} />
     </div>
@@ -250,7 +252,7 @@ export function AdminInvitesPage() {
     <div className="max-w-4xl">
       <AdminHeader title="Invites" search={search} setSearch={setSearch} />
       {loading ? <LoadingSkeleton /> : (
-        <div className="rounded-xl border bg-card overflow-hidden">
+        <Card className="gap-0 py-0 overflow-hidden">
           {invites.map((inv: any) => (
             <div key={inv.id} className="flex items-center gap-3 px-4 py-2.5 border-b last:border-b-0 text-xs">
               <div className="flex-1 min-w-0">
@@ -261,7 +263,7 @@ export function AdminInvitesPage() {
               <span className="text-muted-foreground">{timeAgo(inv.created_at)}</span>
             </div>
           ))}
-        </div>
+        </Card>
       )}
       <Pagination page={page} totalPages={totalPages} setPage={setPage} />
     </div>
@@ -297,7 +299,7 @@ export function AdminAnnouncementsPage() {
         <Button size="sm" className="h-8 text-xs" onClick={create} disabled={creating}>{creating && <Loader2 className="size-3 animate-spin mr-1" />}Create</Button>
       </div>
       {loading ? <LoadingSkeleton /> : (
-        <div className="rounded-xl border bg-card overflow-hidden">
+        <Card className="gap-0 py-0 overflow-hidden">
           {announcements.map((a: any) => (
             <div key={a.id} className="flex items-center gap-3 px-4 py-2.5 border-b last:border-b-0 text-xs">
               <div className="flex-1 min-w-0"><p className="truncate">{a.message}</p></div>
@@ -306,7 +308,7 @@ export function AdminAnnouncementsPage() {
               <Button variant="outline" size="sm" className="h-6 px-2 text-[10px] text-destructive" onClick={() => remove(a.id)}><Trash2 className="size-3" /></Button>
             </div>
           ))}
-        </div>
+        </Card>
       )}
     </div>
   );
@@ -369,7 +371,7 @@ export function AdminSecurityPage() {
     <div className="max-w-4xl">
       <AdminHeader title="Security" search={search} setSearch={setSearch} />
       {loading ? <LoadingSkeleton /> : (
-        <div className="rounded-xl border bg-card overflow-hidden">
+        <Card className="gap-0 py-0 overflow-hidden">
           {audit.map((a: any, i: number) => (
             <div key={i} className="flex items-center gap-3 px-4 py-2.5 border-b last:border-b-0 text-xs">
               <div className="flex-1 min-w-0">
@@ -379,7 +381,7 @@ export function AdminSecurityPage() {
               <span className="text-muted-foreground">{timeAgo(a.created_at)}</span>
             </div>
           ))}
-        </div>
+        </Card>
       )}
       <Pagination page={page} totalPages={totalPages} setPage={setPage} />
     </div>
@@ -409,7 +411,7 @@ export function AdminContactPage() {
     <div className="max-w-4xl">
       <AdminHeader title="Contact Submissions" search={search} setSearch={setSearch} />
       {loading ? <LoadingSkeleton /> : (
-        <div className="rounded-xl border bg-card overflow-hidden">
+        <Card className="gap-0 py-0 overflow-hidden">
           {submissions.map((s: any) => (
             <div key={s.id} className="flex items-center gap-3 px-4 py-2.5 border-b last:border-b-0 text-xs">
               <div className="flex-1 min-w-0">
@@ -421,7 +423,7 @@ export function AdminContactPage() {
               {s.status === 'open' && <Button variant="outline" size="sm" className="h-6 px-2 text-[10px]" onClick={() => { setReplyModal(s); setReplyText(''); }}>Reply</Button>}
             </div>
           ))}
-        </div>
+        </Card>
       )}
       <Pagination page={page} totalPages={totalPages} setPage={setPage} />
 
@@ -429,7 +431,7 @@ export function AdminContactPage() {
         <DialogContent className="max-w-md">
           <DialogHeader><DialogTitle>Reply to {replyModal?.name}</DialogTitle></DialogHeader>
           <p className="text-xs text-muted-foreground mb-2">{replyModal?.description}</p>
-          <textarea value={replyText} onChange={(e) => setReplyText(e.target.value)} className="w-full h-24 border rounded-md px-3 py-2 text-xs resize-y" placeholder="Your reply..." />
+          <Textarea value={replyText} onChange={(e) => setReplyText(e.target.value)} className="w-full h-24 rounded-md px-3 py-2 text-xs resize-y" placeholder="Your reply..." />
           <DialogFooter>
             <Button variant="outline" onClick={() => setReplyModal(null)}>Cancel</Button>
             <Button onClick={() => doAction(replyModal?.id, 'reply', replyText)} disabled={acting || !replyText.trim()}>{acting && <Loader2 className="size-4 animate-spin mr-1.5" />}Send Reply</Button>
@@ -452,7 +454,7 @@ export function AdminPlansPage() {
     <div className="max-w-4xl">
       <h1 className="text-xl font-bold mb-5">Plans</h1>
       {loading ? <LoadingSkeleton /> : (
-        <div className="rounded-xl border bg-card overflow-hidden">
+        <Card className="gap-0 py-0 overflow-hidden">
           {plans.map((p: any) => (
             <div key={p.id} className="flex items-center gap-3 px-4 py-3 border-b last:border-b-0 text-xs">
               <div className="flex-1 min-w-0">
@@ -462,7 +464,7 @@ export function AdminPlansPage() {
               <Badge variant="secondary" className="text-[9px] font-mono">{p.stripe_price_id || 'no stripe'}</Badge>
             </div>
           ))}
-        </div>
+        </Card>
       )}
     </div>
   );

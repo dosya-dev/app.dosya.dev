@@ -10,6 +10,10 @@ import { Skeleton } from '@/components/ui/skeleton';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select';
 import {
   UserPlus, X, Copy, Check, Loader2, Link2, Mail,
   Settings, Plus, Users, Clock, Share2,
@@ -306,10 +310,20 @@ export default function TeamsPage() {
 
 // ── Invite Modal ───────────────────────────────────────────
 
+const MAX_USES_OPTIONS = [
+  { value: '', label: 'Unlimited' }, { value: '1', label: '1' }, { value: '5', label: '5' },
+  { value: '10', label: '10' }, { value: '25', label: '25' }, { value: '100', label: '100' },
+];
+const LINK_EXPIRY_OPTIONS = [
+  { value: '', label: 'Never' }, { value: '1', label: '1 day' }, { value: '7', label: '7 days' },
+  { value: '30', label: '30 days' }, { value: '90', label: '90 days' },
+];
+
 function InviteModal({ open, tab, onTabChange, onClose, wsId, roles, onInvited }: {
   open: boolean; tab: 'email' | 'link'; onTabChange: (t: 'email' | 'link') => void; onClose: () => void; wsId: string; roles: Role[]; onInvited: () => void;
 }) {
   const assignable = roles.filter((r) => r.id !== 'role_owner');
+  const roleItems = assignable.map((r) => ({ value: r.id, label: r.name }));
   const [email, setEmail] = useState('');
   const [role, setRole] = useState('role_member');
   const [sending, setSending] = useState(false);
@@ -374,14 +388,17 @@ function InviteModal({ open, tab, onTabChange, onClose, wsId, roles, onInvited }
           {tab === 'email' ? (
             <form onSubmit={sendInvite} className="space-y-3">
               <div>
-                <label className="text-xs font-medium text-muted-foreground mb-1 block">Email address</label>
+                <Label className="text-xs font-medium text-muted-foreground mb-1 block">Email address</Label>
                 <Input type="email" value={email} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEmail(e.target.value)} placeholder="colleague@company.com" required className="h-9 text-sm" />
               </div>
               <div>
-                <label className="text-xs font-medium text-muted-foreground mb-1 block">Role</label>
-                <select value={role} onChange={(e) => setRole(e.target.value)} className="w-full h-9 text-sm border rounded-md px-3 bg-background">
-                  {assignable.map((r) => (<option key={r.id} value={r.id}>{r.name}</option>))}
-                </select>
+                <Label className="text-xs font-medium text-muted-foreground mb-1 block">Role</Label>
+                <Select value={role} onValueChange={(v) => setRole(v as string)} items={roleItems}>
+                  <SelectTrigger className="w-full h-9 text-sm"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {assignable.map((r) => (<SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>))}
+                  </SelectContent>
+                </Select>
               </div>
               <Button type="submit" className="w-full" disabled={sending}>
                 {sending ? <Loader2 className="size-4 animate-spin mr-2" /> : null} Send invite
@@ -391,23 +408,32 @@ function InviteModal({ open, tab, onTabChange, onClose, wsId, roles, onInvited }
           ) : (
             <div className="space-y-3">
               <div>
-                <label className="text-xs font-medium text-muted-foreground mb-1 block">Role for new members</label>
-                <select value={linkRole} onChange={(e) => setLinkRole(e.target.value)} className="w-full h-9 text-sm border rounded-md px-3 bg-background">
-                  {assignable.map((r) => (<option key={r.id} value={r.id}>{r.name}</option>))}
-                </select>
+                <Label className="text-xs font-medium text-muted-foreground mb-1 block">Role for new members</Label>
+                <Select value={linkRole} onValueChange={(v) => setLinkRole(v as string)} items={roleItems}>
+                  <SelectTrigger className="w-full h-9 text-sm"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {assignable.map((r) => (<SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>))}
+                  </SelectContent>
+                </Select>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs font-medium text-muted-foreground mb-1 block">Max uses</label>
-                  <select value={linkMaxUses} onChange={(e) => setLinkMaxUses(e.target.value)} className="w-full h-9 text-sm border rounded-md px-3 bg-background">
-                    <option value="">Unlimited</option><option value="1">1</option><option value="5">5</option><option value="10">10</option><option value="25">25</option><option value="100">100</option>
-                  </select>
+                  <Label className="text-xs font-medium text-muted-foreground mb-1 block">Max uses</Label>
+                  <Select value={linkMaxUses} onValueChange={(v) => setLinkMaxUses(v as string)} items={MAX_USES_OPTIONS}>
+                    <SelectTrigger className="w-full h-9 text-sm"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {MAX_USES_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div>
-                  <label className="text-xs font-medium text-muted-foreground mb-1 block">Expires</label>
-                  <select value={linkExpires} onChange={(e) => setLinkExpires(e.target.value)} className="w-full h-9 text-sm border rounded-md px-3 bg-background">
-                    <option value="">Never</option><option value="1">1 day</option><option value="7">7 days</option><option value="30">30 days</option><option value="90">90 days</option>
-                  </select>
+                  <Label className="text-xs font-medium text-muted-foreground mb-1 block">Expires</Label>
+                  <Select value={linkExpires} onValueChange={(v) => setLinkExpires(v as string)} items={LINK_EXPIRY_OPTIONS}>
+                    <SelectTrigger className="w-full h-9 text-sm"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {LINK_EXPIRY_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
               <Button className="w-full" onClick={createLink} disabled={creatingLink}>
@@ -415,7 +441,7 @@ function InviteModal({ open, tab, onTabChange, onClose, wsId, roles, onInvited }
               </Button>
               {createdLink && (
                 <div className="mt-3">
-                  <label className="text-xs font-medium text-muted-foreground mb-1 block">Share this link</label>
+                  <Label className="text-xs font-medium text-muted-foreground mb-1 block">Share this link</Label>
                   <div className="flex gap-2">
                     <Input value={createdLink} readOnly className="h-8 text-xs font-mono flex-1" />
                     <CopyButton text={createdLink} />

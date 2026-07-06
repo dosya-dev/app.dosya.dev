@@ -3,13 +3,24 @@ import { api } from '@/api/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Search, Ban, Shield, Loader2, CreditCard } from 'lucide-react';
 import { timeAgo, avatarColor, initials } from '@/lib/helpers';
 import { toast } from '@/lib/toast';
 
 interface User { id: string; name: string; email: string; plan: string; created_at: number; is_banned?: number; login_method?: string }
+
+const PLAN_OPTIONS = [
+  { value: '', label: 'Select plan' },
+  { value: 'free', label: 'Free' },
+  { value: 'starter', label: 'Starter' },
+  { value: 'plus', label: 'Plus' },
+  { value: 'pro', label: 'Pro' },
+  { value: 'business', label: 'Business' },
+];
 
 export default function AdminUsersPage() {
   const [users, setUsers] = useState<User[]>([]);
@@ -55,7 +66,7 @@ export default function AdminUsersPage() {
       {loading ? (
         <div className="space-y-2">{[1,2,3,4,5].map(i => <Skeleton key={i} className="h-14 w-full" />)}</div>
       ) : (
-        <div className="rounded-xl border bg-card overflow-hidden">
+        <Card className="gap-0 py-0 overflow-hidden">
           {filtered.map((u) => (
             <div key={u.id} className="flex items-center gap-3 px-4 py-3 border-b last:border-b-0 hover:bg-muted/50">
               <div className="size-8 rounded-full flex items-center justify-center text-[10px] font-bold text-white shrink-0" style={{ background: avatarColor(u.id) }}>{initials(u.name)}</div>
@@ -72,7 +83,7 @@ export default function AdminUsersPage() {
               </div>
             </div>
           ))}
-        </div>
+        </Card>
       )}
 
       <Dialog open={!!actionModal} onOpenChange={() => setActionModal(null)}>
@@ -80,10 +91,14 @@ export default function AdminUsersPage() {
           <DialogHeader><DialogTitle className="capitalize">{actionModal?.action?.replace('_', ' ')} — {actionModal?.userName}</DialogTitle></DialogHeader>
           {actionModal?.action === 'ban' && <Input value={actionInput} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setActionInput(e.target.value)} placeholder="Ban reason" className="h-8 text-xs" />}
           {actionModal?.action === 'change_plan' && (
-            <select value={actionInput} onChange={(e) => setActionInput(e.target.value)} className="h-8 text-xs border rounded-md px-2 bg-background w-full">
-              <option value="">Select plan</option>
-              <option value="free">Free</option><option value="starter">Starter</option><option value="plus">Plus</option><option value="pro">Pro</option><option value="business">Business</option>
-            </select>
+            <Select value={actionInput} onValueChange={(value) => setActionInput(value ?? '')} items={PLAN_OPTIONS}>
+              <SelectTrigger className="h-8 text-xs border rounded-md px-2 bg-background w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {PLAN_OPTIONS.map((opt) => <SelectItem key={opt.value} value={opt.value} className="text-xs">{opt.label}</SelectItem>)}
+              </SelectContent>
+            </Select>
           )}
           {actionModal?.action === 'delete_sessions' && <p className="text-sm text-muted-foreground">This will log out the user from all devices.</p>}
           <DialogFooter>
