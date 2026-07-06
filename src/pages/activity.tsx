@@ -5,8 +5,11 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
-  ChevronLeft, ChevronRight, Check, ChevronDown,
+  ChevronLeft, ChevronRight, ChevronDown,
 } from 'lucide-react';
+import {
+  DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { timeAgo, avatarColor, initials } from '@/lib/helpers';
 
 // ── Types ─────────────────────────────────────────────────
@@ -354,39 +357,33 @@ function FilterDropdown({ label, placeholder, options, selected, onChange }: {
       : `${selected.size} selected`;
 
   return (
-    <div className="relative">
+    <div>
       <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider block mb-1">{label}</label>
-      <button
-        onClick={() => setOpen(!open)}
-        className={`h-9 min-w-36 max-w-52 px-3 border rounded-lg text-xs flex items-center gap-2 hover:bg-muted/50 ${open ? 'bg-accent' : 'bg-background'} ${selected.size > 0 ? 'text-foreground font-medium' : 'text-muted-foreground'}`}
-      >
-        <span className="truncate flex-1 text-left">{displayText}</span>
-        <ChevronDown className={`size-3 shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
-      </button>
-
-      {open && (
-        <>
-          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <div className="absolute left-0 top-full mt-1 z-20 bg-popover border rounded-lg shadow-lg py-1 min-w-48 max-h-64 overflow-y-auto">
-            {options.length === 0 ? (
-              <p className="text-xs text-muted-foreground text-center py-3">No options</p>
-            ) : (
-              options.map((opt) => (
-                <button
-                  key={opt.value}
-                  onClick={() => toggle(opt.value)}
-                  className="w-full flex items-center gap-2.5 px-3 py-1.5 text-xs hover:bg-muted/50 text-left"
-                >
-                  <div className={`size-4 rounded border flex items-center justify-center shrink-0 ${selected.has(opt.value) ? 'bg-primary border-primary' : ''}`}>
-                    {selected.has(opt.value) && <Check className="size-3 text-primary-foreground" />}
-                  </div>
-                  <span className="truncate">{opt.label}</span>
-                </button>
-              ))
-            )}
-          </div>
-        </>
-      )}
+      <DropdownMenu open={open} onOpenChange={setOpen}>
+        <DropdownMenuTrigger
+          className={`h-9 min-w-36 max-w-52 px-3 border rounded-lg text-xs flex items-center gap-2 hover:bg-muted/50 ${open ? 'bg-accent' : 'bg-background'} ${selected.size > 0 ? 'text-foreground font-medium' : 'text-muted-foreground'}`}
+        >
+          <span className="truncate flex-1 text-left">{displayText}</span>
+          <ChevronDown className={`size-3 shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="min-w-48 max-h-64 overflow-y-auto">
+          {options.length === 0 ? (
+            <p className="text-xs text-muted-foreground text-center py-3">No options</p>
+          ) : (
+            options.map((opt) => (
+              <DropdownMenuCheckboxItem
+                key={opt.value}
+                checked={selected.has(opt.value)}
+                onCheckedChange={() => toggle(opt.value)}
+                closeOnClick={false}
+                className="text-xs"
+              >
+                <span className="truncate">{opt.label}</span>
+              </DropdownMenuCheckboxItem>
+            ))
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   );
 }

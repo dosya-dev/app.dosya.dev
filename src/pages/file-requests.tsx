@@ -6,10 +6,20 @@ import { useWorkspace } from '@/stores/workspace';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
+import {
+  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
+} from '@/components/ui/dropdown-menu';
+import { Label } from '@/components/ui/label';
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Textarea } from '@/components/ui/textarea';
 import {
   Plus, ArrowLeft, Mail, Copy, Check, Send, Trash2, Loader2,
   ChevronDown, FolderOpen, Home, Download, X, Search,
@@ -130,7 +140,7 @@ export default function FileRequestsPage() {
       </div>
 
       {/* List */}
-      <div className="rounded-xl border bg-card overflow-hidden">
+      <Card className="gap-0 py-0 overflow-hidden">
         {loading ? (
           <div className="space-y-0">
             {[1, 2, 3].map((i) => (
@@ -161,7 +171,7 @@ export default function FileRequestsPage() {
             );
           })
         )}
-      </div>
+      </Card>
 
       {/* Create modal */}
       {createOpen && (
@@ -268,6 +278,14 @@ function RequestRow({ request: r, revoked, expired, isActive, onRevoke, onOpenRe
 
 // ── Create Request Dialog ─────────────────────────────────
 
+const EXPIRY_OPTIONS = [
+  { value: '0', label: 'Never' },
+  { value: '1', label: '1 day' },
+  { value: '7', label: '7 days' },
+  { value: '30', label: '30 days' },
+  { value: '90', label: '90 days' },
+];
+
 function CreateRequestDialog({ workspaceId, onClose, onCreated }: {
   workspaceId: string; onClose: () => void; onCreated: () => void;
 }) {
@@ -289,7 +307,6 @@ function CreateRequestDialog({ workspaceId, onClose, onCreated }: {
 
   // Folder picker
   const [folders, setFolders] = useState<PickerFolder[]>([]);
-  const [folderPickerOpen, setFolderPickerOpen] = useState(false);
 
   useEffect(() => {
     api<{ ok: boolean; folders?: PickerFolder[] }>(`/api/folders/tree?workspace_id=${workspaceId}`)
@@ -375,26 +392,26 @@ function CreateRequestDialog({ workspaceId, onClose, onCreated }: {
         </DialogHeader>
 
         {/* Tabs */}
-        <div className="flex border-b -mx-6">
-          <button
-            className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-medium border-b-2 -mb-px transition-colors ${tab === 'email' ? 'border-black dark:border-white text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
-            onClick={() => { setTab('email'); setResultUrl(''); setError(''); }}
-          >
-            <Mail className="size-3.5" /> By email
-          </button>
-          <button
-            className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-medium border-b-2 -mb-px transition-colors ${tab === 'link' ? 'border-black dark:border-white text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
-            onClick={() => { setTab('link'); setResultUrl(''); setError(''); }}
-          >
-            <Copy className="size-3.5" /> By link
-          </button>
-        </div>
+        <Tabs
+          value={tab}
+          onValueChange={(v) => { setTab(v as 'email' | 'link'); setResultUrl(''); setError(''); }}
+          className="-mx-6"
+        >
+          <TabsList variant="line" className="w-full gap-0 border-b p-0 group-data-horizontal/tabs:h-auto">
+            <TabsTrigger value="email" className="flex-1 rounded-none py-2.5 text-xs group-data-horizontal/tabs:after:-bottom-px">
+              <Mail className="size-3.5" /> By email
+            </TabsTrigger>
+            <TabsTrigger value="link" className="flex-1 rounded-none py-2.5 text-xs group-data-horizontal/tabs:after:-bottom-px">
+              <Copy className="size-3.5" /> By link
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
 
         <div className="flex-1 overflow-y-auto space-y-4 -mx-6 px-6">
           {/* Email tab: recipients */}
           {tab === 'email' && (
             <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">Email addresses</label>
+              <Label className="text-xs font-medium text-muted-foreground mb-1 block">Email addresses</Label>
               <div className="flex flex-wrap gap-1 min-h-9 border rounded-md px-2 py-1.5 cursor-text focus-within:ring-1 focus-within:ring-ring">
                 {emails.map((e, i) => (
                   <span key={i} className="inline-flex items-center gap-1 bg-muted rounded px-1.5 py-0.5 text-[11px] font-medium">
@@ -424,61 +441,56 @@ function CreateRequestDialog({ workspaceId, onClose, onCreated }: {
             <>
               {/* Title */}
               <div>
-                <label className="text-xs font-medium text-muted-foreground mb-1 block">Title <span className="font-normal">(optional)</span></label>
+                <Label className="text-xs font-medium text-muted-foreground mb-1 block">Title <span className="font-normal">(optional)</span></Label>
                 <Input value={title} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setTitle(e.target.value)} placeholder="e.g. Q1 invoices" className="h-8 text-xs" />
               </div>
 
               {/* Message */}
               <div>
-                <label className="text-xs font-medium text-muted-foreground mb-1 block">Message <span className="font-normal">(optional)</span></label>
-                <textarea value={message} onChange={(e) => setMessage(e.target.value)} placeholder="Please send the signed contracts..." className="w-full h-14 border rounded-md px-3 py-2 text-xs bg-background resize-y focus:outline-none focus:ring-1 focus:ring-ring" />
+                <Label className="text-xs font-medium text-muted-foreground mb-1 block">Message <span className="font-normal">(optional)</span></Label>
+                <Textarea value={message} onChange={(e) => setMessage(e.target.value)} placeholder="Please send the signed contracts..." className="h-14 min-h-0 px-3 text-xs md:text-xs resize-y" />
               </div>
 
               {/* Password + Expiry row */}
               <div className="flex gap-3">
                 <div className="flex-1">
-                  <label className="text-xs font-medium text-muted-foreground mb-1 block">Password <span className="font-normal">(opt)</span></label>
+                  <Label className="text-xs font-medium text-muted-foreground mb-1 block">Password <span className="font-normal">(opt)</span></Label>
                   <Input type="password" value={password} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPassword(e.target.value)} placeholder="Min 8 chars" className="h-8 text-xs" autoComplete="off" />
                 </div>
                 <div className="flex-1">
-                  <label className="text-xs font-medium text-muted-foreground mb-1 block">Expires</label>
-                  <select value={expiry} onChange={(e) => setExpiry(e.target.value)} className="w-full h-8 border rounded-md px-2.5 text-xs bg-background">
-                    <option value="0">Never</option>
-                    <option value="1">1 day</option>
-                    <option value="7">7 days</option>
-                    <option value="30">30 days</option>
-                    <option value="90">90 days</option>
-                  </select>
+                  <Label className="text-xs font-medium text-muted-foreground mb-1 block">Expires</Label>
+                  <Select value={expiry} onValueChange={(v) => setExpiry(v as string)} items={EXPIRY_OPTIONS}>
+                    <SelectTrigger className="w-full h-8 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {EXPIRY_OPTIONS.map((o) => (
+                        <SelectItem key={o.value} value={o.value} className="text-xs">{o.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
 
               {/* Upload destination */}
               <div>
-                <label className="text-xs font-medium text-muted-foreground mb-1 block">Upload destination</label>
-                <div className="relative">
-                  <button
-                    onClick={() => setFolderPickerOpen(!folderPickerOpen)}
-                    className="w-full h-8 border rounded-md px-2.5 text-xs bg-background flex items-center gap-2 hover:bg-muted/50 text-left"
-                  >
+                <Label className="text-xs font-medium text-muted-foreground mb-1 block">Upload destination</Label>
+                <DropdownMenu>
+                  <DropdownMenuTrigger className="w-full h-8 border rounded-md px-2.5 text-xs bg-background flex items-center gap-2 hover:bg-muted/50 text-left">
                     {selectedFolder ? <><FolderOpen className="size-3 text-muted-foreground shrink-0" /> {selectedFolder.name}</> : <><Home className="size-3 text-muted-foreground shrink-0" /> Root (workspace top level)</>}
                     <ChevronDown className="size-3 text-muted-foreground ml-auto" />
-                  </button>
-                  {folderPickerOpen && (
-                    <>
-                      <div className="fixed inset-0 z-10" onClick={() => setFolderPickerOpen(false)} />
-                      <div className="absolute left-0 right-0 top-full mt-1 z-20 bg-popover border rounded-lg shadow-lg max-h-40 overflow-y-auto py-1">
-                        <button className={`w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-muted/50 text-left ${!folderId ? 'font-medium' : ''}`} onClick={() => { setFolderId(null); setFolderPickerOpen(false); }}>
-                          <Home className="size-3 text-muted-foreground" /> Root
-                        </button>
-                        {folders.map((f) => (
-                          <button key={f.id} className={`w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-muted/50 text-left ${folderId === f.id ? 'font-medium' : ''}`} onClick={() => { setFolderId(f.id); setFolderPickerOpen(false); }}>
-                            <FolderOpen className="size-3 text-muted-foreground" /> {f.name}
-                          </button>
-                        ))}
-                      </div>
-                    </>
-                  )}
-                </div>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent className="max-h-40">
+                    <DropdownMenuItem className={`text-xs ${!folderId ? 'font-medium' : ''}`} onClick={() => setFolderId(null)}>
+                      <Home className="size-3 text-muted-foreground" /> Root
+                    </DropdownMenuItem>
+                    {folders.map((f) => (
+                      <DropdownMenuItem key={f.id} className={`text-xs ${folderId === f.id ? 'font-medium' : ''}`} onClick={() => setFolderId(f.id)}>
+                        <FolderOpen className="size-3 text-muted-foreground" /> {f.name}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
 
               {/* Advanced options */}
@@ -489,16 +501,16 @@ function CreateRequestDialog({ workspaceId, onClose, onCreated }: {
                 {showAdvanced && (
                   <div className="mt-2 space-y-3">
                     <div>
-                      <label className="text-xs font-medium text-muted-foreground mb-1 block">Allowed extensions</label>
+                      <Label className="text-xs font-medium text-muted-foreground mb-1 block">Allowed extensions</Label>
                       <Input value={allowedExts} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setAllowedExts(e.target.value)} placeholder=".pdf, .docx, .jpg" className="h-8 text-xs" />
                     </div>
                     <div className="flex gap-3">
                       <div className="flex-1">
-                        <label className="text-xs font-medium text-muted-foreground mb-1 block">Max file size (MB)</label>
+                        <Label className="text-xs font-medium text-muted-foreground mb-1 block">Max file size (MB)</Label>
                         <Input type="number" value={maxSizeMb} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setMaxSizeMb(e.target.value)} placeholder="No limit" className="h-8 text-xs" />
                       </div>
                       <div className="flex-1">
-                        <label className="text-xs font-medium text-muted-foreground mb-1 block">Max files</label>
+                        <Label className="text-xs font-medium text-muted-foreground mb-1 block">Max files</Label>
                         <Input type="number" value={maxFiles} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setMaxFiles(e.target.value)} placeholder="Unlimited" className="h-8 text-xs" />
                       </div>
                     </div>
@@ -511,7 +523,7 @@ function CreateRequestDialog({ workspaceId, onClose, onCreated }: {
           {/* Result URL (link mode) */}
           {resultUrl && (
             <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Request link</label>
+              <Label className="text-xs font-medium text-muted-foreground mb-1.5 block">Request link</Label>
               <div className="flex gap-2">
                 <Input value={resultUrl} readOnly className="h-8 text-xs font-mono flex-1" />
                 <Button variant="outline" size="sm" className="h-8 text-xs shrink-0" onClick={handleCopyResult}>Copy</Button>

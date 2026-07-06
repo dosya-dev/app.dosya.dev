@@ -3,6 +3,7 @@ import { useSearchParams, Link } from 'react-router-dom';
 import { api } from '@/api/client';
 import { useWorkspace } from '@/stores/workspace';
 import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -158,7 +159,7 @@ export default function RoleCreatePage() {
           <p className="text-sm text-muted-foreground mb-6">Configure exactly what this role can do in your workspace.</p>
 
           {/* Role name */}
-          <div className="rounded-xl border bg-card mb-5">
+          <Card className="gap-0 py-0 mb-5">
             <div className="px-5 py-3 border-b">
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Role identity</p>
             </div>
@@ -174,10 +175,10 @@ export default function RoleCreatePage() {
                 disabled={isViewMode}
               />
             </div>
-          </div>
+          </Card>
 
           {/* Permissions */}
-          <div className="rounded-xl border bg-card mb-5">
+          <Card className="gap-0 py-0 mb-5">
             <div className="px-5 py-3 border-b">
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Permissions</p>
             </div>
@@ -214,7 +215,7 @@ export default function RoleCreatePage() {
                 </div>
               ))}
             </div>
-          </div>
+          </Card>
 
           {/* Actions */}
           {!isViewMode && (
@@ -230,7 +231,7 @@ export default function RoleCreatePage() {
           {error && <p className="text-sm text-destructive bg-destructive/10 border border-destructive/20 rounded-lg px-4 py-3 mb-6">{error}</p>}
 
           {/* Existing roles */}
-          <div className="rounded-xl border bg-card mb-8">
+          <Card className="gap-0 py-0 mb-8">
             <div className="px-5 py-3 border-b">
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                 Existing roles &middot; {existingRoles.length}
@@ -272,7 +273,7 @@ export default function RoleCreatePage() {
                 );
               })}
             </div>
-          </div>
+          </Card>
         </div>
       </div>
 

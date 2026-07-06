@@ -4,6 +4,7 @@ import { api, API_BASE } from '@/api/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
+import { Label } from '@/components/ui/label';
 import { Loader2, LogOut, Plus, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useWorkspace } from '@/stores/workspace';
 
@@ -153,7 +154,7 @@ export default function CreateWorkspacePage() {
 
                 <form onSubmit={handleSubmit} className="space-y-5">
                   <div>
-                    <label className="text-xs font-medium text-muted-foreground mb-2 block">Workspace name</label>
+                    <Label className="text-xs font-medium text-muted-foreground mb-2 block">Workspace name</Label>
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-lg flex items-center justify-center text-xs font-bold text-white shrink-0 transition-colors" style={{ background: color }}>
                         {preview}
@@ -170,7 +171,7 @@ export default function CreateWorkspacePage() {
                   </div>
 
                   <div>
-                    <label className="text-xs font-medium text-muted-foreground mb-2 block">Color</label>
+                    <Label className="text-xs font-medium text-muted-foreground mb-2 block">Color</Label>
                     <div className="flex gap-2">
                       {COLORS.map((c) => (
                         <button

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { SidebarTrigger } from '@/components/ui/sidebar';
 import { Separator } from '@/components/ui/separator';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem,
   DropdownMenuSeparator, DropdownMenuTrigger,
@@ -129,27 +130,27 @@ export function DashboardTopbar() {
       <div className="relative flex-1 max-w-[420px]" ref={searchRef}>
         <div className="flex items-center gap-2 border rounded-lg px-3 h-8 bg-card">
           <Search className="size-3.5 text-muted-foreground shrink-0" />
-          <input
+          <Input
             ref={inputRef}
             type="text"
             value={searchQuery}
-            onChange={(e) => onSearchInput(e.target.value)}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => onSearchInput(e.target.value)}
             onFocus={() => { if (searchQuery.trim().length >= 2) setSearchOpen(true); }}
-            onKeyDown={(e) => {
+            onKeyDown={(e: React.KeyboardEvent) => {
               if (e.key === 'Enter' && searchQuery.trim()) {
                 setSearchOpen(false);
                 navigate(`/search?q=${encodeURIComponent(searchQuery.trim())}`);
               }
             }}
             placeholder="Search files, folders, people..."
-            className="flex-1 bg-transparent border-none outline-none text-sm text-foreground placeholder:text-muted-foreground"
+            className="flex-1 h-auto border-0 rounded-none p-0 bg-transparent dark:bg-transparent text-sm focus-visible:ring-0 focus-visible:border-0"
           />
           {!searchOpen && <kbd className="text-[10px] font-medium text-muted-foreground bg-muted border rounded px-1.5 py-0.5 leading-none">/</kbd>}
         </div>
 
         {/* Search dropdown */}
         {searchOpen && (
-          <div className="absolute top-[calc(100%+6px)] left-0 right-0 bg-card border rounded-xl shadow-xl z-[600] max-h-[420px] overflow-y-auto animate-in fade-in slide-in-from-top-1 duration-100">
+          <div className="absolute top-[calc(100%+6px)] left-0 right-0 bg-popover text-popover-foreground border rounded-xl shadow-xl z-[600] max-h-[420px] overflow-y-auto animate-in fade-in slide-in-from-top-1 duration-100">
             {searching ? (
               <p className="py-6 text-center text-xs text-muted-foreground">Searching...</p>
             ) : totalResults === 0 ? (

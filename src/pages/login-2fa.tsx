@@ -2,7 +2,9 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api } from '@/api/client';
 import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Lock, Loader2, ArrowLeft } from 'lucide-react';
 
 export default function Login2faPage() {
@@ -42,7 +44,7 @@ export default function Login2faPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
       <div className="w-full max-w-sm">
-        <div className="rounded-xl border bg-card p-8 shadow-sm">
+        <Card className="gap-0 py-0 p-8 shadow-sm">
           {/* Header */}
           <div className="text-center mb-6">
             <div className="size-12 rounded-full bg-muted flex items-center justify-center mx-auto mb-3">
@@ -84,7 +86,7 @@ export default function Login2faPage() {
           ) : (
             <div className="space-y-4">
               <div>
-                <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Recovery code</label>
+                <Label className="text-xs font-medium text-muted-foreground mb-1.5 block">Recovery code</Label>
                 <Input
                   type="text"
                   value={recoveryCode}
@@ -120,7 +122,7 @@ export default function Login2faPage() {
               <ArrowLeft className="size-3" /> Back to login
             </Link>
           </div>
-        </div>
+        </Card>
       </div>
     </div>
   );

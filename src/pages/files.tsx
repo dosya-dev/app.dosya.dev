@@ -15,12 +15,17 @@ import {
   Download, Share2, Trash2, MoreHorizontal,
   FolderOpen, Grid3X3, List, Loader2,
   Lock, Pencil, Copy, Move, Eye, EyeOff, History,
-  MessageSquare, Star, SlidersHorizontal, Check, RotateCcw,
+  MessageSquare, Star, SlidersHorizontal, RotateCcw,
 } from 'lucide-react';
 import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuItem,
+  DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem,
   DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { Card } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select';
 import { ContextMenu } from '@/components/context-menu';
 import { FileDetailPanel } from '@/components/file-detail-panel';
 import { ShareModal } from '@/components/share-modal';
@@ -49,6 +54,15 @@ interface PickerFolder { id: string; name: string; parent_id: string | null; fil
 
 type ViewMode = 'grid' | 'list';
 type SortMode = 'newest' | 'oldest' | 'name_asc' | 'name_desc' | 'largest' | 'smallest';
+
+const SORT_OPTIONS: { value: SortMode; label: string }[] = [
+  { value: 'newest', label: 'Newest' },
+  { value: 'oldest', label: 'Oldest' },
+  { value: 'name_asc', label: 'Name A-Z' },
+  { value: 'name_desc', label: 'Name Z-A' },
+  { value: 'largest', label: 'Largest' },
+  { value: 'smallest', label: 'Smallest' },
+];
 
 
 // ── Table columns ─────────────────────────────────────────
@@ -576,43 +590,39 @@ export default function FilesPage() {
           <Search className="size-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <Input value={search} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearch(e.target.value)} placeholder="Search files..." className="h-8 text-xs pl-8" />
         </div>
-        <select value={sort} onChange={(e) => setSort(e.target.value as SortMode)} className="h-8 text-xs border rounded-md px-2 bg-background">
-          <option value="newest">Newest</option><option value="oldest">Oldest</option><option value="name_asc">Name A-Z</option><option value="name_desc">Name Z-A</option><option value="largest">Largest</option><option value="smallest">Smallest</option>
-        </select>
+        <Select value={sort} onValueChange={(v) => setSort(v as SortMode)} items={SORT_OPTIONS}>
+          <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            {SORT_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value} className="text-xs">{o.label}</SelectItem>)}
+          </SelectContent>
+        </Select>
         <div className="flex border rounded-md overflow-hidden">
           <button onClick={() => setView('grid')} className={`p-1.5 ${view === 'grid' ? 'bg-accent' : 'hover:bg-muted/50'}`}><Grid3X3 className="size-3.5" /></button>
           <button onClick={() => setView('list')} className={`p-1.5 ${view === 'list' ? 'bg-accent' : 'hover:bg-muted/50'}`}><List className="size-3.5" /></button>
         </div>
         {view === 'list' && (
-          <div className="relative">
-            <button
-              onClick={() => setColumnPickerOpen(!columnPickerOpen)}
+          <DropdownMenu open={columnPickerOpen} onOpenChange={setColumnPickerOpen}>
+            <DropdownMenuTrigger
               className={`h-8 px-2 text-xs border rounded-md flex items-center gap-1.5 hover:bg-muted/50 ${columnPickerOpen ? 'bg-accent' : ''}`}
               title="Table columns"
             >
               <SlidersHorizontal className="size-3.5" /> Columns
-            </button>
-            {columnPickerOpen && (
-              <>
-                <div className="fixed inset-0 z-10" onClick={() => setColumnPickerOpen(false)} />
-                <div className="absolute right-0 top-full mt-1 z-20 bg-popover border rounded-lg shadow-lg py-1 min-w-44">
-                  {ALL_COLUMNS.map((col) => (
-                    <button
-                      key={col.key}
-                      onClick={() => toggleColumn(col.key)}
-                      disabled={col.key === 'name'}
-                      className={`w-full flex items-center gap-2.5 px-3 py-1.5 text-xs hover:bg-muted/50 text-left ${col.key === 'name' ? 'opacity-50 cursor-not-allowed' : ''}`}
-                    >
-                      <div className={`size-4 rounded border flex items-center justify-center shrink-0 ${visibleColumns.has(col.key) ? 'bg-primary border-primary' : ''}`}>
-                        {visibleColumns.has(col.key) && <Check className="size-3 text-primary-foreground" />}
-                      </div>
-                      {col.label}
-                    </button>
-                  ))}
-                </div>
-              </>
-            )}
-          </div>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="min-w-44">
+              {ALL_COLUMNS.map((col) => (
+                <DropdownMenuCheckboxItem
+                  key={col.key}
+                  checked={visibleColumns.has(col.key)}
+                  onCheckedChange={() => toggleColumn(col.key)}
+                  closeOnClick={false}
+                  disabled={col.key === 'name'}
+                  className="text-xs"
+                >
+                  {col.label}
+                </DropdownMenuCheckboxItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
         )}
         {!isDeletedView && (
           <>
@@ -720,12 +730,12 @@ export default function FilesPage() {
                         onClick={(e) => { e.stopPropagation(); if (e.ctrlKey || e.metaKey) toggleSelect(f.id); else openFileWithLockCheck(f, 'detail'); }}
                         onContextMenu={(e) => onContextMenu(e, 'file', f)}
                       >
-                        <button
-                          className={`size-4 rounded border flex items-center justify-center shrink-0 transition-all ${isSel ? 'bg-primary border-primary' : 'opacity-0 group-hover:opacity-100'} ${selected.size > 0 ? 'opacity-100!' : ''}`}
-                          onClick={(e) => { e.stopPropagation(); toggleSelect(f.id); }}
-                        >
-                          {isSel && <Check className="size-3 text-primary-foreground" />}
-                        </button>
+                        <Checkbox
+                          checked={isSel}
+                          onCheckedChange={() => toggleSelect(f.id)}
+                          onClick={(e) => e.stopPropagation()}
+                          className={`size-4 shrink-0 transition-all ${isSel ? '' : 'opacity-0 group-hover:opacity-100'} ${selected.size > 0 ? 'opacity-100!' : ''}`}
+                        />
                         <RowThumbnail fileId={f.id} fileName={f.name} />
                         {cols.map((col) => {
                           if (col.key === 'name') {
@@ -984,14 +994,14 @@ function FolderCard({ folder, view, onClick, onContextMenu, onRename, onDelete }
     );
   }
   return (
-    <div className="rounded-xl border bg-card p-3 hover:shadow-md hover:-translate-y-px transition-all cursor-pointer group" onClick={onClick} onContextMenu={onContextMenu}>
+    <Card className="gap-0 py-0 p-3 hover:shadow-md hover:-translate-y-px transition-all cursor-pointer group" onClick={onClick} onContextMenu={onContextMenu}>
       <div className="flex items-center gap-2 mb-2">
         <img src={iconSrc} alt="" className="size-6" />
         {folder.lock_mode !== 'none' && <Lock className="size-3 text-muted-foreground ml-auto" />}
       </div>
       <p className="text-xs font-medium truncate">{folder.name}</p>
       <p className="text-[10px] text-muted-foreground">{folder.file_count} files</p>
-    </div>
+    </Card>
   );
 }
 
@@ -1007,12 +1017,12 @@ function FileCard({ file, view, selected, anySelected, active, isFavourite, onCl
   if (view === 'list') {
     return (
       <div className={`flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-muted/50 cursor-pointer group ${active ? 'bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-900' : selected ? 'bg-accent' : ''}`} onClick={onClick} onContextMenu={onContextMenu}>
-        <button
-          className={`size-4 rounded border flex items-center justify-center shrink-0 transition-all ${selected ? 'bg-primary border-primary' : 'opacity-0 group-hover:opacity-100'} ${anySelected ? 'opacity-100!' : ''}`}
-          onClick={(e) => { e.stopPropagation(); onSelect(); }}
-        >
-          {selected && <Check className="size-3 text-primary-foreground" />}
-        </button>
+        <Checkbox
+          checked={selected}
+          onCheckedChange={() => onSelect()}
+          onClick={(e) => e.stopPropagation()}
+          className={`size-4 shrink-0 transition-all ${selected ? '' : 'opacity-0 group-hover:opacity-100'} ${anySelected ? 'opacity-100!' : ''}`}
+        />
         <img src={fileIconSrc(file.name)} alt={ext} className="w-7 h-7 shrink-0" />
         <button className="text-sm font-medium flex-1 truncate text-left hover:underline" onClick={(e) => { e.stopPropagation(); onNameClick(); }}>{file.name}</button>
         {file.current_version > 1 && <Badge variant="secondary" className="text-[9px]">v{file.current_version}</Badge>}
@@ -1027,15 +1037,15 @@ function FileCard({ file, view, selected, anySelected, active, isFavourite, onCl
   }
 
   return (
-    <div className={`rounded-xl border bg-card p-3 hover:shadow-md hover:-translate-y-px transition-all cursor-pointer group relative ${active ? 'ring-2 ring-green-500 border-green-200 dark:border-green-900' : selected ? 'ring-2 ring-primary' : ''}`} onClick={onClick} onContextMenu={onContextMenu}>
+    <Card className={`gap-0 py-0 p-3 hover:shadow-md hover:-translate-y-px transition-all cursor-pointer group relative ${active ? 'ring-2 ring-green-500 border-green-200 dark:border-green-900' : selected ? 'ring-2 ring-primary' : ''}`} onClick={onClick} onContextMenu={onContextMenu}>
       {/* Checkbox (hidden for locked files) */}
       {file.lock_mode !== 'full_lock' && (
-        <button
-          className={`absolute top-2 left-2 z-10 size-5 rounded border flex items-center justify-center transition-all ${selected ? 'bg-primary border-primary' : 'bg-background/80 opacity-0 group-hover:opacity-100'} ${anySelected ? 'opacity-100!' : ''}`}
-          onClick={(e) => { e.stopPropagation(); onSelect(); }}
-        >
-          {selected && <Check className="size-3 text-primary-foreground" />}
-        </button>
+        <Checkbox
+          checked={selected}
+          onCheckedChange={() => onSelect()}
+          onClick={(e) => e.stopPropagation()}
+          className={`absolute top-2 left-2 z-10 size-5 transition-all ${selected ? '' : 'bg-background/80 opacity-0 group-hover:opacity-100'} ${anySelected ? 'opacity-100!' : ''}`}
+        />
       )}
       <FileThumbnail fileId={file.id} fileName={file.name} ext={ext} />
       <div className="flex items-center gap-1">
@@ -1069,7 +1079,7 @@ function FileCard({ file, view, selected, anySelected, active, isFavourite, onCl
           <Lock className="size-2.5 text-violet-600" />
         </div>
       )}
-    </div>
+    </Card>
   );
 }
 

@@ -48,7 +48,7 @@ export function ContextMenu({ items, position, onClose }: ContextMenuProps) {
   return createPortal(
     <div
       ref={menuRef}
-      className="fixed z-[9000] bg-card border rounded-xl shadow-xl py-1.5 min-w-[180px] animate-in fade-in zoom-in-95 duration-100"
+      className="fixed z-[9000] bg-popover text-popover-foreground border rounded-xl shadow-xl py-1.5 min-w-45 animate-in fade-in zoom-in-95 duration-100"
       style={{ left: position.x, top: position.y }}
     >
       {visibleItems.map((item, i) =>

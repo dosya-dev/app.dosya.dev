@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
 import { api } from '@/api/client';
 import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   CreditCard, Download, ExternalLink, AlertTriangle, Check,
@@ -83,7 +85,7 @@ export default function BillingPage() {
       <h1 className="text-xl font-bold mb-6">Billing</h1>
 
       {/* Current plan */}
-      <div className="rounded-xl border bg-card p-5 mb-5">
+      <Card className="gap-0 py-0 p-5 mb-5">
         <div className="flex items-start justify-between mb-4">
           <div>
             <div className="flex items-center gap-2 mb-1">
@@ -115,9 +117,11 @@ export default function BillingPage() {
             <span className="text-xs text-muted-foreground">Storage</span>
             <span className="text-xs text-muted-foreground">{usage.used_label} / {plan.storage_label}</span>
           </div>
-          <div className="h-2 bg-border rounded-full overflow-hidden">
-            <div className="h-full rounded-full transition-all" style={{ width: `${Math.min(storagePct, 100)}%`, background: storageColor }} />
-          </div>
+          <Progress
+            value={Math.min(storagePct, 100)}
+            className="**:data-[slot=progress-track]:h-2 **:data-[slot=progress-track]:bg-border **:data-[slot=progress-indicator]:bg-(--storage-color)"
+            style={{ '--storage-color': storageColor } as React.CSSProperties}
+          />
           {storagePct >= 80 && (
             <div className="flex items-center gap-1.5 mt-2 text-xs" style={{ color: storagePct >= 95 ? '#ef4444' : '#D97706' }}>
               <AlertTriangle className="size-3" />
@@ -139,10 +143,10 @@ export default function BillingPage() {
             </div>
           </div>
         )}
-      </div>
+      </Card>
 
       {/* Invoices */}
-      <div className="rounded-xl border bg-card overflow-hidden">
+      <Card className="gap-0 py-0 overflow-hidden">
         <div className="px-5 py-3 border-b">
           <h2 className="text-sm font-semibold">Invoices</h2>
         </div>
@@ -171,7 +175,7 @@ export default function BillingPage() {
             </div>
           ))
         )}
-      </div>
+      </Card>
     </div>
   );
 }

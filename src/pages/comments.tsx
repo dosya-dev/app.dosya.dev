@@ -3,6 +3,7 @@ import { useSearchParams, Link } from 'react-router-dom';
 import { api, API_BASE } from '@/api/client';
 import { useWorkspace } from '@/stores/workspace';
 import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
 import {
   ChevronLeft, Send, CornerDownRight, Pencil, Trash2, X,
   Loader2, MessageSquare,
@@ -276,7 +277,7 @@ export default function CommentsPage() {
                 {currentUser ? initials(currentUser.name) : '?'}
               </div>
               {/* Input */}
-              <textarea
+              <Textarea
                 ref={inputRef}
                 value={body}
                 onChange={(e) => setBody(e.target.value)}
@@ -287,7 +288,7 @@ export default function CommentsPage() {
                   }
                 }}
                 placeholder="Write a message..."
-                className="flex-1 min-h-10 max-h-32 border rounded-lg px-3 py-2.5 text-sm bg-background resize-none focus:outline-none focus:ring-1 focus:ring-ring"
+                className="flex-1 min-h-10 max-h-32 rounded-lg px-3 py-2.5 text-sm bg-background resize-none"
                 rows={1}
               />
               {/* Send */}
@@ -475,10 +476,10 @@ function ChatMessages({ comments, allComments, currentUser, editId, editBody, on
                   {/* Content */}
                   {isEditing ? (
                     <div className={`px-3 py-2 rounded-xl ${isMine ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}>
-                      <textarea
+                      <Textarea
                         value={editBody}
                         onChange={(e) => onEditBodyChange(e.target.value)}
-                        className="w-full min-h-8 bg-transparent text-sm resize-none outline-none"
+                        className="w-full min-h-8 border-0 rounded-none p-0 bg-transparent dark:bg-transparent text-sm resize-none focus-visible:ring-0"
                         autoFocus
                       />
                       <div className="flex gap-1 mt-1">

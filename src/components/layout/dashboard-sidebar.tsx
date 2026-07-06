@@ -1,9 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useLayoutEffect } from 'react';
 import { useLocation, useNavigate, Link } from 'react-router-dom';
 import {
   Sidebar, SidebarContent, SidebarGroup, SidebarGroupLabel, SidebarGroupContent,
   SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarHeader, SidebarFooter,
 } from '@/components/ui/sidebar';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Progress } from '@/components/ui/progress';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem,
   DropdownMenuSeparator, DropdownMenuTrigger,
@@ -12,7 +14,6 @@ import {
   LayoutDashboard, FolderOpen, Upload, Share2, Users, Settings,
   ChevronsUpDown, Plus, Check,
 } from 'lucide-react';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { api } from '@/api/client';
 import { useWorkspace } from '@/stores/workspace';
 
@@ -47,6 +48,21 @@ const ROLE_LABELS: Record<string, string> = {
   role_viewer: 'Viewer',
 };
 
+// Match the profile-page nav treatment: xs muted text, active = accent pill
+// (accent-foreground text over a green pill). The pill background itself is a
+// single absolutely-positioned div that slides between items on navigation —
+// so the active button's own background stays transparent while the sidebar is
+// expanded. In icon-collapsed mode the pill is hidden and the button paints
+// its own bg-accent instead. Pressed (active:) overrides keep the shadcn base
+// from flashing bg-sidebar-accent (saturated green in this theme) on click.
+const NAV_BTN_CLASS =
+  'gap-2.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground ' +
+  'active:bg-muted/50 active:text-foreground ' +
+  'data-active:bg-transparent data-active:font-medium data-active:text-accent-foreground ' +
+  'data-active:hover:bg-transparent data-active:hover:text-accent-foreground ' +
+  'data-active:active:bg-transparent data-active:active:text-accent-foreground ' +
+  'group-data-[collapsible=icon]:data-active:bg-accent';
+
 export function DashboardSidebar() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -54,6 +70,26 @@ export function DashboardSidebar() {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [storage, setStorage] = useState<StorageInfo | null>(null);
   const [roleName, setRoleName] = useState<string | null>(null);
+
+  // Sliding active pill: measure the active menu button and glide one shared
+  // indicator to it whenever the route changes.
+  const contentRef = useRef<HTMLDivElement>(null);
+  const [pill, setPill] = useState<{ top: number; height: number } | null>(null);
+
+  useLayoutEffect(() => {
+    const measure = () => {
+      const c = contentRef.current;
+      if (!c) return;
+      const el = c.querySelector<HTMLElement>('[data-active]');
+      if (!el) { setPill(null); return; }
+      const cRect = c.getBoundingClientRect();
+      const r = el.getBoundingClientRect();
+      setPill({ top: r.top - cRect.top + c.scrollTop, height: r.height });
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, [location.pathname]);
 
   const activeWs = workspaces.find((w) => w.id === activeId);
   const roleLabel = activeWs
@@ -156,7 +192,16 @@ export function DashboardSidebar() {
         </DropdownMenu>
       </SidebarHeader>
 
-      <SidebarContent>
+      <SidebarContent ref={contentRef} className="relative">
+        {/* Sliding active-item pill (hidden in icon-collapsed mode; the button
+            paints its own bg-accent there instead) */}
+        {pill && (
+          <div
+            aria-hidden
+            className="absolute left-2 right-2 rounded-md bg-accent transition-[top,height] duration-200 ease-out group-data-[collapsible=icon]:hidden"
+            style={{ top: pill.top, height: pill.height }}
+          />
+        )}
         {/* Main nav */}
         <SidebarGroup>
           <SidebarGroupContent>
@@ -164,7 +209,7 @@ export function DashboardSidebar() {
               {navItems.map((item) => (
                 <SidebarMenuItem key={item.url}>
                   <Link to={item.url} className="w-full">
-                    <SidebarMenuButton isActive={location.pathname === item.url || (item.url !== '/' && location.pathname.startsWith(item.url))}>
+                    <SidebarMenuButton className={NAV_BTN_CLASS} isActive={location.pathname === item.url || (item.url !== '/' && location.pathname.startsWith(item.url))}>
                       <item.icon className="size-4" />
                       <span>{item.title}</span>
                     </SidebarMenuButton>
@@ -183,7 +228,7 @@ export function DashboardSidebar() {
               {workspaceItems.map((item) => (
                 <SidebarMenuItem key={item.url}>
                   <Link to={item.url} className="w-full">
-                    <SidebarMenuButton isActive={location.pathname === item.url || location.pathname.startsWith(item.url + '/')}>
+                    <SidebarMenuButton className={NAV_BTN_CLASS} isActive={location.pathname === item.url || location.pathname.startsWith(item.url + '/')}>
                       <item.icon className="size-4" />
                       <span>{item.title}</span>
                     </SidebarMenuButton>
@@ -205,9 +250,11 @@ export function DashboardSidebar() {
                 <span className="text-xs text-muted-foreground">Storage</span>
                 <span className="text-[11px] text-muted-foreground">{storage.usage.used_label} / {storage.plan.storage_label}</span>
               </div>
-              <div className="h-1 bg-border rounded-full overflow-hidden mb-1.5">
-                <div className="h-full rounded-full transition-all" style={{ width: `${Math.min(storagePct, 100)}%`, background: storageColor }} />
-              </div>
+              <Progress
+                value={Math.min(storagePct, 100)}
+                className="mb-1.5 **:data-[slot=progress-track]:bg-border **:data-[slot=progress-indicator]:bg-(--storage-color)"
+                style={{ '--storage-color': storageColor } as React.CSSProperties}
+              />
               {storagePct >= 80 && (
                 <p className={`text-[10px] font-medium ${storagePct >= 95 ? 'text-red-600' : 'text-amber-600'}`}>
                   {storagePct >= 95 ? 'Storage almost full. Upgrade your plan.' : `${Math.round(100 - storagePct)}% remaining`}

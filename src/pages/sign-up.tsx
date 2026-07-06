@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Loader2, Eye, EyeOff } from 'lucide-react';
 import { API_BASE } from '@/api/client';
 import { PublicNav } from '@/components/public-nav';
@@ -119,7 +120,7 @@ export default function SignUpPage() {
                   </div>
                 </div>
                 <label className="flex items-start gap-2 text-sm text-muted-foreground">
-                  <input type="checkbox" checked={terms} onChange={(e) => setTerms(e.target.checked)} className="mt-0.5 size-4 rounded border-input accent-primary" />
+                  <Checkbox checked={terms} onCheckedChange={(checked) => setTerms(checked)} className="mt-0.5 size-4" />
                   <span>
                     I agree to the{' '}
                     <a href="https://dosya.dev/terms-of-service" target="_blank" rel="noreferrer" className="font-medium underline underline-offset-4 hover:text-foreground">Terms of Service</a>

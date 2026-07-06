@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { api, API_BASE } from '@/api/client';
+import { Badge } from '@/components/ui/badge';
 import {
   X, Download, ChevronLeft, ChevronRight, Pencil, Clock,
 
@@ -323,7 +324,7 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
                       <div className="flex items-center gap-1.5 text-xs font-semibold">
                         v{v.version_number}
                         {isLatest && (
-                          <span className="text-[9px] font-semibold uppercase tracking-wide text-white bg-green-500 px-1.5 py-px rounded">Latest</span>
+                          <Badge variant="secondary" className="h-auto rounded px-1.5 py-px text-[9px] font-semibold uppercase tracking-wide text-white bg-green-500">Latest</Badge>
                         )}
                       </div>
                       <div className="text-[11px] text-muted-foreground mt-0.5">

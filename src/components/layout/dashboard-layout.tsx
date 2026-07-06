@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Outlet, useNavigate } from 'react-router-dom';
+import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { SidebarProvider, SidebarInset } from '@/components/ui/sidebar';
 import { DashboardSidebar } from './dashboard-sidebar';
 import { DashboardTopbar } from './dashboard-topbar';
@@ -7,6 +7,7 @@ import { API_BASE } from '@/api/client';
 
 export function DashboardLayout() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [authed, setAuthed] = useState<boolean | null>(null);
 
   useEffect(() => {
@@ -45,11 +46,21 @@ export function DashboardLayout() {
   const defaultOpen = savedState !== 'false';
 
   return (
-    <SidebarProvider defaultOpen={defaultOpen} className="h-svh overflow-hidden">
+    <SidebarProvider
+      defaultOpen={defaultOpen}
+      className="h-svh overflow-hidden"
+      style={{ '--sidebar-width': '200px' } as React.CSSProperties}
+    >
       <DashboardSidebar />
       <SidebarInset className="min-h-0 overflow-hidden">
         <DashboardTopbar />
-        <main className="flex-1 min-h-0 overflow-y-auto">
+        {/* key={pathname} remounts the content area on navigation so the
+            fade/rise animation replays — the page's skeleton fades in first,
+            then its data pops in. Remount also resets scroll to the top. */}
+        <main
+          key={location.pathname}
+          className="flex-1 min-h-0 overflow-y-auto animate-in fade-in slide-in-from-bottom-1 duration-300"
+        >
           <Outlet />
         </main>
       </SidebarInset>

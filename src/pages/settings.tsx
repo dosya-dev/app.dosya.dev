@@ -5,11 +5,18 @@ import { useWorkspace } from '@/stores/workspace';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select';
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from '@/components/ui/table';
 import {
   Info, Shield, Users, AlertTriangle, Check, Loader2, Save,
   Lock, Trash2, LogOut, Upload, X, Plus, ArrowRightLeft,
@@ -240,9 +247,12 @@ function WorkspaceInfoSection({ data, wsId, regions, onSaved }: { data: WsData; 
 
           <SettingRow label="Default upload region" desc="Members can override per upload.">
             <div className="flex items-center gap-2">
-              <select value={region} onChange={(e) => setRegion(e.target.value)} className="h-8 text-xs border rounded-md px-2 bg-background">
-                {regions.map((r) => <option key={r.code} value={r.code}>{r.code} ({r.city})</option>)}
-              </select>
+              <Select value={region} onValueChange={(v) => setRegion(v as string)} items={regions.map((r) => ({ value: r.code, label: `${r.code} (${r.city})` }))}>
+                <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {regions.map((r) => <SelectItem key={r.code} value={r.code}>{r.code} ({r.city})</SelectItem>)}
+                </SelectContent>
+              </Select>
               <SaveBtn loading={saving === 'region'} onClick={() => save({ default_region: region }, 'region')} />
             </div>
           </SettingRow>
@@ -264,8 +274,8 @@ function WorkspaceInfoSection({ data, wsId, regions, onSaved }: { data: WsData; 
           <div className="max-h-64 overflow-y-auto border rounded-lg">
             {regions.map((r) => (
               <label key={r.code} className="flex items-center gap-2.5 px-3 py-2 text-xs border-b last:border-b-0 hover:bg-muted/50 cursor-pointer">
-                <input type="checkbox" checked={availableRegions.size === 0 || availableRegions.has(r.code)}
-                  onChange={() => { setAvailableRegions((prev) => { const next = new Set(prev); if (next.has(r.code)) next.delete(r.code); else next.add(r.code); return next; }); }} />
+                <Checkbox className="size-4" checked={availableRegions.size === 0 || availableRegions.has(r.code)}
+                  onCheckedChange={() => { setAvailableRegions((prev) => { const next = new Set(prev); if (next.has(r.code)) next.delete(r.code); else next.add(r.code); return next; }); }} />
                 <span className="flex-1">{r.code}</span>
                 <span className="text-muted-foreground">{r.city}, {r.country}</span>
               </label>
@@ -336,6 +346,15 @@ function HardLimitsSection({ data, wsId }: { data: WsData; wsId: string }) {
 }
 
 // ── Security ───────────────────────────────────────────────
+
+const SESSION_TIMEOUT_OPTIONS = [
+  { value: '', label: 'No timeout' }, { value: '15', label: '15 min' }, { value: '30', label: '30 min' },
+  { value: '60', label: '1 hour' }, { value: '240', label: '4 hours' }, { value: '480', label: '8 hours' }, { value: '1440', label: '24 hours' },
+];
+const SHARE_EXPIRY_OPTIONS = [
+  { value: '', label: 'No limit' }, { value: '1', label: '1 day' }, { value: '7', label: '7 days' },
+  { value: '30', label: '30 days' }, { value: '90', label: '90 days' }, { value: '365', label: '1 year' },
+];
 
 function SecuritySection({ data, wsId, onSaved }: { data: WsData; wsId: string; onSaved: () => void }) {
   const s = data.settings;
@@ -427,19 +446,23 @@ function SecuritySection({ data, wsId, onSaved }: { data: WsData; wsId: string; 
         <CardContent className="divide-y">
           <SettingRow label="Session timeout" desc="Auto-logout after inactivity.">
             <div className="flex items-center gap-2">
-              <select value={sessionTimeout} onChange={(e) => setSessionTimeout(e.target.value)} className="h-8 text-xs border rounded-md px-2 bg-background">
-                <option value="">No timeout</option><option value="15">15 min</option><option value="30">30 min</option>
-                <option value="60">1 hour</option><option value="240">4 hours</option><option value="480">8 hours</option><option value="1440">24 hours</option>
-              </select>
+              <Select value={sessionTimeout} onValueChange={(v) => setSessionTimeout(v as string)} items={SESSION_TIMEOUT_OPTIONS}>
+                <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {SESSION_TIMEOUT_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+                </SelectContent>
+              </Select>
               <SaveBtn loading={saving === 'session_timeout'} onClick={() => saveSetting('session_timeout_minutes', sessionTimeout || null)} />
             </div>
           </SettingRow>
           <SettingRow label="Share link max expiry" desc="Cap how long share links can live.">
             <div className="flex items-center gap-2">
-              <select value={shareExpiry} onChange={(e) => setShareExpiry(e.target.value)} className="h-8 text-xs border rounded-md px-2 bg-background">
-                <option value="">No limit</option><option value="1">1 day</option><option value="7">7 days</option>
-                <option value="30">30 days</option><option value="90">90 days</option><option value="365">1 year</option>
-              </select>
+              <Select value={shareExpiry} onValueChange={(v) => setShareExpiry(v as string)} items={SHARE_EXPIRY_OPTIONS}>
+                <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {SHARE_EXPIRY_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+                </SelectContent>
+              </Select>
               <SaveBtn loading={saving === 'share_expiry'} onClick={() => saveSetting('share_max_expiry_days', shareExpiry || null)} />
             </div>
           </SettingRow>
@@ -512,43 +535,41 @@ function RolesSection({ data }: { data: WsData; wsId: string; onSaved: () => voi
       <SectionHeader title="Roles & permissions" desc="Manage access levels for your workspace members." />
       <Card>
         <CardContent>
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="border-b">
-                  <th className="text-left py-2 px-3 font-medium text-muted-foreground">Permission</th>
-                  {roles.map((r) => (
-                    <th key={r.id} className="text-center py-2 px-2 font-medium">
-                      <div className="flex flex-col items-center gap-1">
-                        <span>{r.name}</span>
-                        {!builtinIds.has(r.id) ? (
-                          <Link to={`/role-create?edit=${r.id}`} className="text-[9px] text-muted-foreground hover:text-foreground underline">Edit</Link>
-                        ) : (
-                          <Link to={`/role-create?view=${r.id}`} className="text-[9px] text-muted-foreground hover:text-foreground underline">View</Link>
-                        )}
-                      </div>
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {Object.entries(PERM_LABELS).map(([perm, label]) => (
-                  <tr key={perm} className="border-b last:border-b-0">
-                    <td className="py-2 px-3 text-muted-foreground">{label}</td>
-                    {roles.map((r) => (
-                      <td key={r.id} className="text-center py-2 px-2">
-                        {perms[r.id]?.[perm] ? (
-                          <div className="w-5 h-5 rounded bg-green-100 dark:bg-green-950 flex items-center justify-center mx-auto"><Check className="size-3 text-green-600" /></div>
-                        ) : (
-                          <div className="w-5 h-5 rounded bg-muted flex items-center justify-center mx-auto"><span className="text-muted-foreground text-[10px]">—</span></div>
-                        )}
-                      </td>
-                    ))}
-                  </tr>
+          <Table className="text-xs">
+            <TableHeader>
+              <TableRow>
+                <TableHead className="h-auto py-2 px-3 text-muted-foreground">Permission</TableHead>
+                {roles.map((r) => (
+                  <TableHead key={r.id} className="h-auto text-center py-2 px-2">
+                    <div className="flex flex-col items-center gap-1">
+                      <span>{r.name}</span>
+                      {!builtinIds.has(r.id) ? (
+                        <Link to={`/role-create?edit=${r.id}`} className="text-[9px] text-muted-foreground hover:text-foreground underline">Edit</Link>
+                      ) : (
+                        <Link to={`/role-create?view=${r.id}`} className="text-[9px] text-muted-foreground hover:text-foreground underline">View</Link>
+                      )}
+                    </div>
+                  </TableHead>
                 ))}
-              </tbody>
-            </table>
-          </div>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {Object.entries(PERM_LABELS).map(([perm, label]) => (
+                <TableRow key={perm}>
+                  <TableCell className="py-2 px-3 text-muted-foreground">{label}</TableCell>
+                  {roles.map((r) => (
+                    <TableCell key={r.id} className="text-center py-2 px-2">
+                      {perms[r.id]?.[perm] ? (
+                        <div className="w-5 h-5 rounded bg-green-100 dark:bg-green-950 flex items-center justify-center mx-auto"><Check className="size-3 text-green-600" /></div>
+                      ) : (
+                        <div className="w-5 h-5 rounded bg-muted flex items-center justify-center mx-auto"><span className="text-muted-foreground text-[10px]">—</span></div>
+                      )}
+                    </TableCell>
+                  ))}
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
           <div className="mt-3 pt-3 border-t">
             <Link to="/role-create"><Button variant="outline" size="sm" className="text-xs gap-1.5"><Plus className="size-3" /> Add role</Button></Link>
           </div>

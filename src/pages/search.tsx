@@ -4,6 +4,7 @@ import { api, API_BASE } from '@/api/client';
 import { useWorkspace } from '@/stores/workspace';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Search, Share2, FileInput,
 } from 'lucide-react';
@@ -109,26 +110,24 @@ export default function SearchPage() {
         </h1>
 
         {/* Tabs */}
-        <div className="flex items-center gap-0.5 border-b">
-          {TABS.map((t) => (
-            <button
-              key={t.value}
-              onClick={() => setTab(t.value)}
-              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-                tab === t.value
-                  ? 'text-foreground border-foreground'
-                  : 'text-muted-foreground border-transparent hover:text-foreground'
-              }`}
-            >
-              {t.label}
-              <span className={`ml-1.5 text-[10px] font-semibold rounded-full px-1.5 py-px ${
-                tab === t.value ? 'bg-foreground text-background' : 'bg-muted text-muted-foreground'
-              }`}>
-                {t.count}
-              </span>
-            </button>
-          ))}
-        </div>
+        <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)}>
+          <TabsList variant="line" className="w-full justify-start gap-0.5 border-b p-0 group-data-horizontal/tabs:h-auto">
+            {TABS.map((t) => (
+              <TabsTrigger
+                key={t.value}
+                value={t.value}
+                className="flex-none gap-0 rounded-none px-4 py-2 text-sm group-data-horizontal/tabs:after:-bottom-px"
+              >
+                {t.label}
+                <span className={`ml-1.5 text-[10px] font-semibold rounded-full px-1.5 py-px ${
+                  tab === t.value ? 'bg-foreground text-background' : 'bg-muted text-muted-foreground'
+                }`}>
+                  {t.count}
+                </span>
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
       </div>
 
       {/* Results */}
