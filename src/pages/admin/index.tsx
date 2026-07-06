@@ -80,7 +80,7 @@ export function AdminLayout() {
           const active = n.exact ? location.pathname === n.path : location.pathname.startsWith(n.path);
           return (
             <Link key={n.path} to={n.path}
-              className={`flex items-center gap-2 px-2.5 py-1.5 rounded-md text-xs font-medium mb-0.5 transition-colors ${active ? 'bg-accent text-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'}`}>
+              className={`flex items-center gap-2 px-2.5 py-1.5 rounded-md text-xs font-medium mb-0.5 transition-colors ${active ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'}`}>
               <n.icon className="size-3.5" /> {n.label}
             </Link>
           );

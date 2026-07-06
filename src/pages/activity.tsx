@@ -361,7 +361,7 @@ function FilterDropdown({ label, placeholder, options, selected, onChange }: {
       <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider block mb-1">{label}</label>
       <DropdownMenu open={open} onOpenChange={setOpen}>
         <DropdownMenuTrigger
-          className={`h-9 min-w-36 max-w-52 px-3 border rounded-lg text-xs flex items-center gap-2 hover:bg-muted/50 ${open ? 'bg-accent' : 'bg-background'} ${selected.size > 0 ? 'text-foreground font-medium' : 'text-muted-foreground'}`}
+          className={`h-9 min-w-36 max-w-52 px-3 border rounded-lg text-xs flex items-center gap-2 hover:bg-muted/50 ${open ? 'bg-muted' : 'bg-background'} ${selected.size > 0 ? 'text-foreground font-medium' : 'text-muted-foreground'}`}
         >
           <span className="truncate flex-1 text-left">{displayText}</span>
           <ChevronDown className={`size-3 shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
