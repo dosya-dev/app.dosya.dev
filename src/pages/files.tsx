@@ -597,13 +597,13 @@ export default function FilesPage() {
           </SelectContent>
         </Select>
         <div className="flex border rounded-md overflow-hidden">
-          <button onClick={() => setView('grid')} className={`p-1.5 ${view === 'grid' ? 'bg-accent' : 'hover:bg-muted/50'}`}><Grid3X3 className="size-3.5" /></button>
-          <button onClick={() => setView('list')} className={`p-1.5 ${view === 'list' ? 'bg-accent' : 'hover:bg-muted/50'}`}><List className="size-3.5" /></button>
+          <button onClick={() => setView('grid')} className={`p-1.5 ${view === 'grid' ? 'bg-accent text-accent-foreground' : 'hover:bg-muted/50'}`}><Grid3X3 className="size-3.5" /></button>
+          <button onClick={() => setView('list')} className={`p-1.5 ${view === 'list' ? 'bg-accent text-accent-foreground' : 'hover:bg-muted/50'}`}><List className="size-3.5" /></button>
         </div>
         {view === 'list' && (
           <DropdownMenu open={columnPickerOpen} onOpenChange={setColumnPickerOpen}>
             <DropdownMenuTrigger
-              className={`h-8 px-2 text-xs border rounded-md flex items-center gap-1.5 hover:bg-muted/50 ${columnPickerOpen ? 'bg-accent' : ''}`}
+              className={`h-8 px-2 text-xs border rounded-md flex items-center gap-1.5 hover:bg-muted/50 ${columnPickerOpen ? 'bg-muted' : ''}`}
               title="Table columns"
             >
               <SlidersHorizontal className="size-3.5" /> Columns
@@ -634,7 +634,7 @@ export default function FilesPage() {
 
       {/* Bulk bar */}
       {selected.size > 0 && (
-        <div className="flex items-center gap-2 px-5 py-2 bg-accent border-b shrink-0 flex-wrap">
+        <div className="flex items-center gap-2 px-5 py-2 bg-primary/10 border-b shrink-0 flex-wrap">
           <Badge variant="secondary">{selected.size} selected</Badge>
           {isDeletedView ? (
             <>
@@ -726,7 +726,7 @@ export default function FilesPage() {
                     return (
                       <div
                         key={f.id}
-                        className={`flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-muted/50 cursor-pointer group ${isActive ? 'bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-900' : isSel ? 'bg-accent' : ''}`}
+                        className={`flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-muted/50 cursor-pointer group ${isActive ? 'bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-900' : isSel ? 'bg-primary/10' : ''}`}
                         onClick={(e) => { e.stopPropagation(); if (e.ctrlKey || e.metaKey) toggleSelect(f.id); else openFileWithLockCheck(f, 'detail'); }}
                         onContextMenu={(e) => onContextMenu(e, 'file', f)}
                       >
@@ -1016,7 +1016,7 @@ function FileCard({ file, view, selected, anySelected, active, isFavourite, onCl
 
   if (view === 'list') {
     return (
-      <div className={`flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-muted/50 cursor-pointer group ${active ? 'bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-900' : selected ? 'bg-accent' : ''}`} onClick={onClick} onContextMenu={onContextMenu}>
+      <div className={`flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-muted/50 cursor-pointer group ${active ? 'bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-900' : selected ? 'bg-primary/10' : ''}`} onClick={onClick} onContextMenu={onContextMenu}>
         <Checkbox
           checked={selected}
           onCheckedChange={() => onSelect()}
