@@ -12,9 +12,9 @@ import {
 } from '@/components/ui/dropdown-menu';
 import {
   LayoutDashboard, FolderOpen, Upload, Share2, Users, Settings,
-  ChevronsUpDown, Plus, Check,
+  ChevronsUpDown, Plus, Check, Loader2,
 } from 'lucide-react';
-import { api } from '@/api/client';
+import { api, API_BASE } from '@/api/client';
 import { useWorkspace } from '@/stores/workspace';
 
 interface Workspace {
@@ -61,7 +61,11 @@ const NAV_BTN_CLASS =
   'data-active:bg-transparent data-active:font-medium data-active:text-accent-foreground ' +
   'data-active:hover:bg-transparent data-active:hover:text-accent-foreground ' +
   'data-active:active:bg-transparent data-active:active:text-accent-foreground ' +
-  'group-data-[collapsible=icon]:data-active:bg-accent';
+  // Icon-collapsed mode has no pill, so the active button must paint its own
+  // accent — important so the hover/pressed transparent overrides above can't
+  // wipe it (they'd otherwise win on specificity).
+  'group-data-[collapsible=icon]:data-active:bg-accent! ' +
+  'group-data-[collapsible=icon]:data-active:text-accent-foreground!';
 
 export function DashboardSidebar() {
   const location = useLocation();
@@ -135,17 +139,42 @@ export function DashboardSidebar() {
     })();
   }, [activeId, activeWs?.role_id]);
 
+  // Workspace-switch overlay: shown for at least 2s while the new workspace's
+  // data loads underneath, so the swap doesn't feel like an abrupt jump.
+  const [switchingWs, setSwitchingWs] = useState<Workspace | null>(null);
+
   const switchWorkspace = (id: string) => {
     if (id === activeId) return;
+    const target = workspaces.find((w) => w.id === id) ?? null;
+    setSwitchingWs(target);
     setActiveId(id);
     // Land on the dashboard so it refetches for the new workspace — no hard reload.
     navigate('/');
+    window.setTimeout(() => setSwitchingWs(null), 2000);
   };
 
   const storagePct = storage?.usage.pct ?? 0;
   const storageColor = storagePct > 90 ? '#ef4444' : storagePct > 70 ? '#D97706' : '#22c55e';
 
   return (
+    <>
+    {/* Workspace-switch splash (min 2s) */}
+    {switchingWs && (
+      <div className="fixed inset-0 z-9999 bg-background flex flex-col items-center justify-center gap-4 animate-in fade-in duration-200">
+        <div
+          className="flex h-16 w-16 items-center justify-center rounded-2xl text-xl font-bold text-white animate-in zoom-in-75 duration-300"
+          style={{ background: switchingWs.icon_color }}
+        >
+          {switchingWs.icon_initials}
+        </div>
+        <div className="text-center">
+          <p className="text-sm font-semibold">{switchingWs.name}</p>
+          <p className="text-xs text-muted-foreground mt-1 flex items-center justify-center gap-1.5">
+            <Loader2 className="size-3 animate-spin" /> Switching workspace…
+          </p>
+        </div>
+      </div>
+    )}
     <Sidebar collapsible="icon">
       {/* Workspace switcher */}
       <SidebarHeader className="px-2 pt-2 pb-0 group-data-[collapsible=icon]:px-0">
@@ -154,8 +183,10 @@ export function DashboardSidebar() {
             <div className="flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 cursor-pointer hover:bg-muted/60 transition-colors group-data-[collapsible=icon]:px-0 group-data-[collapsible=icon]:justify-center">
               {activeWs ? (
                 <>
-                  <div className="flex h-8 w-8 items-center justify-center rounded-md text-[11px] font-bold text-white shrink-0" style={{ background: activeWs.icon_color }}>
-                    {activeWs.icon_initials}
+                  <div className={`flex h-8 w-8 items-center justify-center rounded-md text-[11px] font-bold text-white shrink-0 overflow-hidden ${activeWs.icon_image_url ? 'bg-muted' : ''}`} style={activeWs.icon_image_url ? undefined : { background: activeWs.icon_color }}>
+                    {activeWs.icon_image_url
+                      ? <img src={`${API_BASE}/api/workspaces/${activeWs.id}/icon`} alt="" className="w-full h-full object-cover" />
+                      : activeWs.icon_initials}
                   </div>
                   <div className="min-w-0 flex-1 text-left group-data-[collapsible=icon]:hidden">
                     <p className="truncate text-sm font-medium leading-tight">{activeWs.name}</p>
@@ -295,5 +326,6 @@ export function DashboardSidebar() {
         )}
       </SidebarFooter>
     </Sidebar>
+    </>
   );
 }

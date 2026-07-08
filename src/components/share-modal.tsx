@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback } from 'react';
-import { api } from '@/api/client';
+import { api, apiErrorMessage } from '@/api/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -10,6 +10,7 @@ import {
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Mail, Link2, X, Loader2, Copy, ChevronDown } from 'lucide-react';
 import { toast } from '@/lib/toast';
 
@@ -174,8 +175,10 @@ export function ShareModal({ open, fileId, fileName, onClose }: ShareModalProps)
           setSubmitting(false);
         }
       }
-    } catch {
-      setError('Network error. Please try again.');
+    } catch (err) {
+      // Surface the API's real message (e.g. "This file is fully locked and
+      // cannot be shared", 403) instead of a generic network error.
+      setError(apiErrorMessage(err));
       setSubmitting(false);
     }
   };
@@ -195,20 +198,16 @@ export function ShareModal({ open, fileId, fileName, onClose }: ShareModalProps)
         </DialogHeader>
 
         {/* Tabs */}
-        <div className="flex border-b -mx-6 px-6">
-          <button
-            className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-b-2 transition-colors ${tab === 'email' ? 'border-foreground text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
-            onClick={() => setTab('email')}
-          >
-            <Mail className="size-3" /> By email
-          </button>
-          <button
-            className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-b-2 transition-colors ${tab === 'link' ? 'border-foreground text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
-            onClick={() => setTab('link')}
-          >
-            <Link2 className="size-3" /> By link
-          </button>
-        </div>
+        <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)} className="-mx-4">
+          <TabsList variant="line" className="w-full gap-0 border-b p-0 group-data-horizontal/tabs:h-auto">
+            <TabsTrigger value="email" className="flex-1 rounded-none py-2.5 text-xs group-data-horizontal/tabs:after:-bottom-px">
+              <Mail className="size-3.5" /> By email
+            </TabsTrigger>
+            <TabsTrigger value="link" className="flex-1 rounded-none py-2.5 text-xs group-data-horizontal/tabs:after:-bottom-px">
+              <Link2 className="size-3.5" /> By link
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
 
         {/* File info */}
         <div className="flex items-center gap-2 text-xs text-muted-foreground">

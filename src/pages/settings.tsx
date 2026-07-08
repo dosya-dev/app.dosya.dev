@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { api, API_BASE } from '@/api/client';
+import { api, apiErrorMessage, ApiError, API_BASE } from '@/api/client';
 import { useWorkspace } from '@/stores/workspace';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -57,7 +57,17 @@ interface WsData {
   roles: { id: string; name: string; is_default: number }[];
   permissions: Record<string, { [perm: string]: boolean }>;
   members?: { id: string; name: string; email: string; role_id: string }[];
+  /** Current user's permission map — used to disable controls up front */
+  my_permissions?: Record<string, boolean>;
 }
+
+/** True when the current user may perform `perm`. Unknown map → optimistic
+ *  (controls stay enabled; the API remains the authority). */
+function canPerm(data: WsData, perm: string): boolean {
+  if (!data.my_permissions) return true;
+  return data.my_permissions[perm] ?? false;
+}
+const NO_PERM = (what: string) => `You don't have permission to change ${what}.`;
 
 interface RegionInfo { code: string; city: string; country: string; continent?: string }
 
@@ -94,7 +104,7 @@ export default function SettingsPage() {
         api<{ ok: boolean } & WsData>(`/api/workspaces/${wsId}`),
         api<{ ok: boolean; regions: RegionInfo[] }>('/api/regions'),
         api<{ ok: boolean; roles: { id: string; name: string; is_default: number; is_builtin: boolean; is_custom: boolean; permissions: Record<string, boolean> }[] }>(`/api/roles?workspace_id=${wsId}`),
-        api<{ ok: boolean; members?: { id: string; name: string; email: string; role_id: string }[] }>(`/api/team?workspace_id=${wsId}`),
+        api<{ ok: boolean; members?: { id: string; name: string; email: string; role_id: string; is_you?: boolean }[] }>(`/api/team?workspace_id=${wsId}`),
       ]);
       if (wsRes.ok) {
         const d = wsRes;
@@ -106,6 +116,9 @@ export default function SettingsPage() {
         }
         if (teamRes.ok && teamRes.members) {
           d.members = teamRes.members;
+          // Resolve the current user's permissions so controls can disable up front
+          const me = teamRes.members.find((m) => m.is_you);
+          if (me && d.permissions?.[me.role_id]) d.my_permissions = d.permissions[me.role_id];
         }
         setData(d);
       }
@@ -128,7 +141,11 @@ export default function SettingsPage() {
             {NAV.filter((n) => n.group === group).map((n) => (
               <button key={n.id}
                 onClick={() => { setActiveSection(n.id); document.getElementById(`section-${n.id}`)?.scrollIntoView({ behavior: 'smooth' }); }}
-                className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium transition-colors mb-0.5 ${activeSection === n.id ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'} ${n.danger ? 'text-destructive' : ''}`}
+                className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium transition-colors mb-0.5 ${
+                  activeSection === n.id
+                    ? n.danger ? 'bg-destructive text-destructive-foreground' : 'bg-accent text-accent-foreground'
+                    : n.danger ? 'text-destructive hover:bg-destructive/10' : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+                }`}
               >
                 <n.icon className="size-3.5" /> {n.label}
               </button>
@@ -160,6 +177,7 @@ function WorkspaceInfoSection({ data, wsId, regions, onSaved }: { data: WsData; 
   const [initials, setInitials] = useState(data.workspace.icon_initials);
   const [iconColor, setIconColor] = useState(data.workspace.icon_color);
   const [iconUrl, setIconUrl] = useState(data.workspace.icon_image_url);
+  const [iconVersion, setIconVersion] = useState(0);
   const [saving, setSaving] = useState<string | null>(null);
   const [regionsModalOpen, setRegionsModalOpen] = useState(false);
   const [availableRegions, setAvailableRegions] = useState<Set<string>>(() => {
@@ -167,12 +185,17 @@ function WorkspaceInfoSection({ data, wsId, regions, onSaved }: { data: WsData; 
   });
   const fileRef = useRef<HTMLInputElement>(null);
 
+  const canName = canPerm(data, 'change_workspace_name');
+  const canIcon = canPerm(data, 'change_workspace_icon');
+  const canRegion = canPerm(data, 'change_workspace_region');
+  const canManage = canPerm(data, 'manage_settings');
+
   const save = async (body: Record<string, unknown>, field: string) => {
     setSaving(field);
     try {
       const res = await api<{ ok: boolean; error?: string }>(`/api/workspaces/${wsId}`, { method: 'PUT', body: JSON.stringify(body) });
       if (res.ok) { toast.success('Saved', 'Your workspace settings have been updated.'); onSaved(); } else toast.error('Couldn\'t save', res.error ?? 'Your workspace settings were not updated.');
-    } catch { toast.error('Network error', 'Could not reach the server. Please try again.'); }
+    } catch (err) { toast.error('Couldn\'t save', apiErrorMessage(err, 'Could not reach the server. Please try again.')); }
     setSaving(null);
   };
 
@@ -181,11 +204,14 @@ function WorkspaceInfoSection({ data, wsId, regions, onSaved }: { data: WsData; 
     setSaving('icon');
     try {
       const formData = new FormData();
-      formData.append('file', file);
+      formData.append('icon', file); // API reads formData.get('icon')
       const res = await fetch(`${API_BASE}/api/workspaces/${wsId}/icon`, { method: 'POST', body: formData, credentials: 'include' });
       const d = await res.json() as { ok: boolean; icon_image_url?: string; error?: string };
-      if (d.ok && d.icon_image_url) { setIconUrl(d.icon_image_url); toast.success('Icon updated', 'Your new workspace icon has been uploaded.'); onSaved(); }
-      else toast.error('Upload failed', d.error ?? 'The workspace icon could not be uploaded.');
+      if (d.ok && d.icon_image_url) {
+        setIconUrl(d.icon_image_url);
+        setIconVersion(Date.now()); // cache-bust the served image
+        toast.success('Icon updated', 'Your new workspace icon has been uploaded.'); onSaved();
+      } else toast.error('Upload failed', d.error ?? 'The workspace icon could not be uploaded.');
     } catch { toast.error('Upload failed', 'The workspace icon could not be uploaded.'); }
     setSaving(null);
   };
@@ -204,7 +230,11 @@ function WorkspaceInfoSection({ data, wsId, regions, onSaved }: { data: WsData; 
     try {
       await api(`/api/workspaces/${wsId}/settings`, { method: 'PUT', body: JSON.stringify({ available_regions: JSON.stringify([...availableRegions]) }) });
       toast.success('Regions updated', 'Your available upload regions have been saved.'); setRegionsModalOpen(false); onSaved();
-    } catch { toast.error('Couldn\'t save', 'Your available regions were not updated.'); }
+    } catch (err) {
+      toast.error('Couldn\'t save', err instanceof ApiError && err.status === 403
+        ? 'You don\'t have permission to change the workspace regions.'
+        : apiErrorMessage(err, 'Your available regions were not updated.'));
+    }
     setSaving(null);
   };
 
@@ -216,7 +246,7 @@ function WorkspaceInfoSection({ data, wsId, regions, onSaved }: { data: WsData; 
           <SettingRow label="Workspace name" desc="Shown in the switcher and notifications.">
             <div className="flex items-center gap-2">
               <Input value={name} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setName(e.target.value)} className="h-8 text-xs w-48" />
-              <SaveBtn loading={saving === 'name'} onClick={() => save({ name }, 'name')} />
+              <SaveBtn loading={saving === 'name'} onClick={() => save({ name }, 'name')} disabled={!canName} disabledReason={NO_PERM('the workspace name')} />
             </div>
           </SettingRow>
 
@@ -224,14 +254,14 @@ function WorkspaceInfoSection({ data, wsId, regions, onSaved }: { data: WsData; 
             <div className="flex items-center gap-3">
               {/* Preview */}
               <div className={`size-10 rounded-lg flex items-center justify-center text-sm font-bold text-white shrink-0 overflow-hidden ${iconUrl ? 'bg-muted' : ''}`} style={iconUrl ? undefined : { background: iconColor }}>
-                {iconUrl ? <img src={iconUrl} alt="" className="w-full h-full object-cover" /> : initials}
+                {iconUrl ? <img src={`${API_BASE}/api/workspaces/${wsId}/icon${iconVersion ? `?v=${iconVersion}` : ''}`} alt="" className="w-full h-full object-cover" /> : initials}
               </div>
               <div className="space-y-1.5">
-                <div className="flex items-center gap-1.5">
-                  <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => fileRef.current?.click()} disabled={saving === 'icon'}>
+                <div className="flex items-center gap-1.5" title={!canIcon ? NO_PERM('the workspace icon') : undefined}>
+                  <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => fileRef.current?.click()} disabled={saving === 'icon' || !canIcon}>
                     <Upload className="size-3" /> Upload
                   </Button>
-                  {iconUrl && <Button variant="outline" size="sm" className="h-7 text-xs" onClick={removeIcon} disabled={saving === 'icon'}>Remove</Button>}
+                  {iconUrl && <Button variant="outline" size="sm" className="h-7 text-xs" onClick={removeIcon} disabled={saving === 'icon' || !canIcon}>Remove</Button>}
                   <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif" className="hidden" onChange={(e) => { if (e.target.files?.[0]) uploadIcon(e.target.files[0]); e.target.value = ''; }} />
                 </div>
                 <div className="flex items-center gap-1.5">
@@ -239,7 +269,7 @@ function WorkspaceInfoSection({ data, wsId, regions, onSaved }: { data: WsData; 
                   {ICON_COLORS.map((c) => (
                     <button key={c} onClick={() => setIconColor(c)} className={`size-5 rounded-full ${iconColor === c ? 'ring-2 ring-offset-1 ring-foreground' : ''}`} style={{ background: c }} />
                   ))}
-                  <SaveBtn loading={saving === 'initials'} onClick={() => save({ icon_initials: initials, icon_color: iconColor }, 'initials')} />
+                  <SaveBtn loading={saving === 'initials'} onClick={() => save({ icon_initials: initials, icon_color: iconColor }, 'initials')} disabled={!canIcon} disabledReason={NO_PERM('the workspace icon')} />
                 </div>
               </div>
             </div>
@@ -253,14 +283,16 @@ function WorkspaceInfoSection({ data, wsId, regions, onSaved }: { data: WsData; 
                   {regions.map((r) => <SelectItem key={r.code} value={r.code}>{r.code} ({r.city})</SelectItem>)}
                 </SelectContent>
               </Select>
-              <SaveBtn loading={saving === 'region'} onClick={() => save({ default_region: region }, 'region')} />
+              <SaveBtn loading={saving === 'region'} onClick={() => save({ default_region: region }, 'region')} disabled={!canRegion} disabledReason={NO_PERM('the default upload region')} />
             </div>
           </SettingRow>
 
           <SettingRow label="Available regions" desc="Restrict which regions members can upload to.">
             <div className="flex items-center gap-2">
               <Badge variant="secondary" className="text-[10px]">{availableRegions.size === 0 ? 'All' : `${availableRegions.size} selected`}</Badge>
-              <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setRegionsModalOpen(true)}>Manage</Button>
+              <span title={!canManage ? NO_PERM('the workspace regions') : undefined} className={!canManage ? 'cursor-not-allowed' : ''}>
+                <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setRegionsModalOpen(true)} disabled={!canManage}>Manage</Button>
+              </span>
             </div>
           </SettingRow>
         </CardContent>
@@ -309,7 +341,7 @@ function HardLimitsSection({ data, wsId }: { data: WsData; wsId: string }) {
       const val = (limits as Record<string, unknown>)[field];
       await api(`/api/workspaces/${wsId}/settings`, { method: 'PUT', body: JSON.stringify({ [field]: val === '' ? null : val }) });
       toast.success('Limit updated', 'Your hard limit has been saved.');
-    } catch { toast.error('Couldn\'t save', 'Your hard limit was not updated.'); }
+    } catch (err) { toast.error('Couldn\'t save', apiErrorMessage(err, 'Your hard limit was not updated.')); }
     setSaving(null);
   };
 
@@ -321,6 +353,16 @@ function HardLimitsSection({ data, wsId }: { data: WsData; wsId: string }) {
     { field: 'allowed_extensions', label: 'Allowed file types', desc: 'Comma-separated. Blank = allow all.', unit: '', showCap: false },
     { field: 'blocked_extensions', label: 'Blocked file types', desc: 'Always rejected.', unit: '', showCap: false },
   ];
+
+  // Mirrors the API's field → permission mapping
+  const LIMIT_PERMS: Record<string, string> = {
+    max_file_size_gb: 'change_max_file_size',
+    max_storage_per_member_gb: 'change_storage_per_member',
+    max_total_storage_gb: 'change_total_storage_cap',
+    max_concurrent_uploads: 'change_max_concurrent_uploads',
+    allowed_extensions: 'change_allowed_file_types',
+    blocked_extensions: 'change_blocked_file_types',
+  };
 
   return (
     <section id="section-limits">
@@ -335,7 +377,9 @@ function HardLimitsSection({ data, wsId }: { data: WsData; wsId: string }) {
                   className="h-8 text-xs w-24" type={row.unit ? 'number' : 'text'} placeholder={row.unit ? '0' : 'e.g. .exe,.bat'} />
                 {row.unit && <span className="text-[11px] text-muted-foreground">{row.unit}</span>}
                 {row.showCap && planCap && <Badge variant="outline" className="text-[9px] text-muted-foreground">plan max: {planCap} GB</Badge>}
-                <SaveBtn loading={saving === row.field} onClick={() => saveLimit(row.field)} />
+                <SaveBtn loading={saving === row.field} onClick={() => saveLimit(row.field)}
+                  disabled={!canPerm(data, LIMIT_PERMS[row.field])}
+                  disabledReason={NO_PERM(row.label.toLowerCase())} />
               </div>
             </SettingRow>
           ))}
@@ -358,6 +402,7 @@ const SHARE_EXPIRY_OPTIONS = [
 
 function SecuritySection({ data, wsId, onSaved }: { data: WsData; wsId: string; onSaved: () => void }) {
   const s = data.settings;
+  const canManageSec = canPerm(data, 'manage_settings');
   const [toggles, setToggles] = useState({
     disable_share_links: s?.disable_share_links === 1, force_share_password: s?.force_share_password === 1,
     require_2fa: s?.require_2fa === 1, disable_password_login: s?.disable_password_login === 1,
@@ -374,7 +419,7 @@ function SecuritySection({ data, wsId, onSaved }: { data: WsData; wsId: string; 
 
   const saveSetting = async (field: string, value: unknown) => {
     setSaving(field);
-    try { await api(`/api/workspaces/${wsId}/settings`, { method: 'PUT', body: JSON.stringify({ [field]: value }) }); toast.success('Settings updated', 'Your security setting has been saved.'); } catch { toast.error('Couldn\'t save', 'Your security setting was not updated.'); }
+    try { await api(`/api/workspaces/${wsId}/settings`, { method: 'PUT', body: JSON.stringify({ [field]: value }) }); toast.success('Settings updated', 'Your security setting has been saved.'); } catch (err) { toast.error('Couldn\'t save', apiErrorMessage(err, 'Your security setting was not updated.')); }
     setSaving(null);
   };
 
@@ -400,7 +445,7 @@ function SecuritySection({ data, wsId, onSaved }: { data: WsData; wsId: string; 
     try {
       await api(`/api/workspaces/${wsId}/settings`, { method: 'PUT', body: JSON.stringify({ [listModal.field]: JSON.stringify(listItems) }) });
       toast.success('List updated', 'Your access list has been saved.'); onSaved(); setListModal(null);
-    } catch { toast.error('Couldn\'t save', 'Your access list was not updated.'); }
+    } catch (err) { toast.error('Couldn\'t save', apiErrorMessage(err, 'Your access list was not updated.')); }
     setSaving(null);
   };
 
@@ -432,7 +477,10 @@ function SecuritySection({ data, wsId, onSaved }: { data: WsData; wsId: string; 
         <CardContent className="divide-y">
           {toggleItems.map((item) => (
             <SettingRow key={item.field} label={item.label} desc={item.desc}>
-              <button className={`relative w-9 h-5 rounded-full transition-colors ${(toggles as Record<string, boolean>)[item.field] ? 'bg-green-600' : 'bg-muted'}`}
+              <button
+                className={`relative w-9 h-5 rounded-full transition-colors ${(toggles as Record<string, boolean>)[item.field] ? 'bg-green-600' : 'bg-muted'} ${!canManageSec ? 'opacity-50 cursor-not-allowed' : ''}`}
+                disabled={!canManageSec}
+                title={!canManageSec ? NO_PERM('security settings') : undefined}
                 onClick={() => { const nv = !(toggles as Record<string, boolean>)[item.field]; setToggles((p) => ({ ...p, [item.field]: nv })); saveSetting(item.field, nv ? 1 : 0); }}>
                 <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-all ${(toggles as Record<string, boolean>)[item.field] ? 'left-4.5' : 'left-0.5'}`} />
               </button>
@@ -452,7 +500,7 @@ function SecuritySection({ data, wsId, onSaved }: { data: WsData; wsId: string; 
                   {SESSION_TIMEOUT_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
                 </SelectContent>
               </Select>
-              <SaveBtn loading={saving === 'session_timeout'} onClick={() => saveSetting('session_timeout_minutes', sessionTimeout || null)} />
+              <SaveBtn loading={saving === 'session_timeout'} onClick={() => saveSetting('session_timeout_minutes', sessionTimeout || null)} disabled={!canManageSec} disabledReason={NO_PERM('the session timeout')} />
             </div>
           </SettingRow>
           <SettingRow label="Share link max expiry" desc="Cap how long share links can live.">
@@ -463,7 +511,7 @@ function SecuritySection({ data, wsId, onSaved }: { data: WsData; wsId: string; 
                   {SHARE_EXPIRY_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
                 </SelectContent>
               </Select>
-              <SaveBtn loading={saving === 'share_expiry'} onClick={() => saveSetting('share_max_expiry_days', shareExpiry || null)} />
+              <SaveBtn loading={saving === 'share_expiry'} onClick={() => saveSetting('share_max_expiry_days', shareExpiry || null)} disabled={!canManageSec} disabledReason={NO_PERM('the share link expiry cap')} />
             </div>
           </SettingRow>
           <SettingRow label="Download rate limit" desc="Max downloads per user per hour.">
@@ -485,7 +533,9 @@ function SecuritySection({ data, wsId, onSaved }: { data: WsData; wsId: string; 
               <SettingRow key={item.field} label={item.label} desc={item.desc}>
                 <div className="flex items-center gap-2">
                   <Badge variant="secondary" className="text-[10px]">{count === 0 ? 'None' : `${count} entries`}</Badge>
-                  <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => openListModal(item.field, item.label, item.placeholder)}>Manage</Button>
+                  <span title={!canManageSec ? NO_PERM(item.label.toLowerCase()) : undefined} className={!canManageSec ? 'cursor-not-allowed' : ''}>
+                    <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => openListModal(item.field, item.label, item.placeholder)} disabled={!canManageSec}>Manage</Button>
+                  </span>
                 </div>
               </SettingRow>
             );
@@ -697,8 +747,15 @@ function SettingRow({ label, desc, children }: { label: string; desc: string; ch
   return <div className="flex items-center justify-between py-4 gap-4"><div className="min-w-0"><p className="text-sm font-medium">{label}</p><p className="text-xs text-muted-foreground mt-0.5">{desc}</p></div><div className="shrink-0">{children}</div></div>;
 }
 
-function SaveBtn({ loading, onClick }: { loading: boolean; onClick: () => void }) {
-  return <Button size="sm" className="h-7 text-xs gap-1" onClick={onClick} disabled={loading}>{loading ? <Loader2 className="size-3 animate-spin" /> : <Save className="size-3" />}Save</Button>;
+function SaveBtn({ loading, onClick, disabled, disabledReason }: { loading: boolean; onClick: () => void; disabled?: boolean; disabledReason?: string }) {
+  const btn = (
+    <Button size="sm" className="h-7 text-xs gap-1" onClick={onClick} disabled={loading || disabled}>
+      {loading ? <Loader2 className="size-3 animate-spin" /> : <Save className="size-3" />}Save
+    </Button>
+  );
+  // Disabled buttons swallow pointer events, so the tooltip lives on a wrapper
+  if (disabled && disabledReason) return <span title={disabledReason} className="cursor-not-allowed">{btn}</span>;
+  return btn;
 }
 
 function SettingsSkeleton() {
