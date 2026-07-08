@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { api } from '@/api/client';
+import { api, API_BASE } from '@/api/client';
+import { isImage, fileIconSrc } from '@/lib/helpers';
 import { useWorkspace } from '@/stores/workspace';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -16,7 +17,9 @@ import {
 import { toast } from '@/lib/toast';
 
 interface FavFile { file_id: string; file_name: string }
-interface Group { id: string; name: string; color: string; file_count: number }
+interface GroupFolder { folder_id: string; folder_name: string }
+interface GroupFile { file_id: string; file_name: string; folder_id: string | null }
+interface Group { id: string; name: string; color: string; folders: GroupFolder[]; files: GroupFile[] }
 
 type Filter = 'all' | 'documents' | 'videos' | 'images' | 'shared' | 'deleted' | 'hidden';
 
@@ -58,8 +61,19 @@ export function FilesSidebar({ onFilterChange, onFavouriteClick, onGroupClick }:
   const [newGroupColor, setNewGroupColor] = useState(GROUP_COLORS[0]);
   const [creatingGroup, setCreatingGroup] = useState(false);
 
-  // Delete group
-  const [deletingGroupId, setDeletingGroupId] = useState<string | null>(null);
+  // Delete group (confirmation modal)
+  const [deleteGroupTarget, setDeleteGroupTarget] = useState<Group | null>(null);
+  const [deletingGroup, setDeletingGroup] = useState(false);
+
+  // Expanded groups (collapse style: clicking a group name shows its contents)
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  const toggleGroupExpanded = (id: string) => {
+    setExpandedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
 
   const loadFavourites = useCallback(async () => {
     if (!wsId) return;
@@ -91,6 +105,18 @@ export function FilesSidebar({ onFilterChange, onFavouriteClick, onGroupClick }:
     loadFileRequestCount();
   }, [loadFavourites, loadGroups, loadFileRequestCount]);
 
+  // Live-refresh when the files page mutates favourites/groups (separate state)
+  useEffect(() => {
+    const onFavs = () => loadFavourites();
+    const onGroups = () => loadGroups();
+    window.addEventListener('dosya:favourites-changed', onFavs);
+    window.addEventListener('dosya:groups-changed', onGroups);
+    return () => {
+      window.removeEventListener('dosya:favourites-changed', onFavs);
+      window.removeEventListener('dosya:groups-changed', onGroups);
+    };
+  }, [loadFavourites, loadGroups]);
+
   const toggleCollapse = () => {
     const next = !collapsed;
     setCollapsed(next);
@@ -111,19 +137,24 @@ export function FilesSidebar({ onFilterChange, onFavouriteClick, onGroupClick }:
     setCreatingGroup(false);
   };
 
-  const handleDeleteGroup = async (groupId: string) => {
+  const handleDeleteGroup = async () => {
+    if (!deleteGroupTarget) return;
+    setDeletingGroup(true);
     try {
-      await api(`/api/groups/${groupId}`, { method: 'DELETE' });
+      await api(`/api/groups/${deleteGroupTarget.id}`, { method: 'DELETE' });
       toast.success('Group deleted', 'The group has been removed.');
       loadGroups();
+      setDeleteGroupTarget(null);
     } catch { toast.error('Delete failed', 'The group could not be deleted.'); }
-    setDeletingGroupId(null);
+    setDeletingGroup(false);
   };
 
   const handleRemoveFavourite = async (fileId: string) => {
     try {
       await api(`/api/favourites?workspace_id=${wsId}&file_id=${fileId}`, { method: 'DELETE' });
       loadFavourites();
+      // Sync the files page's star icons (it keeps its own favourites state)
+      window.dispatchEvent(new Event('dosya:favourites-changed'));
     } catch { toast.error('Remove failed', 'Could not remove from favourites.'); }
   };
 
@@ -223,32 +254,78 @@ export function FilesSidebar({ onFilterChange, onFavouriteClick, onGroupClick }:
                 <p className="text-[11px] text-muted-foreground/60 pl-4.5">No groups yet</p>
               ) : (
                 <div className="space-y-0.5">
-                  {groups.map((g) => (
-                    <div key={g.id}>
-                      {deletingGroupId === g.id ? (
-                        <div className="flex items-center gap-1 px-2 py-1 rounded bg-destructive/5 border border-destructive/20 text-[11px]">
-                          <span className="flex-1 truncate text-destructive">Delete "{g.name}"?</span>
-                          <button className="text-[10px] font-medium text-destructive hover:underline" onClick={() => handleDeleteGroup(g.id)}>Yes</button>
-                          <button className="text-[10px] font-medium text-muted-foreground hover:underline" onClick={() => setDeletingGroupId(null)}>No</button>
-                        </div>
-                      ) : (
-                        <div className="group/grp flex items-center gap-1 rounded hover:bg-muted/50">
-                          <button onClick={() => onGroupClick(g.id)} className="flex items-center gap-2 px-2 py-1 flex-1 min-w-0 text-left text-[11px] text-muted-foreground hover:text-foreground">
+                  {groups.map((g) => {
+                    const itemCount = g.folders.length + g.files.length;
+                    const isExpanded = expandedGroups.has(g.id);
+                    return (
+                      <div key={g.id}>
+                        <div className="group/grp flex items-center gap-0.5 rounded hover:bg-muted/50">
+                          <button
+                            onClick={() => { if (itemCount > 0) toggleGroupExpanded(g.id); }}
+                            className={`shrink-0 pl-1.5 py-1 ${itemCount === 0 ? 'cursor-default' : 'text-muted-foreground hover:text-foreground'}`}
+                            title={itemCount === 0 ? 'Empty group' : isExpanded ? 'Collapse' : 'Expand'}
+                          >
+                            {itemCount > 0 ? (
+                              <ChevronRight className={`size-2.5 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                            ) : (
+                              <span className="block size-2.5" />
+                            )}
+                          </button>
+                          <button
+                            onClick={() => onGroupClick(g.id)}
+                            className="flex items-center gap-1.5 pr-2 py-1 flex-1 min-w-0 text-left text-[11px] text-muted-foreground hover:text-foreground"
+                            title="Open group"
+                          >
                             <div className="size-2.5 rounded-full shrink-0" style={{ background: g.color || '#a0a0a0' }} />
                             <span className="truncate flex-1">{g.name}</span>
-                            <span className="text-[9px] text-muted-foreground/60">{g.file_count}</span>
+                            <span className="text-[9px] text-muted-foreground/60">{itemCount}</span>
                           </button>
                           <button
                             className="opacity-0 group-hover/grp:opacity-100 shrink-0 px-1"
-                            onClick={() => setDeletingGroupId(g.id)}
+                            onClick={() => setDeleteGroupTarget(g)}
                             title="Delete group"
                           >
                             <X className="size-3 text-muted-foreground hover:text-destructive" />
                           </button>
                         </div>
-                      )}
-                    </div>
-                  ))}
+                        {/* Expanded contents: folders then files */}
+                        {isExpanded && (
+                          <div className="ml-4 border-l pl-1.5 space-y-0.5 py-0.5">
+                            {g.folders.map((f) => (
+                              <button
+                                key={f.folder_id}
+                                onClick={() => navigate(`/files?folder=${f.folder_id}`)}
+                                className="w-full flex items-center gap-1.5 px-1.5 py-0.5 rounded text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted/50 text-left"
+                              >
+                                <FolderOpen className="size-2.5 shrink-0" />
+                                <span className="truncate">{f.folder_name}</span>
+                              </button>
+                            ))}
+                            {g.files.map((f) => (
+                              <button
+                                key={f.file_id}
+                                onClick={() => onFavouriteClick(f.file_id)}
+                                className="w-full flex items-center gap-1.5 px-1.5 py-0.5 rounded text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted/50 text-left"
+                                title="Open file"
+                              >
+                                {isImage(f.file_name) ? (
+                                  <img
+                                    src={`${API_BASE}/api/files/${f.file_id}/raw`}
+                                    alt=""
+                                    className="size-3.5 rounded-sm object-cover shrink-0 bg-muted"
+                                    loading="lazy"
+                                  />
+                                ) : (
+                                  <img src={fileIconSrc(f.file_name)} alt="" className="size-3.5 shrink-0" />
+                                )}
+                                <span className="truncate">{f.file_name}</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -293,6 +370,26 @@ export function FilesSidebar({ onFilterChange, onFavouriteClick, onGroupClick }:
             <Button onClick={handleCreateGroup} disabled={creatingGroup || !newGroupName.trim()}>
               {creatingGroup && <Loader2 className="size-4 animate-spin mr-1.5" />}
               Create group
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete group confirmation */}
+      <Dialog open={!!deleteGroupTarget} onOpenChange={(v) => { if (!v) setDeleteGroupTarget(null); }}>
+        <DialogContent className="max-w-xs">
+          <DialogHeader>
+            <DialogTitle>Delete group</DialogTitle>
+          </DialogHeader>
+          <p className="text-xs text-muted-foreground">
+            Delete <span className="font-semibold text-foreground">{deleteGroupTarget?.name}</span>?
+            {' '}Files and folders in it are not deleted — only the group itself.
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteGroupTarget(null)}>Cancel</Button>
+            <Button variant="destructive" onClick={handleDeleteGroup} disabled={deletingGroup}>
+              {deletingGroup && <Loader2 className="size-4 animate-spin mr-1.5" />}
+              Delete
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { api } from '@/api/client';
+import { api, API_BASE } from '@/api/client';
 import { useWorkspace } from '@/stores/workspace';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -183,7 +183,7 @@ export default function DashboardPage() {
                         <div key={m.user_id} className="flex items-center gap-2.5 py-2.5 border-b last:border-b-0">
                           <div className="w-2 h-2 rounded-full shrink-0" style={{ background: MEMBER_COLORS[i % MEMBER_COLORS.length] }} />
                           {m.avatar_url ? (
-                            <img src={m.avatar_url} className="w-7 h-7 rounded-full shrink-0 object-cover" alt="" />
+                            <img src={`${API_BASE}/api/users/${m.user_id}/avatar`} crossOrigin="use-credentials" className="w-7 h-7 rounded-full shrink-0 object-cover" alt="" />
                           ) : (
                             <div className="w-7 h-7 rounded-full shrink-0 flex items-center justify-center text-[10px] font-semibold text-white" style={{ background: avatarColor(m.user_id) }}>{initials(m.name || m.email)}</div>
                           )}

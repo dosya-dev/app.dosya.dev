@@ -133,7 +133,7 @@ export default function SharedPage() {
           <div className="ml-auto" />
           <div className="relative">
             <Search className="size-3 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
-            <Input value={search} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearch(e.target.value)} placeholder="Filter by name or person..." className="h-8 text-xs pl-7 w-48" />
+            <Input value={search} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearch(e.target.value)} placeholder="Filter by name or person..." className="h-8 text-xs pl-7 w-64" />
           </div>
         </div>
 

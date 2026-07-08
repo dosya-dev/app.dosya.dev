@@ -30,15 +30,18 @@ export function ContextMenu({ items, position, onClose }: ContextMenuProps) {
     return () => { document.removeEventListener('mousedown', handler); document.removeEventListener('keydown', keyHandler); };
   }, [position, onClose]);
 
-  // Adjust position to stay in viewport
+  // Keep the menu fully inside the viewport: shift up/left only as far as
+  // needed (never past the top/left edge). A full flip (y - height) could push
+  // a tall menu above the viewport where it can't be scrolled to.
   useEffect(() => {
     if (!position || !menuRef.current) return;
     const menu = menuRef.current;
     const rect = menu.getBoundingClientRect();
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
-    if (rect.right > vw) menu.style.left = `${position.x - rect.width}px`;
-    if (rect.bottom > vh) menu.style.top = `${position.y - rect.height}px`;
+    const pad = 8;
+    const x = Math.max(pad, Math.min(position.x, window.innerWidth - rect.width - pad));
+    const y = Math.max(pad, Math.min(position.y, window.innerHeight - rect.height - pad));
+    menu.style.left = `${x}px`;
+    menu.style.top = `${y}px`;
   }, [position]);
 
   if (!position) return null;
@@ -48,7 +51,7 @@ export function ContextMenu({ items, position, onClose }: ContextMenuProps) {
   return createPortal(
     <div
       ref={menuRef}
-      className="fixed z-[9000] bg-popover text-popover-foreground border rounded-xl shadow-xl py-1.5 min-w-45 animate-in fade-in zoom-in-95 duration-100"
+      className="fixed z-[9000] bg-popover text-popover-foreground border rounded-xl shadow-xl py-1.5 min-w-45 max-h-[calc(100vh-16px)] overflow-y-auto animate-in fade-in zoom-in-95 duration-100"
       style={{ left: position.x, top: position.y }}
     >
       {visibleItems.map((item, i) =>

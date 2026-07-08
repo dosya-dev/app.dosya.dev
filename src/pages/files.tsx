@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, type MouseEvent as ReactMouseEvent } from 'react';
+import { useState, useEffect, useCallback, useRef, type MouseEvent as ReactMouseEvent } from 'react';
 import { useSearchParams, Link, useNavigate } from 'react-router-dom';
 import { api, API_BASE } from '@/api/client';
 import { useDocumentTitle } from '@/lib/page-title';
@@ -194,8 +194,8 @@ export default function FilesPage() {
   // Upload new version (hidden file input)
   const [versionUploadTarget, setVersionUploadTarget] = useState<string | null>(null);
 
-  // Add to group
-  const [addToGroupTarget, setAddToGroupTarget] = useState<{ fileId: string; fileName: string } | null>(null);
+  // Add to group (files and folders)
+  const [addToGroupTarget, setAddToGroupTarget] = useState<{ id: string; name: string; type: 'file' | 'folder' } | null>(null);
   const [availableGroups, setAvailableGroups] = useState<{ id: string; name: string; color: string }[]>([]);
   const [addingToGroup, setAddingToGroup] = useState<string | null>(null);
 
@@ -226,6 +226,10 @@ export default function FilesPage() {
   const currentGroup = searchParams.get('group') || '';
   const isDeletedView = currentFilter === 'deleted';
 
+  // How many items the last load returned — sizes the skeleton so switching
+  // filters doesn't flash 8 placeholder rows when the view only has 1 item.
+  const lastItemCount = useRef<number | null>(null);
+
   const loadFiles = useCallback(async () => {
     if (!wsId) return;
     setLoading(true);
@@ -244,6 +248,7 @@ export default function FilesPage() {
       }>(`/api/files?${params}`);
       if (data.ok) {
         setFolders(data.folders); setFiles(data.files);
+        lastItemCount.current = data.folders.length + data.files.length;
         setBreadcrumbs(data.breadcrumbs);
         if (data.pagination) setPagination(data.pagination);
         setSelected(new Set());
@@ -264,6 +269,14 @@ export default function FilesPage() {
   }, [wsId]);
   useEffect(() => { loadFavourites(); }, [loadFavourites]);
 
+  // Refresh star state when the FilesSidebar removes a favourite (and vice
+  // versa — both components keep their own favourites state).
+  useEffect(() => {
+    const onChanged = () => loadFavourites();
+    window.addEventListener('dosya:favourites-changed', onChanged);
+    return () => window.removeEventListener('dosya:favourites-changed', onChanged);
+  }, [loadFavourites]);
+
   const toggleFavourite = async (fileId: string) => {
     const isFav = favourites.has(fileId);
     try {
@@ -274,6 +287,8 @@ export default function FilesPage() {
         await api('/api/favourites', { method: 'POST', body: JSON.stringify({ file_id: fileId, workspace_id: wsId }) });
         setFavourites((prev) => new Set(prev).add(fileId));
       }
+      // Tell the FilesSidebar (separate state) to refresh its favourites list
+      window.dispatchEvent(new Event('dosya:favourites-changed'));
     } catch { toast.error('Something went wrong', 'Could not update favourites.'); }
   };
 
@@ -381,6 +396,16 @@ export default function FilesPage() {
       const res = await api<{ ok: boolean; folders?: PickerFolder[] }>(`/api/folders/tree?workspace_id=${wsId}`);
       if (res.ok && res.folders) setMoveFolders(res.folders);
     } catch { /* */ }
+  };
+
+  const openAddToGroup = async (id: string, name: string, type: 'file' | 'folder') => {
+    try {
+      const data = await api<{ ok: boolean; groups?: { id: string; name: string; color: string }[] }>(`/api/groups?workspace_id=${wsId}`);
+      if (data.ok && data.groups && data.groups.length > 0) {
+        setAvailableGroups(data.groups);
+        setAddToGroupTarget({ id, name, type });
+      } else toast.info('No groups', 'No groups yet. Create one in the sidebar.');
+    } catch { toast.error('Something went wrong', 'Could not load your groups.'); }
   };
 
   const toggleSelect = (id: string) => {
@@ -505,15 +530,7 @@ export default function FilesPage() {
     { label: 'Copy', icon: <Copy />, onClick: () => handleCopy(f.id) },
     { label: 'Move to...', icon: <Move />, onClick: () => openMoveModal(f.id, 'file') },
     { label: '', separator: true, onClick: () => {}, icon: null },
-    { label: 'Add to group', icon: <FolderPlus />, onClick: async () => {
-      try {
-        const data = await api<{ ok: boolean; groups?: { id: string; name: string; color: string }[] }>(`/api/groups?workspace_id=${wsId}`);
-        if (data.ok && data.groups && data.groups.length > 0) {
-          setAvailableGroups(data.groups);
-          setAddToGroupTarget({ fileId: f.id, fileName: f.name });
-        } else toast.info('No groups', 'No groups yet. Create one in the sidebar.');
-      } catch { toast.error('Something went wrong', 'Could not load your groups.'); }
-    }},
+    { label: 'Add to group', icon: <FolderPlus />, onClick: () => openAddToGroup(f.id, f.name, 'file') },
     { label: 'Upload new version', icon: <Upload />, onClick: () => setVersionUploadTarget(f.id) },
     { label: 'Version history', icon: <History />, onClick: () => openFileWithLockCheck(f, 'view') },
     { label: f.lock_mode !== 'none' ? 'Unlock' : 'Lock', icon: <Lock />, onClick: () => setLockTarget({ id: f.id, name: f.name, type: 'file' }) },
@@ -527,6 +544,7 @@ export default function FilesPage() {
     { label: '', separator: true, onClick: () => {}, icon: null },
     { label: 'Rename', icon: <Pencil />, onClick: () => { setRenameTarget({ id: f.id, name: f.name, type: 'folder' }); setRenameName(f.name); } },
     { label: 'Move to...', icon: <Move />, onClick: () => openMoveModal(f.id, 'folder') },
+    { label: 'Add to group', icon: <FolderPlus />, onClick: () => openAddToGroup(f.id, f.name, 'folder') },
     { label: '', separator: true, onClick: () => {}, icon: null },
     { label: f.lock_mode !== 'none' ? 'Unlock' : 'Lock', icon: <Lock />, onClick: () => setLockTarget({ id: f.id, name: f.name, type: 'folder' }) },
     { label: f.is_hidden ? 'Unhide' : 'Hide', icon: f.is_hidden ? <Eye /> : <EyeOff />, onClick: () => setHideTarget({ id: f.id, name: f.name, type: 'folder' }) },
@@ -549,16 +567,22 @@ export default function FilesPage() {
           const p = new URLSearchParams(searchParams);
           if (filter) p.set('filter', filter); else p.delete('filter');
           p.delete('page');
+          p.delete('group');
           setSearchParams(p);
         }}
-        onFavouriteClick={(fileId) => {
+        onFavouriteClick={async (fileId) => {
           const f = files.find((x) => x.id === fileId);
-          if (f) openFileWithLockCheck(f, 'view');
+          if (f) { openFileWithLockCheck(f, 'view'); return; }
+          // File not in the current list (e.g. clicked from a group in another
+          // folder) — fetch it directly, then open.
+          try {
+            const res = await api<{ ok: boolean; file?: FileItem }>(`/api/files/${fileId}`);
+            if (res.ok && res.file) openFileWithLockCheck(res.file, 'view');
+          } catch { toast.error('Could not open file', 'The file could not be loaded.'); }
         }}
         onGroupClick={(groupId) => {
-          const p = new URLSearchParams(searchParams);
+          const p = new URLSearchParams();
           p.set('group', groupId);
-          p.delete('page');
           setSearchParams(p);
         }}
       />
@@ -660,11 +684,21 @@ export default function FilesPage() {
       <div className="flex-1 flex min-h-0">
         {/* File list */}
         <div className="flex-1 overflow-y-auto p-5" onClick={() => setSelectedFile(null)}>
-          {loading ? <FileSkeleton view={view} /> : folders.length === 0 && files.length === 0 ? (
+          {loading ? <FileSkeleton view={view} count={lastItemCount.current ?? undefined} /> : folders.length === 0 && files.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 text-center">
               <FolderOpen className="size-12 text-muted-foreground/30 mb-4" />
-              <p className="text-sm font-medium text-muted-foreground mb-1">{isDeletedView ? 'Trash is empty' : search ? 'No files match your search' : 'This folder is empty'}</p>
-              {!isDeletedView && !search && <p className="text-xs text-muted-foreground">Upload files or create a folder to get started</p>}
+              <p className="text-sm font-medium text-muted-foreground mb-1">
+                {isDeletedView ? 'Trash is empty'
+                  : search ? 'No files match your search'
+                  : currentGroup ? 'This group is empty'
+                  : 'This folder is empty'}
+              </p>
+              {currentGroup && !search && (
+                <p className="text-xs text-muted-foreground max-w-64">
+                  Right-click any file or folder and choose "Add to group" to collect items here.
+                </p>
+              )}
+              {!isDeletedView && !search && !currentGroup && <p className="text-xs text-muted-foreground">Upload files or create a folder to get started</p>}
             </div>
           ) : (
             <>
@@ -677,7 +711,8 @@ export default function FilesPage() {
                         onClick={() => navigateToFolder(f.id)}
                         onContextMenu={(e) => onContextMenu(e, 'folder', f)}
                         onRename={() => { setRenameTarget({ id: f.id, name: f.name, type: 'folder' }); setRenameName(f.name); }}
-                        onDelete={() => setDeleteTarget({ id: f.id, name: f.name, type: 'folder' })} />
+                        onDelete={() => setDeleteTarget({ id: f.id, name: f.name, type: 'folder' })}
+                        onAddToGroup={() => openAddToGroup(f.id, f.name, 'folder')} />
                     ))}
                   </div>
                 </div>
@@ -702,7 +737,8 @@ export default function FilesPage() {
                         onDelete={() => setDeleteTarget({ id: f.id, name: f.name, type: 'file' })}
                         onCopy={() => handleCopy(f.id)}
                         onMove={() => openMoveModal(f.id, 'file')}
-                        onFavourite={() => toggleFavourite(f.id)} />
+                        onFavourite={() => toggleFavourite(f.id)}
+                        onComments={() => navigate(`/comments?file_id=${f.id}&workspace_id=${wsId}&name=${encodeURIComponent(f.name)}`)} />
                     ))}
                   </div>
                 </div>
@@ -756,6 +792,7 @@ export default function FilesPage() {
                             onDelete={() => setDeleteTarget({ id: f.id, name: f.name, type: 'file' })}
                             onCopy={() => handleCopy(f.id)}
                             onMove={() => openMoveModal(f.id, 'file')}
+                            onAddToGroup={() => openAddToGroup(f.id, f.name, 'file')}
                           />
                         </div>
                       </div>
@@ -841,15 +878,16 @@ export default function FilesPage() {
       <Dialog open={!!moveOpen} onOpenChange={() => setMoveOpen(null)}>
         <DialogContent className="max-w-sm">
           <DialogHeader><DialogTitle>Move to folder</DialogTitle></DialogHeader>
-          <div className="max-h-64 overflow-y-auto border rounded-lg">
-            <button className={`w-full flex items-center gap-2 px-3 py-2.5 text-xs border-b hover:bg-muted/50 text-left ${moveTarget === null ? 'bg-green-50 dark:bg-green-950/30' : ''}`} onClick={() => setMoveTarget(null)}>
-              <Home className="size-3.5 text-muted-foreground" /> <span className="flex-1">Root</span>
+          <div className="max-h-64 overflow-y-auto border rounded-lg p-1">
+            <button className={`w-full flex items-center gap-1.5 py-1.5 px-2 text-xs rounded-md hover:bg-muted/50 text-left ${moveTarget === null ? 'bg-primary/10' : ''}`} onClick={() => setMoveTarget(null)}>
+              <Home className="size-3.5 text-muted-foreground shrink-0" /> <span className="flex-1">Root</span>
             </button>
-            {moveFolders.map((f) => (
-              <button key={f.id} className={`w-full flex items-center gap-2 px-3 py-2.5 text-xs border-b last:border-b-0 hover:bg-muted/50 text-left ${moveTarget === f.id ? 'bg-green-50 dark:bg-green-950/30' : ''}`} onClick={() => setMoveTarget(f.id)}>
-                <FolderOpen className="size-3.5 text-muted-foreground" /> <span className="flex-1 truncate">{f.name}</span>
-              </button>
-            ))}
+            <MoveFolderTree
+              folders={moveFolders}
+              selectedId={moveTarget}
+              onSelect={setMoveTarget}
+              excludeId={moveOpen?.type === 'folder' ? moveOpen.id : null}
+            />
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setMoveOpen(null)}>Cancel</Button>
@@ -889,7 +927,7 @@ export default function FilesPage() {
             <DialogTitle>Add to group</DialogTitle>
           </DialogHeader>
           <p className="text-xs text-muted-foreground mb-2">
-            Select a group for <span className="font-semibold text-foreground">{addToGroupTarget?.fileName}</span>
+            Select a group for <span className="font-semibold text-foreground">{addToGroupTarget?.name}</span>
           </p>
           <div className="max-h-48 overflow-y-auto border rounded-lg">
             {availableGroups.map((g) => (
@@ -901,10 +939,17 @@ export default function FilesPage() {
                   if (!addToGroupTarget) return;
                   setAddingToGroup(g.id);
                   try {
-                    await api(`/api/groups/${g.id}/files/${addToGroupTarget.fileId}`, { method: 'POST' });
-                    toast.success('Added to group', `The file was added to ${g.name}.`);
+                    // Adding goes through POST /api/groups/:id with a body —
+                    // the /files/:id and /folders/:id subroutes are DELETE-only.
+                    const body = addToGroupTarget.type === 'file'
+                      ? { file_id: addToGroupTarget.id }
+                      : { folder_id: addToGroupTarget.id };
+                    await api(`/api/groups/${g.id}`, { method: 'POST', body: JSON.stringify(body) });
+                    toast.success('Added to group', `The ${addToGroupTarget.type} was added to ${g.name}.`);
                     setAddToGroupTarget(null);
-                  } catch { toast.error('Something went wrong', 'The file could not be added to the group.'); }
+                    // Refresh the FilesSidebar's group list (item counts)
+                    window.dispatchEvent(new Event('dosya:groups-changed'));
+                  } catch { toast.error('Something went wrong', `The ${addToGroupTarget.type} could not be added to the group.`); }
                   setAddingToGroup(null);
                 }}
               >
@@ -977,8 +1022,8 @@ export default function FilesPage() {
 
 // ── Folder Card ────────────────────────────────────────────
 
-function FolderCard({ folder, view, onClick, onContextMenu, onRename, onDelete }: {
-  folder: FolderItem; view: ViewMode; onClick: () => void; onContextMenu: (e: ReactMouseEvent) => void; onRename: () => void; onDelete: () => void;
+function FolderCard({ folder, view, onClick, onContextMenu, onRename, onDelete, onAddToGroup }: {
+  folder: FolderItem; view: ViewMode; onClick: () => void; onContextMenu: (e: ReactMouseEvent) => void; onRename: () => void; onDelete: () => void; onAddToGroup?: () => void;
 }) {
   const iconSrc = folderIconSrc(folder.file_count, !!folder.is_synced);
 
@@ -989,7 +1034,7 @@ function FolderCard({ folder, view, onClick, onContextMenu, onRename, onDelete }
         <span className="text-sm font-medium flex-1 truncate">{folder.name}</span>
         <span className="text-xs text-muted-foreground">{folder.file_count} files</span>
         {folder.lock_mode !== 'none' && <Lock className="size-3 text-muted-foreground" />}
-        <FileDropdown onRename={onRename} onDelete={onDelete} />
+        <FileDropdown onRename={onRename} onDelete={onDelete} onAddToGroup={onAddToGroup} />
       </div>
     );
   }
@@ -1007,10 +1052,10 @@ function FolderCard({ folder, view, onClick, onContextMenu, onRename, onDelete }
 
 // ── File Card ──────────────────────────────────────────────
 
-function FileCard({ file, view, selected, anySelected, active, isFavourite, onClick, onSelect, onNameClick, onContextMenu, onDownload, onShare, onRename, onDelete, onCopy, onMove, onFavourite }: {
+function FileCard({ file, view, selected, anySelected, active, isFavourite, onClick, onSelect, onNameClick, onContextMenu, onDownload, onShare, onRename, onDelete, onCopy, onMove, onFavourite, onComments }: {
   file: FileItem; view: ViewMode; selected: boolean; anySelected?: boolean; active?: boolean; isFavourite?: boolean;
   onClick: (e: ReactMouseEvent) => void; onSelect: () => void; onNameClick: () => void; onContextMenu: (e: ReactMouseEvent) => void;
-  onDownload: () => void; onShare: () => void; onRename: () => void; onDelete: () => void; onCopy: () => void; onMove: () => void; onFavourite?: () => void;
+  onDownload: () => void; onShare: () => void; onRename: () => void; onDelete: () => void; onCopy: () => void; onMove: () => void; onFavourite?: () => void; onComments?: () => void;
 }) {
   const ext = extOf(file.name).toUpperCase() || 'FILE';
 
@@ -1069,9 +1114,13 @@ function FileCard({ file, view, selected, anySelected, active, isFavourite, onCl
           </button>
         )}
         {file.comment_count > 0 && (
-          <div className="w-5 h-5 rounded bg-blue-100 dark:bg-blue-950 flex items-center justify-center">
+          <button
+            className="w-5 h-5 rounded bg-blue-100 dark:bg-blue-950 flex items-center justify-center hover:bg-blue-200 dark:hover:bg-blue-900 transition-colors"
+            title={`${file.comment_count} comment${file.comment_count === 1 ? '' : 's'} — open`}
+            onClick={(e) => { e.stopPropagation(); onComments?.(); }}
+          >
             <MessageSquare className="size-2.5 text-blue-600" />
-          </div>
+          </button>
         )}
       </div>
       {file.lock_mode !== 'none' && (
@@ -1117,7 +1166,7 @@ function FileThumbnail({ fileId, fileName, ext }: { fileId: string; fileName: st
   }
 
   return (
-    <div className="w-full h-14 rounded-lg mb-2 flex items-center justify-center bg-muted/50 overflow-hidden">
+    <div className="w-full h-14 rounded-lg mb-2 flex items-center justify-center overflow-hidden">
       <img
         src={`${API_BASE}/api/files/${fileId}/raw`}
         alt=""
@@ -1131,8 +1180,8 @@ function FileThumbnail({ fileId, fileName, ext }: { fileId: string; fileName: st
 
 // ── Dropdown menu (three dots) ─────────────────────────────
 
-function FileDropdown({ onDownload, onShare, onRename, onDelete, onCopy, onMove }: {
-  onDownload?: () => void; onShare?: () => void; onRename: () => void; onDelete: () => void; onCopy?: () => void; onMove?: () => void;
+function FileDropdown({ onDownload, onShare, onRename, onDelete, onCopy, onMove, onAddToGroup }: {
+  onDownload?: () => void; onShare?: () => void; onRename: () => void; onDelete: () => void; onCopy?: () => void; onMove?: () => void; onAddToGroup?: () => void;
 }) {
   return (
     <DropdownMenu>
@@ -1142,6 +1191,7 @@ function FileDropdown({ onDownload, onShare, onRename, onDelete, onCopy, onMove 
         {onShare && <DropdownMenuItem onClick={onShare}><Share2 className="size-3 mr-2" /> Share</DropdownMenuItem>}
         {onCopy && <DropdownMenuItem onClick={onCopy}><Copy className="size-3 mr-2" /> Copy</DropdownMenuItem>}
         {onMove && <DropdownMenuItem onClick={onMove}><Move className="size-3 mr-2" /> Move to...</DropdownMenuItem>}
+        {onAddToGroup && <DropdownMenuItem onClick={onAddToGroup}><FolderPlus className="size-3 mr-2" /> Add to group</DropdownMenuItem>}
         <DropdownMenuItem onClick={onRename}><Pencil className="size-3 mr-2" /> Rename</DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem className="text-destructive" onClick={onDelete}><Trash2 className="size-3 mr-2" /> Delete</DropdownMenuItem>
@@ -1150,11 +1200,69 @@ function FileDropdown({ onDownload, onShare, onRename, onDelete, onCopy, onMove 
   );
 }
 
+// ── Move-to-folder tree picker ─────────────────────────────
+
+function MoveFolderTree({ folders, selectedId, onSelect, excludeId }: {
+  folders: PickerFolder[]; selectedId: string | null;
+  onSelect: (id: string) => void; excludeId?: string | null;
+}) {
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+
+  // Group by parent; skipping the excluded node prunes its whole subtree
+  // (a folder can't be moved into itself or its descendants).
+  const childrenOf = new Map<string | null, PickerFolder[]>();
+  for (const f of folders) {
+    if (f.id === excludeId) continue;
+    const key = f.parent_id ?? null;
+    if (!childrenOf.has(key)) childrenOf.set(key, []);
+    childrenOf.get(key)!.push(f);
+  }
+
+  const toggle = (id: string) => setCollapsed((prev) => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+
+  const renderLevel = (parentId: string | null, depth: number): React.ReactNode =>
+    (childrenOf.get(parentId) ?? []).map((f) => {
+      const kids = childrenOf.get(f.id) ?? [];
+      const isCollapsed = collapsed.has(f.id);
+      return (
+        <div key={f.id}>
+          <button
+            className={`w-full flex items-center gap-1.5 py-1.5 pr-3 text-xs rounded-md hover:bg-muted/50 text-left ${selectedId === f.id ? 'bg-primary/10' : ''}`}
+            style={{ paddingLeft: 8 + depth * 16 }}
+            onClick={() => onSelect(f.id)}
+          >
+            {kids.length > 0 ? (
+              <ChevronRight
+                className={`size-3 text-muted-foreground shrink-0 transition-transform ${isCollapsed ? '' : 'rotate-90'}`}
+                onClick={(e: ReactMouseEvent) => { e.stopPropagation(); toggle(f.id); }}
+              />
+            ) : (
+              <span className="size-3 shrink-0" />
+            )}
+            <img src={folderIconSrc(f.file_count)} alt="" className="size-4 shrink-0" />
+            <span className="flex-1 truncate">{f.name}</span>
+          </button>
+          {!isCollapsed && renderLevel(f.id, depth + 1)}
+        </div>
+      );
+    });
+
+  return <>{renderLevel(null, 0)}</>;
+}
+
 // ── Skeleton ───────────────────────────────────────────────
 
-function FileSkeleton({ view }: { view: ViewMode }) {
+function FileSkeleton({ view, count }: { view: ViewMode; count?: number }) {
+  // Size the placeholder set to the last known item count (min 1) so a view
+  // with a single file doesn't flash a full page of skeleton rows.
+  const n = (max: number) => Math.min(Math.max(count ?? max, 1), max);
+  const rows = (max: number) => Array.from({ length: n(max) }, (_, i) => i);
   if (view === 'list') {
-    return <div className="space-y-1">{[1,2,3,4,5,6].map((i) => <div key={i} className="flex items-center gap-3 px-3 py-2.5"><Skeleton className="w-8 h-8 rounded-md" /><Skeleton className="h-3.5 w-40" /><Skeleton className="h-3 w-16 ml-auto" /></div>)}</div>;
+    return <div className="space-y-1">{rows(6).map((i) => <div key={i} className="flex items-center gap-3 px-3 py-2.5"><Skeleton className="w-8 h-8 rounded-md" /><Skeleton className="h-3.5 w-40" /><Skeleton className="h-3 w-16 ml-auto" /></div>)}</div>;
   }
-  return <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">{[1,2,3,4,5,6,7,8].map((i) => <div key={i} className="rounded-xl border p-3 space-y-2"><Skeleton className="w-full h-14 rounded-lg" /><Skeleton className="h-3 w-3/4" /><Skeleton className="h-2.5 w-1/2" /></div>)}</div>;
+  return <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">{rows(8).map((i) => <div key={i} className="rounded-xl border p-3 space-y-2"><Skeleton className="w-full h-14 rounded-lg" /><Skeleton className="h-3 w-3/4" /><Skeleton className="h-2.5 w-1/2" /></div>)}</div>;
 }

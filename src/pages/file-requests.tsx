@@ -395,7 +395,7 @@ function CreateRequestDialog({ workspaceId, onClose, onCreated }: {
         <Tabs
           value={tab}
           onValueChange={(v) => { setTab(v as 'email' | 'link'); setResultUrl(''); setError(''); }}
-          className="-mx-6"
+          className="-mx-4"
         >
           <TabsList variant="line" className="w-full gap-0 border-b p-0 group-data-horizontal/tabs:h-auto">
             <TabsTrigger value="email" className="flex-1 rounded-none py-2.5 text-xs group-data-horizontal/tabs:after:-bottom-px">
@@ -407,7 +407,7 @@ function CreateRequestDialog({ workspaceId, onClose, onCreated }: {
           </TabsList>
         </Tabs>
 
-        <div className="flex-1 overflow-y-auto space-y-4 -mx-6 px-6">
+        <div className="flex-1 overflow-y-auto space-y-4 -mx-4 px-4">
           {/* Email tab: recipients */}
           {tab === 'email' && (
             <div>
@@ -637,7 +637,7 @@ function RecipientsDialog({ requestId, onClose }: { requestId: string; onClose: 
         {error && <p className="text-xs text-destructive">{error}</p>}
 
         {/* List */}
-        <div className="max-h-64 overflow-y-auto -mx-6 px-6">
+        <div className="max-h-64 overflow-y-auto -mx-4 px-4">
           {loading ? (
             <div className="space-y-2 py-4">{[1, 2].map((i) => <Skeleton key={i} className="h-10 w-full" />)}</div>
           ) : recipients.length === 0 ? (
@@ -728,7 +728,7 @@ function UploadsDialog({ requestId, onClose }: { requestId: string; onClose: () 
           <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
 
-        <div className="max-h-80 overflow-y-auto -mx-6 px-6">
+        <div className="max-h-80 overflow-y-auto -mx-4 px-4">
           {loading ? (
             <div className="space-y-2 py-4">{[1, 2, 3].map((i) => <Skeleton key={i} className="h-12 w-full" />)}</div>
           ) : uploads.length === 0 ? (

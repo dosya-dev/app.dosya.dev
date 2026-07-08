@@ -16,6 +16,18 @@ export class ApiError extends Error {
   }
 }
 
+/** Extract the server's error message from a thrown ApiError (falls back for real network failures). */
+export function apiErrorMessage(err: unknown, fallback = 'Network error. Please try again.'): string {
+  if (err instanceof ApiError) {
+    try {
+      const parsed = JSON.parse(err.body) as { error?: string };
+      if (parsed.error) return parsed.error;
+    } catch { /* non-JSON body */ }
+    return err.body || fallback;
+  }
+  return fallback;
+}
+
 export async function api<T>(
   path: string,
   options: RequestInit = {},
