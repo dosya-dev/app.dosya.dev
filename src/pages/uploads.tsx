@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { api } from '@/api/client';
 import { useWorkspace } from '@/stores/workspace';
 import { useUploads } from '@/stores/uploads';
+import { useShallow } from 'zustand/react/shallow';
 import type { UploadItem } from '@/lib/upload-types';
 import { enqueue, setWorkspaceCap } from '@/lib/upload-runner';
 import {
@@ -41,8 +42,10 @@ export default function UploadsPage() {
   const [wsMaxUploads, setWsMaxUploads] = useState<number>(0); // 0 = unlimited
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // This workspace's queue, from the global store.
-  const queue = useUploads((s) => s.items.filter((i) => i.workspace_id === wsId));
+  // This workspace's queue, from the global store. useShallow keeps the
+  // filtered array reference stable across renders (zustand v5 has no built-in
+  // selector memoization, so returning a fresh array here would loop forever).
+  const queue = useUploads(useShallow((s) => s.items.filter((i) => i.workspace_id === wsId)));
 
   // Load regions + folders + workspace concurrency cap
   useEffect(() => {
