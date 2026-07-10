@@ -77,18 +77,23 @@ export default function UploadDock() {
   // Right-click actions per row. A completed file gets quick actions (full file
   // management still lives on the Files page); a failed one gets retry options.
   const menuItems = (item: UploadItem) => {
+    // A separator is its OWN item (label '', separator: true) — never a flag on a
+    // labeled item, which the ContextMenu would render as a divider instead of a button.
+    const sep = { label: '', icon: null, separator: true, onClick: () => {} };
     if (item.status === 'complete') {
       return [
         { label: 'Download', icon: <Download className="size-3.5" />, onClick: () => { if (item.fileId) window.open(`${API_BASE}/api/files/${item.fileId}/download`, '_blank'); } },
         { label: 'Open in Files', icon: <FolderOpen className="size-3.5" />, onClick: () => openInFiles(item) },
-        { label: 'Remove from list', icon: <X className="size-3.5" />, separator: true, onClick: () => removeItem(item.id) },
+        sep,
+        { label: 'Remove from list', icon: <X className="size-3.5" />, onClick: () => removeItem(item.id) },
       ];
     }
     if (item.status === 'error') {
       return [
         { label: 'Retry', icon: <RotateCw className="size-3.5" />, onClick: () => retry(item.id) },
         { label: 'Retry in another region…', icon: <Globe className="size-3.5" />, onClick: () => setRegionTarget(item) },
-        { label: 'Remove', icon: <Trash2 className="size-3.5" />, separator: true, danger: true, onClick: () => removeItem(item.id) },
+        sep,
+        { label: 'Remove', icon: <Trash2 className="size-3.5" />, danger: true, onClick: () => removeItem(item.id) },
       ];
     }
     if (item.status === 'uploading' || item.status === 'queued') {
@@ -97,7 +102,8 @@ export default function UploadDock() {
     if (item.status === 'interrupted') {
       return [
         { label: 'Resume…', icon: <RotateCw className="size-3.5" />, onClick: () => onPickResume(item.id) },
-        { label: 'Remove', icon: <Trash2 className="size-3.5" />, separator: true, danger: true, onClick: () => removeItem(item.id) },
+        sep,
+        { label: 'Remove', icon: <Trash2 className="size-3.5" />, danger: true, onClick: () => removeItem(item.id) },
       ];
     }
     return [{ label: 'Remove', icon: <Trash2 className="size-3.5" />, danger: true, onClick: () => removeItem(item.id) }]; // canceled
