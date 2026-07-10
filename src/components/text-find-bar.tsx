@@ -7,7 +7,7 @@ export function TextFindBar({ find, onClose }: { find: ReturnType<typeof useInFi
   useEffect(() => { inputRef.current?.focus(); }, []);
 
   const onKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') { e.preventDefault(); e.shiftKey ? find.prev() : find.next(); }
+    if (e.key === 'Enter') { e.preventDefault(); if (e.shiftKey) find.prev(); else find.next(); }
     else if (e.key === 'Escape') { e.preventDefault(); onClose(); }
   };
 

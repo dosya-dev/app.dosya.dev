@@ -12,7 +12,7 @@ function makeHighlight(ranges: Range[]): unknown | null {
   return H ? new H(...ranges) : null;
 }
 
-export function useInFileFind(containerRef: React.RefObject<HTMLElement>) {
+export function useInFileFind<T extends HTMLElement = HTMLElement>(containerRef: React.RefObject<T | null>) {
   const [query, setQueryState] = useState('');
   const [count, setCount] = useState(0);
   const [current, setCurrent] = useState(0); // 1-based; 0 = none
