@@ -99,8 +99,10 @@ export function avatarColor(userId: string): string {
   return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
 }
 
-export function initials(name: string): string {
-  const parts = name.trim().split(/\s+/);
+export function initials(name: string | null | undefined): string {
+  // Guard against null/undefined: activity rows from anonymous actions
+  // (public share-link views/downloads) or deleted users have no name.
+  const parts = (name ?? '').trim().split(/\s+/);
   return ((parts[0]?.[0] ?? '') + (parts[1]?.[0] ?? '')).toUpperCase() || '?';
 }
 

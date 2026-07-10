@@ -299,9 +299,9 @@ export default function TeamsPage() {
             <p className="text-xs text-muted-foreground">No activity yet</p>
           ) : activity.slice(0, 8).map((a, i) => (
             <div key={i} className="flex gap-2 items-start mb-2.5">
-              <UserAvatar url={a.avatar_url} userId={a.user_id ?? ''} name={a.user_name} className="w-5 h-5 text-[8px] mt-0.5" />
+              <UserAvatar url={a.avatar_url} userId={a.user_id ?? ''} name={a.user_name ?? 'Unknown'} className="w-5 h-5 text-[8px] mt-0.5" />
               <div>
-                <p className="text-[11px] text-muted-foreground leading-snug"><span className="font-semibold text-foreground">{a.user_name}</span> {actionLabel(a.action)} {a.meta?.name && <span className="font-semibold text-foreground">{a.meta.name}</span>}</p>
+                <p className="text-[11px] text-muted-foreground leading-snug"><span className="font-semibold text-foreground">{a.user_name ?? 'Unknown'}</span> {actionLabel(a.action)} {a.meta?.name && <span className="font-semibold text-foreground">{a.meta.name}</span>}</p>
                 <p className="text-[10px] text-muted-foreground/60">{timeAgo(a.created_at)}</p>
               </div>
             </div>

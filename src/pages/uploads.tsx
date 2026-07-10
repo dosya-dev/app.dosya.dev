@@ -1,7 +1,14 @@
 import { useState, useEffect, useRef, memo, type DragEvent, type ChangeEvent } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { api, API_BASE } from '@/api/client';
+import { api } from '@/api/client';
 import { useWorkspace } from '@/stores/workspace';
+import { useUploads } from '@/stores/uploads';
+import { useShallow } from 'zustand/react/shallow';
+import type { UploadItem } from '@/lib/upload-types';
+import { enqueue, setWorkspaceCap } from '@/lib/upload-runner';
+import {
+  getUserConcurrency, setUserConcurrency, MAX_USER_CONCURRENCY,
+} from '@/lib/upload-concurrency';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,20 +17,12 @@ import { Progress } from '@/components/ui/progress';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
-import { Upload, FolderPlus, Globe, Info, Check, AlertCircle, Loader2, Home, FolderOpen } from 'lucide-react';
+import { Upload, FolderPlus, Globe, Info, Check, AlertCircle, Loader2, Home, FolderOpen, Layers } from 'lucide-react';
 import { humanSize, folderIconSrc } from '@/lib/helpers';
 import { toast } from '@/lib/toast';
 
 interface RegionInfo { code: string; city: string; country: string }
 interface PickerFolder { id: string; name: string; parent_id: string | null; file_count: number }
-interface QueueItem {
-  id: string;
-  fileName: string;
-  fileSize: number;
-  status: 'pending' | 'uploading' | 'complete' | 'error';
-  progress: number;
-  error?: string;
-}
 
 
 export default function UploadsPage() {
@@ -34,36 +33,28 @@ export default function UploadsPage() {
   const [selectedRegion, setSelectedRegion] = useState('ap-southeast-2');
   const [regions, setRegions] = useState<RegionInfo[]>([]);
   const [folders, setFolders] = useState<PickerFolder[]>([]);
-  const [queue, setQueue] = useState<QueueItem[]>([]);
   const [dragging, setDragging] = useState(false);
   const [selectFolderOpen, setSelectFolderOpen] = useState(false);
   const [createFolderOpen, setCreateFolderOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const [creatingFolder, setCreatingFolder] = useState(false);
+  const [concurrency, setConcurrency] = useState(getUserConcurrency());
+  const [wsMaxUploads, setWsMaxUploads] = useState<number>(0); // 0 = unlimited
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Upload state kept outside React to avoid re-render loops
-  const fileMap = useRef(new Map<string, File>());
-  const pending = useRef<string[]>([]);
-  const busy = useRef(false);
-  const setQueueRef = useRef(setQueue);
-  const wsIdRef = useRef(wsId);
-  const folderIdRef = useRef(folderId);
-  const regionRef = useRef(selectedRegion);
+  // This workspace's queue, from the global store. useShallow keeps the
+  // filtered array reference stable across renders (zustand v5 has no built-in
+  // selector memoization, so returning a fresh array here would loop forever).
+  const queue = useUploads(useShallow((s) => s.items.filter((i) => i.workspace_id === wsId)));
 
-  setQueueRef.current = setQueue;
-  wsIdRef.current = wsId;
-  folderIdRef.current = folderId;
-  regionRef.current = selectedRegion;
-
-  // Load regions + folders
+  // Load regions + folders + workspace concurrency cap
   useEffect(() => {
     if (!wsId) return;
     (async () => {
       try {
         const [regRes, wsRes, folderRes] = await Promise.all([
           api<{ ok: boolean; regions: RegionInfo[] }>('/api/regions'),
-          api<{ ok: boolean; workspace?: { default_region: string }; settings?: { available_regions: string | null } | null }>(`/api/workspaces/${wsId}`),
+          api<{ ok: boolean; workspace?: { default_region: string }; settings?: { available_regions: string | null; max_concurrent_uploads: number } | null }>(`/api/workspaces/${wsId}`),
           api<{ ok: boolean; folders?: PickerFolder[] }>(`/api/folders/tree?workspace_id=${wsId}`),
         ]);
         if (regRes.ok) {
@@ -74,102 +65,21 @@ export default function UploadsPage() {
           setRegions(available.length > 0 ? regRes.regions.filter((r) => available.includes(r.code)) : regRes.regions);
           if (wsRes.ok && wsRes.workspace?.default_region) setSelectedRegion(wsRes.workspace.default_region);
         }
+        const cap = wsRes.ok ? (wsRes.settings?.max_concurrent_uploads ?? 0) : 0;
+        setWsMaxUploads(cap);
+        setWorkspaceCap(cap);
+        if (cap > 0 && getUserConcurrency() > cap) { setUserConcurrency(cap); setConcurrency(cap); }
         if (folderRes.ok && folderRes.folders) setFolders(folderRes.folders);
       } catch { /* */ }
     })();
   }, [wsId]);
 
-  // The upload runner — never recurses, uses async/await only
-  async function runUploadQueue() {
-    if (busy.current) return;
-    busy.current = true;
-
-    while (pending.current.length > 0) {
-      const id = pending.current.shift()!;
-      const file = fileMap.current.get(id);
-      if (!file) continue;
-
-      // Mark uploading
-      setQueueRef.current((prev) => prev.map((q) => q.id === id ? { ...q, status: 'uploading' as const, progress: 0 } : q));
-
-      try {
-        // 1. Init
-        const initRes = await fetch(`${API_BASE}/api/upload/init`, {
-          method: 'POST', credentials: 'include',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            workspace_id: wsIdRef.current,
-            folder_id: folderIdRef.current,
-            file_name: file.name,
-            file_size: file.size,
-            mime_type: file.type || 'application/octet-stream',
-            region: regionRef.current,
-          }),
-        });
-        const initData = await initRes.json();
-        if (!initRes.ok || !initData.ok || !initData.upload_url) {
-          throw new Error(initData.error ?? 'Init failed');
-        }
-
-        // 2. Upload via XHR (for progress)
-        await new Promise<void>((resolve, reject) => {
-          const xhr = new XMLHttpRequest();
-          xhr.open('PUT', `${API_BASE}${initData.upload_url}`);
-          xhr.withCredentials = true;
-          xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
-
-          let lastTick = 0;
-          xhr.upload.onprogress = (e) => {
-            if (!e.lengthComputable) return;
-            const now = Date.now();
-            if (now - lastTick < 300) return;
-            lastTick = now;
-            const pct = Math.round((e.loaded / e.total) * 100);
-            setQueueRef.current((prev) => prev.map((q) => q.id === id ? { ...q, progress: pct } : q));
-          };
-
-          xhr.onload = () => {
-            try {
-              const d = JSON.parse(xhr.responseText);
-              if (xhr.status >= 200 && xhr.status < 300 && d.ok) {
-                setQueueRef.current((prev) => prev.map((q) => q.id === id ? { ...q, status: 'complete' as const, progress: 100 } : q));
-                toast.success('Upload complete', `"${file.name}" was uploaded successfully.`);
-                resolve();
-              } else {
-                reject(new Error(d.error ?? `HTTP ${xhr.status}`));
-              }
-            } catch { reject(new Error(`HTTP ${xhr.status}`)); }
-          };
-          xhr.onerror = () => reject(new Error('Network error'));
-          xhr.send(file);
-        });
-
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : 'Upload failed';
-        setQueueRef.current((prev) => prev.map((q) => q.id === id ? { ...q, status: 'error' as const, error: msg } : q));
-        toast.error('Upload failed', `"${file.name}": ${msg}`);
-      }
-
-      fileMap.current.delete(id);
-    }
-
-    busy.current = false;
-  }
-
   function addFiles(files: FileList | File[]) {
-    const items: QueueItem[] = [];
-    Array.from(files).forEach((file, i) => {
-      const id = `up_${Date.now()}_${i}_${Math.random().toString(36).slice(2, 6)}`;
-      fileMap.current.set(id, file);
-      pending.current.push(id);
-      items.push({ id, fileName: file.name, fileSize: file.size, status: 'pending', progress: 0 });
-    });
-    setQueue((prev) => [...prev, ...items]);
-    // Start processing after React flushes the state update
-    setTimeout(runUploadQueue, 10);
+    if (!wsId) return;
+    enqueue(files, { workspace_id: wsId, folder_id: folderId, region: selectedRegion });
   }
 
-  const clearDone = () => setQueue((prev) => prev.filter((e) => e.status !== 'complete' && e.status !== 'error'));
+  const onConcurrencyChange = (n: number) => { setConcurrency(n); setUserConcurrency(n); };
   const onDrop = (e: DragEvent) => { e.preventDefault(); setDragging(false); if (e.dataTransfer?.files.length) addFiles(e.dataTransfer.files); };
   const onFileChange = (e: ChangeEvent<HTMLInputElement>) => { if (e.target.files?.length) { addFiles(e.target.files); e.target.value = ''; } };
 
@@ -230,7 +140,7 @@ export default function UploadsPage() {
                   <CardTitle className="text-sm font-semibold">Upload queue</CardTitle>
                   <p className="text-xs text-muted-foreground mt-0.5">{queue.length} file{queue.length !== 1 ? 's' : ''} · {humanSize(totalBytes)} total · {doneCount} complete</p>
                 </div>
-                <Button variant="outline" size="sm" className="h-7 text-xs" onClick={clearDone}>Clear done</Button>
+                <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => useUploads.getState().clearFinished()}>Clear done</Button>
               </CardHeader>
               <CardContent className="space-y-0">
                 {queue.map((item) => <QueueRow key={item.id} item={item} />)}
@@ -267,6 +177,26 @@ export default function UploadsPage() {
               </div>
             </div>
             <div className="border-t" />
+            <div>
+              <p className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-1"><Layers className="size-3" /> Simultaneous uploads</p>
+              <div className="flex items-center gap-1.5">
+                {Array.from({ length: MAX_USER_CONCURRENCY }, (_, i) => i + 1)
+                  .filter((n) => wsMaxUploads <= 0 || n <= wsMaxUploads)
+                  .map((n) => (
+                    <button
+                      key={n}
+                      className={`w-8 h-8 rounded-lg border text-xs font-medium transition-colors ${concurrency === n ? 'border-green-500 bg-green-50 dark:bg-green-950/30' : 'hover:bg-muted/50'}`}
+                      onClick={() => onConcurrencyChange(n)}
+                    >{n}</button>
+                  ))}
+              </div>
+              <p className="text-[11px] text-muted-foreground mt-1.5">
+                {wsMaxUploads > 0
+                  ? `Your workspace allows up to ${wsMaxUploads} at a time.`
+                  : `Upload up to ${concurrency} file${concurrency === 1 ? '' : 's'} at once.`}
+              </p>
+            </div>
+            <div className="border-t" />
             <div className="space-y-1.5">
               <p className="text-[11px] text-muted-foreground flex items-center gap-1.5"><Info className="size-3" /> No egress fees · ever</p>
               <p className="text-[11px] text-muted-foreground flex items-center gap-1.5"><Info className="size-3" /> Encrypted in transit with <span className="font-semibold">TLS 1.3</span></p>
@@ -295,7 +225,7 @@ export default function UploadsPage() {
   );
 }
 
-const QueueRow = memo(function QueueRow({ item }: { item: QueueItem }) {
+const QueueRow = memo(function QueueRow({ item }: { item: UploadItem }) {
   const ext = item.fileName.includes('.') ? item.fileName.split('.').pop()!.toUpperCase() : 'FILE';
   return (
     <div className="flex items-center gap-3 py-3 border-b last:border-b-0">
@@ -320,7 +250,7 @@ const QueueRow = memo(function QueueRow({ item }: { item: QueueItem }) {
         {item.status === 'complete' && <div className="w-5 h-5 rounded-full bg-green-100 dark:bg-green-950 flex items-center justify-center"><Check className="size-3 text-green-600" /></div>}
         {item.status === 'error' && <div className="w-5 h-5 rounded-full bg-red-100 dark:bg-red-950 flex items-center justify-center"><AlertCircle className="size-3 text-red-500" /></div>}
         {item.status === 'uploading' && <Loader2 className="size-5 text-green-600 animate-spin" />}
-        {item.status === 'pending' && <div className="w-5 h-5 rounded-full bg-muted flex items-center justify-center"><div className="w-2 h-2 rounded-full bg-muted-foreground/30" /></div>}
+        {(item.status === 'queued' || item.status === 'interrupted' || item.status === 'canceled') && <div className="w-5 h-5 rounded-full bg-muted flex items-center justify-center"><div className="w-2 h-2 rounded-full bg-muted-foreground/30" /></div>}
       </div>
     </div>
   );

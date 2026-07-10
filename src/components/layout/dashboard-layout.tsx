@@ -4,6 +4,7 @@ import { SidebarProvider, SidebarInset } from '@/components/ui/sidebar';
 import { DashboardSidebar } from './dashboard-sidebar';
 import { DashboardTopbar } from './dashboard-topbar';
 import { API_BASE } from '@/api/client';
+import UploadDock from '@/components/uploads/upload-dock';
 
 export function DashboardLayout() {
   const navigate = useNavigate();
@@ -63,6 +64,7 @@ export function DashboardLayout() {
         >
           <Outlet />
         </main>
+        <UploadDock />
       </SidebarInset>
     </SidebarProvider>
   );
