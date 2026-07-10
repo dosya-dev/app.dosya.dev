@@ -25,16 +25,6 @@ import ResetPasswordPage from '@/pages/reset-password';
 import NotFoundPage from '@/pages/not-found';
 import ErrorPage from '@/pages/error-page';
 
-// Admin
-
-import AdminOverviewPage, { AdminLayout } from '@/pages/admin/index';
-import AdminUsersPage from '@/pages/admin/users';
-import {
-  AdminFilesPage, AdminSharesPage, AdminSessionsPage, AdminActivityPage,
-  AdminPaymentsPage, AdminEmailsPage, AdminInvitesPage, AdminAnnouncementsPage,
-  AdminHealthPage, AdminGrowthPage, AdminSecurityPage, AdminContactPage, AdminPlansPage,
-} from '@/pages/admin/sections';
-
 // Root layout: keeps the browser tab title in sync with the route for every page.
 function RootLayout() {
   return (
@@ -67,27 +57,6 @@ export const router = createBrowserRouter([
       { path: '/search', element: <SearchPage /> },
       { path: '/billing', element: <BillingPage /> },
       { path: '/role-create', element: <RoleCreatePage /> },
-      {
-        path: '/admin',
-        element: <AdminLayout />,
-        children: [
-          { index: true, element: <AdminOverviewPage /> },
-          { path: 'users', element: <AdminUsersPage /> },
-          { path: 'files', element: <AdminFilesPage /> },
-          { path: 'shares', element: <AdminSharesPage /> },
-          { path: 'sessions', element: <AdminSessionsPage /> },
-          { path: 'activity', element: <AdminActivityPage /> },
-          { path: 'payments', element: <AdminPaymentsPage /> },
-          { path: 'emails', element: <AdminEmailsPage /> },
-          { path: 'invites', element: <AdminInvitesPage /> },
-          { path: 'announcements', element: <AdminAnnouncementsPage /> },
-          { path: 'health', element: <AdminHealthPage /> },
-          { path: 'growth', element: <AdminGrowthPage /> },
-          { path: 'security', element: <AdminSecurityPage /> },
-          { path: 'contact', element: <AdminContactPage /> },
-          { path: 'plans', element: <AdminPlansPage /> },
-        ],
-      },
     ],
   },
   { path: '/login', element: <LoginPage /> },
