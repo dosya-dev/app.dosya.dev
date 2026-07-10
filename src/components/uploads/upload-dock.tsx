@@ -14,9 +14,14 @@ export default function UploadDock() {
   const resumeIdRef = useRef<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const summary = uploadSummary(items);
   // Auto-hide: nothing to show at all → render nothing.
   if (items.length === 0) return null;
+
+  const summary = uploadSummary(items);
+  // Anything clearFinished() would remove (complete / error / canceled).
+  const clearable = items.some(
+    (i) => i.status === 'complete' || i.status === 'error' || i.status === 'canceled',
+  );
 
   const onPickResume = (id: string) => { resumeIdRef.current = id; fileInputRef.current?.click(); };
   const onResumeFile = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -29,45 +34,57 @@ export default function UploadDock() {
     if (!res.ok) toast.error('Could not resume', res.error ?? 'File mismatch');
   };
 
+  const attention = summary.failed + summary.interrupted;
   const headline = summary.anyActive
     ? `Uploading ${summary.done}/${summary.total} · ${summary.overallPct}%`
-    : summary.failed || summary.interrupted
-      ? `${summary.done}/${summary.total} uploaded · ${summary.failed + summary.interrupted} need attention`
-      : `All ${summary.total} uploaded`;
+    : attention > 0
+      ? `${summary.done}/${summary.total} uploaded · ${attention} need attention`
+      : summary.done === summary.total
+        ? `All ${summary.total} uploaded`
+        : `${summary.done}/${summary.total} uploaded`;
 
   return (
     <div className="fixed bottom-0 inset-x-0 z-50 border-t bg-card shadow-lg">
       <input ref={fileInputRef} type="file" hidden onChange={onResumeFile} />
 
-      {/* Collapsed / summary bar */}
-      <button
-        className="w-full flex items-center gap-3 px-4 py-2 text-left hover:bg-muted/40"
-        onClick={() => setExpanded((v) => !v)}
-      >
-        {summary.anyActive
-          ? <Loader2 className="size-4 text-green-600 animate-spin shrink-0" />
-          : <Upload className="size-4 text-muted-foreground shrink-0" />}
-        <span className="text-xs font-medium">{headline}</span>
-        {summary.anyActive && (
-          <Progress
-            value={summary.overallPct}
-            className="flex-1 max-w-60 **:data-[slot=progress-indicator]:bg-green-500"
-          />
-        )}
-        <span className="ml-auto flex items-center gap-2">
-          {!summary.anyActive && (summary.done > 0 || summary.failed > 0) && (
-            <span
-              role="button"
-              tabIndex={0}
-              className="text-[11px] text-muted-foreground hover:text-foreground underline"
-              onClick={(e) => { e.stopPropagation(); clearFinished(); }}
-            >
-              Clear finished
-            </span>
+      {/* Summary bar — a real toggle button plus sibling controls (no nested
+          interactive elements, so every control is keyboard-activatable). */}
+      <div className="w-full flex items-center gap-3 px-4 py-2">
+        <button
+          type="button"
+          className="flex items-center gap-3 flex-1 min-w-0 text-left hover:opacity-80"
+          onClick={() => setExpanded((v) => !v)}
+          aria-expanded={expanded}
+        >
+          {summary.anyActive
+            ? <Loader2 className="size-4 text-green-600 animate-spin shrink-0" />
+            : <Upload className="size-4 text-muted-foreground shrink-0" />}
+          <span className="text-xs font-medium truncate">{headline}</span>
+          {summary.anyActive && (
+            <Progress
+              value={summary.overallPct}
+              className="flex-1 max-w-60 **:data-[slot=progress-indicator]:bg-green-500"
+            />
           )}
+        </button>
+        {clearable && (
+          <button
+            type="button"
+            className="text-[11px] text-muted-foreground hover:text-foreground underline shrink-0"
+            onClick={() => clearFinished()}
+          >
+            Clear finished
+          </button>
+        )}
+        <button
+          type="button"
+          className="shrink-0"
+          onClick={() => setExpanded((v) => !v)}
+          aria-label={expanded ? 'Collapse upload list' : 'Expand upload list'}
+        >
           {expanded ? <ChevronDown className="size-4" /> : <ChevronUp className="size-4" />}
-        </span>
-      </button>
+        </button>
+      </div>
 
       {/* Expanded per-file list */}
       {expanded && (
