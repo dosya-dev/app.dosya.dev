@@ -38,10 +38,26 @@ function newId(i: number): string {
   return `up_${Date.now()}_${i}_${Math.random().toString(36).slice(2, 6)}`;
 }
 
+// Smoothed upload speed (bytes/sec) per item — transient, never persisted.
+const speedSamples = new Map<string, { bytes: number; time: number; ema: number }>();
+
 function reportBytes(id: string, bytes: number, total: number): void {
+  const now = Date.now();
+  const prev = speedSamples.get(id);
+  let ema = prev?.ema ?? 0;
+  if (prev) {
+    const dt = now - prev.time;
+    const db = bytes - prev.bytes;
+    if (dt > 0 && db >= 0) {
+      const inst = (db / dt) * 1000; // bytes per second over this interval
+      ema = ema > 0 ? ema * 0.6 + inst * 0.4 : inst; // exponential moving average
+    }
+  }
+  speedSamples.set(id, { bytes, time: now, ema });
   store().patchItem(id, {
     bytesUploaded: bytes,
     progress: total > 0 ? Math.min(100, Math.round((bytes / total) * 100)) : 0,
+    speedBps: ema,
   });
 }
 
@@ -118,7 +134,7 @@ async function uploadParts(
   const data = await res.json().catch(() => ({}));
   if (!res.ok || !data.ok) throw new Error(data.error ?? `Complete failed (HTTP ${res.status})`);
   if (bailIfCanceled(id)) return;
-  store().patchItem(id, { status: 'complete', progress: 100, bytesUploaded: file.size });
+  store().patchItem(id, { status: 'complete', progress: 100, bytesUploaded: file.size, fileId: data?.file?.id });
 }
 
 async function resumeParts(id: string, file: File, sessionId: string): Promise<void> {
@@ -160,8 +176,9 @@ function isConcurrencyLimit(err: unknown): boolean {
 function bailIfCanceled(id: string): boolean {
   if (!canceledIds.has(id)) return false;
   canceledIds.delete(id);
-  store().patchItem(id, { status: 'canceled' });
+  store().patchItem(id, { status: 'canceled', speedBps: 0 });
   fileMap.delete(id);
+  speedSamples.delete(id);
   return true;
 }
 
@@ -182,10 +199,10 @@ async function runOne(id: string): Promise<void> {
       if (init.resumable) {
         await uploadParts(id, file, init.session_id, init.resumable.part_size, init.resumable.total_parts);
       } else {
-        await xhrPut(id, `${API_BASE}${init.upload_url}`, file,
+        const putRes = await xhrPut(id, `${API_BASE}${init.upload_url}`, file,
           file.type || 'application/octet-stream', 0, file.size);
         if (bailIfCanceled(id)) return;
-        store().patchItem(id, { status: 'complete', progress: 100, bytesUploaded: file.size });
+        store().patchItem(id, { status: 'complete', progress: 100, bytesUploaded: file.size, fileId: putRes?.file?.id });
       }
     }
   } catch (err) {
@@ -208,6 +225,7 @@ async function runOne(id: string): Promise<void> {
     if (getItem(id)?.status === 'complete') {
       fileMap.delete(id);
       concurrencyRetries.delete(id);
+      speedSamples.delete(id);
     }
     updateUnloadGuard();
   }
@@ -241,8 +259,9 @@ export function cancel(id: string): void {
   heldIds.delete(id);
   const xhr = activeXhr.get(id);
   if (xhr) xhr.abort();              // triggers onabort → AbortError → status 'canceled'
-  else store().patchItem(id, { status: 'canceled' });
+  else store().patchItem(id, { status: 'canceled', speedBps: 0 });
   fileMap.delete(id);
+  speedSamples.delete(id);
   updateUnloadGuard();
 }
 
@@ -253,6 +272,29 @@ export function retry(id: string): void {
   canceledIds.delete(id);
   concurrencyRetries.delete(id);
   store().patchItem(id, { status: 'queued', error: undefined });
+  updateUnloadGuard();
+  scheduler.wake();
+}
+
+/** Retry a failed upload in a different region — starts a fresh session. */
+export function retryInRegion(id: string, region: string): void {
+  const item = getItem(id);
+  if (!item || !fileMap.has(id)) return;
+  canceledIds.delete(id);
+  concurrencyRetries.delete(id);
+  speedSamples.delete(id);
+  store().patchItem(id, {
+    region,
+    status: 'queued',
+    error: undefined,
+    session_id: null,
+    part_size: null,
+    total_parts: null,
+    uploaded_parts: [],
+    bytesUploaded: 0,
+    progress: 0,
+    speedBps: 0,
+  });
   updateUnloadGuard();
   scheduler.wake();
 }
