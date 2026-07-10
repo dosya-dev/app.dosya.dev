@@ -10,12 +10,18 @@ export interface UploadSummary {
   interrupted: number;
   overallPct: number;   // by bytes across active items
   anyActive: boolean;
+  activeUploadedBytes: number; // sum of bytesUploaded across active items
+  activeTotalBytes: number;    // sum of fileSize across active items
+  activeSpeedBps: number;      // combined speed across currently-uploading items
 }
 
 export function uploadSummary(items: UploadItem[]): UploadSummary {
   const active = items.filter((i) => i.status === 'queued' || i.status === 'uploading');
   const totalActiveBytes = active.reduce((s, i) => s + i.fileSize, 0);
   const doneActiveBytes = active.reduce((s, i) => s + i.bytesUploaded, 0);
+  const activeSpeedBps = items
+    .filter((i) => i.status === 'uploading')
+    .reduce((s, i) => s + (i.speedBps ?? 0), 0);
   return {
     total: items.length,
     active: active.length,
@@ -24,6 +30,9 @@ export function uploadSummary(items: UploadItem[]): UploadSummary {
     interrupted: items.filter((i) => i.status === 'interrupted').length,
     overallPct: totalActiveBytes > 0 ? Math.round((doneActiveBytes / totalActiveBytes) * 100) : 0,
     anyActive: active.length > 0,
+    activeUploadedBytes: doneActiveBytes,
+    activeTotalBytes: totalActiveBytes,
+    activeSpeedBps,
   };
 }
 

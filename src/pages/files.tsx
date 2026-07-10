@@ -213,8 +213,11 @@ export default function FilesPage() {
   const [moveOpen, setMoveOpen] = useState<{ id: string; type: 'file' | 'folder' } | null>(null);
   const [moveTarget, setMoveTarget] = useState<string | null>(null);
   const [moveFolders, setMoveFolders] = useState<PickerFolder[]>([]);
+  const [highlightId, setHighlightId] = useState<string | null>(null);
+  const highlightTimer = useRef<number | null>(null);
 
   const currentFolderId = searchParams.get('folder') || null;
+  const deepLinkFileId = searchParams.get('file');
   const currentPage = parseInt(searchParams.get('page') || '1');
 
   // Reflect the current folder in the browser tab title
@@ -258,6 +261,26 @@ export default function FilesPage() {
   }, [wsId, sort, currentPage, search, currentFolderId, isDeletedView, currentFilter, currentGroup]);
 
   useEffect(() => { loadFiles(); }, [loadFiles]);
+
+  // Deep-link from the upload dock (?file=<id>): once that file is in the loaded
+  // list, scroll it into view and flash the highlight. Keyed on the param VALUE
+  // (so clicking a different file while already here re-triggers) and the loaded
+  // files. The param is stripped after so the same file can be re-opened, and the
+  // clear timer is ref-held so stripping the param doesn't cancel it.
+  useEffect(() => {
+    if (!deepLinkFileId || !files.some((f) => f.id === deepLinkFileId)) return;
+    const id = deepLinkFileId;
+    setHighlightId(id);
+    requestAnimationFrame(() => {
+      document.getElementById(`file-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+    if (highlightTimer.current) clearTimeout(highlightTimer.current);
+    highlightTimer.current = window.setTimeout(() => setHighlightId((cur) => (cur === id ? null : cur)), 2600);
+    const next = new URLSearchParams(searchParams);
+    next.delete('file');
+    setSearchParams(next, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deepLinkFileId, files]);
 
   // Load favourites
   const loadFavourites = useCallback(async () => {
@@ -723,9 +746,11 @@ export default function FilesPage() {
                   <div className={`grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 ${selectedFile ? 'lg:grid-cols-4' : 'lg:grid-cols-6'} gap-2`}>
                     {files.map((f) => (
                       <FileCard key={f.id} file={f} view="grid"
+                        domId={`file-${f.id}`}
                         selected={selected.has(f.id)}
                         anySelected={selected.size > 0}
-                        active={selectedFile?.id === f.id}
+                        active={selectedFile?.id === f.id || highlightId === f.id}
+                        highlight={highlightId === f.id}
                         isFavourite={favourites.has(f.id)}
                         onClick={(e) => { e.stopPropagation(); if (e.ctrlKey || e.metaKey) toggleSelect(f.id); else openFileWithLockCheck(f, 'detail'); }}
                         onSelect={() => toggleSelect(f.id)}
@@ -756,13 +781,14 @@ export default function FilesPage() {
                   </div>
                   {/* Table rows */}
                   {files.map((f) => {
-                    const isActive = selectedFile?.id === f.id;
+                    const isActive = selectedFile?.id === f.id || highlightId === f.id;
                     const isSel = selected.has(f.id);
                     const cols = ALL_COLUMNS.filter((c) => visibleColumns.has(c.key));
                     return (
                       <div
                         key={f.id}
-                        className={`flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-muted/50 cursor-pointer group ${isActive ? 'bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-900' : isSel ? 'bg-primary/10' : ''}`}
+                        id={`file-${f.id}`}
+                        className={`flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-muted/50 cursor-pointer group ${highlightId === f.id ? 'animate-upload-flash ' : ''}${isActive ? 'bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-900' : isSel ? 'bg-primary/10' : ''}`}
                         onClick={(e) => { e.stopPropagation(); if (e.ctrlKey || e.metaKey) toggleSelect(f.id); else openFileWithLockCheck(f, 'detail'); }}
                         onContextMenu={(e) => onContextMenu(e, 'file', f)}
                       >
@@ -1052,8 +1078,8 @@ function FolderCard({ folder, view, onClick, onContextMenu, onRename, onDelete, 
 
 // ── File Card ──────────────────────────────────────────────
 
-function FileCard({ file, view, selected, anySelected, active, isFavourite, onClick, onSelect, onNameClick, onContextMenu, onDownload, onShare, onRename, onDelete, onCopy, onMove, onFavourite, onComments }: {
-  file: FileItem; view: ViewMode; selected: boolean; anySelected?: boolean; active?: boolean; isFavourite?: boolean;
+function FileCard({ file, view, selected, anySelected, active, highlight, domId, isFavourite, onClick, onSelect, onNameClick, onContextMenu, onDownload, onShare, onRename, onDelete, onCopy, onMove, onFavourite, onComments }: {
+  file: FileItem; view: ViewMode; selected: boolean; anySelected?: boolean; active?: boolean; highlight?: boolean; domId?: string; isFavourite?: boolean;
   onClick: (e: ReactMouseEvent) => void; onSelect: () => void; onNameClick: () => void; onContextMenu: (e: ReactMouseEvent) => void;
   onDownload: () => void; onShare: () => void; onRename: () => void; onDelete: () => void; onCopy: () => void; onMove: () => void; onFavourite?: () => void; onComments?: () => void;
 }) {
@@ -1061,7 +1087,7 @@ function FileCard({ file, view, selected, anySelected, active, isFavourite, onCl
 
   if (view === 'list') {
     return (
-      <div className={`flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-muted/50 cursor-pointer group ${active ? 'bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-900' : selected ? 'bg-primary/10' : ''}`} onClick={onClick} onContextMenu={onContextMenu}>
+      <div id={domId} className={`flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-muted/50 cursor-pointer group ${highlight ? 'animate-upload-flash ' : ''}${active ? 'bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-900' : selected ? 'bg-primary/10' : ''}`} onClick={onClick} onContextMenu={onContextMenu}>
         <Checkbox
           checked={selected}
           onCheckedChange={() => onSelect()}
@@ -1082,7 +1108,7 @@ function FileCard({ file, view, selected, anySelected, active, isFavourite, onCl
   }
 
   return (
-    <Card className={`gap-0 py-0 p-3 hover:shadow-md hover:-translate-y-px transition-all cursor-pointer group relative ${active ? 'ring-2 ring-green-500 border-green-200 dark:border-green-900' : selected ? 'ring-2 ring-primary' : ''}`} onClick={onClick} onContextMenu={onContextMenu}>
+    <Card id={domId} className={`gap-0 py-0 p-3 hover:shadow-md hover:-translate-y-px transition-all cursor-pointer group relative ${highlight ? 'animate-upload-flash ' : ''}${active ? 'ring-2 ring-green-500 border-green-200 dark:border-green-900' : selected ? 'ring-2 ring-primary' : ''}`} onClick={onClick} onContextMenu={onContextMenu}>
       {/* Checkbox (hidden for locked files) */}
       {file.lock_mode !== 'full_lock' && (
         <Checkbox
