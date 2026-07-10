@@ -880,7 +880,7 @@ export default function FilesPage() {
       <Dialog open={!!deleteTarget} onOpenChange={() => setDeleteTarget(null)}>
         <DialogContent className="max-w-sm">
           <DialogHeader><DialogTitle>Delete {deleteTarget?.type}?</DialogTitle></DialogHeader>
-          <p className="text-sm text-muted-foreground">Are you sure you want to delete <span className="font-semibold text-foreground">{deleteTarget?.name}</span>?</p>
+          <p className="text-sm text-muted-foreground">Are you sure you want to delete <span className="font-semibold text-foreground break-all">{deleteTarget?.name}</span>?</p>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteTarget(null)}>Cancel</Button>
             <Button variant="destructive" onClick={handleDelete}>Delete</Button>
@@ -953,7 +953,7 @@ export default function FilesPage() {
             <DialogTitle>Add to group</DialogTitle>
           </DialogHeader>
           <p className="text-xs text-muted-foreground mb-2">
-            Select a group for <span className="font-semibold text-foreground">{addToGroupTarget?.name}</span>
+            Select a group for <span className="font-semibold text-foreground break-all">{addToGroupTarget?.name}</span>
           </p>
           <div className="max-h-48 overflow-y-auto border rounded-lg">
             {availableGroups.map((g) => (
@@ -995,7 +995,7 @@ export default function FilesPage() {
       <Dialog open={!!unlockPrompt} onOpenChange={() => setUnlockPrompt(null)}>
         <DialogContent className="max-w-xs">
           <DialogHeader><DialogTitle className="flex items-center gap-2"><Lock className="size-4" /> File is locked</DialogTitle></DialogHeader>
-          <p className="text-xs text-muted-foreground">Enter the password to access <span className="font-semibold text-foreground">{unlockPrompt?.file.name}</span></p>
+          <p className="text-xs text-muted-foreground">Enter the password to access <span className="font-semibold text-foreground break-all">{unlockPrompt?.file.name}</span></p>
           {unlockError && <p className="text-xs text-destructive bg-destructive/10 border border-destructive/20 rounded-md px-3 py-2">{unlockError}</p>}
           <Input
             type="password"
