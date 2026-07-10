@@ -10,6 +10,12 @@ const fileMap = new Map<string, File>();
 const activeXhr = new Map<string, XMLHttpRequest>();
 // Bounded auto-retry counter for server concurrency-limit rejections.
 const concurrencyRetries = new Map<string, number>();
+// Ids the user canceled — checked after every await so an in-flight async step
+// (init/status/complete fetch, or the gap between parts) can't resurrect a
+// canceled upload by overwriting its status.
+const canceledIds = new Set<string>();
+// Ids temporarily held out of the queue during concurrency-limit backoff.
+const heldIds = new Set<string>();
 // Workspace max_concurrent_uploads (0 = unlimited); set by the Uploads page.
 let wsCap = 0;
 
@@ -93,6 +99,7 @@ async function uploadParts(
   store().patchItem(id, { part_size: partSize, total_parts: totalParts });
   const already = getItem(id)?.uploaded_parts ?? [];
   for (const n of missingPartNumbers(totalParts, already)) {
+    if (bailIfCanceled(id)) return;
     const start = (n - 1) * partSize;
     const chunk = file.slice(start, Math.min(start + partSize, file.size));
     const d = await xhrPut(id, `${API_BASE}/api/upload/${sessionId}/part/${n}`,
@@ -104,11 +111,13 @@ async function uploadParts(
       progress: Math.min(100, Math.round((bytes / file.size) * 100)),
     });
   }
+  if (bailIfCanceled(id)) return;
   const res = await fetch(`${API_BASE}/api/upload/${sessionId}/complete`, {
     method: 'POST', credentials: 'include',
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok || !data.ok) throw new Error(data.error ?? `Complete failed (HTTP ${res.status})`);
+  if (bailIfCanceled(id)) return;
   store().patchItem(id, { status: 'complete', progress: 100, bytesUploaded: file.size });
 }
 
@@ -116,6 +125,7 @@ async function resumeParts(id: string, file: File, sessionId: string): Promise<v
   const res = await fetch(`${API_BASE}/api/upload/${sessionId}/status`, { credentials: 'include' });
   const s = await res.json().catch(() => ({}));
   if (!res.ok || !s.ok) throw new Error(s.error ?? 'Could not read upload status');
+  if (bailIfCanceled(id)) return;
   if (s.status === 'complete') {
     store().patchItem(id, { status: 'complete', progress: 100, bytesUploaded: file.size });
     return;
@@ -146,10 +156,20 @@ function isConcurrencyLimit(err: unknown): boolean {
   return m.includes('uploads in progress');
 }
 
+// If the item was canceled during an await, finalize it as canceled and stop.
+function bailIfCanceled(id: string): boolean {
+  if (!canceledIds.has(id)) return false;
+  canceledIds.delete(id);
+  store().patchItem(id, { status: 'canceled' });
+  fileMap.delete(id);
+  return true;
+}
+
 async function runOne(id: string): Promise<void> {
   const file = fileMap.get(id);
   const item = getItem(id);
   if (!file || !item) return;
+  if (bailIfCanceled(id)) return;
   store().patchItem(id, { status: 'uploading', error: undefined }); // leaves the queued set synchronously
   try {
     const resuming = !!item.session_id && !!item.total_parts;
@@ -157,21 +177,30 @@ async function runOne(id: string): Promise<void> {
       await resumeParts(id, file, item.session_id!);
     } else {
       const init = await initSession(item);
+      if (bailIfCanceled(id)) return;
       store().patchItem(id, { session_id: init.session_id });
       if (init.resumable) {
         await uploadParts(id, file, init.session_id, init.resumable.part_size, init.resumable.total_parts);
       } else {
         await xhrPut(id, `${API_BASE}${init.upload_url}`, file,
           file.type || 'application/octet-stream', 0, file.size);
+        if (bailIfCanceled(id)) return;
         store().patchItem(id, { status: 'complete', progress: 100, bytesUploaded: file.size });
       }
     }
   } catch (err) {
-    // Server concurrency cap hit → wait and requeue (bounded), don't error out.
-    if (isConcurrencyLimit(err) && (concurrencyRetries.get(id) ?? 0) < 5) {
+    if (canceledIds.has(id)) {
+      // Canceled mid-transfer (e.g. XHR abort) — finalize as canceled, not error.
+      canceledIds.delete(id);
+      store().patchItem(id, { status: 'canceled' });
+    } else if (isConcurrencyLimit(err) && (concurrencyRetries.get(id) ?? 0) < 5) {
+      // Real backoff: hold the id OUT of the queue for 3s, then requeue. Setting
+      // 'queued' alone would be re-picked immediately by the scheduler's
+      // post-settle pump(), defeating the delay.
       concurrencyRetries.set(id, (concurrencyRetries.get(id) ?? 0) + 1);
+      heldIds.add(id);
       store().patchItem(id, { status: 'queued', error: undefined });
-      setTimeout(() => scheduler.wake(), 3000);
+      setTimeout(() => { heldIds.delete(id); scheduler.wake(); }, 3000);
     } else {
       handleError(id, err);
     }
@@ -185,7 +214,7 @@ async function runOne(id: string): Promise<void> {
 }
 
 const scheduler = createScheduler({
-  getQueuedIds: () => store().items.filter((i) => i.status === 'queued').map((i) => i.id),
+  getQueuedIds: () => store().items.filter((i) => i.status === 'queued' && !heldIds.has(i.id)).map((i) => i.id),
   getConcurrency: () => effectiveConcurrency(getUserConcurrency(), wsCap),
   runOne,
 });
@@ -208,17 +237,23 @@ export function enqueue(files: File[] | FileList, input: UploadInput): void {
 }
 
 export function cancel(id: string): void {
+  canceledIds.add(id);
+  heldIds.delete(id);
   const xhr = activeXhr.get(id);
-  if (xhr) xhr.abort();              // triggers onabort → status 'canceled'
+  if (xhr) xhr.abort();              // triggers onabort → AbortError → status 'canceled'
   else store().patchItem(id, { status: 'canceled' });
   fileMap.delete(id);
+  updateUnloadGuard();
 }
 
 /** Retry an errored item whose File is still in memory (no re-pick needed). */
 export function retry(id: string): void {
   const item = getItem(id);
   if (!item || !fileMap.has(id)) return;
+  canceledIds.delete(id);
+  concurrencyRetries.delete(id);
   store().patchItem(id, { status: 'queued', error: undefined });
+  updateUnloadGuard();
   scheduler.wake();
 }
 
@@ -230,6 +265,8 @@ export function resumeWithFile(id: string, file: File): { ok: boolean; error?: s
     return { ok: false, error: 'That file does not match (name or size differs).' };
   }
   fileMap.set(id, file);
+  canceledIds.delete(id);
+  concurrencyRetries.delete(id);
   const isMultipart = !!item.total_parts && !!item.session_id;
   store().patchItem(id, {
     status: 'queued',
@@ -240,6 +277,7 @@ export function resumeWithFile(id: string, file: File): { ok: boolean; error?: s
     progress: isMultipart ? item.progress : 0,
     uploaded_parts: isMultipart ? item.uploaded_parts : [],
   });
+  updateUnloadGuard();
   scheduler.wake();
   return { ok: true };
 }
