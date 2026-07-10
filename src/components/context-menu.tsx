@@ -61,7 +61,7 @@ export function ContextMenu({ items, position, onClose }: ContextMenuProps) {
           <button
             key={item.label}
             onClick={() => { item.onClick(); onClose(); }}
-            className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-medium transition-colors ${item.danger ? 'text-destructive hover:bg-destructive/10' : 'text-foreground hover:bg-muted/50'}`}
+            className={`w-full flex items-center gap-2.5 px-3 py-2 text-left text-xs font-medium transition-colors ${item.danger ? 'text-destructive hover:bg-destructive/10' : 'text-foreground hover:bg-muted/50'}`}
           >
             {item.icon && <span className="shrink-0 [&>svg]:size-3.5">{item.icon}</span>}
             {item.label}
