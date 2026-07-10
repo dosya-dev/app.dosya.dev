@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { api, API_BASE } from '@/api/client';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -11,6 +11,7 @@ import { isTextReadable, langFromExtension, looksBinary } from '@/lib/text-detec
 import { highlightToHtml } from '@/lib/text-highlight';
 import { useInFileFind } from '@/lib/use-in-file-find';
 import { TextFindBar } from '@/components/text-find-bar';
+import { TextEditorOverlay } from '@/components/text-editor';
 
 
 // ── Types ─────────────────────────────────────────────────
@@ -62,6 +63,11 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
   const [editingOpen, setEditingOpen] = useState(false);
   const editorContainerRef = useRef<HTMLDivElement>(null);
   const editorInstanceRef = useRef<any>(null);
+  const [textEditOpen, setTextEditOpen] = useState(false);
+  const closeTextEdit = useCallback(() => setTextEditOpen(false), []);
+  const canTextEdit = isTextReadable(file.name, file.mime_type)
+    && file.size_bytes <= 2 * 1024 * 1024
+    && file.lock_mode !== 'full_lock';
 
   const idx = files.findIndex((f) => f.id === file.id);
   const hasPrev = idx > 0;
@@ -98,6 +104,24 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
     return `${API_BASE}/api/files/${file.id}/raw?${params}`;
   }, [file.id, activeVersion, versions]);
 
+  // Stable raw URL for the text editor overlay: identity only changes when the
+  // file/version actually changes, so it doesn't tear down the live EditorView
+  // on unrelated FileViewer re-renders (e.g. keystrokes bubbling from CodeMirror).
+  // Cache-bust with a deterministic value derived from state (latest version's
+  // created_at, falling back to the file's updated_at) instead of Date.now() —
+  // calling Date.now() during a useMemo body is flagged as impure by
+  // react-hooks/purity (unlike the rawUrl useCallback above, whose body only
+  // runs when invoked, not synchronously during render).
+  const editorRawUrl = useMemo(() => {
+    const params = new URLSearchParams();
+    if (activeVersion > 0 && versions.length > 0 && activeVersion !== versions[0].version_number) {
+      params.set('version', String(activeVersion));
+    }
+    const cacheBust = versions.length > 0 ? versions[0].created_at : file.updated_at;
+    params.set('_t', String(cacheBust));
+    return `${API_BASE}/api/files/${file.id}/raw?${params}`;
+  }, [file.id, file.updated_at, activeVersion, versions]);
+
   const downloadUrl = `${API_BASE}/api/files/${file.id}/download`;
 
   // Navigate version
@@ -113,7 +137,7 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
   // Keyboard shortcuts
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (editingOpen) return;
+      if (editingOpen || textEditOpen) return;
       if (e.key === 'Escape') { handleClose(); return; }
       if (e.key === 'ArrowLeft' && hasPrev) onNavigate(files[idx - 1]);
       if (e.key === 'ArrowRight' && hasNext) onNavigate(files[idx + 1]);
@@ -122,7 +146,7 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
     };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
-  }, [hasPrev, hasNext, idx, files, onNavigate, navigateVersion, editingOpen]);
+  }, [hasPrev, hasNext, idx, files, onNavigate, navigateVersion, editingOpen, textEditOpen]);
 
   // Lock body scroll
   useEffect(() => {
@@ -278,8 +302,9 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
                 <ChevronRight className="size-4 text-muted-foreground" />
               </button>
             )}
-            {isEditable(file.name) && (
-              <button className="h-7 px-2.5 rounded-md border flex items-center gap-1.5 text-xs font-medium hover:bg-muted" onClick={openEditor}>
+            {(isEditable(file.name) || canTextEdit) && (
+              <button className="h-7 px-2.5 rounded-md border flex items-center gap-1.5 text-xs font-medium hover:bg-muted"
+                onClick={() => (canTextEdit ? setTextEditOpen(true) : openEditor())}>
                 <Pencil className="size-3 text-muted-foreground" /> Edit
               </button>
             )}
@@ -395,6 +420,16 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
           </div>
           <div ref={editorContainerRef} className="flex-1 min-h-0" />
         </div>
+      )}
+
+      {textEditOpen && (
+        <TextEditorOverlay
+          file={file}
+          rawUrl={editorRawUrl}
+          workspaceId={workspaceId}
+          onClose={closeTextEdit}
+          onSaved={() => { onRefresh(); loadVersions(); }}
+        />
       )}
     </>
   );
