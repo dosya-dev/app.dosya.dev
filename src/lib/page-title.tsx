@@ -26,7 +26,6 @@ const TITLES: Record<string, string> = {
   '/search': 'Search',
   '/billing': 'Billing',
   '/role-create': 'Create role',
-  '/admin': 'Admin',
   '/login': 'Sign in',
   '/login/2fa': 'Two-factor authentication',
   '/sign-up': 'Sign up',
@@ -51,34 +50,20 @@ const ICONS: Record<string, LucideIcon> = {
   '/search': Search,
   '/billing': CreditCard,
   '/role-create': Shield,
-  '/admin': Shield,
   '/login': LogIn,
   '/login/2fa': ShieldCheck,
   '/create-workspace': Building2,
 };
 
-// /admin/<section>
-const ADMIN_SECTIONS: Record<string, string> = {
-  users: 'Users', files: 'Files', shares: 'Shares', sessions: 'Sessions',
-  activity: 'Activity', payments: 'Payments', emails: 'Emails', invites: 'Invites',
-  announcements: 'Announcements', health: 'Health', growth: 'Growth',
-  security: 'Security', contact: 'Contact', plans: 'Plans',
-};
-
 export function titleForPath(pathname: string): string {
   if (pathname in TITLES) return TITLES[pathname];
   if (pathname.startsWith('/file-requests/')) return 'File request';
-  if (pathname.startsWith('/admin/')) {
-    const seg = pathname.split('/')[2] ?? '';
-    return ADMIN_SECTIONS[seg] ? `${ADMIN_SECTIONS[seg]} · Admin` : 'Admin';
-  }
   return '';
 }
 
 export function iconForPath(pathname: string): LucideIcon | null {
   if (pathname in ICONS) return ICONS[pathname];
   if (pathname.startsWith('/file-requests/')) return Inbox;
-  if (pathname.startsWith('/admin/')) return Shield;
   return null;
 }
 
