@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useLocation } from 'react-router-dom';
 import { api, API_BASE, ApiError } from '@/api/client';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -19,7 +20,7 @@ import {
 import { toast } from '@/lib/toast';
 import { timeAgo } from '@/lib/helpers';
 import { THEMES, type Mode } from '@/lib/themes';
-import { readCache, writeCache, applyTheme, type ThemePref } from '@/lib/theme';
+import { readCache, writeCache, applyTheme, subscribeThemeChange, type ThemePref } from '@/lib/theme';
 
 // ── Types ──────────────────────────────────────────────────
 
@@ -87,6 +88,7 @@ async function req<T extends OkResult = OkResult>(path: string, options?: Reques
 // ── Page ───────────────────────────────────────────────────
 
 export default function ProfilePage() {
+  const location = useLocation();
   const [user, setUser] = useState<UserProfile | null>(null);
   const [tfa, setTfa] = useState<TfaStatus | null>(null);
   const [keys, setKeys] = useState<ApiKey[]>([]);
@@ -130,15 +132,16 @@ export default function ProfilePage() {
 
   useEffect(() => { load(); }, [load]);
 
-  // Deep-link: /profile?section=appearance scrolls to + highlights a section.
+  // Deep-link: /profile?section=appearance scrolls to + highlights a section,
+  // including when navigated to while already on the Profile page.
   useEffect(() => {
     if (loading) return;
-    const section = new URLSearchParams(window.location.search).get('section');
+    const section = new URLSearchParams(location.search).get('section');
     if (section && NAV.some((n) => n.id === section)) {
       setActiveSection(section);
       setTimeout(() => document.getElementById(`section-${section}`)?.scrollIntoView({ behavior: 'smooth' }), 50);
     }
-  }, [loading]);
+  }, [loading, location.search]);
 
   if (loading) return <ProfileSkeleton />;
 
@@ -389,6 +392,8 @@ function IdentitySection({ user, onSaved }: { user: UserProfile | null; onSaved:
 
 function AppearanceSection() {
   const [pref, setPref] = useState<ThemePref>(() => readCache());
+
+  useEffect(() => subscribeThemeChange(() => setPref(readCache())), []);
 
   const save = async (next: ThemePref) => {
     const prev = pref;

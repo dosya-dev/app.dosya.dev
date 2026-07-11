@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { applyTheme, resolveDark, readCache, writeCache } from './theme';
+import { applyTheme, resolveDark, readCache, writeCache, subscribeThemeChange } from './theme';
 
 function mockMatchMedia(dark: boolean) {
   vi.stubGlobal('matchMedia', (q: string) => ({
@@ -55,5 +55,22 @@ describe('cache', () => {
   it('migrates a legacy theme=dark key', () => {
     localStorage.setItem('theme', 'dark');
     expect(readCache()).toEqual({ theme: 'default', mode: 'dark' });
+  });
+});
+
+describe('theme change events', () => {
+  it('applyTheme dispatches a ui-theme-change event', () => {
+    let fired = 0;
+    const off = subscribeThemeChange(() => { fired += 1; });
+    applyTheme({ theme: 'ocean', mode: 'dark' });
+    expect(fired).toBe(1);
+    off();
+  });
+  it('unsubscribe stops further notifications', () => {
+    let fired = 0;
+    const off = subscribeThemeChange(() => { fired += 1; });
+    off();
+    applyTheme({ theme: 'amber', mode: 'light' });
+    expect(fired).toBe(0);
   });
 });

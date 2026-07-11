@@ -1,5 +1,7 @@
 import { type Mode, DEFAULT_THEME, DEFAULT_MODE, isThemeId, isMode } from './themes';
 
+export const THEME_CHANGE_EVENT = 'ui-theme-change';
+
 export interface ThemePref { theme: string; mode: Mode }
 
 export const CACHE_KEY = 'ui-theme';
@@ -35,6 +37,7 @@ export function applyTheme(pref: ThemePref): void {
   if (pref.theme && pref.theme !== DEFAULT_THEME) el.setAttribute('data-theme', pref.theme);
   else el.removeAttribute('data-theme');
   el.classList.toggle('dark', resolveDark(pref.mode));
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event(THEME_CHANGE_EVENT));
 }
 
 /** Re-apply on OS scheme change while the user is on 'system'. Returns an unsubscribe fn. */
@@ -44,4 +47,12 @@ export function initSystemListener(getPref: () => ThemePref): () => void {
   const handler = () => { const p = getPref(); if (p.mode === 'system') applyTheme(p); };
   mq.addEventListener('change', handler);
   return () => mq.removeEventListener('change', handler);
+}
+
+/** Subscribe to any applyTheme() call. Returns an unsubscribe fn. Consumers
+ *  re-read readCache()/DOM so late account reconciliation updates their UI. */
+export function subscribeThemeChange(cb: () => void): () => void {
+  if (typeof window === 'undefined') return () => {};
+  window.addEventListener(THEME_CHANGE_EVENT, cb);
+  return () => window.removeEventListener(THEME_CHANGE_EVENT, cb);
 }

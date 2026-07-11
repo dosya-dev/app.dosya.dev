@@ -10,7 +10,7 @@ import {
 import { Search, Bell, User, LogOut, Settings, CreditCard, HelpCircle, Sun, Moon, Palette } from 'lucide-react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { api, API_BASE } from '@/api/client';
-import { readCache, writeCache, applyTheme } from '@/lib/theme';
+import { readCache, writeCache, applyTheme, subscribeThemeChange } from '@/lib/theme';
 import { useWorkspace } from '@/stores/workspace';
 import { humanSize, colorFor, labelFor, initials } from '@/lib/helpers';
 import { titleForPath, iconForPath } from '@/lib/page-title';
@@ -36,6 +36,11 @@ export function DashboardTopbar() {
   const pageLabel = titleForPath(location.pathname);
   const [user, setUser] = useState<UserInfo | null>(null);
   const [dark, setDark] = useState(() => document.documentElement.classList.contains('dark'));
+  // Keep the sun/moon icon in sync when the theme is applied elsewhere
+  // (e.g. account reconcile on load, or the Appearance picker).
+  useEffect(() => subscribeThemeChange(() => {
+    setDark(document.documentElement.classList.contains('dark'));
+  }), []);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<SearchResult | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
