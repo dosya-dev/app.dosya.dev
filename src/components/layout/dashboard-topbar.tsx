@@ -10,6 +10,7 @@ import {
 import { Search, Bell, User, LogOut, Settings, CreditCard, HelpCircle, Sun, Moon } from 'lucide-react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { api, API_BASE } from '@/api/client';
+import { readCache, writeCache, applyTheme } from '@/lib/theme';
 import { useWorkspace } from '@/stores/workspace';
 import { humanSize, colorFor, labelFor, initials } from '@/lib/helpers';
 import { titleForPath, iconForPath } from '@/lib/page-title';
@@ -53,12 +54,15 @@ export function DashboardTopbar() {
     })();
   }, []);
 
-  // Theme toggle
+  // Theme toggle — flips light/dark for the current theme and saves to the account.
   const toggleTheme = () => {
-    document.documentElement.classList.toggle('dark');
-    const isDark = document.documentElement.classList.contains('dark');
-    setDark(isDark);
-    localStorage.setItem('theme', isDark ? 'dark' : 'light');
+    const cur = readCache();
+    const nextMode = dark ? 'light' : 'dark';
+    const pref = { theme: cur.theme, mode: nextMode as 'light' | 'dark' };
+    applyTheme(pref);
+    writeCache(pref);
+    setDark(nextMode === 'dark');
+    api('/api/me/appearance', { method: 'PUT', body: JSON.stringify(pref) }).catch(() => { /* fire-and-forget */ });
   };
 
   // Logout

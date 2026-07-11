@@ -5,6 +5,8 @@ import { DashboardSidebar } from './dashboard-sidebar';
 import { DashboardTopbar } from './dashboard-topbar';
 import { API_BASE } from '@/api/client';
 import UploadDock from '@/components/uploads/upload-dock';
+import { applyTheme, writeCache, readCache, initSystemListener } from '@/lib/theme';
+import { isThemeId, isMode, DEFAULT_THEME, DEFAULT_MODE } from '@/lib/themes';
 
 export function DashboardLayout() {
   const navigate = useNavigate();
@@ -12,10 +14,22 @@ export function DashboardLayout() {
   const [authed, setAuthed] = useState<boolean | null>(null);
 
   useEffect(() => {
+    const stopListener = initSystemListener(readCache);
     fetch(`${API_BASE}/api/me`, { credentials: 'include' })
-      .then((res) => {
+      .then(async (res) => {
         if (res.ok) {
           setAuthed(true);
+          try {
+            const data = await res.json();
+            if (data?.user) {
+              const pref = {
+                theme: isThemeId(data.user.ui_theme) ? data.user.ui_theme : DEFAULT_THEME,
+                mode: isMode(data.user.ui_mode) ? data.user.ui_mode : DEFAULT_MODE,
+              };
+              applyTheme(pref);
+              writeCache(pref);
+            }
+          } catch { /* body already consumed / not json */ }
         } else {
           setAuthed(false);
           navigate('/login', { replace: true });
@@ -25,6 +39,7 @@ export function DashboardLayout() {
         setAuthed(false);
         navigate('/login', { replace: true });
       });
+    return stopListener;
   }, [navigate]);
 
   if (authed === null) {

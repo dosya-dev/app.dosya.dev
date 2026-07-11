@@ -9,14 +9,24 @@
     <title>dosya.dev</title>
     <meta name="description" content="dosya.dev — secure file storage, sharing and requests." />
     <script>
-      // Apply the saved theme before first paint so it persists across refreshes
-      // (and avoids a flash of the wrong theme). Falls back to the OS preference.
+      // Apply the saved theme + mode before first paint (no flash on refresh).
       (function () {
         try {
-          var t = localStorage.getItem('theme');
-          if (t === 'dark' || (!t && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
-            document.documentElement.classList.add('dark');
+          var theme = 'default', mode = 'system';
+          var raw = localStorage.getItem('ui-theme');
+          if (raw) {
+            var p = JSON.parse(raw);
+            if (p && p.theme) theme = p.theme;
+            if (p && p.mode) mode = p.mode;
+          } else {
+            var legacy = localStorage.getItem('theme');
+            if (legacy === 'dark' || legacy === 'light') mode = legacy;
           }
+          var el = document.documentElement;
+          if (theme && theme !== 'default') el.setAttribute('data-theme', theme);
+          var dark = mode === 'dark' ||
+            (mode === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+          if (dark) el.classList.add('dark');
         } catch (e) {}
       })();
     </script>
