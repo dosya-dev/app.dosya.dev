@@ -545,7 +545,7 @@ function TextViewer({ file, rawUrl, downloadUrl }: { file: FileItem; rawUrl: str
   }
 
   return (
-    <div className="relative w-full max-w-[900px] h-full rounded-lg bg-[#1e1e1e] overflow-hidden self-stretch flex flex-col">
+    <div className="relative w-full h-full rounded-lg bg-[#1e1e1e] overflow-hidden self-stretch flex flex-col">
       <div className="sticky top-0 px-4 py-2 bg-[#1e1e1e] border-b border-white/10 text-[11px] text-white/40 font-mono z-10">
         {langFromExtension(file.name) === 'text' ? ext.toUpperCase() : langFromExtension(file.name)}
       </div>
