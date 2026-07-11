@@ -49,8 +49,8 @@ export function initSystemListener(getPref: () => ThemePref): () => void {
   return () => mq.removeEventListener('change', handler);
 }
 
-/** Subscribe to any applyTheme() call. Returns an unsubscribe fn. Consumers
- *  re-read readCache()/DOM so late account reconciliation updates their UI. */
+/** Subscribe to any applyTheme() call; the callback receives the applied pref
+ *  (via the event detail) so late account reconciliation updates consumers' UI. */
 export function subscribeThemeChange(cb: (pref: ThemePref) => void): () => void {
   if (typeof window === 'undefined') return () => {};
   const handler = (e: Event) => cb((e as CustomEvent<ThemePref>).detail);
