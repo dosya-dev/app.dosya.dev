@@ -7,9 +7,10 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem,
   DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Search, Bell, User, LogOut, Settings, CreditCard, HelpCircle, Sun, Moon } from 'lucide-react';
+import { Search, Bell, User, LogOut, Settings, CreditCard, HelpCircle, Sun, Moon, Palette } from 'lucide-react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { api, API_BASE } from '@/api/client';
+import { readCache, writeCache, applyTheme, subscribeThemeChange } from '@/lib/theme';
 import { useWorkspace } from '@/stores/workspace';
 import { humanSize, colorFor, labelFor, initials } from '@/lib/helpers';
 import { titleForPath, iconForPath } from '@/lib/page-title';
@@ -35,6 +36,11 @@ export function DashboardTopbar() {
   const pageLabel = titleForPath(location.pathname);
   const [user, setUser] = useState<UserInfo | null>(null);
   const [dark, setDark] = useState(() => document.documentElement.classList.contains('dark'));
+  // Keep the sun/moon icon in sync when the theme is applied elsewhere
+  // (e.g. account reconcile on load, or the Appearance picker).
+  useEffect(() => subscribeThemeChange(() => {
+    setDark(document.documentElement.classList.contains('dark'));
+  }), []);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<SearchResult | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -53,12 +59,15 @@ export function DashboardTopbar() {
     })();
   }, []);
 
-  // Theme toggle
+  // Theme toggle — flips light/dark for the current theme and saves to the account.
   const toggleTheme = () => {
-    document.documentElement.classList.toggle('dark');
-    const isDark = document.documentElement.classList.contains('dark');
-    setDark(isDark);
-    localStorage.setItem('theme', isDark ? 'dark' : 'light');
+    const cur = readCache();
+    const nextMode = dark ? 'light' : 'dark';
+    const pref = { theme: cur.theme, mode: nextMode as 'light' | 'dark' };
+    applyTheme(pref);
+    writeCache(pref);
+    setDark(nextMode === 'dark');
+    api('/api/me/appearance', { method: 'PUT', body: JSON.stringify(pref) }).catch(() => { /* fire-and-forget */ });
   };
 
   // Logout
@@ -226,6 +235,7 @@ export function DashboardTopbar() {
               </>
             )}
             <Link to="/profile"><DropdownMenuItem><User className="size-3.5 mr-2" /> Profile</DropdownMenuItem></Link>
+            <Link to="/profile?section=appearance"><DropdownMenuItem><Palette className="size-3.5 mr-2" /> Appearance</DropdownMenuItem></Link>
             <Link to="/settings"><DropdownMenuItem><Settings className="size-3.5 mr-2" /> Settings</DropdownMenuItem></Link>
             <Link to="/billing"><DropdownMenuItem><CreditCard className="size-3.5 mr-2" /> Billing</DropdownMenuItem></Link>
             <a href="https://dosya.dev/help" target="_blank" rel="noreferrer"><DropdownMenuItem><HelpCircle className="size-3.5 mr-2" /> Help</DropdownMenuItem></a>
