@@ -36,6 +36,7 @@ export function TextEditorOverlay({ file, rawUrl, workspaceId, onClose, onSaved 
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<import('@codemirror/view').EditorView | null>(null);
   const [saving, setSaving] = useState(false);
+  const [initialRawUrl] = useState(rawUrl); // freeze at mount — later editorRawUrl churn must not rebuild the editor and drop edits
 
   // Keep keystrokes typed in the editor from bubbling to the document-level
   // shortcut handler in files.tsx (which otherwise treats them as list
@@ -52,7 +53,7 @@ export function TextEditorOverlay({ file, rawUrl, workspaceId, onClose, onSaved 
     let cancelled = false;
     (async () => {
       try {
-        const text = await fetch(rawUrl).then((r) => (r.ok ? r.text() : Promise.reject()));
+        const text = await fetch(initialRawUrl).then((r) => (r.ok ? r.text() : Promise.reject()));
         if (cancelled || !containerRef.current) return;
         const { EditorView, basicSetup } = await import('codemirror');
         const { oneDark } = await import('@codemirror/theme-one-dark');
@@ -71,7 +72,7 @@ export function TextEditorOverlay({ file, rawUrl, workspaceId, onClose, onSaved 
       }
     })();
     return () => { cancelled = true; viewRef.current?.destroy(); viewRef.current = null; };
-  }, [rawUrl, file.name, onClose]);
+  }, [initialRawUrl, file.name, onClose]);
 
   const save = async () => {
     const view = viewRef.current;
