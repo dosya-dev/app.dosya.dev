@@ -393,7 +393,7 @@ function IdentitySection({ user, onSaved }: { user: UserProfile | null; onSaved:
 function AppearanceSection() {
   const [pref, setPref] = useState<ThemePref>(() => readCache());
 
-  useEffect(() => subscribeThemeChange(() => setPref(readCache())), []);
+  useEffect(() => subscribeThemeChange((next) => setPref(next)), []);
 
   const save = async (next: ThemePref) => {
     const prev = pref;
