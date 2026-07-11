@@ -1,12 +1,17 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { api, API_BASE } from '@/api/client';
 import { Badge } from '@/components/ui/badge';
 import {
   X, Download, ChevronLeft, ChevronRight, Pencil, Clock,
 
 } from 'lucide-react';
-import { humanSize, extOf, isImage, isVideo, isText, isAudio, fileIconSrc } from '@/lib/helpers';
+import { humanSize, extOf, isImage, isVideo, isAudio, fileIconSrc } from '@/lib/helpers';
 import { toast } from '@/lib/toast';
+import { isTextReadable, langFromExtension, looksBinary } from '@/lib/text-detect';
+import { highlightToHtml } from '@/lib/text-highlight';
+import { useInFileFind } from '@/lib/use-in-file-find';
+import { TextFindBar } from '@/components/text-find-bar';
+import { TextEditorOverlay } from '@/components/text-editor';
 
 
 // ── Types ─────────────────────────────────────────────────
@@ -58,6 +63,11 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
   const [editingOpen, setEditingOpen] = useState(false);
   const editorContainerRef = useRef<HTMLDivElement>(null);
   const editorInstanceRef = useRef<any>(null);
+  const [textEditOpen, setTextEditOpen] = useState(false);
+  const closeTextEdit = useCallback(() => setTextEditOpen(false), []);
+  const canTextEdit = isTextReadable(file.name, file.mime_type)
+    && file.size_bytes <= 2 * 1024 * 1024
+    && file.lock_mode !== 'full_lock';
 
   const idx = files.findIndex((f) => f.id === file.id);
   const hasPrev = idx > 0;
@@ -94,6 +104,24 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
     return `${API_BASE}/api/files/${file.id}/raw?${params}`;
   }, [file.id, activeVersion, versions]);
 
+  // Stable raw URL for the text editor overlay: identity only changes when the
+  // file/version actually changes, so it doesn't tear down the live EditorView
+  // on unrelated FileViewer re-renders (e.g. keystrokes bubbling from CodeMirror).
+  // Cache-bust with a deterministic value derived from state (latest version's
+  // created_at, falling back to the file's updated_at) instead of Date.now() —
+  // calling Date.now() during a useMemo body is flagged as impure by
+  // react-hooks/purity (unlike the rawUrl useCallback above, whose body only
+  // runs when invoked, not synchronously during render).
+  const editorRawUrl = useMemo(() => {
+    const params = new URLSearchParams();
+    if (activeVersion > 0 && versions.length > 0 && activeVersion !== versions[0].version_number) {
+      params.set('version', String(activeVersion));
+    }
+    const cacheBust = versions.length > 0 ? versions[0].created_at : file.updated_at;
+    params.set('_t', String(cacheBust));
+    return `${API_BASE}/api/files/${file.id}/raw?${params}`;
+  }, [file.id, file.updated_at, activeVersion, versions]);
+
   const downloadUrl = `${API_BASE}/api/files/${file.id}/download`;
 
   // Navigate version
@@ -109,7 +137,7 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
   // Keyboard shortcuts
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (editingOpen) return;
+      if (editingOpen || textEditOpen) return;
       if (e.key === 'Escape') { handleClose(); return; }
       if (e.key === 'ArrowLeft' && hasPrev) onNavigate(files[idx - 1]);
       if (e.key === 'ArrowRight' && hasNext) onNavigate(files[idx + 1]);
@@ -118,7 +146,7 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
     };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
-  }, [hasPrev, hasNext, idx, files, onNavigate, navigateVersion, editingOpen]);
+  }, [hasPrev, hasNext, idx, files, onNavigate, navigateVersion, editingOpen, textEditOpen]);
 
   // Lock body scroll
   useEffect(() => {
@@ -274,8 +302,9 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
                 <ChevronRight className="size-4 text-muted-foreground" />
               </button>
             )}
-            {isEditable(file.name) && (
-              <button className="h-7 px-2.5 rounded-md border flex items-center gap-1.5 text-xs font-medium hover:bg-muted" onClick={openEditor}>
+            {(isEditable(file.name) || canTextEdit) && (
+              <button className="h-7 px-2.5 rounded-md border flex items-center gap-1.5 text-xs font-medium hover:bg-muted"
+                onClick={() => (canTextEdit ? setTextEditOpen(true) : openEditor())}>
                 <Pencil className="size-3 text-muted-foreground" /> Edit
               </button>
             )}
@@ -392,6 +421,16 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
           <div ref={editorContainerRef} className="flex-1 min-h-0" />
         </div>
       )}
+
+      {textEditOpen && (
+        <TextEditorOverlay
+          file={file}
+          rawUrl={editorRawUrl}
+          workspaceId={workspaceId}
+          onClose={closeTextEdit}
+          onSaved={() => { onRefresh(); loadVersions(); }}
+        />
+      )}
     </>
   );
 }
@@ -429,8 +468,8 @@ function FileContent({ file, rawUrl, downloadUrl }: { file: FileItem; rawUrl: st
     );
   }
 
-  if (isText(file.name)) {
-    return <TextPreview rawUrl={rawUrl} ext={ext} />;
+  if (isTextReadable(file.name, file.mime_type)) {
+    return <TextViewer file={file} rawUrl={rawUrl} downloadUrl={downloadUrl} />;
   }
 
   // Fallback
@@ -449,25 +488,87 @@ function FileContent({ file, rawUrl, downloadUrl }: { file: FileItem; rawUrl: st
   );
 }
 
-function TextPreview({ rawUrl, ext }: { rawUrl: string; ext: string }) {
-  const [content, setContent] = useState<string | null>(null);
+const TEXT_PREVIEW_MAX = 2 * 1024 * 1024; // 2 MB
+const HIGHLIGHT_MAX = 300 * 1024;         // 300 KB
 
+function TextViewer({ file, rawUrl, downloadUrl }: { file: FileItem; rawUrl: string; downloadUrl: string }) {
+  const ext = extOf(file.name);
+  const [plain, setPlain] = useState<string | null>(null);
+  const [html, setHtml] = useState<string | null>(null);
+  const [state, setState] = useState<'loading' | 'ok' | 'toobig' | 'binary' | 'error'>('loading');
+  const [findOpen, setFindOpen] = useState(false);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const find = useInFileFind(contentRef);
+
+  // Fetch + detect
   useEffect(() => {
-    setContent(null);
+    setPlain(null); setHtml(null); setFindOpen(false); find.clear();
+    if (file.size_bytes > TEXT_PREVIEW_MAX) { setState('toobig'); return; }
+    setState('loading');
+    let cancelled = false;
     fetch(rawUrl)
-      .then((r) => r.ok ? r.text() : Promise.reject())
-      .then((t) => setContent(t))
-      .catch(() => setContent('Failed to load file content.'));
-  }, [rawUrl]);
+      .then((r) => (r.ok ? r.text() : Promise.reject()))
+      .then((text) => {
+        if (cancelled) return;
+        if (looksBinary(text.slice(0, 8192))) { setState('binary'); return; }
+        setPlain(text);
+        setState('ok');
+        if (text.length <= HIGHLIGHT_MAX) {
+          highlightToHtml(text, langFromExtension(file.name))
+            .then((h) => { if (!cancelled) { setHtml(h); requestAnimationFrame(() => find.refresh()); } })
+            .catch(() => { /* keep plain */ });
+        }
+      })
+      .catch(() => { if (!cancelled) setState('error'); });
+    return () => { cancelled = true; };
+  }, [rawUrl, file.name, file.size_bytes]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Ctrl/Cmd+F opens our find bar (intercept native find while a text file is shown)
+  useEffect(() => {
+    if (state !== 'ok') return;
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'f') {
+        e.preventDefault();
+        setFindOpen(true);
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [state]);
+
+  if (state === 'toobig') {
+    return <OversizeFallback file={file} downloadUrl={downloadUrl} />;
+  }
+  if (state === 'binary' || state === 'error') {
+    return <OversizeFallback file={file} downloadUrl={downloadUrl}
+      note={state === 'binary' ? 'This file is not text-previewable.' : 'Failed to load file content.'} />;
+  }
 
   return (
-    <div className="w-full max-w-[900px] h-full rounded-lg bg-[#1e1e1e] overflow-auto self-stretch flex flex-col">
+    <div className="relative w-full h-full rounded-lg bg-[#1e1e1e] overflow-hidden self-stretch flex flex-col">
       <div className="sticky top-0 px-4 py-2 bg-[#1e1e1e] border-b border-white/10 text-[11px] text-white/40 font-mono z-10">
-        {ext.toUpperCase()}
+        {langFromExtension(file.name) === 'text' ? ext.toUpperCase() : langFromExtension(file.name)}
       </div>
-      <pre className="m-0 px-4 py-4 text-[13px] leading-relaxed text-[#d4d4d4] font-mono whitespace-pre-wrap break-all flex-1">
-        {content ?? 'Loading\u2026'}
-      </pre>
+      {findOpen && <TextFindBar find={find} onClose={() => { setFindOpen(false); find.clear(); }} />}
+      <div ref={contentRef} className="flex-1 overflow-auto text-[13px] leading-relaxed [&_pre]:m-0 [&_pre]:!bg-transparent [&_pre]:px-4 [&_pre]:py-4 [&_pre]:whitespace-pre-wrap [&_pre]:break-words">
+        {html
+          ? <div dangerouslySetInnerHTML={{ __html: html }} />
+          : <pre className="m-0 px-4 py-4 text-[#d4d4d4] font-mono whitespace-pre-wrap break-words">{plain ?? 'Loading\u2026'}</pre>}
+      </div>
+    </div>
+  );
+}
+
+function OversizeFallback({ file, downloadUrl, note }: { file: FileItem; downloadUrl: string; note?: string }) {
+  const sizeStr = humanSize(file.size_bytes);
+  return (
+    <div className="bg-background border rounded-xl p-10 text-center min-w-70">
+      <p className="text-4xl font-bold text-muted-foreground/30 tracking-wider mb-3">{extOf(file.name).toUpperCase() || 'FILE'}</p>
+      <p className="text-sm text-muted-foreground mb-2 break-all">{file.name}</p>
+      <p className="text-xs text-muted-foreground mb-5">{note ?? `File too large to preview inline (${sizeStr}).`}</p>
+      <a href={downloadUrl} download className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-foreground text-background text-sm font-semibold hover:opacity-90">
+        <Download className="size-4" /> Download
+      </a>
     </div>
   );
 }
