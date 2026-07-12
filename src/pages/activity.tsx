@@ -11,6 +11,7 @@ import {
   DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { timeAgo, avatarColor, initials } from '@/lib/helpers';
+import { parseUA } from '@/lib/ua';
 
 // ── Types ─────────────────────────────────────────────────
 
@@ -25,6 +26,21 @@ interface Activity {
   user_id: string;
   user_email: string;
   user_avatar: string | null;
+  // Forensic / enrichment fields (Task 3 endpoint) — nulled server-side by
+  // gateActivityRow for non-privileged viewers looking at another member's row.
+  source_ip?: string | null;
+  user_agent?: string | null;
+  outcome?: string | null;
+  source?: string | null;
+  action_group?: string | null;
+  on_behalf_of?: string | null;
+  obo_name?: string | null;
+  obo_email?: string | null;
+  resource_name?: string | null;
+  request_id?: string | null;
+  session_id?: string | null;
+  actor_type?: string | null;
+  meta?: ({ geo?: { country?: string | null; city?: string | null } | null } & Record<string, any>) | null;
 }
 
 
@@ -107,6 +123,17 @@ const ACTION_COLORS: Record<string, string> = {
   workspace_updated: '#D97706', workspace_settings_changed: '#D97706', role_updated: '#D97706',
   file_shared: '#7C3AED', file_shared_email: '#7C3AED', folder_shared: '#7C3AED',
   file_copied: '#706e69',
+  // New action codes (richer activity feed)
+  file_unlocked: '#22c55e', folder_unlocked: '#22c55e', file_unhidden: '#22c55e',
+  folder_unhidden: '#22c55e', role_created: '#22c55e', favourite_added: '#22c55e',
+  group_created: '#22c55e', group_item_added: '#22c55e',
+  sync_session_completed: '#22c55e',
+  folder_locked: '#D97706', folder_hidden: '#D97706', comment_edited: '#D97706',
+  group_updated: '#D97706', profile_updated: '#D97706', plan_changed: '#D97706',
+  files_batch_deleted: '#ef4444', favourite_removed: '#ef4444', group_deleted: '#ef4444',
+  group_item_removed: '#ef4444', dmca_reported: '#ef4444', sync_session_failed: '#ef4444',
+  share_link_unlocked: '#7C3AED',
+  sync_session_started: '#2563EB',
 };
 
 const ACTION_LABELS: Record<string, string> = {
@@ -124,6 +151,17 @@ const ACTION_LABELS: Record<string, string> = {
   workspace_created: 'created workspace', workspace_updated: 'updated workspace',
   workspace_settings_changed: 'changed settings', role_updated: 'updated role', role_deleted: 'deleted role',
   comment_added: 'commented on', comment_deleted: 'deleted comment on',
+  // New action codes (richer activity feed)
+  file_unlocked: 'unlocked', folder_unlocked: 'unlocked folder', folder_locked: 'locked folder',
+  file_unhidden: 'changed visibility of', folder_hidden: 'changed visibility of folder', folder_unhidden: 'changed visibility of folder',
+  files_batch_deleted: 'deleted multiple files', share_link_unlocked: 'unlocked share link',
+  comment_edited: 'edited comment on', role_created: 'created role',
+  favourite_added: 'favourited', favourite_removed: 'unfavourited',
+  group_created: 'created group', group_updated: 'updated group', group_deleted: 'deleted group',
+  group_item_added: 'added to group', group_item_removed: 'removed from group',
+  dmca_reported: 'reported (DMCA)',
+  sync_session_started: 'started a sync', sync_session_completed: 'completed a sync', sync_session_failed: 'sync failed',
+  profile_updated: 'updated profile', plan_changed: 'changed plan',
 };
 
 // ── Page ──────────────────────────────────────────────────
@@ -275,60 +313,125 @@ export default function ActivityPage() {
 // ── Activity row ──────────────────────────────────────────
 
 function ActivityRow({ activity: a }: { activity: Activity }) {
+  const [open, setOpen] = useState(false);
   const label = ACTION_LABELS[a.action] ?? a.action;
   const color = ACTION_COLORS[a.action] ?? '#706e69';
-  const meta = a.metadata;
+  // `meta` is the parsed, possibly server-gated metadata (Task 3); fall back
+  // to the legacy `metadata` field for rows/responses that predate it.
+  const meta = a.meta ?? a.metadata;
   const bgColor = avatarColor(a.user_id ?? '');
+  const failed = a.outcome === 'failure' || a.outcome === 'denied';
+  const device = parseUA(a.user_agent);
+  const geo = a.meta?.geo;
 
   return (
-    <div className="flex items-start gap-3 py-3 border-b last:border-b-0">
-      {/* Avatar */}
-      <div
-        className="size-8 rounded-full shrink-0 flex items-center justify-center text-[10px] font-bold text-white mt-0.5"
-        style={{ background: bgColor }}
-      >
-        {a.user_avatar ? (
-          <img src={a.user_avatar} alt="" className="w-full h-full rounded-full object-cover" />
-        ) : (
-          initials(a.user_name ?? 'Unknown')
-        )}
-      </div>
-
-      {/* Content */}
-      <div className="flex-1 min-w-0">
-        <p className="text-sm leading-snug">
-          <span className="font-semibold">{a.user_name ?? 'Unknown'}</span>{' '}
-          <span className="text-muted-foreground">{label}</span>
-          {meta?.name && (
-            <>
-              {' '}<span className="font-semibold">{meta.name}</span>
-            </>
-          )}
-        </p>
-
-        {/* Meta tags */}
-        <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-          <span className="text-[11px] text-muted-foreground">{timeAgo(a.created_at)}</span>
-
-          {meta?.old_name && meta?.new_name && (
-            <Badge variant="outline" className="text-[9px] h-4 gap-1">
-              {meta.old_name} → {meta.new_name}
-            </Badge>
-          )}
-          {meta?.email && (
-            <Badge variant="outline" className="text-[9px] h-4">{meta.email}</Badge>
-          )}
-          {meta?.file_count && meta.file_count > 1 && (
-            <Badge variant="outline" className="text-[9px] h-4">{meta.file_count} files</Badge>
-          )}
-          {meta?.via && (
-            <Badge variant="outline" className="text-[9px] h-4">via {meta.via}</Badge>
+    <div className="border-b last:border-b-0">
+      <button type="button" onClick={() => setOpen((v) => !v)} className="w-full text-left flex items-start gap-3 py-3">
+        {/* Avatar */}
+        <div
+          className="size-8 rounded-full shrink-0 flex items-center justify-center text-[10px] font-bold text-white mt-0.5"
+          style={{ background: bgColor }}
+        >
+          {a.user_avatar ? (
+            <img src={a.user_avatar} alt="" className="w-full h-full rounded-full object-cover" />
+          ) : (
+            initials(a.user_name ?? 'Unknown')
           )}
         </div>
-      </div>
 
-      {/* Color dot */}
-      <div className="size-2 rounded-full shrink-0 mt-2" style={{ background: color }} />
+        {/* Content */}
+        <div className="flex-1 min-w-0">
+          <p className="text-sm leading-snug">
+            <span className="font-semibold">{a.user_name ?? 'Unknown'}</span>{' '}
+            <span className="text-muted-foreground">{label}</span>
+            {(a.resource_name || meta?.name) && (
+              <>
+                {' '}<span className="font-semibold">{a.resource_name ?? meta?.name}</span>
+              </>
+            )}
+          </p>
+
+          {/* Meta tags */}
+          <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+            <span className="text-[11px] text-muted-foreground">{timeAgo(a.created_at)}</span>
+
+            {failed && (
+              <Badge variant="outline" className="text-[9px] h-4 text-red-600 border-red-300">
+                {a.outcome}
+              </Badge>
+            )}
+            {a.on_behalf_of && (
+              <Badge variant="outline" className="text-[9px] h-4">
+                on behalf of {a.obo_name ?? a.on_behalf_of}
+              </Badge>
+            )}
+            {a.source && a.source !== 'web' && (
+              <Badge variant="outline" className="text-[9px] h-4">{a.source}</Badge>
+            )}
+            {meta?.old_name && meta?.new_name && (
+              <Badge variant="outline" className="text-[9px] h-4 gap-1">
+                {meta.old_name} → {meta.new_name}
+              </Badge>
+            )}
+            {meta?.email && (
+              <Badge variant="outline" className="text-[9px] h-4">{meta.email}</Badge>
+            )}
+            {meta?.file_count && meta.file_count > 1 && (
+              <Badge variant="outline" className="text-[9px] h-4">{meta.file_count} files</Badge>
+            )}
+            {meta?.via && (
+              <Badge variant="outline" className="text-[9px] h-4">via {meta.via}</Badge>
+            )}
+          </div>
+        </div>
+
+        {/* Color dot */}
+        <div className="size-2 rounded-full shrink-0 mt-2" style={{ background: color }} />
+      </button>
+
+      {open && (
+        <dl className="pl-11 pb-3 grid grid-cols-[80px_1fr] gap-x-3 gap-y-1 text-[11px]">
+          <dt className="text-muted-foreground">When</dt>
+          <dd>{new Date(a.created_at * 1000).toLocaleString()} · {timeAgo(a.created_at)}</dd>
+
+          {a.source_ip && (
+            <>
+              <dt className="text-muted-foreground">Where</dt>
+              <dd>{a.source_ip}{geo?.country ? ` · ${geo.city ? `${geo.city}, ` : ''}${geo.country}` : ''}</dd>
+            </>
+          )}
+          {a.user_agent && (
+            <>
+              <dt className="text-muted-foreground">Device</dt>
+              <dd title={a.user_agent}>{device.browser}{device.os ? ` · ${device.os}` : ''}</dd>
+            </>
+          )}
+          {a.source && (
+            <>
+              <dt className="text-muted-foreground">Source</dt>
+              <dd>{a.source}</dd>
+            </>
+          )}
+          {a.outcome && (
+            <>
+              <dt className="text-muted-foreground">Outcome</dt>
+              <dd>{a.outcome}{meta?.reason ? ` (${meta.reason})` : ''}</dd>
+            </>
+          )}
+          {(a.resource_name || a.entity_type) && (
+            <>
+              <dt className="text-muted-foreground">Resource</dt>
+              <dd>{a.resource_name ?? `${a.entity_type} ${a.entity_id ?? ''}`}</dd>
+            </>
+          )}
+          {a.session_id && (
+            <>
+              <dt className="text-muted-foreground">Session</dt>
+              <dd className="truncate">{a.session_id}</dd>
+            </>
+          )}
+        </dl>
+      )}
     </div>
   );
 }
