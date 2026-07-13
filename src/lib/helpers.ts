@@ -28,6 +28,7 @@ const EXT_COLORS: Record<string, string> = {
   xls: '#059669', xlsx: '#059669', csv: '#374151',
   zip: '#0891B2', rar: '#0891B2',
   png: '#059669', jpg: '#059669', jpeg: '#059669', gif: '#059669', svg: '#059669', webp: '#059669',
+  heic: '#059669', heif: '#059669',
 };
 
 export function extOf(name: string): string {
@@ -43,9 +44,16 @@ export function labelFor(name: string): string {
   return e ? e.toUpperCase() : 'FILE';
 }
 
-const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'ico']);
+const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'ico', 'heic', 'heif']);
 export function isImage(name: string): boolean {
   return IMAGE_EXTS.has(extOf(name));
+}
+
+// HEIC/HEIF need a WASM decode step before they can go in an <img> (only Safari
+// decodes them natively), so they're a distinct case from the other IMAGE_EXTS.
+const HEIC_EXTS = new Set(['heic', 'heif']);
+export function isHeic(name: string): boolean {
+  return HEIC_EXTS.has(extOf(name));
 }
 
 const VIDEO_EXTS = new Set(['mp4', 'mov', 'avi', 'mkv', 'webm', 'wmv', 'flv']);
@@ -72,7 +80,7 @@ export function isAudio(name: string): boolean {
 const EXT_ICON_MAP: Record<string, string> = {
   pdf: '001-pdf', xls: '002-xls', xlsx: '002-xls', doc: '003-doc', docx: '003-doc',
   ppt: '004-ppt', pptx: '004-ppt', txt: '005-txt', svg: '006-svg', sql: '007-sql',
-  js: '008-js', ts: '008-js', jpg: '009-jpg', jpeg: '009-jpg', png: '010-png',
+  js: '008-js', ts: '008-js', jpg: '009-jpg', jpeg: '009-jpg', heic: '009-jpg', heif: '009-jpg', png: '010-png',
   ai: '011-ai', mp3: '012-mp3', wav: '012-mp3', ogg: '012-mp3', flac: '012-mp3',
   mp4: '013-mp4', gif: '014-gif', iso: '015-iso', exe: '016-exe', msi: '016-exe',
   apk: '017-apk', php: '018-php', avi: '019-avi', mov: '020-mov', css: '021-css',
