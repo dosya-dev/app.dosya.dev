@@ -6,6 +6,7 @@ import {
 
 } from 'lucide-react';
 import { humanSize, extOf, isImage, isVideo, isAudio, fileIconSrc } from '@/lib/helpers';
+import { FilePreviewImage } from '@/components/file-preview-image';
 import { toast } from '@/lib/toast';
 import { isTextReadable, langFromExtension, looksBinary } from '@/lib/text-detect';
 import { highlightToHtml } from '@/lib/text-highlight';
@@ -123,6 +124,12 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
   }, [file.id, file.updated_at, activeVersion, versions]);
 
   const downloadUrl = `${API_BASE}/api/files/${file.id}/download`;
+
+  // The version actually being shown — mirrors the logic inside rawUrl() above.
+  const previewVersion =
+    activeVersion > 0 && versions.length > 0 && activeVersion !== versions[0].version_number
+      ? activeVersion
+      : undefined;
 
   // Navigate version
   const navigateVersion = useCallback((dir: number) => {
@@ -321,7 +328,7 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
         <div className="flex-1 flex min-h-0">
           {/* File content */}
           <div className="flex-1 min-h-0 min-w-0 flex items-center justify-center bg-muted/30 overflow-auto p-6">
-            <FileContent file={file} rawUrl={rawUrl()} downloadUrl={downloadUrl} />
+            <FileContent file={file} rawUrl={rawUrl()} downloadUrl={downloadUrl} version={previewVersion} />
           </div>
 
           {/* Version sidebar */}
@@ -386,11 +393,13 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
                   onClick={() => onNavigate(files[realIdx])}
                   title={f.name}
                 >
-                  {isImage(f.name) ? (
-                    <img src={`${API_BASE}/api/files/${f.id}/raw`} alt="" className="w-full h-full object-cover" />
-                  ) : (
-                    <img src={fileIconSrc(f.name)} alt="" className="size-6" />
-                  )}
+                  <FilePreviewImage
+                    fileId={f.id}
+                    fileName={f.name}
+                    maxDim={128}
+                    className="w-full h-full object-cover"
+                    fallback={<img src={fileIconSrc(f.name)} alt="" className="size-6" />}
+                  />
                   {isVideo(f.name) && (
                     <div className="absolute bottom-0.5 right-0.5 w-3.5 h-3.5 rounded bg-black/50 flex items-center justify-center">
                       <svg viewBox="0 0 8 8" fill="none" width="8" height="8"><path d="M2 1.5l4.5 2.5L2 6.5z" fill="#fff" /></svg>
@@ -437,11 +446,21 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
 
 // ── File content renderer ─────────────────────────────────
 
-function FileContent({ file, rawUrl, downloadUrl }: { file: FileItem; rawUrl: string; downloadUrl: string }) {
+function FileContent({ file, rawUrl, downloadUrl, version }: { file: FileItem; rawUrl: string; downloadUrl: string; version?: number }) {
   const ext = extOf(file.name);
 
   if (isImage(file.name)) {
-    return <img src={rawUrl} alt={file.name} className="max-w-full max-h-full object-contain rounded-md" />;
+    return (
+      <FilePreviewImage
+        fileId={file.id}
+        fileName={file.name}
+        version={version}
+        maxDim={2048}
+        className="max-w-full max-h-full object-contain rounded-md"
+        alt={file.name}
+        fallback={<img src={fileIconSrc(file.name)} alt={file.name} className="size-24" />}
+      />
+    );
   }
 
   if (isVideo(file.name)) {
