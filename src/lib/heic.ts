@@ -30,6 +30,21 @@ function getWorker(): Worker {
     // in-flight decode rather than leaving callers hanging forever.
     for (const entry of pending.values()) entry.reject(new Error('HEIC decoder crashed'));
     pending.clear();
+    // The error may not have been fatal to the underlying thread (e.g. an
+    // uncaught async rejection inside the worker); terminate explicitly so
+    // it can't keep running as an orphan after we drop our only reference.
+    worker?.terminate();
+    worker = null;
+  };
+
+  worker.onmessageerror = () => {
+    // A posted message failed structured-clone deserialization. We can't tell
+    // which in-flight request it belonged to, so fail them all rather than
+    // leaving the corresponding caller(s) hanging forever. Mirrors onerror:
+    // discard this worker (terminate + null) so a future call starts fresh.
+    for (const entry of pending.values()) entry.reject(new Error('HEIC decoder message error'));
+    pending.clear();
+    worker?.terminate();
     worker = null;
   };
 
