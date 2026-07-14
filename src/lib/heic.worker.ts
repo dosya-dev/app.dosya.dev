@@ -17,10 +17,13 @@ async function toBitmap(blob: Blob): Promise<ImageBitmap> {
     // only when a HEIC is actually on screen in a browser that can't decode
     // it natively.
     const { data, width, height } = await decodeHeicToRgba(await blob.arrayBuffer());
-    // `ImageData` requires an ArrayBuffer-backed view specifically (not the
-    // wider ArrayBufferLike that a bare `Uint8ClampedArray` type resolves
-    // to); copying into a fresh typed array satisfies that guarantee.
-    const imageData = new ImageData(new Uint8ClampedArray(data), width, height);
+    // `ImageData` requires a `Uint8ClampedArray<ArrayBuffer>` specifically
+    // (not the wider ArrayBufferLike that a bare `Uint8ClampedArray` type
+    // resolves to). `data` is always backed by a real ArrayBuffer (freshly
+    // allocated in decodeHeicToRgba), so this is a type-only cast, not a
+    // copy — copying here would double peak transient memory for a full-size
+    // RGBA buffer (a 12MP photo is ~48MB) for no runtime benefit.
+    const imageData = new ImageData(data as Uint8ClampedArray<ArrayBuffer>, width, height);
     // Can't drawImage() an ImageData directly; round-trip it through a bitmap.
     return await createImageBitmap(imageData);
   }
