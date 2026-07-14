@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { fileThumbUrl, type ThumbSize } from '@/lib/file-url';
-import { isImage } from '@/lib/helpers';
+import { fileThumbUrl, fileRawUrl, type ThumbSize } from '@/lib/file-url';
+import { isImage, isHeic } from '@/lib/helpers';
 
 interface FilePreviewImageProps {
   fileId: string;
@@ -19,8 +19,12 @@ interface FilePreviewImageProps {
 /**
  * The one place a file preview image is rendered.
  *
- * The API generates and caches a small WebP; the browser just displays it. There
- * is no client-side decoding of any format, HEIC included.
+ * HEIC/HEIF is the one format browsers can't render natively, so it's the only
+ * one the server generates (and caches) a small WebP derivative for — see
+ * `fileThumbUrl`. Every other image format is already renderable by the
+ * browser, so it's pointed straight at the original bytes via `fileRawUrl`:
+ * no server-side decode, no redirect round-trip through `/thumb`, exactly
+ * production behavior for JPEG/PNG/etc. prior to HEIC support.
  *
  * This just picks a `key` from the file identity and delegates to the real
  * component below. Keying on (fileId, version, query, size) makes React fully
@@ -49,9 +53,15 @@ function FilePreviewImageForFile({
 
   if (!isImage(fileName) || failed) return <>{fallback}</>;
 
+  // HEIC/HEIF: the browser can't render it, so use the server-generated thumb.
+  // Everything else: the browser already renders it, so use the original bytes.
+  const src = isHeic(fileName)
+    ? fileThumbUrl({ fileId, version, query, size })
+    : fileRawUrl({ fileId, version, query });
+
   return (
     <img
-      src={fileThumbUrl({ fileId, version, query, size })}
+      src={src}
       alt={alt}
       className={className}
       loading="lazy"

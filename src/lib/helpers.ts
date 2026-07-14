@@ -49,6 +49,12 @@ export function isImage(name: string): boolean {
   return IMAGE_EXTS.has(extOf(name));
 }
 
+const HEIC_EXTS = new Set(['heic', 'heif']);
+/** True only for HEIC/HEIF — the one image format browsers can't render natively. */
+export function isHeic(name: string): boolean {
+  return HEIC_EXTS.has(extOf(name));
+}
+
 const VIDEO_EXTS = new Set(['mp4', 'mov', 'avi', 'mkv', 'webm', 'wmv', 'flv']);
 export function isVideo(name: string): boolean {
   return VIDEO_EXTS.has(extOf(name));

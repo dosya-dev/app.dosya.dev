@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { humanSize, initials, extOf, isImage, fileIconSrc } from "./helpers";
+import { humanSize, initials, extOf, isImage, isHeic, fileIconSrc } from "./helpers";
 
 describe("humanSize", () => {
   it("formats sizes with the right unit", () => {
@@ -41,6 +41,24 @@ describe("isImage", () => {
     expect(isImage("a.jpg")).toBe(true);
     expect(isImage("a.png")).toBe(true);
     expect(isImage("a.pdf")).toBe(false);
+  });
+});
+
+describe("isHeic", () => {
+  it("is true only for heic/heif", () => {
+    expect(isHeic("IMG_0001.heic")).toBe(true);
+    expect(isHeic("IMG_0001.heif")).toBe(true);
+  });
+
+  it("is case-insensitive (iPhones produce .HEIC)", () => {
+    expect(isHeic("IMG_0001.HEIC")).toBe(true);
+  });
+
+  it("is false for every other image format — those render natively in the browser", () => {
+    expect(isHeic("a.jpg")).toBe(false);
+    expect(isHeic("a.png")).toBe(false);
+    expect(isHeic("a.webp")).toBe(false);
+    expect(isHeic("a.pdf")).toBe(false);
   });
 });
 
