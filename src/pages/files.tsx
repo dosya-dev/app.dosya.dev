@@ -1174,7 +1174,7 @@ function RowThumbnail({ fileId, fileName }: { fileId: string; fileName: string }
     <FilePreviewImage
       fileId={fileId}
       fileName={fileName}
-      maxDim={128}
+      size={128}
       className="w-7 h-7 shrink-0 rounded object-cover bg-muted"
       fallback={<img src={fileIconSrc(fileName)} alt="" className="w-7 h-7 shrink-0" />}
     />
@@ -1203,7 +1203,7 @@ function FileThumbnail({ fileId, fileName, ext }: { fileId: string; fileName: st
       <FilePreviewImage
         fileId={fileId}
         fileName={fileName}
-        maxDim={256}
+        size={256}
         className="w-full h-full object-contain rounded-lg"
         fallback={badge}
       />

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { humanSize, initials, extOf, isImage, isHeic, fileIconSrc } from "./helpers";
+import { humanSize, initials, extOf, isImage, fileIconSrc } from "./helpers";
 
 describe("humanSize", () => {
   it("formats sizes with the right unit", () => {
@@ -41,15 +41,6 @@ describe("isImage", () => {
     expect(isImage("a.jpg")).toBe(true);
     expect(isImage("a.png")).toBe(true);
     expect(isImage("a.pdf")).toBe(false);
-  });
-});
-
-describe("isHeic", () => {
-  it("is true only for heic/heif", () => {
-    expect(isHeic("a.heic")).toBe(true);
-    expect(isHeic("a.HEIF")).toBe(true);
-    expect(isHeic("a.jpg")).toBe(false);
-    expect(isHeic("a.pdf")).toBe(false);
   });
 });
 

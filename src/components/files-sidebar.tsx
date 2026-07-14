@@ -312,7 +312,7 @@ export function FilesSidebar({ onFilterChange, onFavouriteClick, onGroupClick }:
                                 <FilePreviewImage
                                   fileId={f.file_id}
                                   fileName={f.file_name}
-                                  maxDim={128}
+                                  size={128}
                                   className="size-3.5 rounded-sm object-cover shrink-0 bg-muted"
                                   fallback={<img src={fileIconSrc(f.file_name)} alt="" className="size-3.5 shrink-0" />}
                                 />

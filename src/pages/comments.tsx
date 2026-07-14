@@ -203,7 +203,7 @@ export default function CommentsPage() {
               <FilePreviewImage
                 fileId={fileId}
                 fileName={fileName}
-                maxDim={128}
+                size={128}
                 className="w-full h-full object-cover"
                 fallback={<img src={fileIconSrc(fileName)} alt="" className="size-5" />}
               />
@@ -322,7 +322,7 @@ export default function CommentsPage() {
                 <FilePreviewImage
                   fileId={fileId}
                   fileName={fileName}
-                  maxDim={256}
+                  size={256}
                   className="w-full h-full object-contain"
                   fallback={<img src={fileIconSrc(fileName)} alt="" className="size-16" />}
                 />

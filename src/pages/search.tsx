@@ -173,7 +173,7 @@ export default function SearchPage() {
                       <FilePreviewImage
                         fileId={f.id}
                         fileName={f.name}
-                        maxDim={128}
+                        size={128}
                         className="w-full h-full object-cover"
                         fallback={<img src={fileIconSrc(f.name)} alt="" className="size-5" />}
                       />
