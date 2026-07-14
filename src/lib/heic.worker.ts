@@ -1,5 +1,7 @@
 /// <reference lib="webworker" />
 
+import { decodeHeicToRgba } from './heic-decode';
+
 interface DecodeRequest {
   id: number;
   url: string;
@@ -11,10 +13,16 @@ async function toBitmap(blob: Blob): Promise<ImageBitmap> {
     // Safari decodes HEIC natively, so it never pays for the WASM at all.
     return await createImageBitmap(blob);
   } catch {
-    // Everyone else: ~1.5MB of libheif, fetched only now — i.e. only when a HEIC
-    // is actually on screen in a browser that can't decode it.
-    const { heicTo } = await import('heic-to/next');
-    return (await heicTo({ blob, type: 'bitmap' })) as ImageBitmap;
+    // Everyone else: ~1.4MB of real-WASM libheif, fetched only now — i.e.
+    // only when a HEIC is actually on screen in a browser that can't decode
+    // it natively.
+    const { data, width, height } = await decodeHeicToRgba(await blob.arrayBuffer());
+    // `ImageData` requires an ArrayBuffer-backed view specifically (not the
+    // wider ArrayBufferLike that a bare `Uint8ClampedArray` type resolves
+    // to); copying into a fresh typed array satisfies that guarantee.
+    const imageData = new ImageData(new Uint8ClampedArray(data), width, height);
+    // Can't drawImage() an ImageData directly; round-trip it through a bitmap.
+    return await createImageBitmap(imageData);
   }
 }
 
