@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { api, API_BASE } from '@/api/client';
-import { isImage, fileIconSrc } from '@/lib/helpers';
+import { api } from '@/api/client';
+import { fileIconSrc } from '@/lib/helpers';
+import { FilePreviewImage } from '@/components/file-preview-image';
 import { useWorkspace } from '@/stores/workspace';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -308,16 +309,13 @@ export function FilesSidebar({ onFilterChange, onFavouriteClick, onGroupClick }:
                                 className="w-full flex items-center gap-1.5 px-1.5 py-0.5 rounded text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted/50 text-left"
                                 title="Open file"
                               >
-                                {isImage(f.file_name) ? (
-                                  <img
-                                    src={`${API_BASE}/api/files/${f.file_id}/raw`}
-                                    alt=""
-                                    className="size-3.5 rounded-sm object-cover shrink-0 bg-muted"
-                                    loading="lazy"
-                                  />
-                                ) : (
-                                  <img src={fileIconSrc(f.file_name)} alt="" className="size-3.5 shrink-0" />
-                                )}
+                                <FilePreviewImage
+                                  fileId={f.file_id}
+                                  fileName={f.file_name}
+                                  maxDim={128}
+                                  className="size-3.5 rounded-sm object-cover shrink-0 bg-muted"
+                                  fallback={<img src={fileIconSrc(f.file_name)} alt="" className="size-3.5 shrink-0" />}
+                                />
                                 <span className="truncate">{f.file_name}</span>
                               </button>
                             ))}

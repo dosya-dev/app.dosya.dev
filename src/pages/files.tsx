@@ -33,7 +33,8 @@ import { FileViewer } from '@/components/file-viewer';
 import { LockModal } from '@/components/lock-modal';
 import { HideModal } from '@/components/hide-modal';
 import { FilesSidebar } from '@/components/files-sidebar';
-import { humanSize, timeAgo, isImage, extOf, fileIconSrc, folderIconSrc, colorFor } from '@/lib/helpers';
+import { FilePreviewImage } from '@/components/file-preview-image';
+import { humanSize, timeAgo, extOf, fileIconSrc, folderIconSrc, colorFor } from '@/lib/helpers';
 import { toast } from '@/lib/toast';
 
 // ── Types ──────────────────────────────────────────────────
@@ -1161,44 +1162,42 @@ function FileCard({ file, view, selected, anySelected, active, highlight, domId,
 // ── Small row thumbnail (table view): preview if image, else icon ──
 
 function RowThumbnail({ fileId, fileName }: { fileId: string; fileName: string }) {
-  const [failed, setFailed] = useState(false);
-
-  if (isImage(fileName) && !failed) {
-    return (
-      <img
-        src={`${API_BASE}/api/files/${fileId}/raw`}
-        alt=""
-        className="w-7 h-7 shrink-0 rounded object-cover bg-muted"
-        loading="lazy"
-        onError={() => setFailed(true)}
-      />
-    );
-  }
-
-  return <img src={fileIconSrc(fileName)} alt="" className="w-7 h-7 shrink-0" />;
+  return (
+    <FilePreviewImage
+      fileId={fileId}
+      fileName={fileName}
+      maxDim={128}
+      className="w-7 h-7 shrink-0 rounded object-cover bg-muted"
+      fallback={<img src={fileIconSrc(fileName)} alt="" className="w-7 h-7 shrink-0" />}
+    />
+  );
 }
 
 // ── File thumbnail with error fallback ─────────────────────
 
 function FileThumbnail({ fileId, fileName, ext }: { fileId: string; fileName: string; ext: string }) {
-  const [failed, setFailed] = useState(false);
-
-  if (!isImage(fileName) || failed) {
-    return (
-      <div className="w-full h-14 rounded-lg mb-2 flex items-center justify-center" style={{ background: colorFor(fileName) + '18' }}>
-        <span className="text-[10px] font-bold tracking-wider uppercase" style={{ color: colorFor(fileName) }}>{ext || 'FILE'}</span>
-      </div>
-    );
-  }
+  const badge = (
+    <div
+      className="w-full h-full rounded-lg flex items-center justify-center"
+      style={{ background: colorFor(fileName) + '18' }}
+    >
+      <span
+        className="text-[10px] font-bold tracking-wider uppercase"
+        style={{ color: colorFor(fileName) }}
+      >
+        {ext || 'FILE'}
+      </span>
+    </div>
+  );
 
   return (
     <div className="w-full h-14 rounded-lg mb-2 flex items-center justify-center overflow-hidden">
-      <img
-        src={`${API_BASE}/api/files/${fileId}/raw`}
-        alt=""
+      <FilePreviewImage
+        fileId={fileId}
+        fileName={fileName}
+        maxDim={256}
         className="w-full h-full object-contain rounded-lg"
-        loading="lazy"
-        onError={() => setFailed(true)}
+        fallback={badge}
       />
     </div>
   );

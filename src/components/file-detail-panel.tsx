@@ -8,6 +8,7 @@ import {
   RotateCcw, Loader2,
 } from 'lucide-react';
 import { humanSize, timeAgo, extOf, isImage, isVideo, isText, isAudio, fileIconSrc, regionLabel, colorFor } from '@/lib/helpers';
+import { FilePreviewImage } from '@/components/file-preview-image';
 import { toast } from '@/lib/toast';
 
 
@@ -376,11 +377,18 @@ function FilePreview({ file, utSuffix }: { file: FileItem; utSuffix: string }) {
   if (isImage(file.name)) {
     return (
       <div className="w-full h-28 bg-muted/50 flex items-center justify-center overflow-hidden">
-        <img
-          src={`${API_BASE}/api/files/${file.id}/raw${utSuffix}`}
-          alt={file.name}
+        <FilePreviewImage
+          fileId={file.id}
+          fileName={file.name}
+          query={utSuffix.replace(/^\?/, '')}
+          maxDim={512}
           className="w-full h-full object-contain"
-          onError={() => setPreviewError(true)}
+          alt={file.name}
+          fallback={
+            <div className="w-full h-28 flex items-center justify-center" style={{ background: colorFor(file.name) + '18' }}>
+              <img src={fileIconSrc(file.name)} alt={extOf(file.name).toUpperCase() || 'FILE'} className="size-16" />
+            </div>
+          }
         />
       </div>
     );

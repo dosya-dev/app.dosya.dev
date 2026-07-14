@@ -5,6 +5,17 @@ import path from 'path'
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  worker: {
+    // Default worker format is 'iife', which forces Rollup to disable code
+    // splitting for worker chunks — that would inline the dynamic
+    // import('heic-to/next') (~2.9MB) into heic.worker's own chunk, so every
+    // browser that spawns the worker (including Safari, which decodes HEIC
+    // natively and never needs the fallback) would download it upfront.
+    // 'es' keeps the worker chunk's code splitting intact so the decoder is
+    // only fetched when the fallback branch actually runs. Matches heic.ts,
+    // which already constructs the worker with { type: 'module' }.
+    format: 'es',
+  },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),

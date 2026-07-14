@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Upload } from 'lucide-react';
+import { FilePreviewImage } from '@/components/file-preview-image';
 import {
   greeting, todayStr, humanSize, humanSizeShort, timeAgo,
   colorFor, labelFor, isImage, avatarColor, initials,
@@ -138,9 +139,13 @@ export default function DashboardPage() {
                   {data.recent_files.map((f) => (
                     <Link key={f.id} to="/files" className="group rounded-lg border bg-muted/50 p-3 hover:shadow-md hover:border-border hover:-translate-y-px transition-all no-underline">
                       <div className={`w-full h-12 rounded-md mb-2.5 flex items-center justify-center text-[10px] font-bold tracking-wide text-white ${isImage(f.name) ? 'bg-muted' : ''}`} style={isImage(f.name) ? undefined : { background: colorFor(f.name) }}>
-                        {isImage(f.name) ? (
-                          <img src={`/api/files/${f.id}/raw`} alt="" className="w-full h-full object-contain rounded-md" loading="lazy" />
-                        ) : labelFor(f.name)}
+                        <FilePreviewImage
+                          fileId={f.id}
+                          fileName={f.name}
+                          maxDim={256}
+                          className="w-full h-full object-contain rounded-md"
+                          fallback={<>{labelFor(f.name)}</>}
+                        />
                       </div>
                       <p className="text-xs font-medium truncate">{f.name}</p>
                       <p className="text-[11px] text-muted-foreground">{humanSize(f.size_bytes)} · {timeAgo(f.created_at)}</p>

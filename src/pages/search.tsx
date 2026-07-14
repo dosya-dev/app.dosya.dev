@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { api, API_BASE } from '@/api/client';
+import { api } from '@/api/client';
 import { useWorkspace } from '@/stores/workspace';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -8,8 +8,9 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Search, Share2, FileInput,
 } from 'lucide-react';
+import { FilePreviewImage } from '@/components/file-preview-image';
 import {
-  humanSize, timeAgo, isImage, fileIconSrc, folderIconSrc,
+  humanSize, timeAgo, fileIconSrc, folderIconSrc,
 } from '@/lib/helpers';
 
 
@@ -169,11 +170,13 @@ export default function SearchPage() {
                     className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-muted/50 text-left"
                   >
                     <div className="size-9 rounded-lg bg-muted/50 flex items-center justify-center shrink-0 overflow-hidden">
-                      {isImage(f.name) ? (
-                        <img src={`${API_BASE}/api/files/${f.id}/raw`} alt="" className="w-full h-full object-cover" />
-                      ) : (
-                        <img src={fileIconSrc(f.name)} alt="" className="size-5" />
-                      )}
+                      <FilePreviewImage
+                        fileId={f.id}
+                        fileName={f.name}
+                        maxDim={128}
+                        className="w-full h-full object-cover"
+                        fallback={<img src={fileIconSrc(f.name)} alt="" className="size-5" />}
+                      />
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium truncate">{f.name}</p>

@@ -8,6 +8,7 @@ import {
   ChevronLeft, Send, CornerDownRight, Pencil, Trash2, X,
   Loader2, MessageSquare,
 } from 'lucide-react';
+import { FilePreviewImage } from '@/components/file-preview-image';
 import {
   humanSize, timeAgo, isImage, fileIconSrc, colorFor,
   avatarColor, initials,
@@ -198,8 +199,14 @@ export default function CommentsPage() {
             <ChevronLeft className="size-4 text-muted-foreground" />
           </Link>
           <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 overflow-hidden ${isImage(fileName) ? 'bg-muted' : ''}`} style={isImage(fileName) ? undefined : { background: colorFor(fileName) + '20' }}>
-            {isImage(fileName) && fileId ? (
-              <img src={`${API_BASE}/api/files/${fileId}/raw`} alt="" className="w-full h-full object-cover" />
+            {fileId ? (
+              <FilePreviewImage
+                fileId={fileId}
+                fileName={fileName}
+                maxDim={128}
+                className="w-full h-full object-cover"
+                fallback={<img src={fileIconSrc(fileName)} alt="" className="size-5" />}
+              />
             ) : (
               <img src={fileIconSrc(fileName)} alt="" className="size-5" />
             )}
@@ -311,8 +318,14 @@ export default function CommentsPage() {
 
             {/* Preview */}
             <div className={`w-full h-28 rounded-lg flex items-center justify-center overflow-hidden mb-3 ${isImage(fileName) ? 'bg-muted' : ''}`} style={isImage(fileName) ? undefined : { background: colorFor(fileName) + '18' }}>
-              {isImage(fileName) && fileId ? (
-                <img src={`${API_BASE}/api/files/${fileId}/raw`} alt="" className="w-full h-full object-contain" />
+              {fileId ? (
+                <FilePreviewImage
+                  fileId={fileId}
+                  fileName={fileName}
+                  maxDim={256}
+                  className="w-full h-full object-contain"
+                  fallback={<img src={fileIconSrc(fileName)} alt="" className="size-16" />}
+                />
               ) : (
                 <img src={fileIconSrc(fileName)} alt="" className="size-16" />
               )}
