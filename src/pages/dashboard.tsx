@@ -142,7 +142,7 @@ export default function DashboardPage() {
                         <FilePreviewImage
                           fileId={f.id}
                           fileName={f.name}
-                          maxDim={256}
+                          size={256}
                           className="w-full h-full object-contain rounded-md"
                           fallback={<>{labelFor(f.name)}</>}
                         />

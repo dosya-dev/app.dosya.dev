@@ -396,7 +396,7 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
                   <FilePreviewImage
                     fileId={f.id}
                     fileName={f.name}
-                    maxDim={128}
+                    size={128}
                     className="w-full h-full object-cover"
                     fallback={<img src={fileIconSrc(f.name)} alt="" className="size-6" />}
                   />
@@ -455,7 +455,7 @@ function FileContent({ file, rawUrl, downloadUrl, version }: { file: FileItem; r
         fileId={file.id}
         fileName={file.name}
         version={version}
-        maxDim={2048}
+        size={1600}
         className="max-w-full max-h-full object-contain rounded-md"
         alt={file.name}
         fallback={<img src={fileIconSrc(file.name)} alt={file.name} className="size-24" />}

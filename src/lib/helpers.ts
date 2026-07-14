@@ -49,9 +49,8 @@ export function isImage(name: string): boolean {
   return IMAGE_EXTS.has(extOf(name));
 }
 
-// HEIC/HEIF need a WASM decode step before they can go in an <img> (only Safari
-// decodes them natively), so they're a distinct case from the other IMAGE_EXTS.
 const HEIC_EXTS = new Set(['heic', 'heif']);
+/** True only for HEIC/HEIF — the one image format browsers can't render natively. */
 export function isHeic(name: string): boolean {
   return HEIC_EXTS.has(extOf(name));
 }

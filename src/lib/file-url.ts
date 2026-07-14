@@ -22,3 +22,17 @@ export function fileRawUrl({ fileId, version, query }: FileRef): string {
   const qs = params.toString();
   return `${API_BASE}/api/files/${fileId}/raw${qs ? `?${qs}` : ''}`;
 }
+
+/** Longest-edge sizes the API will serve. Anything else is rejected with a 400. */
+export type ThumbSize = 128 | 256 | 512 | 1600;
+
+/** URL of a server-generated WebP thumbnail. The browser never decodes anything. */
+export function fileThumbUrl({ fileId, version, query, size }: FileRef & { size: ThumbSize }): string {
+  const params = new URLSearchParams();
+  if (version && version > 0) params.set('version', String(version));
+  if (query) {
+    for (const [k, v] of new URLSearchParams(query)) params.set(k, v);
+  }
+  params.set('w', String(size));
+  return `${API_BASE}/api/files/${fileId}/thumb?${params}`;
+}

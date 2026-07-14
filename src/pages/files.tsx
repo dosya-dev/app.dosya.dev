@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef, type MouseEvent as ReactMouse
 import { useSearchParams, Link, useNavigate } from 'react-router-dom';
 import { api, API_BASE } from '@/api/client';
 import { useDocumentTitle } from '@/lib/page-title';
+import { folderNavParams, filterNavParams, groupNavParams } from '@/lib/files-params';
 import { useWorkspace } from '@/stores/workspace';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -93,6 +94,15 @@ const ALL_COLUMNS: ColumnDef[] = [
 ];
 
 const DEFAULT_VISIBLE: Set<ColumnKey> = new Set(ALL_COLUMNS.filter((c) => c.defaultVisible).map((c) => c.key));
+
+// Only the filters the API actually narrows by. `shared` is a no-op server-side,
+// so an empty view under it means the folder is empty, not that nothing is shared.
+const FILTER_EMPTY_LABELS: Record<string, string> = {
+  documents: 'No documents here',
+  videos: 'No videos here',
+  images: 'No images here',
+  hidden: 'No hidden files here',
+};
 
 function loadSavedColumns(): Set<ColumnKey> {
   try {
@@ -230,6 +240,10 @@ export default function FilesPage() {
   const currentGroup = searchParams.get('group') || '';
   const isDeletedView = currentFilter === 'deleted';
 
+  // A filtered view stays applied while you browse into folders, so an empty
+  // result usually means "nothing of this type here" rather than an empty folder.
+  const filterEmptyLabel = isDeletedView ? '' : FILTER_EMPTY_LABELS[currentFilter] ?? '';
+
   // How many items the last load returned — sizes the skeleton so switching
   // filters doesn't flash 8 placeholder rows when the view only has 1 item.
   const lastItemCount = useRef<number | null>(null);
@@ -354,9 +368,7 @@ export default function FilesPage() {
   // ── Actions ────────────────────────────────────────────────
 
   const navigateToFolder = (folderId: string | null) => {
-    const p = new URLSearchParams();
-    if (folderId) p.set('folder', folderId);
-    setSearchParams(p);
+    setSearchParams(folderNavParams(searchParams, folderId));
   };
 
   const handleCreateFolder = async () => {
@@ -587,13 +599,7 @@ export default function FilesPage() {
     <div className="flex h-full overflow-hidden">
       {/* Files sidebar */}
       <FilesSidebar
-        onFilterChange={(filter) => {
-          const p = new URLSearchParams(searchParams);
-          if (filter) p.set('filter', filter); else p.delete('filter');
-          p.delete('page');
-          p.delete('group');
-          setSearchParams(p);
-        }}
+        onFilterChange={(filter) => setSearchParams(filterNavParams(searchParams, filter))}
         onFavouriteClick={async (fileId) => {
           const f = files.find((x) => x.id === fileId);
           if (f) { openFileWithLockCheck(f, 'view'); return; }
@@ -604,11 +610,7 @@ export default function FilesPage() {
             if (res.ok && res.file) openFileWithLockCheck(res.file, 'view');
           } catch { toast.error('Could not open file', 'The file could not be loaded.'); }
         }}
-        onGroupClick={(groupId) => {
-          const p = new URLSearchParams();
-          p.set('group', groupId);
-          setSearchParams(p);
-        }}
+        onGroupClick={(groupId) => setSearchParams(groupNavParams(searchParams, groupId))}
       />
 
       {/* Main content */}
@@ -715,6 +717,7 @@ export default function FilesPage() {
                 {isDeletedView ? 'Trash is empty'
                   : search ? 'No files match your search'
                   : currentGroup ? 'This group is empty'
+                  : filterEmptyLabel ? filterEmptyLabel
                   : 'This folder is empty'}
               </p>
               {currentGroup && !search && (
@@ -722,7 +725,12 @@ export default function FilesPage() {
                   Right-click any file or folder and choose "Add to group" to collect items here.
                 </p>
               )}
-              {!isDeletedView && !search && !currentGroup && <p className="text-xs text-muted-foreground">Upload files or create a folder to get started</p>}
+              {filterEmptyLabel && !search && !currentGroup && (
+                <Button variant="outline" size="sm" className="h-7 text-xs mt-1" onClick={() => setSearchParams(filterNavParams(searchParams, ''))}>
+                  Show all files
+                </Button>
+              )}
+              {!isDeletedView && !search && !currentGroup && !filterEmptyLabel && <p className="text-xs text-muted-foreground">Upload files or create a folder to get started</p>}
             </div>
           ) : (
             <>
@@ -1166,7 +1174,7 @@ function RowThumbnail({ fileId, fileName }: { fileId: string; fileName: string }
     <FilePreviewImage
       fileId={fileId}
       fileName={fileName}
-      maxDim={128}
+      size={128}
       className="w-7 h-7 shrink-0 rounded object-cover bg-muted"
       fallback={<img src={fileIconSrc(fileName)} alt="" className="w-7 h-7 shrink-0" />}
     />
@@ -1195,7 +1203,7 @@ function FileThumbnail({ fileId, fileName, ext }: { fileId: string; fileName: st
       <FilePreviewImage
         fileId={fileId}
         fileName={fileName}
-        maxDim={256}
+        size={256}
         className="w-full h-full object-contain rounded-lg"
         fallback={badge}
       />

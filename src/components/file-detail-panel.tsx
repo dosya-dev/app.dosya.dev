@@ -381,7 +381,7 @@ function FilePreview({ file, utSuffix }: { file: FileItem; utSuffix: string }) {
           fileId={file.id}
           fileName={file.name}
           query={utSuffix.replace(/^\?/, '')}
-          maxDim={512}
+          size={512}
           className="w-full h-full object-contain"
           alt={file.name}
           fallback={

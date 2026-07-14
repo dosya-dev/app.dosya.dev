@@ -46,9 +46,18 @@ describe("isImage", () => {
 
 describe("isHeic", () => {
   it("is true only for heic/heif", () => {
-    expect(isHeic("a.heic")).toBe(true);
-    expect(isHeic("a.HEIF")).toBe(true);
+    expect(isHeic("IMG_0001.heic")).toBe(true);
+    expect(isHeic("IMG_0001.heif")).toBe(true);
+  });
+
+  it("is case-insensitive (iPhones produce .HEIC)", () => {
+    expect(isHeic("IMG_0001.HEIC")).toBe(true);
+  });
+
+  it("is false for every other image format — those render natively in the browser", () => {
     expect(isHeic("a.jpg")).toBe(false);
+    expect(isHeic("a.png")).toBe(false);
+    expect(isHeic("a.webp")).toBe(false);
     expect(isHeic("a.pdf")).toBe(false);
   });
 });
