@@ -1178,7 +1178,7 @@ function RowThumbnail({ fileId, fileName }: { fileId: string; fileName: string }
 function FileThumbnail({ fileId, fileName, ext }: { fileId: string; fileName: string; ext: string }) {
   const badge = (
     <div
-      className="w-full h-14 rounded-lg mb-2 flex items-center justify-center"
+      className="w-full h-full rounded-lg flex items-center justify-center"
       style={{ background: colorFor(fileName) + '18' }}
     >
       <span
