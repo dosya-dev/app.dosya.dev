@@ -39,6 +39,8 @@ import { FilesSidebar } from '@/components/files-sidebar';
 import { FilePreviewImage } from '@/components/file-preview-image';
 import { humanSize, timeAgo, extOf, fileIconSrc, folderIconSrc, colorFor } from '@/lib/helpers';
 import { toast } from '@/lib/toast';
+import { FolderPickerDialog } from '@/components/folder-picker-dialog';
+import { useFolderTree } from '@/lib/folders';
 
 // ── Types ──────────────────────────────────────────────────
 
@@ -54,7 +56,6 @@ interface FolderItem {
 }
 interface Breadcrumb { id: string; name: string }
 interface Pagination { page: number; per_page: number; total_files: number; total_pages: number }
-interface PickerFolder { id: string; name: string; parent_id: string | null; file_count: number }
 
 type ViewMode = 'grid' | 'list';
 type SortMode = 'newest' | 'oldest' | 'name_asc' | 'name_desc' | 'largest' | 'smallest';
@@ -238,8 +239,7 @@ export default function FilesPage() {
   const [renameTarget, setRenameTarget] = useState<{ id: string; name: string; type: 'file' | 'folder' } | null>(null);
   const [renameName, setRenameName] = useState('');
   const [moveOpen, setMoveOpen] = useState<{ id: string; type: 'file' | 'folder' } | null>(null);
-  const [moveTarget, setMoveTarget] = useState<string | null>(null);
-  const [moveFolders, setMoveFolders] = useState<PickerFolder[]>([]);
+  const { folders: pickerFolders, setFolders: setPickerFolders } = useFolderTree(wsId);
   const [highlightId, setHighlightId] = useState<string | null>(null);
   const highlightTimer = useRef<number | null>(null);
   // Guards the one-shot restore of an open file/viewer from the URL on first load,
@@ -471,11 +471,11 @@ export default function FilesPage() {
     } catch { toast.error('Copy failed', 'The file could not be copied.'); }
   };
 
-  const handleMove = async () => {
+  const handleMove = async (folderId: string | null) => {
     if (!moveOpen) return;
     try {
       const ep = moveOpen.type === 'file' ? `/api/files/${moveOpen.id}/move` : `/api/folders/${moveOpen.id}/move`;
-      const body = moveOpen.type === 'file' ? { folder_id: moveTarget } : { parent_id: moveTarget };
+      const body = moveOpen.type === 'file' ? { folder_id: folderId } : { parent_id: folderId };
       await api(ep, { method: 'PUT', body: JSON.stringify(body) });
       toast.success('Moved', 'The file has been moved.'); setMoveOpen(null); loadFiles();
     } catch { toast.error('Move failed', 'The file could not be moved.'); }
@@ -485,12 +485,8 @@ export default function FilesPage() {
     setShareTarget({ id: fileId, name: fileName });
   };
 
-  const openMoveModal = async (id: string, type: 'file' | 'folder') => {
-    setMoveOpen({ id, type }); setMoveTarget(null);
-    try {
-      const res = await api<{ ok: boolean; folders?: PickerFolder[] }>(`/api/folders/tree?workspace_id=${wsId}`);
-      if (res.ok && res.folders) setMoveFolders(res.folders);
-    } catch { /* */ }
+  const openMoveModal = (id: string, type: 'file' | 'folder') => {
+    setMoveOpen({ id, type });
   };
 
   const openAddToGroup = async (id: string, name: string, type: 'file' | 'folder') => {
@@ -536,14 +532,10 @@ export default function FilesPage() {
     } catch { toast.error('Download failed', 'The download could not be prepared.'); }
   };
 
-  const bulkMove = async () => {
+  const bulkMove = () => {
     if (selected.size === 0) return;
     // Use the first selected file to open move modal
     setMoveOpen({ id: Array.from(selected)[0], type: 'file' });
-    try {
-      const res = await api<{ ok: boolean; folders?: PickerFolder[] }>(`/api/folders/tree?workspace_id=${wsId}`);
-      if (res.ok && res.folders) setMoveFolders(res.folders);
-    } catch {}
   };
 
   const bulkRestore = async () => {
@@ -973,26 +965,20 @@ export default function FilesPage() {
       </Dialog>
 
       {/* Move dialog */}
-      <Dialog open={!!moveOpen} onOpenChange={() => setMoveOpen(null)}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader><DialogTitle>Move to folder</DialogTitle></DialogHeader>
-          <div className="max-h-64 overflow-y-auto border rounded-lg p-1">
-            <button className={`w-full flex items-center gap-1.5 py-1.5 px-2 text-xs rounded-md hover:bg-muted/50 text-left ${moveTarget === null ? 'bg-primary/10' : ''}`} onClick={() => setMoveTarget(null)}>
-              <Home className="size-3.5 text-muted-foreground shrink-0" /> <span className="flex-1">Root</span>
-            </button>
-            <MoveFolderTree
-              folders={moveFolders}
-              selectedId={moveTarget}
-              onSelect={setMoveTarget}
-              excludeId={moveOpen?.type === 'folder' ? moveOpen.id : null}
-            />
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setMoveOpen(null)}>Cancel</Button>
-            <Button onClick={handleMove}>Move</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {moveOpen && (
+        <FolderPickerDialog
+          open
+          onClose={() => setMoveOpen(null)}
+          workspaceId={wsId}
+          folders={pickerFolders}
+          onFoldersChange={setPickerFolders}
+          selectedId={null}
+          onSelect={(id) => handleMove(id)}
+          title="Move to folder"
+          confirmLabel="Move"
+          excludeId={moveOpen.type === 'folder' ? moveOpen.id : null}
+        />
+      )}
 
       {/* Share modal */}
       <ShareModal
@@ -1336,60 +1322,6 @@ function FileDropdown({ onDownload, onShare, onRename, onDelete, onCopy, onMove,
       </DropdownMenuContent>
     </DropdownMenu>
   );
-}
-
-// ── Move-to-folder tree picker ─────────────────────────────
-
-function MoveFolderTree({ folders, selectedId, onSelect, excludeId }: {
-  folders: PickerFolder[]; selectedId: string | null;
-  onSelect: (id: string) => void; excludeId?: string | null;
-}) {
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
-
-  // Group by parent; skipping the excluded node prunes its whole subtree
-  // (a folder can't be moved into itself or its descendants).
-  const childrenOf = new Map<string | null, PickerFolder[]>();
-  for (const f of folders) {
-    if (f.id === excludeId) continue;
-    const key = f.parent_id ?? null;
-    if (!childrenOf.has(key)) childrenOf.set(key, []);
-    childrenOf.get(key)!.push(f);
-  }
-
-  const toggle = (id: string) => setCollapsed((prev) => {
-    const next = new Set(prev);
-    if (next.has(id)) next.delete(id); else next.add(id);
-    return next;
-  });
-
-  const renderLevel = (parentId: string | null, depth: number): React.ReactNode =>
-    (childrenOf.get(parentId) ?? []).map((f) => {
-      const kids = childrenOf.get(f.id) ?? [];
-      const isCollapsed = collapsed.has(f.id);
-      return (
-        <div key={f.id}>
-          <button
-            className={`w-full flex items-center gap-1.5 py-1.5 pr-3 text-xs rounded-md hover:bg-muted/50 text-left ${selectedId === f.id ? 'bg-primary/10' : ''}`}
-            style={{ paddingLeft: 8 + depth * 16 }}
-            onClick={() => onSelect(f.id)}
-          >
-            {kids.length > 0 ? (
-              <ChevronRight
-                className={`size-3 text-muted-foreground shrink-0 transition-transform ${isCollapsed ? '' : 'rotate-90'}`}
-                onClick={(e: ReactMouseEvent) => { e.stopPropagation(); toggle(f.id); }}
-              />
-            ) : (
-              <span className="size-3 shrink-0" />
-            )}
-            <img src={folderIconSrc(f.file_count)} alt="" className="size-4 shrink-0" />
-            <span className="flex-1 truncate">{f.name}</span>
-          </button>
-          {!isCollapsed && renderLevel(f.id, depth + 1)}
-        </div>
-      );
-    });
-
-  return <>{renderLevel(null, 0)}</>;
 }
 
 // ── Skeleton ───────────────────────────────────────────────
