@@ -56,9 +56,10 @@ export const useNotifications = create<NotifState>((set, get) => ({
     finally { set({ loading: false }); }
   },
   markItemRead: async (id) => {
+    const wasUnread = !!get().items.find((i) => i.id === id && isUnread(i));
     set((s) => ({
-      items: s.items.map((i) => (i.id === id ? { ...i, read_at: Math.floor(Date.now() / 1000) } : i)),
-      unread: Math.max(0, s.unread - 1),
+      items: s.items.map((i) => (i.id === id ? { ...i, read_at: i.read_at ?? Math.floor(Date.now() / 1000) } : i)),
+      unread: wasUnread ? Math.max(0, s.unread - 1) : s.unread,
     }));
     try { await apiNotif.markRead(id); } catch { get().refreshSummary(); }
   },
