@@ -16,7 +16,7 @@ import {
   Download, Share2, Trash2, MoreHorizontal,
   FolderOpen, Grid3X3, List, Loader2,
   Lock, Pencil, Copy, Move, Eye, EyeOff, History,
-  MessageSquare, Star, SlidersHorizontal, RotateCcw,
+  MessageSquare, Star, SlidersHorizontal, RotateCcw, RefreshCw,
 } from 'lucide-react';
 import {
   DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem,
@@ -112,6 +112,13 @@ function loadSavedColumns(): Set<ColumnKey> {
   return new Set(DEFAULT_VISIBLE);
 }
 
+const VIEW_STORAGE_KEY = 'dosya_files_view';
+
+function loadSavedView(): ViewMode {
+  const saved = localStorage.getItem(VIEW_STORAGE_KEY);
+  return saved === 'list' || saved === 'grid' ? saved : 'grid';
+}
+
 // ── Page ───────────────────────────────────────────────────
 
 export default function FilesPage() {
@@ -126,7 +133,11 @@ export default function FilesPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState<SortMode>('newest');
-  const [view, setView] = useState<ViewMode>('grid');
+  const [view, setView] = useState<ViewMode>(loadSavedView);
+  const changeView = (next: ViewMode) => {
+    setView(next);
+    localStorage.setItem(VIEW_STORAGE_KEY, next);
+  };
   const [visibleColumns, setVisibleColumns] = useState<Set<ColumnKey>>(loadSavedColumns);
   const [columnPickerOpen, setColumnPickerOpen] = useState(false);
 
@@ -589,6 +600,8 @@ export default function FilesPage() {
   ];
 
   const blankCtxItems = [
+    { label: 'Refresh', icon: <RefreshCw />, onClick: () => loadFiles() },
+    { label: '', separator: true, onClick: () => {}, icon: null },
     { label: 'New folder', icon: <FolderPlus />, onClick: () => setCreateFolderOpen(true) },
     { label: 'Upload files', icon: <Upload />, onClick: () => navigate(uploadHref) },
   ];
@@ -647,8 +660,8 @@ export default function FilesPage() {
           </SelectContent>
         </Select>
         <div className="flex border rounded-md overflow-hidden">
-          <button onClick={() => setView('grid')} className={`p-1.5 ${view === 'grid' ? 'bg-accent text-accent-foreground' : 'hover:bg-muted/50'}`}><Grid3X3 className="size-3.5" /></button>
-          <button onClick={() => setView('list')} className={`p-1.5 ${view === 'list' ? 'bg-accent text-accent-foreground' : 'hover:bg-muted/50'}`}><List className="size-3.5" /></button>
+          <button onClick={() => changeView('grid')} className={`p-1.5 ${view === 'grid' ? 'bg-accent text-accent-foreground' : 'hover:bg-muted/50'}`}><Grid3X3 className="size-3.5" /></button>
+          <button onClick={() => changeView('list')} className={`p-1.5 ${view === 'list' ? 'bg-accent text-accent-foreground' : 'hover:bg-muted/50'}`}><List className="size-3.5" /></button>
         </div>
         {view === 'list' && (
           <DropdownMenu open={columnPickerOpen} onOpenChange={setColumnPickerOpen}>
