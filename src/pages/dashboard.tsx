@@ -137,7 +137,8 @@ export default function DashboardPage() {
               ) : (
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
                   {data.recent_files.map((f) => (
-                    <Link key={f.id} to="/files" className="group relative aspect-3/2 overflow-hidden rounded-xl border hover:shadow-lg hover:-translate-y-px transition-all no-underline">
+                    <Link key={f.id} to={`/files?view=${f.id}`} className="group relative aspect-3/2 overflow-hidden rounded-xl border hover:shadow-lg hover:-translate-y-px transition-all no-underline">
+
                       {/* Full-bleed cover image (matches the files-page card) */}
                       <div className="absolute inset-0 bg-neutral-900">
                         <FilePreviewImage
