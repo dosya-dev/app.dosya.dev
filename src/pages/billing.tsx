@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { getBillingStatus, type BillingStatus } from '@/api/billing';
-import { formatBytes } from '@/lib/billing/cart-math';
+import { formatBytes, formatCents } from '@/lib/billing/cart-math';
 import { SubscriptionModal } from '@/components/billing/subscription-modal';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -41,6 +41,11 @@ export default function BillingPage() {
     if (params.get('canceled')) window.history.replaceState({}, '', '/billing');
   }, []);
 
+  // POST /billing/subscription only calls Stripe — the D1 mirror is updated
+  // asynchronously by the webhook, so refetch immediately AND after a short delay
+  // to pick up the settled state (mirrors the ?success handling above).
+  const onModalUpdated = () => { reload(); setTimeout(reload, 2500); };
+
   if (loading) {
     return (
       <div className="p-6 max-w-2xl mx-auto space-y-6">
@@ -80,7 +85,7 @@ export default function BillingPage() {
               {sub.status === 'active' && <Badge variant="outline" className="text-[10px] text-green-600 border-green-200">Active</Badge>}
               {sub.cancel_at_period_end && <Badge variant="outline" className="text-[10px] text-amber-600 border-amber-200">Cancelling</Badge>}
             </div>
-            <p className="text-2xl font-bold">${plan.price_monthly}<span className="text-sm font-normal text-muted-foreground">/mo</span></p>
+            <p className="text-2xl font-bold">{formatCents(plan.price_monthly)}<span className="text-sm font-normal text-muted-foreground">/mo</span></p>
             {sub.current_period_end && (
               <p className="text-xs text-muted-foreground mt-1">
                 {sub.cancel_at_period_end ? 'Cancels' : 'Renews'} {new Date(sub.current_period_end * 1000).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
@@ -199,7 +204,7 @@ export default function BillingPage() {
           planId: data.plan.id === "free" ? (data.subscription.has_subscription ? data.plan.id : "starter") : data.plan.id,
           addonQty: Object.fromEntries(data.items.filter((i) => i.kind === "addon").map((i) => [i.ref_id, i.quantity])),
         }}
-        onUpdated={reload}
+        onUpdated={onModalUpdated}
       />
     </div>
   );

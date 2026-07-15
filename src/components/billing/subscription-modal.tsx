@@ -90,7 +90,7 @@ export function SubscriptionModal({ open, onOpenChange, hasSubscription, initial
                     {(["month", "year"] as const).map((iv) => (
                         <button key={iv} type="button" onClick={() => setInterval(iv)}
                             className={`flex-1 rounded-md px-3 py-1.5 ${state.interval === iv ? "bg-background font-medium shadow-sm" : "text-muted-foreground"}`}>
-                            {iv === "month" ? "Monthly" : "Annual"}{iv === "year" && <span className="ml-1 text-[10px] text-green-600">save ~17%</span>}
+                            {iv === "month" ? "Monthly" : "Annual"}{iv === "year" && catalog.plans.some((p) => p.has_yearly) && <span className="ml-1 text-[10px] text-green-600">save ~17%</span>}
                         </button>
                     ))}
                 </div>
@@ -101,9 +101,11 @@ export function SubscriptionModal({ open, onOpenChange, hasSubscription, initial
                 <div>
                     <p className="mb-1 text-xs font-medium text-muted-foreground">Storage add-ons {isPaid <= 0 && "(select a paid plan first)"}</p>
                     <div className="rounded-lg border px-3">
-                        {catalog.addons.map((a) => (
-                            <AddonRow key={a.id} addon={a} interval={state.interval} qty={state.addonQty[a.id] ?? 0} disabled={isPaid <= 0} onChange={(q) => setQty(a.id, q)} />
-                        ))}
+                        {catalog.addons.map((a) => {
+                            const avail = state.interval === "year" ? a.has_yearly : a.has_monthly;
+                            return <AddonRow key={a.id} addon={a} interval={state.interval} qty={state.addonQty[a.id] ?? 0}
+                                disabled={isPaid <= 0 || !avail} onChange={(q) => setQty(a.id, q)} />;
+                        })}
                     </div>
                 </div>
 
