@@ -8,7 +8,7 @@ export function applySummary(
   summary: { unread: number; latest: NotificationItem | null },
 ): { unread: number; lastLatestId: string | null; hasNew: boolean } {
   const newId = summary.latest?.id ?? prev.lastLatestId;
-  const hasNew = !!summary.latest && summary.latest.id !== prev.lastLatestId;
+  const hasNew = !!summary.latest && summary.latest.id !== prev.lastLatestId && prev.lastLatestId !== null;
   return { unread: summary.unread, lastLatestId: newId ?? null, hasNew };
 }
 
