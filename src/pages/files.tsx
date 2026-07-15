@@ -16,7 +16,7 @@ import {
   Download, Share2, Trash2, MoreHorizontal,
   FolderOpen, Grid3X3, List, Loader2,
   Lock, Pencil, Copy, Move, Eye, EyeOff, History,
-  MessageSquare, Star, SlidersHorizontal, RotateCcw, RefreshCw,
+  MessageSquare, Star, SlidersHorizontal, RotateCcw, RefreshCw, Info,
 } from 'lucide-react';
 import {
   DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem,
@@ -29,6 +29,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import { ContextMenu } from '@/components/context-menu';
+import { FileInfoDialog, type InfoTarget } from '@/components/file-info-dialog';
 import { FileDetailPanel } from '@/components/file-detail-panel';
 import { ShareModal } from '@/components/share-modal';
 import { FileViewer } from '@/components/file-viewer';
@@ -168,6 +169,9 @@ export default function FilesPage() {
 
   // Lock modal
   const [lockTarget, setLockTarget] = useState<{ id: string; name: string; type: 'file' | 'folder' } | null>(null);
+
+  // Get-info dialog
+  const [infoTarget, setInfoTarget] = useState<InfoTarget | null>(null);
 
   // Unlock gate — tracks unlocked file IDs and pending unlock prompts
   const [unlockedFiles] = useState(() => new Map<string, string>()); // fileId → unlock_token
@@ -616,6 +620,7 @@ export default function FilesPage() {
     { label: 'Share', icon: <Share2 />, onClick: () => openShare(f.id, f.name) },
     { label: 'Comments', icon: <MessageSquare />, onClick: () => navigate(`/comments?file_id=${f.id}&workspace_id=${wsId}&name=${encodeURIComponent(f.name)}`) },
     { label: favourites.has(f.id) ? 'Remove favourite' : 'Add to favourites', icon: <Star />, onClick: () => toggleFavourite(f.id) },
+    { label: 'Get info', icon: <Info />, onClick: () => setInfoTarget({ type: 'file', item: f }) },
     { label: '', separator: true, onClick: () => {}, icon: null },
     { label: 'Rename', icon: <Pencil />, onClick: () => { setRenameTarget({ id: f.id, name: f.name, type: 'file' }); setRenameName(f.name); } },
     { label: 'Copy', icon: <Copy />, onClick: () => handleCopy(f.id) },
@@ -632,6 +637,7 @@ export default function FilesPage() {
 
   const folderCtxItems = (f: FolderItem) => [
     { label: 'Open', icon: <FolderOpen />, onClick: () => navigateToFolder(f.id) },
+    { label: 'Get info', icon: <Info />, onClick: () => setInfoTarget({ type: 'folder', item: f }) },
     { label: '', separator: true, onClick: () => {}, icon: null },
     { label: 'Rename', icon: <Pencil />, onClick: () => { setRenameTarget({ id: f.id, name: f.name, type: 'folder' }); setRenameName(f.name); } },
     { label: 'Move to...', icon: <Move />, onClick: () => openMoveModal(f.id, 'folder') },
@@ -1010,6 +1016,13 @@ export default function FilesPage() {
         target={hideTarget}
         onClose={() => setHideTarget(null)}
         onDone={loadFiles}
+      />
+
+      {/* Get-info dialog */}
+      <FileInfoDialog
+        target={infoTarget}
+        location={breadcrumbs.length ? breadcrumbs.map((b) => b.name).join(' / ') : 'Home'}
+        onClose={() => setInfoTarget(null)}
       />
 
       {/* Add to group dialog */}
