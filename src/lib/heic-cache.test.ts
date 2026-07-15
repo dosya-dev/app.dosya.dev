@@ -167,3 +167,53 @@ describe("createHeicCache", () => {
     expect(decoder).toHaveBeenCalledTimes(2);
   });
 });
+
+describe("createHeicCache — persistent store (survives page reload)", () => {
+  it("a persistent HIT skips the download+decode entirely", async () => {
+    // This is the whole point: on refresh, a previously-decoded thumb is served
+    // from the Cache API without re-fetching the ~5MB original or re-decoding.
+    const decoder = vi.fn().mockResolvedValue(new Blob(["decoded"]));
+    const persistGet = vi.fn().mockResolvedValue(new Blob(["persisted"]));
+    const persistPut = vi.fn();
+    const cache = createHeicCache({ decoder, persistGet, persistPut, ...urlStubs() });
+
+    const url = await cache.get({ fileId: "f1", maxDim: 256 });
+
+    expect(url).toBe("blob:1");
+    expect(persistGet).toHaveBeenCalledWith("f1:0:256");
+    expect(decoder).not.toHaveBeenCalled();   // no re-decode
+    expect(persistPut).not.toHaveBeenCalled(); // nothing new to store
+  });
+
+  it("a persistent MISS decodes and then writes the result to the store", async () => {
+    const blob = new Blob(["decoded"]);
+    const decoder = vi.fn().mockResolvedValue(blob);
+    const persistGet = vi.fn().mockResolvedValue(null); // miss
+    const persistPut = vi.fn();
+    const cache = createHeicCache({ decoder, persistGet, persistPut, ...urlStubs() });
+
+    await cache.get({ fileId: "f1", maxDim: 256 });
+
+    expect(decoder).toHaveBeenCalledTimes(1);
+    expect(persistPut).toHaveBeenCalledWith("f1:0:256", blob);
+  });
+
+  it("a persistGet that resolves null falls through to decode (graceful degradation)", async () => {
+    const decoder = vi.fn().mockResolvedValue(new Blob(["decoded"]));
+    // Simulate Cache API unavailable / read failure -> persistGet returns null.
+    const persistGet = vi.fn().mockResolvedValue(null);
+    const cache = createHeicCache({ decoder, persistGet, ...urlStubs() });
+
+    const url = await cache.get({ fileId: "f1", maxDim: 256 });
+
+    expect(url).toBe("blob:1");
+    expect(decoder).toHaveBeenCalledTimes(1);
+  });
+
+  it("without a persistent store, behaves exactly as before (decodes normally)", async () => {
+    const decoder = vi.fn().mockResolvedValue(new Blob(["decoded"]));
+    const cache = createHeicCache({ decoder, ...urlStubs() });
+    await cache.get({ fileId: "f1", maxDim: 256 });
+    expect(decoder).toHaveBeenCalledTimes(1);
+  });
+});

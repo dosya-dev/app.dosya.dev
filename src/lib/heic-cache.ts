@@ -18,6 +18,14 @@ interface HeicCacheOptions {
   concurrency?: number;
   createUrl?: (blob: Blob) => string;
   revokeUrl?: (url: string) => void;
+  /**
+   * Optional persistent store (e.g. Cache API) that survives a page reload.
+   * Injected so this module stays free of browser-only globals and testable.
+   * `persistGet` must never reject (return null on any failure); `persistPut`
+   * is fire-and-forget and must swallow its own errors.
+   */
+  persistGet?: (key: string) => Promise<Blob | null>;
+  persistPut?: (key: string, blob: Blob) => void;
 }
 
 /**
@@ -67,7 +75,14 @@ export function createHeicCache(opts: HeicCacheOptions) {
 
   async function decode(req: HeicRequest, key: string): Promise<string> {
     try {
-      const blob = await opts.decoder(fileRawUrl(req), req.maxDim);
+      // Persistent hit (Cache API) survives a page reload: skip the ~5MB
+      // original download AND the ~1s WASM decode entirely.
+      let blob = opts.persistGet ? await opts.persistGet(key) : null;
+      if (!blob) {
+        blob = await opts.decoder(fileRawUrl(req), req.maxDim);
+        // Fire-and-forget: persisting must not delay the preview.
+        opts.persistPut?.(key, blob);
+      }
       const url = createUrl(blob);
       insert(key, url);
       return url;

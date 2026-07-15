@@ -1,5 +1,6 @@
 import { createHeicCache, type HeicRequest } from '@/lib/heic-cache';
 import { createHeicPool, type PoolWorker } from '@/lib/heic-pool';
+import { persistGet, persistPut } from '@/lib/heic-persist';
 
 // Decoding is CPU-bound and a single Worker is single-threaded, so one shared
 // worker would serialize every decode onto one core no matter how many the
@@ -28,7 +29,16 @@ const pool = createHeicPool({
 // The cache's concurrency cap must match the pool size: if it admitted fewer
 // decodes than there are workers, some workers would always sit idle; if it
 // admitted more, the extra decodes would just queue inside the pool anyway.
-const cache = createHeicCache({ decoder: (url, maxDim) => pool.decode(url, maxDim), concurrency: pool.size });
+//
+// `persistGet`/`persistPut` back the in-memory LRU with the Cache API, so a
+// decoded thumbnail survives a page reload — a refresh serves it without
+// re-downloading the original or re-running the WASM decode.
+const cache = createHeicCache({
+  decoder: (url, maxDim) => pool.decode(url, maxDim),
+  concurrency: pool.size,
+  persistGet,
+  persistPut,
+});
 
 /** Resolves to an object URL for a decoded, downscaled preview of a HEIC file. */
 export function getHeicPreviewUrl(req: HeicRequest): Promise<string> {
