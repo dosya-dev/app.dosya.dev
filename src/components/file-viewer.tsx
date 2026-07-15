@@ -204,7 +204,8 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
           );
           defaults.locale = { ...defaults.locale, ...pinturaVideo.plugin_trim_locale_en_gb };
 
-          const res = await fetch(src);
+          const res = await fetch(src, { credentials: 'include' });
+          if (!res.ok) throw new Error(`Failed to load video (HTTP ${res.status})`);
           const blob = await res.blob();
           const ext = extOf(file.name);
           const mimeMap: Record<string, string> = {
@@ -217,9 +218,17 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
             ...defaults, src: videoFile, imageCropAspectRatio: undefined,
           } as any);
         } else {
+          // Pintura fetches `src` itself. A cross-origin URL to api.dosya.dev fails
+          // the browser CORS check on Pintura's XHR, so fetch the image here (the
+          // app's own credentialed request works) and hand Pintura a local File —
+          // same approach as the video branch above.
+          const res = await fetch(src, { credentials: 'include' });
+          if (!res.ok) throw new Error(`Failed to load image (HTTP ${res.status})`);
+          const blob = await res.blob();
           if (cancelled || !editorContainerRef.current) return;
+          const imageFile = new File([blob], file.name, { type: blob.type || file.mime_type });
           editorInstanceRef.current = pintura.appendEditor(editorContainerRef.current, {
-            ...defaults, src, imageCropAspectRatio: undefined,
+            ...defaults, src: imageFile, imageCropAspectRatio: undefined,
           } as any);
         }
 
@@ -258,8 +267,12 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
             toast.error('Save failed', 'Failed to save edited file.');
           }
         });
-      } catch {
-        toast.error('Editor unavailable', 'Image editor not available.');
+      } catch (err) {
+        // Surface the real reason instead of swallowing it — e.g. a failed dynamic
+        // import means the Pintura chunk didn't load (commonly the private-registry
+        // package installed as the public stub because NPM_TOKEN was missing at build).
+        console.error('[pintura] failed to load/init editor', err);
+        toast.error('Editor unavailable', err instanceof Error ? err.message : 'Image editor not available.');
         setEditingOpen(false);
       }
     })();
