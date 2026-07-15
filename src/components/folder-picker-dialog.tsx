@@ -106,27 +106,33 @@ export function FolderPickerDialog({
         </div>
 
         {creating ? (
-          <div className="flex items-center gap-2">
-            <Input
-              autoFocus
-              placeholder="New folder name"
-              value={newName}
-              onChange={(e: ChangeEvent<HTMLInputElement>) => setNewName(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') handleCreate(); }}
-              className="h-8 text-xs"
-            />
-            <Button size="sm" onClick={handleCreate} disabled={busy || !newName.trim()}>
-              {busy ? <Loader2 className="size-3.5 animate-spin" /> : 'Create'}
-            </Button>
-            <Button size="sm" variant="ghost" onClick={() => { setCreating(false); setNewName(''); }}>Cancel</Button>
+          <div className="space-y-1.5">
+            <p className="text-[11px] text-muted-foreground">
+              New folder in <span className="font-medium text-foreground">{nameOf(picked)}</span>
+            </p>
+            <div className="flex items-center gap-2">
+              <Input
+                autoFocus
+                placeholder="Folder name"
+                value={newName}
+                onChange={(e: ChangeEvent<HTMLInputElement>) => setNewName(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleCreate(); }}
+                className="h-8 text-xs"
+              />
+              <Button size="sm" onClick={handleCreate} disabled={busy || !newName.trim()}>
+                {busy ? <Loader2 className="size-3.5 animate-spin" /> : 'Create'}
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => { setCreating(false); setNewName(''); }}>Cancel</Button>
+            </div>
           </div>
         ) : (
           <button
-            className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+            type="button"
             onClick={() => setCreating(true)}
+            className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg border border-dashed text-xs font-medium hover:bg-muted/50 hover:border-solid transition-colors"
           >
             <FolderPlus className="size-3.5" />
-            Create new folder{picked !== null ? ` in "${nameOf(picked)}"` : ' at root'}
+            New folder {picked !== null ? `in "${nameOf(picked)}"` : 'at root'}
           </button>
         )}
 
