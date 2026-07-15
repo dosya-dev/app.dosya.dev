@@ -24,6 +24,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Card } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
@@ -750,7 +751,7 @@ export default function FilesPage() {
               {folders.length > 0 && (
                 <div className="mb-5">
                   <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">Folders</p>
-                  <div className={view === 'grid' ? 'grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2' : 'space-y-0.5'}>
+                  <div className={view === 'grid' ? 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3' : 'space-y-0.5'}>
                     {folders.map((f) => (
                       <FolderCard key={f.id} folder={f} view={view}
                         onClick={() => navigateToFolder(f.id)}
@@ -765,7 +766,7 @@ export default function FilesPage() {
               {files.length > 0 && view === 'grid' && (
                 <div>
                   <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">Files</p>
-                  <div className={`grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 ${selectedFile ? 'lg:grid-cols-4' : 'lg:grid-cols-6'} gap-2`}>
+                  <div className={`grid grid-cols-2 md:grid-cols-3 ${selectedFile ? 'lg:grid-cols-3' : 'lg:grid-cols-4'} gap-3`}>
                     {files.map((f) => (
                       <FileCard key={f.id} file={f} view="grid"
                         domId={`file-${f.id}`}
@@ -1130,52 +1131,83 @@ function FileCard({ file, view, selected, anySelected, active, highlight, domId,
   }
 
   return (
-    <Card id={domId} className={`gap-0 py-0 p-3 hover:shadow-md hover:-translate-y-px transition-all cursor-pointer group relative ${highlight ? 'animate-upload-flash ' : ''}${active ? 'ring-2 ring-green-500 border-green-200 dark:border-green-900' : selected ? 'ring-2 ring-primary' : ''}`} onClick={onClick} onContextMenu={onContextMenu}>
-      {/* Checkbox (hidden for locked files) */}
+    <Card id={domId} className={`gap-0 py-0 p-0 overflow-hidden rounded-xl aspect-3/2 transition-all cursor-pointer group relative hover:-translate-y-px hover:shadow-lg ${highlight ? 'animate-upload-flash ' : ''}${active ? 'ring-2 ring-green-500' : selected ? 'ring-2 ring-primary' : 'ring-1 ring-black/5 dark:ring-white/10'}`} onClick={onClick} onContextMenu={onContextMenu}>
+      {/* Full-bleed image */}
+      <FileThumbnail fileId={file.id} fileName={file.name} ext={ext} />
+
+      {/* Legibility scrims: top for the pills, bottom for filename + actions */}
+      <div className="absolute inset-x-0 top-0 h-14 bg-linear-to-b from-black/55 to-transparent pointer-events-none" />
+      <div className="absolute inset-x-0 bottom-0 h-3/5 bg-linear-to-t from-black/85 via-black/40 to-transparent pointer-events-none" />
+
+      {/* Top-left: multi-select checkbox (hidden for fully-locked files) */}
       {file.lock_mode !== 'full_lock' && (
         <Checkbox
           checked={selected}
           onCheckedChange={() => onSelect()}
           onClick={(e) => e.stopPropagation()}
-          className={`absolute top-2 left-2 z-10 size-5 transition-all ${selected ? '' : 'bg-background/80 opacity-0 group-hover:opacity-100'} ${anySelected ? 'opacity-100!' : ''}`}
+          className={`absolute top-2 left-2 z-20 size-5 rounded-full border-white/70 bg-black/30 backdrop-blur-sm transition-all data-[state=checked]:bg-primary data-[state=checked]:border-primary ${selected ? '' : 'opacity-0 group-hover:opacity-100'} ${anySelected ? 'opacity-100!' : ''}`}
         />
       )}
-      <FileThumbnail fileId={file.id} fileName={file.name} ext={ext} />
-      <div className="flex items-center gap-1">
-        <button className="text-xs font-medium truncate flex-1 text-left hover:underline" onClick={(e) => { e.stopPropagation(); onNameClick(); }}>{file.name}</button>
-        {file.current_version > 1 && <Badge variant="secondary" className="text-[8px] px-1 shrink-0">v{file.current_version}</Badge>}
+
+      {/* Top-right: lock (if any) + file-format pill */}
+      <div className="absolute top-2 right-2 z-10 flex items-center gap-1">
+        {file.lock_mode !== 'none' && (
+          <span className="flex items-center justify-center size-6 rounded-full bg-black/45 backdrop-blur-sm">
+            <Lock className="size-3 text-white" />
+          </span>
+        )}
+        <span className="px-2 py-0.5 rounded-full bg-black/45 backdrop-blur-sm text-[10px] font-mono font-semibold uppercase tracking-wider text-white">{ext}</span>
       </div>
-      <p className="text-[10px] text-muted-foreground">{humanSize(file.size_bytes)} · {timeAgo(file.updated_at)}</p>
-      {/* Badges */}
-      <div className="absolute top-2 right-2 flex gap-1">
-        {file.share_count > 0 && (
-          <div className="w-5 h-5 rounded bg-green-100 dark:bg-green-950 flex items-center justify-center">
-            <Share2 className="size-2.5 text-green-600" />
-          </div>
-        )}
-        {isFavourite && (
-          <button
-            className="w-5 h-5 rounded bg-orange-100 dark:bg-orange-950 flex items-center justify-center"
-            onClick={(e) => { e.stopPropagation(); onFavourite?.(); }}
-          >
-            <Star className="size-2.5 text-orange-500 fill-orange-500" />
-          </button>
-        )}
+
+      {/* Right vertical action rail: favourite · (comments) · share · settings */}
+      <div className="absolute right-2 bottom-2 z-20 flex flex-col gap-2 opacity-90 group-hover:opacity-100 transition-opacity">
+        {/* Favourite (single star — the app's favourite flag) */}
+        <button
+          className="flex items-center justify-center size-8 rounded-full bg-black/35 hover:bg-black/55 backdrop-blur-sm transition-colors"
+          title={isFavourite ? 'Remove from favourites' : 'Add to favourites'}
+          onClick={(e) => { e.stopPropagation(); onFavourite?.(); }}
+        >
+          <Star className={`size-4 ${isFavourite ? 'text-orange-400 fill-orange-400' : 'text-white'}`} />
+        </button>
         {file.comment_count > 0 && (
           <button
-            className="w-5 h-5 rounded bg-blue-100 dark:bg-blue-950 flex items-center justify-center hover:bg-blue-200 dark:hover:bg-blue-900 transition-colors"
+            className="relative flex items-center justify-center size-8 rounded-full bg-black/35 hover:bg-black/55 backdrop-blur-sm transition-colors"
             title={`${file.comment_count} comment${file.comment_count === 1 ? '' : 's'} — open`}
             onClick={(e) => { e.stopPropagation(); onComments?.(); }}
           >
-            <MessageSquare className="size-2.5 text-blue-600" />
+            <MessageSquare className="size-4 text-white" />
+            <span className="absolute -top-1 -right-1 min-w-4 h-4 px-1 rounded-full bg-blue-500 text-[9px] font-mono text-white flex items-center justify-center">{file.comment_count}</span>
           </button>
         )}
-      </div>
-      {file.lock_mode !== 'none' && (
-        <div className="absolute top-2 left-2 w-5 h-5 rounded bg-violet-100 dark:bg-violet-950 flex items-center justify-center">
-          <Lock className="size-2.5 text-violet-600" />
+        {/* Share */}
+        <button
+          className="flex items-center justify-center size-8 rounded-full bg-black/35 hover:bg-black/55 backdrop-blur-sm transition-colors"
+          title={file.share_count > 0 ? `Shared (${file.share_count}) — manage` : 'Share'}
+          onClick={(e) => { e.stopPropagation(); onShare(); }}
+        >
+          <Share2 className={`size-4 ${file.share_count > 0 ? 'text-green-400' : 'text-white'}`} />
+        </button>
+        {/* Settings / more */}
+        <div onClick={(e) => e.stopPropagation()}>
+          <FileDropdown overlay onDownload={onDownload} onShare={onShare} onRename={onRename} onDelete={onDelete} onCopy={onCopy} onMove={onMove} />
         </div>
-      )}
+      </div>
+
+      {/* Bottom-left: filename + meta line (padded so it clears the rail) */}
+      <div className="absolute inset-x-0 bottom-0 z-10 p-2.5 pr-12">
+        <div className="flex items-center gap-1.5 min-w-0">
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <button className="font-mono text-sm font-semibold text-white truncate text-left hover:underline drop-shadow min-w-0" onClick={(e) => { e.stopPropagation(); onNameClick(); }}>{file.name}</button>
+              }
+            />
+            <TooltipContent side="top" align="start" className="font-mono break-all max-w-xs">{file.name}</TooltipContent>
+          </Tooltip>
+          {file.current_version > 1 && <span className="shrink-0 rounded border border-white/30 px-1 text-[9px] font-mono text-white/80">v{file.current_version}</span>}
+        </div>
+        <p className="font-mono text-[11px] text-white/70 truncate drop-shadow">{humanSize(file.size_bytes)} · {timeAgo(file.updated_at)}</p>
+      </div>
     </Card>
   );
 }
@@ -1199,11 +1231,11 @@ function RowThumbnail({ fileId, fileName }: { fileId: string; fileName: string }
 function FileThumbnail({ fileId, fileName, ext }: { fileId: string; fileName: string; ext: string }) {
   const badge = (
     <div
-      className="w-full h-full rounded-lg flex items-center justify-center"
-      style={{ background: colorFor(fileName) + '18' }}
+      className="w-full h-full flex items-center justify-center"
+      style={{ background: `linear-gradient(135deg, ${colorFor(fileName)}22, #0a0a0a)` }}
     >
       <span
-        className="text-[10px] font-bold tracking-wider uppercase"
+        className="font-mono text-xl font-bold tracking-widest uppercase"
         style={{ color: colorFor(fileName) }}
       >
         {ext || 'FILE'}
@@ -1212,12 +1244,12 @@ function FileThumbnail({ fileId, fileName, ext }: { fileId: string; fileName: st
   );
 
   return (
-    <div className="w-full h-14 rounded-lg mb-2 flex items-center justify-center overflow-hidden">
+    <div className="absolute inset-0 bg-neutral-900">
       <FilePreviewImage
         fileId={fileId}
         fileName={fileName}
-        size={256}
-        className="w-full h-full object-contain rounded-lg"
+        size={512}
+        className="w-full h-full object-cover"
         fallback={badge}
       />
     </div>
@@ -1226,12 +1258,16 @@ function FileThumbnail({ fileId, fileName, ext }: { fileId: string; fileName: st
 
 // ── Dropdown menu (three dots) ─────────────────────────────
 
-function FileDropdown({ onDownload, onShare, onRename, onDelete, onCopy, onMove, onAddToGroup }: {
-  onDownload?: () => void; onShare?: () => void; onRename: () => void; onDelete: () => void; onCopy?: () => void; onMove?: () => void; onAddToGroup?: () => void;
+function FileDropdown({ onDownload, onShare, onRename, onDelete, onCopy, onMove, onAddToGroup, overlay }: {
+  onDownload?: () => void; onShare?: () => void; onRename: () => void; onDelete: () => void; onCopy?: () => void; onMove?: () => void; onAddToGroup?: () => void; overlay?: boolean;
 }) {
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger><button className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-muted" onClick={(e) => e.stopPropagation()}><MoreHorizontal className="size-3.5" /></button></DropdownMenuTrigger>
+      <DropdownMenuTrigger>
+        {overlay
+          ? <button className="flex items-center justify-center size-7 rounded-full bg-white/10 hover:bg-white/25 backdrop-blur-sm transition-colors" title="More" onClick={(e) => e.stopPropagation()}><MoreHorizontal className="size-4 text-white" /></button>
+          : <button className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-muted" onClick={(e) => e.stopPropagation()}><MoreHorizontal className="size-3.5" /></button>}
+      </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
         {onDownload && <DropdownMenuItem onClick={onDownload}><Download className="size-3 mr-2" /> Download</DropdownMenuItem>}
         {onShare && <DropdownMenuItem onClick={onShare}><Share2 className="size-3 mr-2" /> Share</DropdownMenuItem>}
@@ -1310,5 +1346,5 @@ function FileSkeleton({ view, count }: { view: ViewMode; count?: number }) {
   if (view === 'list') {
     return <div className="space-y-1">{rows(6).map((i) => <div key={i} className="flex items-center gap-3 px-3 py-2.5"><Skeleton className="w-8 h-8 rounded-md" /><Skeleton className="h-3.5 w-40" /><Skeleton className="h-3 w-16 ml-auto" /></div>)}</div>;
   }
-  return <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">{rows(8).map((i) => <div key={i} className="rounded-xl border p-3 space-y-2"><Skeleton className="w-full h-14 rounded-lg" /><Skeleton className="h-3 w-3/4" /><Skeleton className="h-2.5 w-1/2" /></div>)}</div>;
+  return <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">{rows(8).map((i) => <Skeleton key={i} className="w-full aspect-3/2 rounded-xl" />)}</div>;
 }
