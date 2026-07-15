@@ -10,6 +10,7 @@ import {
   getUserConcurrency, setUserConcurrency, MAX_USER_CONCURRENCY,
 } from '@/lib/upload-concurrency';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Upload, Globe, Info, Check, AlertCircle, Loader2, Home, FolderOpen, Layers } from 'lucide-react';
