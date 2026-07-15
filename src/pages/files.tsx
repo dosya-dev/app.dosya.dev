@@ -356,8 +356,8 @@ export default function FilesPage() {
   const loadFavourites = useCallback(async () => {
     if (!wsId) return;
     try {
-      const data = await api<{ ok: boolean; file_ids?: string[] }>(`/api/favourites?workspace_id=${wsId}`);
-      if (data.ok && data.file_ids) setFavourites(new Set(data.file_ids));
+      const data = await api<{ ok: boolean; files?: { file_id: string }[] }>(`/api/favourites?workspace_id=${wsId}`);
+      if (data.ok && data.files) setFavourites(new Set(data.files.map((f) => f.file_id)));
     } catch { /* optional feature */ }
   }, [wsId]);
   useEffect(() => { loadFavourites(); }, [loadFavourites]);
@@ -374,7 +374,7 @@ export default function FilesPage() {
     const isFav = favourites.has(fileId);
     try {
       if (isFav) {
-        await api(`/api/favourites/${fileId}`, { method: 'DELETE', body: JSON.stringify({ workspace_id: wsId }) });
+        await api(`/api/favourites?workspace_id=${wsId}&file_id=${fileId}`, { method: 'DELETE' });
         setFavourites((prev) => { const next = new Set(prev); next.delete(fileId); return next; });
       } else {
         await api('/api/favourites', { method: 'POST', body: JSON.stringify({ file_id: fileId, workspace_id: wsId }) });
