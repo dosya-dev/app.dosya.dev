@@ -10,7 +10,7 @@ import { Upload } from 'lucide-react';
 import { FilePreviewImage } from '@/components/file-preview-image';
 import {
   greeting, todayStr, humanSize, humanSizeShort, timeAgo,
-  colorFor, labelFor, isImage, avatarColor, initials,
+  colorFor, extOf, avatarColor, initials,
   regionLabel, actionLabel,
 } from '@/lib/helpers';
 
@@ -137,18 +137,26 @@ export default function DashboardPage() {
               ) : (
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
                   {data.recent_files.map((f) => (
-                    <Link key={f.id} to="/files" className="group rounded-lg border bg-muted/50 p-3 hover:shadow-md hover:border-border hover:-translate-y-px transition-all no-underline">
-                      <div className={`w-full h-12 rounded-md mb-2.5 flex items-center justify-center text-[10px] font-bold tracking-wide text-white ${isImage(f.name) ? 'bg-muted' : ''}`} style={isImage(f.name) ? undefined : { background: colorFor(f.name) }}>
+                    <Link key={f.id} to="/files" className="group relative aspect-3/2 overflow-hidden rounded-xl border hover:shadow-lg hover:-translate-y-px transition-all no-underline">
+                      {/* Full-bleed cover image (matches the files-page card) */}
+                      <div className="absolute inset-0 bg-neutral-900">
                         <FilePreviewImage
                           fileId={f.id}
                           fileName={f.name}
-                          size={256}
-                          className="w-full h-full object-contain rounded-md"
-                          fallback={<>{labelFor(f.name)}</>}
+                          size={512}
+                          className="w-full h-full object-cover"
+                          fallback={
+                            <div className="w-full h-full flex items-center justify-center" style={{ background: `linear-gradient(135deg, ${colorFor(f.name)}22, #0a0a0a)` }}>
+                              <span className="font-mono text-lg font-bold tracking-widest uppercase" style={{ color: colorFor(f.name) }}>{extOf(f.name).toUpperCase() || 'FILE'}</span>
+                            </div>
+                          }
                         />
                       </div>
-                      <p className="text-xs font-medium truncate">{f.name}</p>
-                      <p className="text-[11px] text-muted-foreground">{humanSize(f.size_bytes)} · {timeAgo(f.created_at)}</p>
+                      {/* Name + size·date overlaid on a bottom scrim */}
+                      <div className="absolute inset-x-0 bottom-0 z-10 bg-linear-to-t from-black/85 via-black/40 to-transparent p-2.5 pt-6">
+                        <p className="font-mono text-xs font-semibold text-white truncate drop-shadow">{f.name}</p>
+                        <p className="font-mono text-[10px] text-white/70 truncate drop-shadow">{humanSize(f.size_bytes)} · {timeAgo(f.created_at)}</p>
+                      </div>
                     </Link>
                   ))}
                 </div>
