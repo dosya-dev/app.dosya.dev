@@ -238,6 +238,9 @@ export default function FilesPage() {
   const [moveFolders, setMoveFolders] = useState<PickerFolder[]>([]);
   const [highlightId, setHighlightId] = useState<string | null>(null);
   const highlightTimer = useRef<number | null>(null);
+  // Guards the one-shot restore of an open file/viewer from the URL on first load,
+  // so the state→URL mirror effect doesn't wipe the param before it's been read.
+  const openRestored = useRef(false);
 
   const currentFolderId = searchParams.get('folder') || null;
   const deepLinkFileId = searchParams.get('file');
@@ -308,6 +311,46 @@ export default function FilesPage() {
     setSearchParams(next, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deepLinkFileId, files]);
+
+  // Restore an open file/viewer from the URL after a refresh. `view=<id>` reopens
+  // the full viewer, `panel=<id>` reopens the detail panel. Runs once, after the
+  // first file load, and falls back to fetching the file directly if it isn't on
+  // the current page/folder. Sets `openRestored` so the mirror effect below can
+  // take over without racing to clear the param.
+  useEffect(() => {
+    if (openRestored.current || loading) return;
+    const viewId = searchParams.get('view');
+    const panelId = searchParams.get('panel');
+    const id = viewId || panelId;
+    const action: 'view' | 'detail' = viewId ? 'view' : 'detail';
+    if (!id) { openRestored.current = true; return; }
+    const inList = files.find((f) => f.id === id);
+    if (inList) { openFileWithLockCheck(inList, action); openRestored.current = true; return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await api<{ ok: boolean; file?: FileItem }>(`/api/files/${id}`);
+        if (!cancelled && res.ok && res.file) openFileWithLockCheck(res.file, action);
+      } catch { /* stale/deleted file — the mirror effect will drop the param */ }
+      finally { if (!cancelled) openRestored.current = true; }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, files]);
+
+  // Mirror the open file/viewer into the URL so it survives a refresh. Viewer wins
+  // if both are somehow set. Guarded until the initial restore has run.
+  useEffect(() => {
+    if (!openRestored.current) return;
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (viewerFile) { next.set('view', viewerFile.id); next.delete('panel'); }
+      else if (selectedFile) { next.set('panel', selectedFile.id); next.delete('view'); }
+      else { next.delete('view'); next.delete('panel'); }
+      return next.toString() === prev.toString() ? prev : next;
+    }, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewerFile, selectedFile]);
 
   // Load favourites
   const loadFavourites = useCallback(async () => {
