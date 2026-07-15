@@ -13,6 +13,7 @@ import { highlightToHtml } from '@/lib/text-highlight';
 import { useInFileFind } from '@/lib/use-in-file-find';
 import { TextFindBar } from '@/components/text-find-bar';
 import { TextEditorOverlay } from '@/components/text-editor';
+import { VCardView } from '@/components/vcard-viewer';
 
 
 // ── Types ─────────────────────────────────────────────────
@@ -43,6 +44,7 @@ interface FileViewerProps {
 // ── Helpers ───────────────────────────────────────────────
 
 function isPdf(name: string) { return extOf(name) === 'pdf'; }
+function isVcard(name: string) { const e = extOf(name); return e === 'vcf' || e === 'vcard'; }
 function isEditable(name: string) { return isImage(name) || isVideo(name); }
 
 const THUMB_WINDOW = 6;
@@ -341,7 +343,7 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
         <div className="flex-1 flex min-h-0">
           {/* File content */}
           <div className="flex-1 min-h-0 min-w-0 flex items-center justify-center bg-muted/30 overflow-auto p-6">
-            <FileContent file={file} rawUrl={rawUrl()} downloadUrl={downloadUrl} version={previewVersion} />
+            <FileContent file={file} rawUrl={rawUrl()} downloadUrl={downloadUrl} version={previewVersion} workspaceId={workspaceId} onSaved={() => { onRefresh(); loadVersions(); }} />
           </div>
 
           {/* Version sidebar */}
@@ -459,8 +461,12 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
 
 // ── File content renderer ─────────────────────────────────
 
-function FileContent({ file, rawUrl, downloadUrl, version }: { file: FileItem; rawUrl: string; downloadUrl: string; version?: number }) {
+function FileContent({ file, rawUrl, downloadUrl, version, workspaceId, onSaved }: { file: FileItem; rawUrl: string; downloadUrl: string; version?: number; workspaceId: string; onSaved: () => void }) {
   const ext = extOf(file.name);
+
+  if (isVcard(file.name)) {
+    return <VCardView file={file} rawUrl={rawUrl} workspaceId={workspaceId} onSaved={onSaved} />;
+  }
 
   if (isImage(file.name)) {
     return (
