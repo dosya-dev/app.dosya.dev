@@ -24,7 +24,18 @@ export function SubscriptionModal({ open, onOpenChange, hasSubscription, initial
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    useEffect(() => { if (open) { setState({ ...initial, coupon: null }); getCatalog().then(setCatalog).catch(() => setError("Failed to load plans")); } }, [open]);
+    useEffect(() => {
+        if (!open) return;
+        // Modal stays mounted across open/close (controlled purely by `open`, like ShareModal),
+        // so reset all transient state on open — otherwise `submitting` stays true after a
+        // successful update and the CTA is permanently disabled on reopen.
+        setState({ ...initial, coupon: null });
+        setSubmitting(false);
+        setError(null);
+        setCouponError(null);
+        setCodeInput("");
+        getCatalog().then(setCatalog).catch(() => setError("Failed to load plans"));
+    }, [open]);
 
     if (!catalog) {
         return (
@@ -58,7 +69,9 @@ export function SubscriptionModal({ open, onOpenChange, hasSubscription, initial
         setSubmitting(true); setError(null);
         const payload: CartPayload = {
             interval: state.interval, plan_id: state.planId,
-            addons: Object.entries(state.addonQty).filter(([, q]) => q > 0).map(([id, qty]) => ({ id, qty })),
+            addons: Object.entries(state.addonQty)
+                .filter(([id, q]) => q > 0 && catalog.addons.some((a) => a.id === id))
+                .map(([id, qty]) => ({ id, qty })),
             promo_code: state.coupon?.code,
         };
         try {
