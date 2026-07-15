@@ -5,11 +5,11 @@ import type { Catalog } from "@/api/billing";
 const GB = 1_073_741_824, TB = 1_099_511_627_776;
 const catalog: Catalog = {
     plans: [
-        { id: "free", name: "Free", storage_bytes: 5 * GB, price_monthly: 0, price_yearly: 0, price_monthly_label: "Free", price_yearly_label: null, features: [], has_monthly: false, has_yearly: false },
-        { id: "pro", name: "Pro", storage_bytes: 1 * TB, price_monthly: 1999, price_yearly: 19990, price_monthly_label: "$19.99", price_yearly_label: "$199.90", features: [], has_monthly: true, has_yearly: true },
+        { id: "free", name: "Free", storage_bytes: 5 * GB, storage_label: "5 GB", price_monthly: 0, price_yearly: 0, price_monthly_label: "Free", price_yearly_label: null, features: [], has_monthly: false, has_yearly: false },
+        { id: "pro", name: "Pro", storage_bytes: 1 * TB, storage_label: "1 TB", price_monthly: 1999, price_yearly: 19990, price_monthly_label: "$19.99", price_yearly_label: "$199.90", features: [], has_monthly: true, has_yearly: true },
     ],
     addons: [
-        { id: "addon_1tb", name: "+1 TB", storage_bytes: 1 * TB, price_monthly: 1500, price_yearly: 15000, price_monthly_label: "$15", price_yearly_label: "$150", max_quantity: 20, has_monthly: true, has_yearly: true },
+        { id: "addon_1tb", name: "+1 TB", storage_bytes: 1 * TB, storage_label: "1 TB", price_monthly: 1500, price_yearly: 15000, price_monthly_label: "$15", price_yearly_label: "$150", max_quantity: 20, has_monthly: true, has_yearly: true },
     ],
 };
 
