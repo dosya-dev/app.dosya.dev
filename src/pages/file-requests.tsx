@@ -11,9 +11,6 @@ import { Skeleton } from '@/components/ui/skeleton';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
-import {
-  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
-} from '@/components/ui/dropdown-menu';
 import { Label } from '@/components/ui/label';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -26,6 +23,8 @@ import {
 } from 'lucide-react';
 import { humanSize, timeAgo, fileIconSrc } from '@/lib/helpers';
 import { toast } from '@/lib/toast';
+import { FolderPickerDialog } from '@/components/folder-picker-dialog';
+import { useFolderTree, folderPath } from '@/lib/folders';
 
 
 // ── Types ─────────────────────────────────────────────────
@@ -61,12 +60,6 @@ interface Upload {
   extension: string | null;
 }
 
-interface PickerFolder {
-  id: string;
-  name: string;
-  parent_id: string | null;
-  file_count: number;
-}
 
 // ── Page ──────────────────────────────────────────────────
 
@@ -306,13 +299,8 @@ function CreateRequestDialog({ workspaceId, onClose, onCreated }: {
   const [resultUrl, setResultUrl] = useState('');
 
   // Folder picker
-  const [folders, setFolders] = useState<PickerFolder[]>([]);
-
-  useEffect(() => {
-    api<{ ok: boolean; folders?: PickerFolder[] }>(`/api/folders/tree?workspace_id=${workspaceId}`)
-      .then((d) => { if (d.ok && d.folders) setFolders(d.folders); })
-      .catch(() => {});
-  }, [workspaceId]);
+  const { folders, setFolders } = useFolderTree(workspaceId);
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   const addEmail = (raw: string) => {
     const e = raw.trim().toLowerCase();
@@ -385,6 +373,7 @@ function CreateRequestDialog({ workspaceId, onClose, onCreated }: {
   const selectedFolder = folders.find((f) => f.id === folderId);
 
   return (
+    <>
     <Dialog open onOpenChange={() => onClose()}>
       <DialogContent className="max-w-md max-h-[85vh] flex flex-col">
         <DialogHeader>
@@ -475,22 +464,29 @@ function CreateRequestDialog({ workspaceId, onClose, onCreated }: {
               {/* Upload destination */}
               <div>
                 <Label className="text-xs font-medium text-muted-foreground mb-1 block">Upload destination</Label>
-                <DropdownMenu>
-                  <DropdownMenuTrigger className="w-full h-8 border rounded-md px-2.5 text-xs bg-background flex items-center gap-2 hover:bg-muted/50 text-left">
-                    {selectedFolder ? <><FolderOpen className="size-3 text-muted-foreground shrink-0" /> {selectedFolder.name}</> : <><Home className="size-3 text-muted-foreground shrink-0" /> Root (workspace top level)</>}
-                    <ChevronDown className="size-3 text-muted-foreground ml-auto" />
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent className="max-h-40">
-                    <DropdownMenuItem className={`text-xs ${!folderId ? 'font-medium' : ''}`} onClick={() => setFolderId(null)}>
-                      <Home className="size-3 text-muted-foreground" /> Root
-                    </DropdownMenuItem>
-                    {folders.map((f) => (
-                      <DropdownMenuItem key={f.id} className={`text-xs ${folderId === f.id ? 'font-medium' : ''}`} onClick={() => setFolderId(f.id)}>
-                        <FolderOpen className="size-3 text-muted-foreground" /> {f.name}
-                      </DropdownMenuItem>
-                    ))}
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                <button
+                  type="button"
+                  className="w-full h-8 border rounded-md px-2.5 text-xs bg-background flex items-center gap-2 hover:bg-muted/50 text-left"
+                  onClick={() => setPickerOpen(true)}
+                >
+                  {selectedFolder ? (
+                    <>
+                      <FolderOpen className="size-3 text-muted-foreground shrink-0" />
+                      <span className="flex-1 truncate">
+                        {folderPath(folders, selectedFolder.id) && (
+                          <span className="text-muted-foreground">{folderPath(folders, selectedFolder.id)} / </span>
+                        )}
+                        {selectedFolder.name}
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <Home className="size-3 text-muted-foreground shrink-0" />
+                      <span className="flex-1 truncate">Root (workspace top level)</span>
+                    </>
+                  )}
+                  <ChevronDown className="size-3 text-muted-foreground shrink-0" />
+                </button>
               </div>
 
               {/* Advanced options */}
@@ -547,6 +543,18 @@ function CreateRequestDialog({ workspaceId, onClose, onCreated }: {
         </DialogFooter>
       </DialogContent>
     </Dialog>
+    {pickerOpen && (
+      <FolderPickerDialog
+        open
+        onClose={() => setPickerOpen(false)}
+        workspaceId={workspaceId}
+        folders={folders}
+        onFoldersChange={setFolders}
+        selectedId={folderId}
+        onSelect={(id) => { setFolderId(id); setPickerOpen(false); }}
+      />
+    )}
+    </>
   );
 }
 

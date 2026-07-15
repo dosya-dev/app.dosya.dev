@@ -10,19 +10,15 @@ import {
   getUserConcurrency, setUserConcurrency, MAX_USER_CONCURRENCY,
 } from '@/lib/upload-concurrency';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
-} from '@/components/ui/dialog';
-import { Upload, FolderPlus, Globe, Info, Check, AlertCircle, Loader2, Home, FolderOpen, Layers } from 'lucide-react';
+import { Upload, Globe, Info, Check, AlertCircle, Loader2, Home, FolderOpen, Layers } from 'lucide-react';
 import { humanSize, folderIconSrc } from '@/lib/helpers';
 import { toast } from '@/lib/toast';
+import { FolderPickerDialog } from '@/components/folder-picker-dialog';
+import { useFolderTree } from '@/lib/folders';
 
 interface RegionInfo { code: string; city: string; country: string }
-interface PickerFolder { id: string; name: string; parent_id: string | null; file_count: number }
 
 
 export default function UploadsPage() {
@@ -32,12 +28,9 @@ export default function UploadsPage() {
   const [folderName, setFolderName] = useState(searchParams.get('folder_name') || 'Root (top level)');
   const [selectedRegion, setSelectedRegion] = useState('ap-southeast-2');
   const [regions, setRegions] = useState<RegionInfo[]>([]);
-  const [folders, setFolders] = useState<PickerFolder[]>([]);
+  const { folders, setFolders } = useFolderTree(wsId);
   const [dragging, setDragging] = useState(false);
   const [selectFolderOpen, setSelectFolderOpen] = useState(false);
-  const [createFolderOpen, setCreateFolderOpen] = useState(false);
-  const [newFolderName, setNewFolderName] = useState('');
-  const [creatingFolder, setCreatingFolder] = useState(false);
   const [concurrency, setConcurrency] = useState(getUserConcurrency());
   const [wsMaxUploads, setWsMaxUploads] = useState<number>(0); // 0 = unlimited
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -52,10 +45,9 @@ export default function UploadsPage() {
     if (!wsId) return;
     (async () => {
       try {
-        const [regRes, wsRes, folderRes] = await Promise.all([
+        const [regRes, wsRes] = await Promise.all([
           api<{ ok: boolean; regions: RegionInfo[] }>('/api/regions'),
           api<{ ok: boolean; workspace?: { default_region: string }; settings?: { available_regions: string | null; max_concurrent_uploads: number } | null }>(`/api/workspaces/${wsId}`),
-          api<{ ok: boolean; folders?: PickerFolder[] }>(`/api/folders/tree?workspace_id=${wsId}`),
         ]);
         if (regRes.ok) {
           let available: string[] = [];
@@ -69,7 +61,6 @@ export default function UploadsPage() {
         setWsMaxUploads(cap);
         setWorkspaceCap(cap);
         if (cap > 0 && getUserConcurrency() > cap) { setUserConcurrency(cap); setConcurrency(cap); }
-        if (folderRes.ok && folderRes.folders) setFolders(folderRes.folders);
       } catch { /* */ }
     })();
   }, [wsId]);
@@ -82,23 +73,6 @@ export default function UploadsPage() {
   const onConcurrencyChange = (n: number) => { setConcurrency(n); setUserConcurrency(n); };
   const onDrop = (e: DragEvent) => { e.preventDefault(); setDragging(false); if (e.dataTransfer?.files.length) addFiles(e.dataTransfer.files); };
   const onFileChange = (e: ChangeEvent<HTMLInputElement>) => { if (e.target.files?.length) { addFiles(e.target.files); e.target.value = ''; } };
-
-  const handleCreateFolder = async () => {
-    if (!newFolderName.trim()) return;
-    setCreatingFolder(true);
-    try {
-      const data = await api<{ ok: boolean; folder?: { id: string; name: string }; error?: string }>('/api/folders', {
-        method: 'POST', body: JSON.stringify({ workspace_id: wsId, parent_id: folderId, name: newFolderName.trim() }),
-      });
-      if (data.ok && data.folder) {
-        setFolders((prev) => [...prev, { id: data.folder!.id, name: data.folder!.name, parent_id: folderId, file_count: 0 }]);
-        setFolderId(data.folder.id); setFolderName(data.folder.name);
-        toast.success('Folder created', `"${data.folder.name}" is ready to use.`);
-        setCreateFolderOpen(false); setNewFolderName('');
-      } else toast.error('Folder creation failed', data.error ?? 'Could not create folder');
-    } catch { toast.error('Folder creation failed', 'The folder could not be created.'); }
-    setCreatingFolder(false);
-  };
 
   const totalBytes = queue.reduce((s, e) => s + e.fileSize, 0);
   const doneCount = queue.filter((e) => e.status === 'complete').length;
@@ -160,9 +134,6 @@ export default function UploadsPage() {
                   : <Home className="size-3.5 text-muted-foreground shrink-0" />}
                 <span className="flex-1 truncate">{folderName}</span>
               </button>
-              <button className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground" onClick={() => setCreateFolderOpen(true)}>
-                <FolderPlus className="size-3" /> Create new folder
-              </button>
             </div>
             <div className="border-t" />
             <div>
@@ -206,21 +177,16 @@ export default function UploadsPage() {
       </div>
 
       {selectFolderOpen && (
-        <FolderPickerDialog open onClose={() => setSelectFolderOpen(false)} folders={folders} selectedId={folderId}
-          onSelect={(id, name) => { setFolderId(id); setFolderName(name); setSelectFolderOpen(false); toast.success('Uploading here', `New files will go to "${name}".`); }} />
+        <FolderPickerDialog
+          open
+          onClose={() => setSelectFolderOpen(false)}
+          workspaceId={wsId}
+          folders={folders}
+          onFoldersChange={setFolders}
+          selectedId={folderId}
+          onSelect={(id, name) => { setFolderId(id); setFolderName(name); setSelectFolderOpen(false); toast.success('Uploading here', `New files will go to "${name}".`); }}
+        />
       )}
-
-      <Dialog open={createFolderOpen} onOpenChange={setCreateFolderOpen}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader><DialogTitle>Create new folder</DialogTitle></DialogHeader>
-          <Input placeholder="e.g. Project Assets" value={newFolderName} onChange={(e: ChangeEvent<HTMLInputElement>) => setNewFolderName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleCreateFolder()} maxLength={100} />
-          <p className="text-xs text-muted-foreground">{folderId ? `Will be created inside "${folderName}"` : 'Will be created at root level'}</p>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setCreateFolderOpen(false)}>Cancel</Button>
-            <Button onClick={handleCreateFolder} disabled={creatingFolder}>{creatingFolder ? <Loader2 className="size-4 animate-spin mr-1.5" /> : null} Create folder</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
@@ -256,77 +222,3 @@ const QueueRow = memo(function QueueRow({ item }: { item: UploadItem }) {
   );
 });
 
-function FolderPickerDialog({ open, onClose, folders, selectedId, onSelect }: {
-  open: boolean; onClose: () => void; folders: PickerFolder[]; selectedId: string | null;
-  onSelect: (id: string | null, name: string) => void;
-}) {
-  const [search, setSearch] = useState('');
-  const [picked, setPicked] = useState<string | null>(selectedId);
-
-  useEffect(() => { if (open) { setPicked(selectedId); setSearch(''); } }, [open, selectedId]);
-
-  const q = search.trim().toLowerCase();
-
-  // No search → hierarchical tree (depth-indented). Search → flat matches with breadcrumb path.
-  const treeRows: { folder: PickerFolder; depth: number }[] = [];
-  if (!q) {
-    const pushChildren = (parentId: string | null, depth: number) => {
-      folders
-        .filter((f) => f.parent_id === parentId)
-        .sort((a, b) => a.name.localeCompare(b.name))
-        .forEach((f) => { treeRows.push({ folder: f, depth }); pushChildren(f.id, depth + 1); });
-    };
-    pushChildren(null, 0);
-  }
-  const matches = q ? folders.filter((f) => f.name.toLowerCase().includes(q)) : [];
-
-  const pathOf = (f: PickerFolder): string => {
-    const parts: string[] = [];
-    let pid = f.parent_id;
-    while (pid) { const p = folders.find((x) => x.id === pid); if (!p) break; parts.unshift(p.name); pid = p.parent_id; }
-    return parts.length ? parts.join(' / ') + ' / ' : '';
-  };
-
-  const rowCls = (id: string | null) =>
-    `w-full flex items-center gap-2 pr-2.5 py-2 text-xs border-b last:border-b-0 hover:bg-muted/50 text-left ${picked === id ? 'bg-green-50 dark:bg-green-950/30' : ''}`;
-  const selectedBadge = <Badge className="text-[9px] bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-400">selected</Badge>;
-
-  return (
-    <Dialog open={open} onOpenChange={() => onClose()}>
-      <DialogContent className="max-w-sm">
-        <DialogHeader><DialogTitle>Select folder</DialogTitle></DialogHeader>
-        <Input placeholder="Search folders..." value={search} onChange={(e: ChangeEvent<HTMLInputElement>) => setSearch(e.target.value)} className="h-8 text-xs" />
-        <div className="max-h-70 overflow-y-auto border rounded-lg">
-          <button className={rowCls(null)} style={{ paddingLeft: 10 }} onClick={() => setPicked(null)}>
-            <Home className="size-3.5 text-muted-foreground shrink-0" /><span className="flex-1 truncate">Root (top level)</span>
-            {picked === null && selectedBadge}
-          </button>
-
-          {q ? (
-            matches.length === 0 ? (
-              <div className="px-2.5 py-3 text-center text-xs text-muted-foreground">No folders match "{search}"</div>
-            ) : matches.map((f) => (
-              <button key={f.id} className={rowCls(f.id)} style={{ paddingLeft: 10 }} onClick={() => setPicked(f.id)}>
-                <img src={folderIconSrc(f.file_count)} alt="" className="size-3.5 shrink-0" />
-                <span className="flex-1 truncate"><span className="text-muted-foreground">{pathOf(f)}</span>{f.name}</span>
-                {picked === f.id && selectedBadge}
-              </button>
-            ))
-          ) : (
-            treeRows.map(({ folder, depth }) => (
-              <button key={folder.id} className={rowCls(folder.id)} style={{ paddingLeft: 10 + depth * 18 }} onClick={() => setPicked(folder.id)}>
-                <img src={folderIconSrc(folder.file_count)} alt="" className="size-3.5 shrink-0" />
-                <span className="flex-1 truncate">{folder.name}</span>
-                {picked === folder.id && selectedBadge}
-              </button>
-            ))
-          )}
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={() => onSelect(picked, picked === null ? 'Root (top level)' : folders.find((f) => f.id === picked)?.name ?? 'Folder')}>Select folder</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
