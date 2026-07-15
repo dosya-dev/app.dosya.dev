@@ -5,6 +5,7 @@ import { DashboardSidebar } from './dashboard-sidebar';
 import { DashboardTopbar } from './dashboard-topbar';
 import { API_BASE } from '@/api/client';
 import UploadDock from '@/components/uploads/upload-dock';
+import { NotificationPoller } from '../notifications/notification-poller';
 import { applyTheme, writeCache, readCache, initSystemListener } from '@/lib/theme';
 import { isThemeId, isMode, DEFAULT_THEME, DEFAULT_MODE } from '@/lib/themes';
 
@@ -69,6 +70,7 @@ export function DashboardLayout() {
     >
       <DashboardSidebar />
       <SidebarInset className="min-h-0 overflow-hidden">
+        <NotificationPoller />
         <DashboardTopbar />
         {/* key={pathname} remounts the content area on navigation so the
             fade/rise animation replays — the page's skeleton fades in first,
