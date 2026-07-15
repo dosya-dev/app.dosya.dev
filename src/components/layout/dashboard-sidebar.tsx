@@ -12,7 +12,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import {
   LayoutDashboard, FolderOpen, Upload, Share2, Users, Settings,
-  ChevronsUpDown, Plus, Check, Loader2,
+  ChevronsUpDown, Plus, Check, Loader2, Map,
 } from 'lucide-react';
 import { api, API_BASE } from '@/api/client';
 import { useWorkspace } from '@/stores/workspace';
@@ -30,6 +30,7 @@ interface StorageInfo {
 const navItems = [
   { title: 'Dashboard', url: '/', icon: LayoutDashboard },
   { title: 'Files', url: '/files', icon: FolderOpen },
+  { title: 'Map', url: '/map', icon: Map },
   { title: 'Uploads', url: '/uploads', icon: Upload },
   { title: 'Shared', url: '/shared', icon: Share2 },
 ];

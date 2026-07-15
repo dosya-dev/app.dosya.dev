@@ -7,6 +7,7 @@ import UploadsPage from '@/pages/uploads';
 import SettingsPage from '@/pages/settings';
 import ProfilePage from '@/pages/profile';
 import FilesPage from '@/pages/files';
+import MapPage from '@/pages/map';
 import CreateWorkspacePage from '@/pages/create-workspace';
 import TeamsPage from '@/pages/teams';
 import SharedPage from '@/pages/shared';
@@ -46,6 +47,7 @@ export const router = createBrowserRouter([
     children: [
       { path: '/', element: <DashboardPage /> },
       { path: '/files', element: <FilesPage /> },
+      { path: '/map', element: <MapPage /> },
       { path: '/file-requests', element: <FileRequestsPage /> },
       { path: '/file-requests/:id', element: <FileRequestDetailPage /> },
       { path: '/uploads', element: <UploadsPage /> },

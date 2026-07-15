@@ -1,6 +1,7 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
+@import "maplibre-gl/dist/maplibre-gl.css";
 @import "@fontsource-variable/space-grotesk";
 @import "@fontsource/space-mono/400.css";
 @import "@fontsource/space-mono/700.css";
@@ -463,3 +464,10 @@ body {
   background-color: rgba(255, 153, 0, 0.85);
   color: #1a1a1a;
 }
+
+/* Photo map markers (dynamically-created DOM nodes; Tailwind can't reach these) */
+.dosya-map-marker { width: 40px; height: 40px; border-radius: 9999px; overflow: hidden;
+  border: 2px solid white; box-shadow: 0 1px 4px rgba(0,0,0,.35); background: #3b82f6; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; padding: 0; }
+.dosya-map-marker img { width: 100%; height: 100%; object-fit: cover; }
+.dosya-map-count { color: white; font-weight: 600; font-size: 13px; }
