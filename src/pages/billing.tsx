@@ -1,59 +1,44 @@
 import { useState, useEffect } from 'react';
-import { api } from '@/api/client';
+import { getBillingStatus, type BillingStatus } from '@/api/billing';
+import { formatBytes } from '@/lib/billing/cart-math';
+import { SubscriptionModal } from '@/components/billing/subscription-modal';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
-  CreditCard, Download, ExternalLink, AlertTriangle, Check,
+  CreditCard, Download, AlertTriangle,
 } from 'lucide-react';
-
-interface BillingData {
-  plan: {
-    name: string;
-    storage_label: string;
-    storage_bytes: number;
-    price_monthly: number;
-    price_yearly: number;
-    features: string[];
-  };
-  
-  usage: {
-    used_bytes: number;
-    used_label: string;
-    pct: number;
-  };
-  subscription: {
-    status: string | null;
-    current_period_end: number | null;
-    cancel_at_period_end: boolean;
-    grace_period_end: number | null;
-  };
-  invoices: {
-    id: string;
-    period_start: number;
-    period_end: number;
-    amount: number;
-    status: string;
-    pdf_url: string | null;
-  }[];
-  portal_url: string | null;
-}
 
 const PLAN_COLORS: Record<string, string> = {
   free: '#6b7280', starter: '#3b82f6', plus: '#8b5cf6', pro: '#f59e0b', business: '#059669',
 };
 
 export default function BillingPage() {
-  const [data, setData] = useState<BillingData | null>(null);
+  const [data, setData] = useState<BillingStatus | null>(null);
   const [loading, setLoading] = useState(true);
+  const [modalOpen, setModalOpen] = useState(false);
+
+  const reload = () => getBillingStatus().then((d) => setData(d)).catch(() => {});
 
   useEffect(() => {
-    api<{ ok: boolean } & BillingData>('/api/billing/status')
-      .then((d) => { if (d.ok) setData(d as any); })
+    getBillingStatus()
+      .then((d) => setData(d))
       .catch(() => {})
       .finally(() => setLoading(false));
+  }, []);
+
+  // Handle the return from Stripe Checkout (?success / ?canceled).
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('success')) {
+      // Stripe redirect back — the webhook may lag a moment; refetch after a short delay.
+      const t = setTimeout(() => getBillingStatus().then((d) => setData(d)).catch(() => {}), 2500);
+      window.history.replaceState({}, '', '/billing');
+      return () => clearTimeout(t);
+    }
+    if (params.get('canceled')) window.history.replaceState({}, '', '/billing');
   }, []);
 
   if (loading) {
@@ -102,20 +87,13 @@ export default function BillingPage() {
               </p>
             )}
           </div>
-          {data.portal_url && (
-            <a href={data.portal_url} target="_blank" rel="noreferrer">
-              <Button variant="outline" size="sm" className="gap-1.5 text-xs">
-                <ExternalLink className="size-3" /> Manage subscription
-              </Button>
-            </a>
-          )}
         </div>
 
         {/* Storage */}
         <div className="mb-3">
           <div className="flex items-center justify-between mb-1.5">
             <span className="text-xs text-muted-foreground">Storage</span>
-            <span className="text-xs text-muted-foreground">{usage.used_label} / {plan.storage_label}</span>
+            <span className="text-xs text-muted-foreground">{usage.used_label} / {formatBytes(usage.limit_bytes)}</span>
           </div>
           <Progress
             value={Math.min(storagePct, 100)}
@@ -123,26 +101,58 @@ export default function BillingPage() {
             style={{ '--storage-color': storageColor } as React.CSSProperties}
           />
           {storagePct >= 80 && (
-            <div className="flex items-center gap-1.5 mt-2 text-xs" style={{ color: storagePct >= 95 ? '#ef4444' : '#D97706' }}>
-              <AlertTriangle className="size-3" />
-              {storagePct >= 95 ? 'Storage almost full. Upgrade your plan.' : `${Math.round(100 - storagePct)}% remaining`}
-            </div>
+            storagePct >= 95 ? (
+              <button
+                type="button"
+                onClick={() => setModalOpen(true)}
+                className="flex items-center gap-1.5 mt-2 text-xs w-full text-left hover:underline"
+                style={{ color: '#ef4444' }}
+              >
+                <AlertTriangle className="size-3" />
+                Storage almost full. Upgrade your plan.
+              </button>
+            ) : (
+              <div className="flex items-center gap-1.5 mt-2 text-xs" style={{ color: '#D97706' }}>
+                <AlertTriangle className="size-3" />
+                {Math.round(100 - storagePct)}% remaining
+              </div>
+            )
           )}
         </div>
 
-        {/* Features */}
-        {plan.features && plan.features.length > 0 && (
-          <div className="pt-3 border-t">
-            <p className="text-xs font-medium text-muted-foreground mb-2">Plan includes</p>
-            <div className="grid grid-cols-2 gap-1.5">
-              {plan.features.map((f, i) => (
-                <div key={i} className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <Check className="size-3 text-green-500 shrink-0" /> {f}
-                </div>
-              ))}
+        {/* Storage breakdown (the stack) */}
+        <div className="mt-3 space-y-1 border-t pt-3">
+          <p className="text-xs font-medium text-muted-foreground">Storage breakdown</p>
+          {data.items.filter((i) => i.kind !== "plan").length === 0 && (
+            <div className="flex justify-between text-xs text-muted-foreground">
+              <span>{data.plan.name} plan</span><span>{data.plan.storage_label}</span>
             </div>
+          )}
+          {data.items.map((i) => (
+            <div key={`${i.kind}-${i.ref_id}`} className="flex justify-between text-xs text-muted-foreground">
+              <span>{i.kind === "plan" ? `${data.plan.name} plan` : i.kind === "custom" ? "Custom package" : `${i.ref_id} × ${i.quantity}`}</span>
+              <span>{i.total_label}</span>
+            </div>
+          ))}
+          <div className="flex justify-between border-t pt-1 text-xs font-semibold">
+            <span>Total</span><span>{formatBytes(data.usage.limit_bytes)}</span>
           </div>
-        )}
+        </div>
+
+        {/* Actions */}
+        <div className="mt-4 flex gap-2">
+          <Button size="sm" onClick={() => setModalOpen(true)}>
+            {data.subscription.has_subscription ? "Change plan" : "Upgrade"}
+          </Button>
+          {data.subscription.has_subscription && (
+            <Button size="sm" variant="outline" onClick={() => setModalOpen(true)}>Add storage</Button>
+          )}
+          {data.portal_url && (
+            <a href={data.portal_url} target="_blank" rel="noreferrer">
+              <Button size="sm" variant="ghost">Manage billing</Button>
+            </a>
+          )}
+        </div>
       </Card>
 
       {/* Invoices */}
@@ -176,6 +186,19 @@ export default function BillingPage() {
           ))
         )}
       </Card>
+
+      <SubscriptionModal
+        open={modalOpen}
+        onOpenChange={setModalOpen}
+        hasSubscription={data.subscription.has_subscription}
+        usedBytes={data.usage.used_bytes}
+        initial={{
+          interval: data.interval,
+          planId: data.plan.id === "free" ? (data.subscription.has_subscription ? data.plan.id : "starter") : data.plan.id,
+          addonQty: Object.fromEntries(data.items.filter((i) => i.kind === "addon").map((i) => [i.ref_id, i.quantity])),
+        }}
+        onUpdated={reload}
+      />
     </div>
   );
 }
