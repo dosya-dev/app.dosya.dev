@@ -7,13 +7,14 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem,
   DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Search, Bell, User, LogOut, Settings, CreditCard, HelpCircle, Sun, Moon, Palette } from 'lucide-react';
+import { Search, User, LogOut, Settings, CreditCard, HelpCircle, Sun, Moon, Palette } from 'lucide-react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { api, API_BASE } from '@/api/client';
 import { readCache, writeCache, applyTheme, subscribeThemeChange } from '@/lib/theme';
 import { useWorkspace } from '@/stores/workspace';
 import { humanSize, colorFor, labelFor, initials } from '@/lib/helpers';
 import { titleForPath, iconForPath } from '@/lib/page-title';
+import { NotificationBell } from '../notifications/notification-bell';
 
 interface UserInfo {
   name: string;
@@ -208,10 +209,7 @@ export function DashboardTopbar() {
         </Button>
 
         {/* Notifications */}
-        <Button variant="outline" size="sm" className="size-9 p-0 relative">
-          <Bell className="size-4" />
-          <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 bg-green-500 rounded-full" />
-        </Button>
+        <NotificationBell />
 
         {/* Profile */}
         <DropdownMenu>
