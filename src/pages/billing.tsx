@@ -123,14 +123,16 @@ export default function BillingPage() {
         {/* Storage breakdown (the stack) */}
         <div className="mt-3 space-y-1 border-t pt-3">
           <p className="text-xs font-medium text-muted-foreground">Storage breakdown</p>
-          {data.items.filter((i) => i.kind !== "plan").length === 0 && (
-            <div className="flex justify-between text-xs text-muted-foreground">
-              <span>{data.plan.name} plan</span><span>{data.plan.storage_label}</span>
-            </div>
-          )}
-          {data.items.map((i) => (
+          {/* Plan row — always, from data.plan (the source of truth for the base contribution).
+              The backend mirrors a kind:"plan" row into subscription_items too, so we must NOT
+              also render that item here or the plan would show twice for subscribers. */}
+          <div className="flex justify-between text-xs text-muted-foreground">
+            <span>{data.plan.name} plan</span><span>{data.plan.storage_label}</span>
+          </div>
+          {/* Add-on / custom rows */}
+          {data.items.filter((i) => i.kind !== "plan").map((i) => (
             <div key={`${i.kind}-${i.ref_id}`} className="flex justify-between text-xs text-muted-foreground">
-              <span>{i.kind === "plan" ? `${data.plan.name} plan` : i.kind === "custom" ? "Custom package" : `${i.ref_id} × ${i.quantity}`}</span>
+              <span>{i.kind === "custom" ? "Custom package" : `${i.ref_id} × ${i.quantity}`}</span>
               <span>{i.total_label}</span>
             </div>
           ))}
