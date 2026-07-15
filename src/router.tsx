@@ -12,6 +12,7 @@ import TeamsPage from '@/pages/teams';
 import SharedPage from '@/pages/shared';
 import CommentsPage from '@/pages/comments';
 import ActivityPage from '@/pages/activity';
+import NotificationsPage from '@/pages/notifications';
 import SearchPage from '@/pages/search';
 import BillingPage from '@/pages/billing';
 import RoleCreatePage from '@/pages/role-create';
@@ -54,6 +55,7 @@ export const router = createBrowserRouter([
       { path: '/shared', element: <SharedPage /> },
       { path: '/comments', element: <CommentsPage /> },
       { path: '/activity', element: <ActivityPage /> },
+      { path: '/notifications', element: <NotificationsPage /> },
       { path: '/search', element: <SearchPage /> },
       { path: '/billing', element: <BillingPage /> },
       { path: '/role-create', element: <RoleCreatePage /> },
