@@ -46,6 +46,7 @@ interface WsSettings {
   share_max_expiry_days: number | null;
   require_2fa: number;
   disable_password_login: number;
+  record_upload_origin: number;
 }
 
 interface WsData {
@@ -406,6 +407,7 @@ function SecuritySection({ data, wsId, onSaved }: { data: WsData; wsId: string; 
   const [toggles, setToggles] = useState({
     disable_share_links: s?.disable_share_links === 1, force_share_password: s?.force_share_password === 1,
     require_2fa: s?.require_2fa === 1, disable_password_login: s?.disable_password_login === 1,
+    record_upload_origin: s?.record_upload_origin !== 0,
   });
   const [sessionTimeout, setSessionTimeout] = useState(s?.session_timeout_minutes != null ? String(s.session_timeout_minutes) : '');
   const [shareExpiry, setShareExpiry] = useState(s?.share_max_expiry_days != null ? String(s.share_max_expiry_days) : '');
@@ -458,6 +460,7 @@ function SecuritySection({ data, wsId, onSaved }: { data: WsData; wsId: string; 
     { field: 'force_share_password', label: 'Force password on share links', desc: 'Every share link must have a password.' },
     { field: 'require_2fa', label: 'Require 2FA for all members', desc: 'Members without 2FA will be prompted.' },
     { field: 'disable_password_login', label: 'Disable password login', desc: 'Force SSO-only login.' },
+    { field: 'record_upload_origin', label: 'Record upload-origin location', desc: 'Fall back to the uploader\'s approximate (IP-based) location on the map when a file or folder has no GPS data.' },
   ];
 
   const listItems2 = [
