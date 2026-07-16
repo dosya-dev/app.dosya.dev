@@ -8,7 +8,7 @@ import { subscribeThemeChange } from '@/lib/theme';
 import { fetchMapPins, type MapPin, type FilePin } from '@/lib/map-pins';
 import { markerFor } from '@/lib/map-marker';
 import { pinsToFeatures, buildClusterIndex, clustersInView } from '@/lib/map-cluster';
-import { buildMapStyle } from '@/lib/map-style';
+import { buildMapStyle, checkBasemapAvailable } from '@/lib/map-style';
 import { fileThumbUrl } from '@/lib/file-url';
 import { FileViewer } from '@/components/file-viewer';
 
@@ -53,6 +53,10 @@ export default function MapPage() {
   const [viewerFile, setViewerFile] = useState<FilePin | null>(null);
   const [showApprox, setShowApprox] = useState(true);
   const [dark, setDark] = useState(() => document.documentElement.classList.contains('dark'));
+  // Whether the basemap .pmtiles is provisioned. Until it is (or if the probe
+  // fails), the map renders a clean empty background rather than 404-ing on a
+  // missing sprite/tiles. Auto-upgrades to the real basemap once available.
+  const [hasBasemap, setHasBasemap] = useState(false);
 
   // All file pins (for the viewer's prev/next + thumbnail strip) — folders never
   // open the viewer, so they're excluded regardless of the approximate filter.
@@ -79,6 +83,7 @@ export default function MapPage() {
 
   useEffect(() => { loadPins(); }, [loadPins]);
   useEffect(() => subscribeThemeChange(() => setDark(document.documentElement.classList.contains('dark'))), []);
+  useEffect(() => { checkBasemapAvailable().then(setHasBasemap); }, []);
 
   // Render cluster/pin markers for the current viewport.
   const renderMarkers = useCallback(() => {
@@ -118,13 +123,18 @@ export default function MapPage() {
     }
   }, [index, byId, navigate]);
 
+  // Keep the latest renderMarkers available to effects that must not re-run on
+  // every data change (the re-style effect) without listing it as a dependency.
+  const renderMarkersRef = useRef(renderMarkers);
+  renderMarkersRef.current = renderMarkers;
+
   // Init the map once.
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
     ensurePmtiles();
     const map = new maplibregl.Map({
       container: containerRef.current,
-      style: buildMapStyle(document.documentElement.classList.contains('dark')),
+      style: buildMapStyle(document.documentElement.classList.contains('dark'), false),
       center: [0, 20],
       zoom: 1.5,
       attributionControl: { compact: true },
@@ -144,13 +154,15 @@ export default function MapPage() {
     else map.once('load', renderMarkers);
   }, [renderMarkers]);
 
-  // Re-style on theme change, then re-add markers after the new style loads.
+  // Re-style only when the theme or basemap-availability changes (NOT on every
+  // data change — hence renderMarkersRef instead of a renderMarkers dep), then
+  // re-add markers after the new style loads.
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
-    map.setStyle(buildMapStyle(dark));
-    map.once('styledata', () => renderMarkers());
-  }, [dark, renderMarkers]);
+    map.setStyle(buildMapStyle(dark, hasBasemap));
+    map.once('styledata', () => renderMarkersRef.current());
+  }, [dark, hasBasemap]);
 
   const countParts = [`${counts.gps} located`];
   if (counts.approximate > 0) countParts.push(`${counts.approximate} approximate`);
