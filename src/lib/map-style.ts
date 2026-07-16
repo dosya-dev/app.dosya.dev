@@ -50,8 +50,11 @@ export function buildMapStyle(dark: boolean, hasBasemap = false): StyleSpecifica
   const flavor = dark ? 'dark' : 'light';
   return {
     version: 8,
-    glyphs: GLYPHS_URL,
-    sprite: `${SPRITE_URL}/${flavor}`,
+    // NB: no `glyphs`/`sprite` here on purpose. We self-host only the vector
+    // .pmtiles; the fonts/sprite assets aren't provisioned. Omitting `{ lang }`
+    // below yields a geometry-only basemap (land/water/roads/boundaries, no text
+    // labels), so no glyph/sprite fetch happens — nothing can 404 into an
+    // HTML-parse error. Add glyphs/sprite + `{ lang: 'en' }` later to enable labels.
     sources: {
       protomaps: {
         type: 'vector',
@@ -59,11 +62,8 @@ export function buildMapStyle(dark: boolean, hasBasemap = false): StyleSpecifica
         attribution: '© OpenStreetMap contributors',
       },
     },
-    // protomaps-themes-base ^4 exports named `layers(source, theme, options)` +
-    // `namedTheme(name)` — the older default-export `layers('protomaps', 'light')`
-    // 2-arg shape (assumed by the original plan) no longer exists in this version.
-    // `{ lang: 'en' }` includes place/road labels; omitting it would render an
-    // unlabeled basemap (layers() only adds label layers when `lang` is given).
-    layers: layers('protomaps', namedTheme(flavor), { lang: 'en' }) as StyleSpecification['layers'],
+    // protomaps-themes-base ^4: `layers(source, namedTheme(name))`. Without the
+    // options `{ lang }` arg, only geometry layers are emitted (no label layers).
+    layers: layers('protomaps', namedTheme(flavor)) as StyleSpecification['layers'],
   };
 }
