@@ -40,7 +40,6 @@ import { FilePreviewImage } from '@/components/file-preview-image';
 import { humanSize, timeAgo, extOf, fileIconSrc, folderIconSrc, colorFor } from '@/lib/helpers';
 import { toast } from '@/lib/toast';
 import { FolderPickerDialog } from '@/components/folder-picker-dialog';
-import { useFolderTree } from '@/lib/folders';
 
 // ── Types ──────────────────────────────────────────────────
 
@@ -239,7 +238,6 @@ export default function FilesPage() {
   const [renameTarget, setRenameTarget] = useState<{ id: string; name: string; type: 'file' | 'folder' } | null>(null);
   const [renameName, setRenameName] = useState('');
   const [moveOpen, setMoveOpen] = useState<{ id: string; type: 'file' | 'folder' } | null>(null);
-  const { folders: pickerFolders, setFolders: setPickerFolders } = useFolderTree(wsId);
   const [highlightId, setHighlightId] = useState<string | null>(null);
   const highlightTimer = useRef<number | null>(null);
   // Guards the one-shot restore of an open file/viewer from the URL on first load,
@@ -970,8 +968,6 @@ export default function FilesPage() {
           open
           onClose={() => setMoveOpen(null)}
           workspaceId={wsId}
-          folders={pickerFolders}
-          onFoldersChange={setPickerFolders}
           selectedId={null}
           onSelect={(id) => handleMove(id)}
           title="Move to folder"
