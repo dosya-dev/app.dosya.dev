@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import maplibregl from 'maplibre-gl';
 import { Protocol } from 'pmtiles';
-import { MapPin, Loader2 } from 'lucide-react';
+import { MapPin as MapPinIcon, Loader2 } from 'lucide-react';
 import { useWorkspace } from '@/stores/workspace';
 import { subscribeThemeChange } from '@/lib/theme';
-import { fetchMapPhotos, type MapPhoto } from '@/lib/map-photos';
-import { photosToFeatures, buildClusterIndex, clustersInView } from '@/lib/map-cluster';
+import { fetchMapPins, type MapPin, type FilePin } from '@/lib/map-pins';
+import { markerFor } from '@/lib/map-marker';
+import { pinsToFeatures, buildClusterIndex, clustersInView } from '@/lib/map-cluster';
 import { buildMapStyle } from '@/lib/map-style';
 import { fileThumbUrl } from '@/lib/file-url';
 import { FileViewer } from '@/components/file-viewer';
@@ -17,35 +19,68 @@ function ensurePmtiles() {
   pmtilesRegistered = true;
 }
 
+// Lucide's default SVG frame (see lucide-react's defaultAttributes) — matched by
+// hand so the marker icons render without mounting a React tree into imperative
+// maplibre marker elements (which are built with document.createElement, same as
+// the cluster-count bubble below).
+function iconSvg(paths: string[]): string {
+  const body = paths.map((d) => `<path d="${d}"/>`).join('');
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${body}</svg>`;
+}
+// lucide-react's FileText icon path data.
+const FILE_ICON_SVG = iconSvg([
+  'M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z',
+  'M14 2v5a1 1 0 0 0 1 1h5',
+  'M10 9H8',
+  'M16 13H8',
+  'M16 17H8',
+]);
+// lucide-react's FolderOpen icon path data.
+const FOLDER_ICON_SVG = iconSvg([
+  'm6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2',
+]);
+
 export default function MapPage() {
+  const navigate = useNavigate();
   const wsId = useWorkspace((s) => s.activeId);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const markersRef = useRef<maplibregl.Marker[]>([]);
 
-  const [photos, setPhotos] = useState<MapPhoto[]>([]);
-  const [counts, setCounts] = useState({ geotagged: 0, pending: 0 });
+  const [pins, setPins] = useState<MapPin[]>([]);
+  const [counts, setCounts] = useState({ gps: 0, approximate: 0, pending: 0 });
   const [loading, setLoading] = useState(true);
-  const [viewerFile, setViewerFile] = useState<MapPhoto | null>(null);
+  const [viewerFile, setViewerFile] = useState<FilePin | null>(null);
+  const [showApprox, setShowApprox] = useState(true);
   const [dark, setDark] = useState(() => document.documentElement.classList.contains('dark'));
 
-  const byId = useMemo(() => new Map(photos.map((p) => [p.id, p] as const)), [photos]);
-  const index = useMemo(() => buildClusterIndex(photosToFeatures(photos)), [photos]);
+  // All file pins (for the viewer's prev/next + thumbnail strip) — folders never
+  // open the viewer, so they're excluded regardless of the approximate filter.
+  const filePins = useMemo(() => pins.filter((p): p is FilePin => p.kind === 'file'), [pins]);
 
-  const loadPhotos = useCallback(async () => {
+  // Pins actually shown on the map: hide IP-derived (approximate) pins when the
+  // toggle is off. Clustering runs over exactly this set.
+  const visiblePins = useMemo(
+    () => (showApprox ? pins : pins.filter((p) => p.source !== 'ip')),
+    [pins, showApprox],
+  );
+  const byId = useMemo(() => new Map(visiblePins.map((p) => [p.id, p] as const)), [visiblePins]);
+  const index = useMemo(() => buildClusterIndex(pinsToFeatures(visiblePins)), [visiblePins]);
+
+  const loadPins = useCallback(async () => {
     if (!wsId) return;
     setLoading(true);
     try {
-      const data = await fetchMapPhotos(wsId);
-      if (data.ok) { setPhotos(data.photos); setCounts(data.counts); }
+      const data = await fetchMapPins(wsId);
+      if (data.ok) { setPins(data.pins); setCounts(data.counts); }
     } catch { /* leave empty state */ }
     setLoading(false);
   }, [wsId]);
 
-  useEffect(() => { loadPhotos(); }, [loadPhotos]);
+  useEffect(() => { loadPins(); }, [loadPins]);
   useEffect(() => subscribeThemeChange(() => setDark(document.documentElement.classList.contains('dark'))), []);
 
-  // Render cluster/photo markers for the current viewport.
+  // Render cluster/pin markers for the current viewport.
   const renderMarkers = useCallback(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -60,18 +95,28 @@ export default function MapPage() {
         el.innerHTML = `<span class="dosya-map-count">${item.count}</span>`;
         el.onclick = () => map.easeTo({ center: [item.lon, item.lat], zoom: item.expansionZoom });
       } else {
-        const p = byId.get(item.photoId);
-        if (p) {
+        const p = byId.get(item.pinId);
+        if (!p) continue;
+        const marker = markerFor(p);
+        if (marker.approximate) el.classList.add('dosya-map-marker--approx');
+        if (marker.type === 'thumbnail' && p.kind === 'file') {
           const img = document.createElement('img');
           img.src = fileThumbUrl({ fileId: p.id, size: 128 });
           img.loading = 'lazy';
           el.appendChild(img);
-          el.onclick = () => setViewerFile(p);
+        } else if (marker.type === 'folder-icon') {
+          el.innerHTML = FOLDER_ICON_SVG;
+        } else {
+          el.innerHTML = FILE_ICON_SVG;
         }
+        el.onclick = () => {
+          if (p.kind === 'file') setViewerFile(p);
+          else navigate(`/files?folder=${p.id}`);
+        };
       }
       markersRef.current.push(new maplibregl.Marker({ element: el }).setLngLat([item.lon, item.lat]).addTo(map));
     }
-  }, [index, byId]);
+  }, [index, byId, navigate]);
 
   // Init the map once.
   useEffect(() => {
@@ -107,14 +152,32 @@ export default function MapPage() {
     map.once('styledata', () => renderMarkers());
   }, [dark, renderMarkers]);
 
+  const countParts = [`${counts.gps} located`];
+  if (counts.approximate > 0) countParts.push(`${counts.approximate} approximate`);
+  if (counts.pending > 0) countParts.push(`${counts.pending} scanning…`);
+
   return (
     <div className="h-full w-full relative overflow-hidden">
       <div ref={containerRef} className="absolute inset-0" />
 
-      {/* Count chip */}
-      <div className="absolute top-4 left-4 z-10 rounded-full bg-background/90 backdrop-blur px-3 py-1.5 text-sm shadow flex items-center gap-2">
-        <MapPin className="size-4 text-muted-foreground" />
-        <span>{counts.geotagged} photos{counts.pending > 0 ? ` · ${counts.pending} scanning…` : ''}</span>
+      <div className="absolute top-4 left-4 z-10 flex flex-col items-start gap-2">
+        {/* Count chip */}
+        <div className="rounded-full bg-background/90 backdrop-blur px-3 py-1.5 text-sm shadow flex items-center gap-2">
+          <MapPinIcon className="size-4 text-muted-foreground" />
+          <span>{countParts.join(' · ')}</span>
+        </div>
+
+        {/* Approximate-locations filter */}
+        <button
+          type="button"
+          onClick={() => setShowApprox((v) => !v)}
+          className="rounded-full bg-background/90 backdrop-blur px-3 py-1.5 text-xs shadow flex items-center gap-2 hover:bg-muted/60"
+        >
+          <span className={`relative w-8 h-4.5 rounded-full transition-colors ${showApprox ? 'bg-green-600' : 'bg-muted'}`}>
+            <span className={`absolute top-0.5 size-3.5 bg-white rounded-full shadow transition-all ${showApprox ? 'left-4' : 'left-0.5'}`} />
+          </span>
+          Show approximate locations
+        </button>
       </div>
 
       {loading && (
@@ -123,12 +186,18 @@ export default function MapPage() {
         </div>
       )}
 
-      {!loading && counts.geotagged === 0 && (
+      {!loading && visiblePins.length === 0 && (
         <div className="absolute inset-0 z-10 flex flex-col items-center justify-center text-center pointer-events-none">
-          <MapPin className="size-12 text-muted-foreground/30 mb-4" />
-          <p className="text-sm font-medium text-muted-foreground mb-1">No photos with location yet</p>
+          <MapPinIcon className="size-12 text-muted-foreground/30 mb-4" />
+          <p className="text-sm font-medium text-muted-foreground mb-1">
+            {pins.length > 0 ? 'No pins to show' : 'No files or folders with a location yet'}
+          </p>
           <p className="text-xs text-muted-foreground">
-            {counts.pending > 0 ? 'Scanning your photos for location…' : 'Photos taken with location services on will appear here.'}
+            {pins.length > 0
+              ? 'All located items are approximate — enable the toggle above to see them.'
+              : counts.pending > 0
+                ? 'Scanning your files for location…'
+                : 'Files with location data, or uploaded with location capture on, will appear here.'}
           </p>
         </div>
       )}
@@ -136,11 +205,11 @@ export default function MapPage() {
       {viewerFile && (
         <FileViewer
           file={viewerFile}
-          files={photos}
+          files={filePins}
           workspaceId={wsId}
           onClose={() => setViewerFile(null)}
-          onNavigate={(f) => setViewerFile(f as MapPhoto)}
-          onRefresh={loadPhotos}
+          onNavigate={(f) => setViewerFile(f as FilePin)}
+          onRefresh={loadPins}
         />
       )}
     </div>
