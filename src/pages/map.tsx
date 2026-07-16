@@ -118,8 +118,11 @@ export default function MapPage() {
     if (!map) return;
     markersRef.current.forEach((m) => m.remove());
     markersRef.current = [];
-    const b = map.getBounds();
-    const bbox: [number, number, number, number] = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()];
+    // Whole world, NOT map.getBounds(): once you pan horizontally the bounds run
+    // outside ±180° (world copies) and supercluster returns nothing, wiping every
+    // pin. Pin counts are small and MapLibre culls off-screen markers + wraps them
+    // to the visible world copy, so it's safe (and correct) to render them all.
+    const bbox: [number, number, number, number] = [-180, -85, 180, 85];
     // Build one Apple-style teardrop: rounded photo frame (or file/folder icon),
     // optional count badge, and a downward tail (via CSS ::after).
     const buildPin = (o: { thumbUrl?: string; iconSvg?: string; count?: number; approx?: boolean; onClick: () => void }) => {
