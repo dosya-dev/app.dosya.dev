@@ -178,7 +178,10 @@ export default function MapPage() {
 
   return (
     <div className="absolute inset-0 overflow-hidden">
-      <div ref={containerRef} className="absolute inset-0" />
+      {/* MapLibre forces `.maplibregl-map { position: relative }`, which overrides
+          `absolute inset-0` (so inset-0 can't size it). Use h-full/w-full instead —
+          the root above is `absolute inset-0`, giving this a real parent height. */}
+      <div ref={containerRef} className="h-full w-full" />
 
       <div className="absolute top-4 left-4 z-10 flex flex-col items-start gap-2">
         {/* Count chip */}
