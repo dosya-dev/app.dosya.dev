@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { getBillingStatus, type BillingStatus } from '@/api/billing';
 import { formatBytes, formatCents } from '@/lib/billing/cart-math';
-import { SubscriptionModal } from '@/components/billing/subscription-modal';
+import { PlanChooser } from '@/components/billing/plan-chooser';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -18,7 +18,7 @@ const PLAN_COLORS: Record<string, string> = {
 export default function BillingPage() {
   const [data, setData] = useState<BillingStatus | null>(null);
   const [loading, setLoading] = useState(true);
-  const [modalOpen, setModalOpen] = useState(false);
+  const [showChooser, setShowChooser] = useState(false);
 
   const reload = () => getBillingStatus().then((d) => setData(d)).catch(() => {});
 
@@ -44,7 +44,7 @@ export default function BillingPage() {
   // POST /billing/subscription only calls Stripe — the D1 mirror is updated
   // asynchronously by the webhook, so refetch immediately AND after a short delay
   // to pick up the settled state (mirrors the ?success handling above).
-  const onModalUpdated = () => { reload(); setTimeout(reload, 2500); };
+  const onChooserUpdated = () => { reload(); setTimeout(reload, 2500); };
 
   if (loading) {
     return (
@@ -109,7 +109,7 @@ export default function BillingPage() {
             storagePct >= 95 ? (
               <button
                 type="button"
-                onClick={() => setModalOpen(true)}
+                onClick={() => setShowChooser(true)}
                 className="flex items-center gap-1.5 mt-2 text-xs w-full text-left hover:underline"
                 style={{ color: '#ef4444' }}
               >
@@ -148,11 +148,11 @@ export default function BillingPage() {
 
         {/* Actions */}
         <div className="mt-4 flex gap-2">
-          <Button size="sm" onClick={() => setModalOpen(true)}>
+          <Button size="sm" onClick={() => setShowChooser(true)}>
             {data.subscription.has_subscription ? "Change plan" : "Upgrade"}
           </Button>
           {data.subscription.has_subscription && (
-            <Button size="sm" variant="outline" onClick={() => setModalOpen(true)}>Add storage</Button>
+            <Button size="sm" variant="outline" onClick={() => setShowChooser(true)}>Add storage</Button>
           )}
           {data.portal_url && (
             <a href={data.portal_url} target="_blank" rel="noreferrer">
@@ -161,6 +161,21 @@ export default function BillingPage() {
           )}
         </div>
       </Card>
+
+      {/* Inline plan chooser — opens in-page (not a modal) on Upgrade / Change plan / Add storage */}
+      {showChooser && (
+        <PlanChooser
+          hasSubscription={data.subscription.has_subscription}
+          usedBytes={data.usage.used_bytes}
+          initial={{
+            interval: data.interval,
+            planId: data.plan.id === "free" ? (data.subscription.has_subscription ? data.plan.id : "starter") : data.plan.id,
+            addonQty: Object.fromEntries(data.items.filter((i) => i.kind === "addon").map((i) => [i.ref_id, i.quantity])),
+          }}
+          onUpdated={onChooserUpdated}
+          onClose={() => setShowChooser(false)}
+        />
+      )}
 
       {/* Invoices */}
       <Card className="gap-0 py-0 overflow-hidden">
@@ -194,18 +209,6 @@ export default function BillingPage() {
         )}
       </Card>
 
-      <SubscriptionModal
-        open={modalOpen}
-        onOpenChange={setModalOpen}
-        hasSubscription={data.subscription.has_subscription}
-        usedBytes={data.usage.used_bytes}
-        initial={{
-          interval: data.interval,
-          planId: data.plan.id === "free" ? (data.subscription.has_subscription ? data.plan.id : "starter") : data.plan.id,
-          addonQty: Object.fromEntries(data.items.filter((i) => i.kind === "addon").map((i) => [i.ref_id, i.quantity])),
-        }}
-        onUpdated={onModalUpdated}
-      />
     </div>
   );
 }
