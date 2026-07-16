@@ -7,6 +7,10 @@ import type { StyleSpecification } from 'maplibre-gl';
 // no external theme dependency) — validated to render cleanly with zero errors.
 // Text labels are a future add-on (would need self-hosted glyph fonts).
 export const BASEMAP_URL = `pmtiles://${API_BASE}/api/map/basemap`;
+// Self-hosted Protomaps glyph fonts (Noto Sans Regular/Medium) in the web app's
+// /public — same-origin, absolute URL (MapLibre needs glyphs absolute).
+const ASSET_ORIGIN = typeof window !== 'undefined' ? window.location.origin : '';
+const GLYPHS_URL = `${ASSET_ORIGIN}/map-assets/fonts/{fontstack}/{range}.pbf`;
 
 /**
  * A self-contained style with NO external references — just a solid background.
@@ -36,17 +40,28 @@ export async function checkBasemapAvailable(): Promise<boolean> {
 }
 
 // Apple-Photos-ish palette: pale green land, green parks/forest, soft blue water.
-type Palette = { water: string; earth: string; landuse: string; roads: string; boundaries: string };
-const LIGHT: Palette = { water: '#a3d0ef', earth: '#eef1de', landuse: '#c7e2a4', roads: '#ffffff', boundaries: '#b3b9bf' };
-const DARK: Palette = { water: '#0d1b2a', earth: '#1c2b22', landuse: '#223a2a', roads: '#43564c', boundaries: '#3c4c42' };
+type Palette = {
+  water: string; earth: string; landuse: string; roads: string; boundaries: string;
+  label: string; waterLabel: string; labelHalo: string;
+};
+const LIGHT: Palette = {
+  water: '#a3d0ef', earth: '#eef1de', landuse: '#c7e2a4', roads: '#ffffff', boundaries: '#b3b9bf',
+  label: '#41513a', waterLabel: '#5b86ad', labelHalo: '#ffffff',
+};
+const DARK: Palette = {
+  water: '#0d1b2a', earth: '#1c2b22', landuse: '#223a2a', roads: '#43564c', boundaries: '#3c4c42',
+  label: '#b6c0b6', waterLabel: '#6a8aa5', labelHalo: '#0d1b2a',
+};
 
 export function buildMapStyle(dark: boolean, hasBasemap = false): StyleSpecification {
   if (!hasBasemap) return emptyStyle(dark);
   const c = dark ? DARK : LIGHT;
-  // Geometry-only layers against the Protomaps schema (earth/landuse/water/roads/
-  // boundaries). No `symbol` layers → no glyph/sprite fetches → no label errors.
+  // Geometry layers (earth/landuse/water/roads/boundaries) + place-name labels.
+  // Labels use only self-hosted glyph fonts (no sprite icons), and each place
+  // layer is filtered by its `min_zoom` so the map declutters as you zoom out.
   return {
     version: 8,
+    glyphs: GLYPHS_URL,
     sources: {
       protomaps: { type: 'vector', url: BASEMAP_URL, attribution: '© OpenStreetMap' },
     },
@@ -57,6 +72,30 @@ export function buildMapStyle(dark: boolean, hasBasemap = false): StyleSpecifica
       { id: 'water', type: 'fill', source: 'protomaps', 'source-layer': 'water', paint: { 'fill-color': c.water } },
       { id: 'roads', type: 'line', source: 'protomaps', 'source-layer': 'roads', paint: { 'line-color': c.roads, 'line-width': 0.7 } },
       { id: 'boundaries', type: 'line', source: 'protomaps', 'source-layer': 'boundaries', paint: { 'line-color': c.boundaries, 'line-width': 0.5 } },
+      // Ocean / sea labels
+      {
+        id: 'water-labels', type: 'symbol', source: 'protomaps', 'source-layer': 'water',
+        filter: ['all', ['has', 'name'], ['<=', ['coalesce', ['get', 'min_zoom'], 0], ['zoom']]],
+        layout: {
+          'text-field': ['coalesce', ['get', 'name:en'], ['get', 'name']],
+          'text-font': ['Noto Sans Regular'],
+          'text-size': ['interpolate', ['linear'], ['zoom'], 2, 10, 8, 13],
+          'text-max-width': 6,
+        },
+        paint: { 'text-color': c.waterLabel, 'text-halo-color': c.labelHalo, 'text-halo-width': 1 },
+      },
+      // Place labels: continents, countries, cities/towns (min_zoom declutters)
+      {
+        id: 'places-labels', type: 'symbol', source: 'protomaps', 'source-layer': 'places',
+        filter: ['<=', ['coalesce', ['get', 'min_zoom'], 0], ['zoom']],
+        layout: {
+          'text-field': ['coalesce', ['get', 'name:en'], ['get', 'name']],
+          'text-font': ['Noto Sans Medium'],
+          'text-size': ['interpolate', ['linear'], ['zoom'], 2, 11, 8, 15],
+          'text-max-width': 7,
+        },
+        paint: { 'text-color': c.label, 'text-halo-color': c.labelHalo, 'text-halo-width': 1.3 },
+      },
     ] as StyleSpecification['layers'],
   };
 }
