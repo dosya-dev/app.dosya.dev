@@ -128,7 +128,16 @@ export default function MapPage() {
       const frame = document.createElement('span');
       frame.className = 'dosya-pin__frame';
       if (o.thumbUrl) {
-        frame.style.backgroundImage = `url("${o.thumbUrl}")`;
+        // Show a shimmer skeleton until the thumbnail actually loads, then swap
+        // it in. Preloading via Image() (instead of setting background-image on
+        // a fresh marker node) also fixes the "blank until a theme toggle forces
+        // a reflow" paint quirk — the image now appears the moment it loads.
+        frame.classList.add('is-loading');
+        const url = o.thumbUrl;
+        const img = new Image();
+        img.onload = () => { frame.style.backgroundImage = `url("${url}")`; frame.classList.remove('is-loading'); };
+        img.onerror = () => { frame.classList.remove('is-loading'); };
+        img.src = url;
       } else if (o.iconSvg) {
         frame.classList.add('dosya-pin__frame--icon');
         frame.innerHTML = o.iconSvg;

@@ -475,7 +475,12 @@ body {
   border-radius: 16px; border: 3px solid #fff; overflow: hidden; background: #dfe3e8 center/cover no-repeat; }
 .dosya-pin__frame--icon { display: flex; align-items: center; justify-content: center; background: #eef2f7; color: #64748b; }
 .dosya-pin__frame--icon svg { width: 26px; height: 26px; }
-.dosya-pin__count { position: absolute; left: 6px; bottom: 5px; color: #fff; font-weight: 700;
+/* loading skeleton: an animated shimmer over the square until its photo loads */
+.dosya-pin__frame.is-loading::before { content: ''; position: absolute; inset: 0;
+  background: linear-gradient(100deg, #d9dee4 30%, #eef2f6 50%, #d9dee4 70%); background-size: 200% 100%;
+  animation: dosya-pin-shimmer 1.15s ease-in-out infinite; }
+@keyframes dosya-pin-shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+.dosya-pin__count { position: absolute; left: 6px; bottom: 5px; color: #fff; font-weight: 700; z-index: 1;
   font-size: 14px; line-height: 1; text-shadow: 0 1px 3px rgba(0,0,0,.9); }
 /* downward tail; its tip is the marker's bottom (anchored to the coordinate) */
 .dosya-pin::after { content: ''; display: block; width: 0; height: 0; margin: -1px auto 0;
