@@ -15,7 +15,38 @@ export const BASEMAP_URL = `pmtiles://${API_BASE}/api/map/basemap`;
 const GLYPHS_URL = `${ASSET_ORIGIN}/map-assets/fonts/{fontstack}/{range}.pbf`;
 const SPRITE_URL = `${ASSET_ORIGIN}/map-assets/sprites`; // MapLibre appends /{flavor}.json + .png
 
-export function buildMapStyle(dark: boolean): StyleSpecification {
+/**
+ * A self-contained style with NO external references (no PMTiles source, no
+ * sprite, no glyphs) — just a solid background. Used when the basemap asset
+ * isn't provisioned yet, so the map renders a clean empty canvas with pins
+ * instead of throwing on missing sprite/tile fetches. (The SPA serves
+ * index.html for any missing static path, so a missing sprite JSON would
+ * otherwise parse HTML as JSON and throw.)
+ */
+function emptyStyle(dark: boolean): StyleSpecification {
+  return {
+    version: 8,
+    sources: {},
+    layers: [{ id: 'background', type: 'background', paint: { 'background-color': dark ? '#0f1720' : '#e7ebef' } }],
+  };
+}
+
+/**
+ * Probe whether the basemap PMTiles is actually available in R2 (a tiny ranged
+ * GET). When it isn't, `buildMapStyle` falls back to `emptyStyle` so the page
+ * never tries to load a nonexistent sprite/glyphs/tiles.
+ */
+export async function checkBasemapAvailable(): Promise<boolean> {
+  try {
+    const res = await fetch(`${API_BASE}/api/map/basemap`, { headers: { Range: 'bytes=0-0' } });
+    return res.ok; // 200/206 when the .pmtiles exists; 404 when not provisioned
+  } catch {
+    return false;
+  }
+}
+
+export function buildMapStyle(dark: boolean, hasBasemap = false): StyleSpecification {
+  if (!hasBasemap) return emptyStyle(dark);
   const flavor = dark ? 'dark' : 'light';
   return {
     version: 8,
