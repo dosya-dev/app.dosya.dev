@@ -24,7 +24,6 @@ import {
 import { humanSize, timeAgo, fileIconSrc } from '@/lib/helpers';
 import { toast } from '@/lib/toast';
 import { FolderPickerDialog } from '@/components/folder-picker-dialog';
-import { useFolderTree, folderPath } from '@/lib/folders';
 
 
 // ── Types ─────────────────────────────────────────────────
@@ -299,7 +298,7 @@ function CreateRequestDialog({ workspaceId, onClose, onCreated }: {
   const [resultUrl, setResultUrl] = useState('');
 
   // Folder picker
-  const { folders, setFolders } = useFolderTree(workspaceId);
+  const [folderName, setFolderName] = useState('');
   const [pickerOpen, setPickerOpen] = useState(false);
 
   const addEmail = (raw: string) => {
@@ -369,8 +368,6 @@ function CreateRequestDialog({ workspaceId, onClose, onCreated }: {
   const handleCopyResult = async () => {
     try { await navigator.clipboard.writeText(resultUrl); toast.success('Link copied', 'The link is on your clipboard.'); } catch {}
   };
-
-  const selectedFolder = folders.find((f) => f.id === folderId);
 
   return (
     <>
@@ -469,15 +466,10 @@ function CreateRequestDialog({ workspaceId, onClose, onCreated }: {
                   className="w-full h-8 border rounded-md px-2.5 text-xs bg-background flex items-center gap-2 hover:bg-muted/50 text-left"
                   onClick={() => setPickerOpen(true)}
                 >
-                  {selectedFolder ? (
+                  {folderId ? (
                     <>
                       <FolderOpen className="size-3 text-muted-foreground shrink-0" />
-                      <span className="flex-1 truncate">
-                        {folderPath(folders, selectedFolder.id) && (
-                          <span className="text-muted-foreground">{folderPath(folders, selectedFolder.id)} / </span>
-                        )}
-                        {selectedFolder.name}
-                      </span>
+                      <span className="flex-1 truncate">{folderName || 'Selected folder'}</span>
                     </>
                   ) : (
                     <>
@@ -548,10 +540,9 @@ function CreateRequestDialog({ workspaceId, onClose, onCreated }: {
         open
         onClose={() => setPickerOpen(false)}
         workspaceId={workspaceId}
-        folders={folders}
-        onFoldersChange={setFolders}
         selectedId={folderId}
-        onSelect={(id) => { setFolderId(id); setPickerOpen(false); }}
+        selectedName={folderName}
+        onSelect={(id, name) => { setFolderId(id); setFolderName(id ? name : ''); setPickerOpen(false); }}
       />
     )}
     </>
