@@ -3,7 +3,7 @@ import { useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, FolderOpen, Upload, Share2, Users, Settings, User, Inbox,
   MessageSquare, Activity, Search, CreditCard, Shield, ShieldCheck, LogIn,
-  Building2, Bell, type LucideIcon,
+  Building2, Bell, MapPin, type LucideIcon,
 } from 'lucide-react';
 
 // Single source of truth for each route's browser tab title AND in-app header icon.
@@ -16,6 +16,7 @@ const TITLES: Record<string, string> = {
   '/': 'Dashboard',
   '/files': 'Files',
   '/file-requests': 'File requests',
+  '/map': 'Map',
   '/uploads': 'Upload',
   '/settings': 'Settings',
   '/profile': 'Profile',
@@ -41,6 +42,7 @@ const ICONS: Record<string, LucideIcon> = {
   '/': LayoutDashboard,
   '/files': FolderOpen,
   '/file-requests': Inbox,
+  '/map': MapPin,
   '/uploads': Upload,
   '/settings': Settings,
   '/profile': User,

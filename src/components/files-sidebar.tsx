@@ -13,7 +13,7 @@ import {
 import {
   Files, FileText, Video, Image, Share2, Trash2, EyeOff,
   FileInput, Star, FolderOpen, ChevronLeft, ChevronRight, Plus, X,
-  Loader2,
+  Loader2, MapPin,
 } from 'lucide-react';
 import { toast } from '@/lib/toast';
 
@@ -199,6 +199,15 @@ export function FilesSidebar({ onFilterChange, onFavouriteClick, onGroupClick }:
                 )}
               </>
             )}
+          </button>
+
+          <button
+            onClick={() => navigate('/map')}
+            className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-xs text-muted-foreground hover:bg-muted/50 hover:text-foreground transition-colors"
+            title={collapsed ? 'Map' : undefined}
+          >
+            <MapPin className="size-4" />
+            {!collapsed && <span className="truncate flex-1 text-left">Map</span>}
           </button>
         </nav>
 
