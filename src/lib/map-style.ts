@@ -1,27 +1,17 @@
 import { API_BASE } from '@/api/client';
-import { layers, namedTheme } from 'protomaps-themes-base';
 import type { StyleSpecification } from 'maplibre-gl';
 
-// The big vector basemap streams from R2 via our own API (range requests) — see
-// apps/api/.../map/basemap.ts. Fonts + sprite are generic public assets (not user data),
-// so they are served as same-origin static files from the web app's own /public dir
-// (apps/web/public/map-assets/). Everything is first-party → zero external calls.
-//
-// MapLibre requires the `sprite` URL to be ABSOLUTE (scheme + host); a root-relative
-// "/map-assets/..." throws "Invalid sprite URL". Build absolute same-origin URLs from
-// window.location.origin (falls back to '' during SSR/tests, where the map never renders).
-const ASSET_ORIGIN = typeof window !== 'undefined' ? window.location.origin : '';
+// The vector basemap streams from R2 via our own API (range requests) — see
+// apps/api/.../map/basemap.ts. It's a Protomaps-schema .pmtiles (whole world,
+// z0-7). We render it with a small hand-written geometry style (no fonts/sprite,
+// no external theme dependency) — validated to render cleanly with zero errors.
+// Text labels are a future add-on (would need self-hosted glyph fonts).
 export const BASEMAP_URL = `pmtiles://${API_BASE}/api/map/basemap`;
-const GLYPHS_URL = `${ASSET_ORIGIN}/map-assets/fonts/{fontstack}/{range}.pbf`;
-const SPRITE_URL = `${ASSET_ORIGIN}/map-assets/sprites`; // MapLibre appends /{flavor}.json + .png
 
 /**
- * A self-contained style with NO external references (no PMTiles source, no
- * sprite, no glyphs) — just a solid background. Used when the basemap asset
- * isn't provisioned yet, so the map renders a clean empty canvas with pins
- * instead of throwing on missing sprite/tile fetches. (The SPA serves
- * index.html for any missing static path, so a missing sprite JSON would
- * otherwise parse HTML as JSON and throw.)
+ * A self-contained style with NO external references — just a solid background.
+ * Used before the basemap is confirmed available, so the map renders a clean
+ * empty canvas with pins instead of throwing on missing tiles.
  */
 function emptyStyle(dark: boolean): StyleSpecification {
   return {
@@ -32,9 +22,9 @@ function emptyStyle(dark: boolean): StyleSpecification {
 }
 
 /**
- * Probe whether the basemap PMTiles is actually available in R2 (a tiny ranged
- * GET). When it isn't, `buildMapStyle` falls back to `emptyStyle` so the page
- * never tries to load a nonexistent sprite/glyphs/tiles.
+ * Probe whether the basemap PMTiles is actually in R2 (a tiny ranged GET). When
+ * it isn't, `buildMapStyle` falls back to `emptyStyle` so the page never tries
+ * to load a nonexistent basemap.
  */
 export async function checkBasemapAvailable(): Promise<boolean> {
   try {
@@ -45,25 +35,27 @@ export async function checkBasemapAvailable(): Promise<boolean> {
   }
 }
 
+type Palette = { water: string; earth: string; landuse: string; roads: string; boundaries: string };
+const LIGHT: Palette = { water: '#a9d3e8', earth: '#e7e2d8', landuse: '#e2e8d5', roads: '#ffffff', boundaries: '#9aa0a6' };
+const DARK: Palette = { water: '#12283b', earth: '#22303f', landuse: '#26364a', roads: '#3a4d63', boundaries: '#46596e' };
+
 export function buildMapStyle(dark: boolean, hasBasemap = false): StyleSpecification {
   if (!hasBasemap) return emptyStyle(dark);
-  const flavor = dark ? 'dark' : 'light';
+  const c = dark ? DARK : LIGHT;
+  // Geometry-only layers against the Protomaps schema (earth/landuse/water/roads/
+  // boundaries). No `symbol` layers → no glyph/sprite fetches → no label errors.
   return {
     version: 8,
-    // NB: no `glyphs`/`sprite` here on purpose. We self-host only the vector
-    // .pmtiles; the fonts/sprite assets aren't provisioned. Omitting `{ lang }`
-    // below yields a geometry-only basemap (land/water/roads/boundaries, no text
-    // labels), so no glyph/sprite fetch happens — nothing can 404 into an
-    // HTML-parse error. Add glyphs/sprite + `{ lang: 'en' }` later to enable labels.
     sources: {
-      protomaps: {
-        type: 'vector',
-        url: BASEMAP_URL,
-        attribution: '© OpenStreetMap contributors',
-      },
+      protomaps: { type: 'vector', url: BASEMAP_URL, attribution: '© OpenStreetMap' },
     },
-    // protomaps-themes-base ^4: `layers(source, namedTheme(name))`. Without the
-    // options `{ lang }` arg, only geometry layers are emitted (no label layers).
-    layers: layers('protomaps', namedTheme(flavor)) as StyleSpecification['layers'],
+    layers: [
+      { id: 'background', type: 'background', paint: { 'background-color': c.water } },
+      { id: 'earth', type: 'fill', source: 'protomaps', 'source-layer': 'earth', paint: { 'fill-color': c.earth } },
+      { id: 'landuse', type: 'fill', source: 'protomaps', 'source-layer': 'landuse', paint: { 'fill-color': c.landuse } },
+      { id: 'water', type: 'fill', source: 'protomaps', 'source-layer': 'water', paint: { 'fill-color': c.water } },
+      { id: 'roads', type: 'line', source: 'protomaps', 'source-layer': 'roads', paint: { 'line-color': c.roads, 'line-width': 0.7 } },
+      { id: 'boundaries', type: 'line', source: 'protomaps', 'source-layer': 'boundaries', paint: { 'line-color': c.boundaries, 'line-width': 0.5 } },
+    ] as StyleSpecification['layers'],
   };
 }

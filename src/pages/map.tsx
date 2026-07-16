@@ -141,6 +141,9 @@ export default function MapPage() {
     });
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
     map.on('moveend', () => renderMarkers());
+    // Safety: if the flex/absolute container finished sizing after init, make the
+    // canvas match it (a 0-height container at init is a classic blank-map cause).
+    map.once('load', () => map.resize());
     mapRef.current = map;
     return () => { map.remove(); mapRef.current = null; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -154,12 +157,17 @@ export default function MapPage() {
     else map.once('load', renderMarkers);
   }, [renderMarkers]);
 
-  // Re-style only when the theme or basemap-availability changes (NOT on every
-  // data change — hence renderMarkersRef instead of a renderMarkers dep), then
-  // re-add markers after the new style loads.
+  // Re-style only when the theme or basemap-availability actually changes vs
+  // what's already applied — avoids a redundant setStyle on mount (which races
+  // the initial style load and triggers "style not done loading, rebuilding from
+  // scratch"). The map is initialized with buildMapStyle(initialDark, false),
+  // which is exactly this ref's initial value, so the mount run is skipped.
+  const appliedStyleRef = useRef({ dark, hasBasemap });
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
+    if (appliedStyleRef.current.dark === dark && appliedStyleRef.current.hasBasemap === hasBasemap) return;
+    appliedStyleRef.current = { dark, hasBasemap };
     map.setStyle(buildMapStyle(dark, hasBasemap));
     map.once('styledata', () => renderMarkersRef.current());
   }, [dark, hasBasemap]);
