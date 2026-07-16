@@ -77,7 +77,7 @@ export function DashboardLayout() {
             then its data pops in. Remount also resets scroll to the top. */}
         <main
           key={location.pathname}
-          className="flex-1 min-h-0 overflow-y-auto animate-in fade-in slide-in-from-bottom-1 duration-300"
+          className="relative flex-1 min-h-0 overflow-y-auto animate-in fade-in slide-in-from-bottom-1 duration-300"
         >
           <Outlet />
         </main>

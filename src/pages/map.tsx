@@ -177,7 +177,7 @@ export default function MapPage() {
   if (counts.pending > 0) countParts.push(`${counts.pending} scanning…`);
 
   return (
-    <div className="h-full w-full relative overflow-hidden">
+    <div className="absolute inset-0 overflow-hidden">
       <div ref={containerRef} className="absolute inset-0" />
 
       <div className="absolute top-4 left-4 z-10 flex flex-col items-start gap-2">
