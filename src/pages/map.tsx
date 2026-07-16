@@ -9,7 +9,7 @@ import { fetchMapPins, type MapPin, type FilePin } from '@/lib/map-pins';
 import { markerFor } from '@/lib/map-marker';
 import { pinsToFeatures, buildClusterIndex, clustersInView } from '@/lib/map-cluster';
 import { buildMapStyle, checkBasemapAvailable } from '@/lib/map-style';
-import { fileThumbUrl } from '@/lib/file-url';
+import { fileThumbUrl, fileRawUrl } from '@/lib/file-url';
 import { FileViewer } from '@/components/file-viewer';
 
 let pmtilesRegistered = false;
@@ -39,6 +39,16 @@ const FILE_ICON_SVG = iconSvg([
 const FOLDER_ICON_SVG = iconSvg([
   'm6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2',
 ]);
+
+// Raster types the thumbnail pipeline can rasterize; other image-ish types
+// (svg/gif/ico) render directly from their raw URL in the browser instead.
+const RASTER_THUMB = new Set(['.jpg', '.jpeg', '.png', '.webp', '.heic', '.heif', '.tiff', '.tif', '.bmp']);
+function pinImageUrl(p: FilePin): string {
+  const ext = (p.extension || '').toLowerCase();
+  return RASTER_THUMB.has(ext) ? fileThumbUrl({ fileId: p.id, size: 128 }) : fileRawUrl({ fileId: p.id });
+}
+const isRasterFile = (p: MapPin): p is FilePin =>
+  p.kind === 'file' && RASTER_THUMB.has((p.extension || '').toLowerCase());
 
 export default function MapPage() {
   const navigate = useNavigate();
@@ -85,14 +95,34 @@ export default function MapPage() {
   useEffect(() => subscribeThemeChange(() => setDark(document.documentElement.classList.contains('dark'))), []);
   useEffect(() => { checkBasemapAvailable().then(setHasBasemap); }, []);
 
+  // Auto-fit the view to the pins once (like Apple Photos). Without this, pins
+  // that all sit in one far-off place (e.g. every upload's IP city) fall outside
+  // the default world view and never appear on screen.
+  const didFitRef = useRef(false);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || didFitRef.current || pins.length === 0) return;
+    didFitRef.current = true;
+    let west = 180, south = 90, east = -180, north = -90;
+    for (const p of pins) {
+      west = Math.min(west, p.longitude); east = Math.max(east, p.longitude);
+      south = Math.min(south, p.latitude); north = Math.max(north, p.latitude);
+    }
+    const fit = () => map.fitBounds([[west, south], [east, north]], { padding: 90, maxZoom: 12, duration: 0 });
+    if (map.loaded()) fit(); else map.once('load', fit);
+  }, [pins]);
+
   // Render cluster/pin markers for the current viewport.
   const renderMarkers = useCallback(() => {
     const map = mapRef.current;
     if (!map) return;
     markersRef.current.forEach((m) => m.remove());
     markersRef.current = [];
-    const b = map.getBounds();
-    const bbox: [number, number, number, number] = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()];
+    // Whole world, NOT map.getBounds(): once you pan horizontally the bounds run
+    // outside ±180° (world copies) and supercluster returns nothing, wiping every
+    // pin. Pin counts are small and MapLibre culls off-screen markers + wraps them
+    // to the visible world copy, so it's safe (and correct) to render them all.
+    const bbox: [number, number, number, number] = [-180, -85, 180, 85];
     // Build one Apple-style teardrop: rounded photo frame (or file/folder icon),
     // optional count badge, and a downward tail (via CSS ::after).
     const buildPin = (o: { thumbUrl?: string; iconSvg?: string; count?: number; approx?: boolean; onClick: () => void }) => {
@@ -101,7 +131,16 @@ export default function MapPage() {
       const frame = document.createElement('span');
       frame.className = 'dosya-pin__frame';
       if (o.thumbUrl) {
-        frame.style.backgroundImage = `url("${o.thumbUrl}")`;
+        // Show a shimmer skeleton until the thumbnail actually loads, then swap
+        // it in. Preloading via Image() (instead of setting background-image on
+        // a fresh marker node) also fixes the "blank until a theme toggle forces
+        // a reflow" paint quirk — the image now appears the moment it loads.
+        frame.classList.add('is-loading');
+        const url = o.thumbUrl;
+        const img = new Image();
+        img.onload = () => { frame.style.backgroundImage = `url("${url}")`; frame.classList.remove('is-loading'); };
+        img.onerror = () => { frame.classList.remove('is-loading'); };
+        img.src = url;
       } else if (o.iconSvg) {
         frame.classList.add('dosya-pin__frame--icon');
         frame.innerHTML = o.iconSvg;
@@ -121,10 +160,12 @@ export default function MapPage() {
       let el: HTMLButtonElement;
       if (item.kind === 'cluster') {
         const samples = item.sampleIds.map((id) => byId.get(id)).filter(Boolean) as MapPin[];
-        const photo = samples.find((p) => markerFor(p).type === 'thumbnail');
+        // Prefer a real raster photo as the cover; fall back to any image, then an icon.
+        const photo = samples.find(isRasterFile)
+          ?? samples.find((p): p is FilePin => p.kind === 'file' && markerFor(p).type === 'thumbnail');
         const rep = photo ?? samples[0];
         el = buildPin({
-          thumbUrl: photo ? fileThumbUrl({ fileId: photo.id, size: 128 }) : undefined,
+          thumbUrl: photo ? pinImageUrl(photo) : undefined,
           iconSvg: photo ? undefined : rep && markerFor(rep).type === 'folder-icon' ? FOLDER_ICON_SVG : FILE_ICON_SVG,
           count: item.count,
           approx: samples.length > 0 && samples.every((p) => p.source === 'ip'),
@@ -134,13 +175,15 @@ export default function MapPage() {
         const p = byId.get(item.pinId);
         if (!p) continue;
         const marker = markerFor(p);
-        const isThumb = marker.type === 'thumbnail' && p.kind === 'file';
-        el = buildPin({
-          thumbUrl: isThumb ? fileThumbUrl({ fileId: p.id, size: 128 }) : undefined,
-          iconSvg: isThumb ? undefined : marker.type === 'folder-icon' ? FOLDER_ICON_SVG : FILE_ICON_SVG,
-          approx: marker.approximate,
-          onClick: () => { if (p.kind === 'file') setViewerFile(p); else navigate(`/files?folder=${p.id}`); },
-        });
+        if (p.kind === 'file' && marker.type === 'thumbnail') {
+          el = buildPin({ thumbUrl: pinImageUrl(p), approx: marker.approximate, onClick: () => setViewerFile(p) });
+        } else {
+          el = buildPin({
+            iconSvg: marker.type === 'folder-icon' ? FOLDER_ICON_SVG : FILE_ICON_SVG,
+            approx: marker.approximate,
+            onClick: () => { if (p.kind === 'file') setViewerFile(p); else navigate(`/files?folder=${p.id}`); },
+          });
+        }
       }
       markersRef.current.push(new maplibregl.Marker({ element: el, anchor: 'bottom' }).setLngLat([item.lon, item.lat]).addTo(map));
     }
