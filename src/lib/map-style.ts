@@ -35,9 +35,10 @@ export async function checkBasemapAvailable(): Promise<boolean> {
   }
 }
 
+// Apple-Photos-ish palette: pale green land, green parks/forest, soft blue water.
 type Palette = { water: string; earth: string; landuse: string; roads: string; boundaries: string };
-const LIGHT: Palette = { water: '#a9d3e8', earth: '#e7e2d8', landuse: '#e2e8d5', roads: '#ffffff', boundaries: '#9aa0a6' };
-const DARK: Palette = { water: '#12283b', earth: '#22303f', landuse: '#26364a', roads: '#3a4d63', boundaries: '#46596e' };
+const LIGHT: Palette = { water: '#a3d0ef', earth: '#eef1de', landuse: '#c7e2a4', roads: '#ffffff', boundaries: '#b3b9bf' };
+const DARK: Palette = { water: '#0d1b2a', earth: '#1c2b22', landuse: '#223a2a', roads: '#43564c', boundaries: '#3c4c42' };
 
 export function buildMapStyle(dark: boolean, hasBasemap = false): StyleSpecification {
   if (!hasBasemap) return emptyStyle(dark);

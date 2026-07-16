@@ -20,7 +20,7 @@ export function buildClusterIndex(features: PinFeature[]): Supercluster<PinPoint
 }
 
 export type ViewItem =
-  | { kind: 'cluster'; id: number; count: number; lon: number; lat: number; expansionZoom: number }
+  | { kind: 'cluster'; id: number; count: number; lon: number; lat: number; expansionZoom: number; sampleIds: string[] }
   | { kind: 'pin'; pinId: string; lon: number; lat: number };
 
 export function clustersInView(
@@ -33,6 +33,8 @@ export function clustersInView(
     const props = f.properties as PinPointProps & { cluster?: boolean; cluster_id?: number; point_count?: number };
     if (props.cluster) {
       const id = props.cluster_id as number;
+      // A few representative leaf ids so the marker can show a cover photo (Apple-style).
+      const sampleIds = (index.getLeaves(id, 6) as PinFeature[]).map((l) => l.properties.pinId);
       return {
         kind: 'cluster',
         id,
@@ -40,6 +42,7 @@ export function clustersInView(
         lon,
         lat,
         expansionZoom: Math.min(index.getClusterExpansionZoom(id), 20),
+        sampleIds,
       };
     }
     return { kind: 'pin', pinId: props.pinId, lon, lat };

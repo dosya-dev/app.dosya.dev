@@ -93,33 +93,56 @@ export default function MapPage() {
     markersRef.current = [];
     const b = map.getBounds();
     const bbox: [number, number, number, number] = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()];
-    for (const item of clustersInView(index, bbox, map.getZoom())) {
+    // Build one Apple-style teardrop: rounded photo frame (or file/folder icon),
+    // optional count badge, and a downward tail (via CSS ::after).
+    const buildPin = (o: { thumbUrl?: string; iconSvg?: string; count?: number; approx?: boolean; onClick: () => void }) => {
       const el = document.createElement('button');
-      el.className = 'dosya-map-marker';
+      el.className = o.approx ? 'dosya-pin dosya-pin--approx' : 'dosya-pin';
+      const frame = document.createElement('span');
+      frame.className = 'dosya-pin__frame';
+      if (o.thumbUrl) {
+        frame.style.backgroundImage = `url("${o.thumbUrl}")`;
+      } else if (o.iconSvg) {
+        frame.classList.add('dosya-pin__frame--icon');
+        frame.innerHTML = o.iconSvg;
+      }
+      if (o.count && o.count > 1) {
+        const c = document.createElement('span');
+        c.className = 'dosya-pin__count';
+        c.textContent = o.count > 999 ? `${Math.floor(o.count / 1000)}k` : String(o.count);
+        frame.appendChild(c);
+      }
+      el.appendChild(frame);
+      el.onclick = o.onClick;
+      return el;
+    };
+
+    for (const item of clustersInView(index, bbox, map.getZoom())) {
+      let el: HTMLButtonElement;
       if (item.kind === 'cluster') {
-        el.innerHTML = `<span class="dosya-map-count">${item.count}</span>`;
-        el.onclick = () => map.easeTo({ center: [item.lon, item.lat], zoom: item.expansionZoom });
+        const samples = item.sampleIds.map((id) => byId.get(id)).filter(Boolean) as MapPin[];
+        const photo = samples.find((p) => markerFor(p).type === 'thumbnail');
+        const rep = photo ?? samples[0];
+        el = buildPin({
+          thumbUrl: photo ? fileThumbUrl({ fileId: photo.id, size: 128 }) : undefined,
+          iconSvg: photo ? undefined : rep && markerFor(rep).type === 'folder-icon' ? FOLDER_ICON_SVG : FILE_ICON_SVG,
+          count: item.count,
+          approx: samples.length > 0 && samples.every((p) => p.source === 'ip'),
+          onClick: () => map.easeTo({ center: [item.lon, item.lat], zoom: item.expansionZoom }),
+        });
       } else {
         const p = byId.get(item.pinId);
         if (!p) continue;
         const marker = markerFor(p);
-        if (marker.approximate) el.classList.add('dosya-map-marker--approx');
-        if (marker.type === 'thumbnail' && p.kind === 'file') {
-          const img = document.createElement('img');
-          img.src = fileThumbUrl({ fileId: p.id, size: 128 });
-          img.loading = 'lazy';
-          el.appendChild(img);
-        } else if (marker.type === 'folder-icon') {
-          el.innerHTML = FOLDER_ICON_SVG;
-        } else {
-          el.innerHTML = FILE_ICON_SVG;
-        }
-        el.onclick = () => {
-          if (p.kind === 'file') setViewerFile(p);
-          else navigate(`/files?folder=${p.id}`);
-        };
+        const isThumb = marker.type === 'thumbnail' && p.kind === 'file';
+        el = buildPin({
+          thumbUrl: isThumb ? fileThumbUrl({ fileId: p.id, size: 128 }) : undefined,
+          iconSvg: isThumb ? undefined : marker.type === 'folder-icon' ? FOLDER_ICON_SVG : FILE_ICON_SVG,
+          approx: marker.approximate,
+          onClick: () => { if (p.kind === 'file') setViewerFile(p); else navigate(`/files?folder=${p.id}`); },
+        });
       }
-      markersRef.current.push(new maplibregl.Marker({ element: el }).setLngLat([item.lon, item.lat]).addTo(map));
+      markersRef.current.push(new maplibregl.Marker({ element: el, anchor: 'bottom' }).setLngLat([item.lon, item.lat]).addTo(map));
     }
   }, [index, byId, navigate]);
 
