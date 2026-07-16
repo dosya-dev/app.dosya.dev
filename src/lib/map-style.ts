@@ -6,9 +6,14 @@ import type { StyleSpecification } from 'maplibre-gl';
 // apps/api/.../map/basemap.ts. Fonts + sprite are generic public assets (not user data),
 // so they are served as same-origin static files from the web app's own /public dir
 // (apps/web/public/map-assets/). Everything is first-party → zero external calls.
+//
+// MapLibre requires the `sprite` URL to be ABSOLUTE (scheme + host); a root-relative
+// "/map-assets/..." throws "Invalid sprite URL". Build absolute same-origin URLs from
+// window.location.origin (falls back to '' during SSR/tests, where the map never renders).
+const ASSET_ORIGIN = typeof window !== 'undefined' ? window.location.origin : '';
 export const BASEMAP_URL = `pmtiles://${API_BASE}/api/map/basemap`;
-const GLYPHS_URL = `/map-assets/fonts/{fontstack}/{range}.pbf`;
-const SPRITE_URL = `/map-assets/sprites`; // MapLibre appends /{flavor}.json + .png
+const GLYPHS_URL = `${ASSET_ORIGIN}/map-assets/fonts/{fontstack}/{range}.pbf`;
+const SPRITE_URL = `${ASSET_ORIGIN}/map-assets/sprites`; // MapLibre appends /{flavor}.json + .png
 
 export function buildMapStyle(dark: boolean): StyleSpecification {
   const flavor = dark ? 'dark' : 'light';
