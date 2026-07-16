@@ -17,7 +17,6 @@ import { Upload, Globe, Info, Check, AlertCircle, Loader2, Home, FolderOpen, Lay
 import { humanSize, folderIconSrc } from '@/lib/helpers';
 import { toast } from '@/lib/toast';
 import { FolderPickerDialog } from '@/components/folder-picker-dialog';
-import { useFolderTree } from '@/lib/folders';
 
 interface RegionInfo { code: string; city: string; country: string }
 
@@ -29,7 +28,6 @@ export default function UploadsPage() {
   const [folderName, setFolderName] = useState(searchParams.get('folder_name') || 'Root (top level)');
   const [selectedRegion, setSelectedRegion] = useState('ap-southeast-2');
   const [regions, setRegions] = useState<RegionInfo[]>([]);
-  const { folders, setFolders } = useFolderTree(wsId);
   const [dragging, setDragging] = useState(false);
   const [selectFolderOpen, setSelectFolderOpen] = useState(false);
   const [concurrency, setConcurrency] = useState(getUserConcurrency());
@@ -131,7 +129,7 @@ export default function UploadsPage() {
               <p className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-1"><FolderOpen className="size-3" /> Folder</p>
               <button className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border bg-muted/50 text-xs hover:bg-muted transition-colors text-left" onClick={() => setSelectFolderOpen(true)}>
                 {folderId
-                  ? <img src={folderIconSrc(folders.find((f) => f.id === folderId)?.file_count ?? 0)} alt="" className="size-3.5 shrink-0" />
+                  ? <img src={folderIconSrc(0)} alt="" className="size-3.5 shrink-0" />
                   : <Home className="size-3.5 text-muted-foreground shrink-0" />}
                 <span className="flex-1 truncate">{folderName}</span>
               </button>
@@ -182,9 +180,8 @@ export default function UploadsPage() {
           open
           onClose={() => setSelectFolderOpen(false)}
           workspaceId={wsId}
-          folders={folders}
-          onFoldersChange={setFolders}
           selectedId={folderId}
+          selectedName={folderName}
           onSelect={(id, name) => { setFolderId(id); setFolderName(name); setSelectFolderOpen(false); toast.success('Uploading here', `New files will go to "${name}".`); }}
         />
       )}

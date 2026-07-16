@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '@/api/client';
 
 export interface PickerFolder {
@@ -6,84 +6,85 @@ export interface PickerFolder {
   name: string;
   parent_id: string | null;
   file_count: number;
+  has_children: boolean;
 }
 
-export interface TreeRow {
-  folder: PickerFolder;
-  depth: number;
-  hasChildren: boolean;
+export interface SearchFolder {
+  id: string;
+  name: string;
+  file_count: number;
+  path: string; // breadcrumb of ancestor names ("" for a root-level folder)
 }
 
-/** Breadcrumb of ancestor names, e.g. "Alpha / Beta". "" for a root or unknown folder. */
-export function folderPath(folders: PickerFolder[], id: string): string {
-  const byId = new Map(folders.map((f) => [f.id, f]));
-  const parts: string[] = [];
-  let pid = byId.get(id)?.parent_id ?? null;
-  while (pid) {
-    const p = byId.get(pid);
-    if (!p) break;
-    parts.unshift(p.name);
-    pid = p.parent_id;
-  }
-  return parts.join(' / ');
+const ROOT_KEY = '__root__';
+const keyOf = (parentId: string | null) => parentId ?? ROOT_KEY;
+
+/** Direct children of a folder (or roots when parentId is null). */
+export async function fetchChildren(workspaceId: string, parentId: string | null): Promise<PickerFolder[]> {
+  const qs = new URLSearchParams({ workspace_id: workspaceId });
+  if (parentId) qs.set('parent_id', parentId);
+  const d = await api<{ ok: boolean; folders?: Array<Omit<PickerFolder, 'has_children'> & { has_children: number | boolean }> }>(
+    `/api/folders/children?${qs.toString()}`,
+  );
+  if (!d.ok || !d.folders) return [];
+  return d.folders.map((f) => ({ ...f, has_children: !!f.has_children }));
 }
 
-/** Depth-first flatten of the folder forest, siblings sorted by name. */
-export function buildTreeRows(
-  folders: PickerFolder[],
-  opts: { excludeId?: string | null; collapsed?: Set<string> } = {},
-): TreeRow[] {
-  const { excludeId = null, collapsed } = opts;
-  const childrenOf = new Map<string | null, PickerFolder[]>();
-  for (const f of folders) {
-    if (f.id === excludeId) continue; // pruning here drops the whole subtree
-    const key = f.parent_id ?? null;
-    if (!childrenOf.has(key)) childrenOf.set(key, []);
-    childrenOf.get(key)!.push(f);
-  }
-  for (const list of childrenOf.values()) list.sort((a, b) => a.name.localeCompare(b.name));
-
-  const rows: TreeRow[] = [];
-  const walk = (parentId: string | null, depth: number) => {
-    for (const f of childrenOf.get(parentId) ?? []) {
-      const hasChildren = (childrenOf.get(f.id) ?? []).length > 0;
-      rows.push({ folder: f, depth, hasChildren });
-      if (hasChildren && !collapsed?.has(f.id)) walk(f.id, depth + 1);
-    }
-  };
-  walk(null, 0);
-  return rows;
+/** Up to 50 name matches, each with a server-computed breadcrumb path. */
+export async function searchFolders(workspaceId: string, q: string): Promise<SearchFolder[]> {
+  const qs = new URLSearchParams({ workspace_id: workspaceId, q });
+  const d = await api<{ ok: boolean; folders?: SearchFolder[] }>(`/api/folders/search?${qs.toString()}`);
+  return d.ok && d.folders ? d.folders : [];
 }
 
-/** Flat, case-insensitive name-substring matches. [] for a blank query. */
-export function filterFolders(folders: PickerFolder[], query: string): PickerFolder[] {
-  const q = query.trim().toLowerCase();
-  if (!q) return [];
-  return folders.filter((f) => f.name.toLowerCase().includes(q));
-}
+/**
+ * Lazily loads a folder tree one level at a time and caches children by parent id.
+ * Keeps the picker fast even in workspaces with tens of thousands of folders.
+ */
+export function useLazyFolders(workspaceId: string | null, open: boolean) {
+  const [childrenByParent, setChildrenByParent] = useState<Map<string | null, PickerFolder[]>>(new Map());
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [loading, setLoading] = useState<Set<string>>(new Set());
+  const loadedRef = useRef<Set<string | null>>(new Set());
 
-/** Centralizes the GET /api/folders/tree fetch shared by every folder picker. */
-export function useFolderTree(workspaceId: string | null) {
-  const [folders, setFolders] = useState<PickerFolder[]>([]);
-  const [loading, setLoading] = useState(false);
-
-  const reload = useCallback(() => {
-    if (!workspaceId) {
-      setFolders([]);
-      return;
-    }
-    setLoading(true);
-    api<{ ok: boolean; folders?: PickerFolder[] }>(`/api/folders/tree?workspace_id=${workspaceId}`)
-      .then((d) => {
-        if (d.ok && d.folders) setFolders(d.folders);
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
+  const load = useCallback(async (parentId: string | null) => {
+    if (!workspaceId) return;
+    loadedRef.current.add(parentId);
+    const k = keyOf(parentId);
+    setLoading((prev) => new Set(prev).add(k));
+    let kids: PickerFolder[] = [];
+    try { kids = await fetchChildren(workspaceId, parentId); } catch { /* leave empty */ }
+    setChildrenByParent((prev) => new Map(prev).set(parentId, kids));
+    setLoading((prev) => { const next = new Set(prev); next.delete(k); return next; });
   }, [workspaceId]);
 
+  // (Re)load roots whenever the picker opens or the workspace changes.
   useEffect(() => {
-    reload();
-  }, [reload]);
+    if (open && workspaceId) {
+      loadedRef.current = new Set();
+      setChildrenByParent(new Map());
+      setExpanded(new Set());
+      load(null);
+    }
+  }, [open, workspaceId, load]);
 
-  return { folders, setFolders, loading, reload };
+  const toggle = useCallback((id: string) => {
+    const willExpand = !expanded.has(id);
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+    if (willExpand && !loadedRef.current.has(id)) load(id);
+  }, [expanded, load]);
+
+  const expand = useCallback((id: string) => setExpanded((prev) => new Set(prev).add(id)), []);
+
+  /** Force a refetch of one level (used after creating a folder). */
+  const reload = useCallback((parentId: string | null) => {
+    loadedRef.current.delete(parentId);
+    load(parentId);
+  }, [load]);
+
+  return { childrenByParent, expanded, loading, toggle, expand, reload, rootKey: ROOT_KEY };
 }
