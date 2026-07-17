@@ -12,6 +12,8 @@ import { pinsToFeatures, buildClusterIndex, clustersInView } from '@/lib/map-clu
 import { buildMapStyle, checkBasemapAvailable } from '@/lib/map-style';
 import { fileThumbUrl, fileRawUrl } from '@/lib/file-url';
 import { FileViewer } from '@/components/file-viewer';
+import { FilesSidebar } from '@/components/files-sidebar';
+import { filterNavParams, groupNavParams } from '@/lib/files-params';
 
 let pmtilesRegistered = false;
 function ensurePmtiles() {
@@ -248,11 +250,25 @@ export default function MapPage() {
   if (counts.pending > 0) countParts.push(`${counts.pending} scanning…`);
 
   return (
-    <div className="absolute inset-0 overflow-hidden">
-      {/* MapLibre forces `.maplibregl-map { position: relative }`, which overrides
-          `absolute inset-0` (so inset-0 can't size it). Use h-full/w-full instead —
-          the root above is `absolute inset-0`, giving this a real parent height. */}
-      <div ref={containerRef} className="h-full w-full" />
+    <div className="absolute inset-0 flex overflow-hidden">
+      {/* The same inner files menu as the Files page, so you can jump to a
+          filter / group / favourite (all of which live on Files) without
+          leaving the map. The outer app rail is already always visible; this
+          just restores the inner menu the full-bleed map used to cover.
+          File-oriented actions route to /files since the map has no filter of
+          its own. */}
+      <FilesSidebar
+        onFilterChange={(filter) => navigate(`/files?${filterNavParams(new URLSearchParams(), filter)}`)}
+        onFavouriteClick={() => navigate('/files')}
+        onGroupClick={(groupId) => navigate(`/files?${groupNavParams(new URLSearchParams(), groupId)}`)}
+      />
+
+      {/* Map area fills the remaining space. `relative` is the positioning
+          context for the overlays below; `flex-1 min-w-0` gives the map a real
+          size. MapLibre forces `.maplibregl-map { position: relative }`, so the
+          container sizes with h-full/w-full (not inset-0) against this box. */}
+      <div className="relative flex-1 min-w-0 h-full overflow-hidden">
+        <div ref={containerRef} className="h-full w-full" />
 
       <div className="absolute top-4 left-4 z-10 flex flex-col items-start gap-2">
         {/* Count chip */}
@@ -303,6 +319,8 @@ export default function MapPage() {
           </p>
         </div>
       )}
+
+      </div>
 
       {viewerFile && (
         <FileViewer
