@@ -44,6 +44,25 @@ export interface MapPinsResponse {
   counts: { gps: number; approximate: number; pending: number };
 }
 
-export function fetchMapPins(workspaceId: string): Promise<MapPinsResponse> {
-  return api<MapPinsResponse>(`/api/map/pins?workspace_id=${encodeURIComponent(workspaceId)}`);
+// Filters applied server-side. `folderId` scopes to that folder + its descendants
+// (recursive); `from`/`to` are inclusive unix-epoch-second bounds on the pin's
+// taken-date (falling back to upload date).
+export interface MapFilters {
+  folderId?: string | null;
+  folderName?: string | null; // UI label only; not sent to the API
+  from?: number | null;
+  to?: number | null;
+}
+
+/** Build the /api/map/pins query string, omitting empty filters. Pure + tested. */
+export function mapPinsQuery(workspaceId: string, filters?: MapFilters): string {
+  const p = new URLSearchParams({ workspace_id: workspaceId });
+  if (filters?.folderId) p.set('folder_id', filters.folderId);
+  if (filters?.from != null) p.set('from', String(filters.from));
+  if (filters?.to != null) p.set('to', String(filters.to));
+  return p.toString();
+}
+
+export function fetchMapPins(workspaceId: string, filters?: MapFilters): Promise<MapPinsResponse> {
+  return api<MapPinsResponse>(`/api/map/pins?${mapPinsQuery(workspaceId, filters)}`);
 }

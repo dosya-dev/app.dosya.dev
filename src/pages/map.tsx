@@ -5,7 +5,8 @@ import { Protocol } from 'pmtiles';
 import { MapPin as MapPinIcon, Loader2 } from 'lucide-react';
 import { useWorkspace } from '@/stores/workspace';
 import { subscribeThemeChange } from '@/lib/theme';
-import { fetchMapPins, type MapPin, type FilePin } from '@/lib/map-pins';
+import { fetchMapPins, type MapPin, type FilePin, type MapFilters } from '@/lib/map-pins';
+import { MapFilterPanel } from '@/components/map-filter-panel';
 import { markerFor } from '@/lib/map-marker';
 import { pinsToFeatures, buildClusterIndex, clustersInView } from '@/lib/map-cluster';
 import { buildMapStyle, checkBasemapAvailable } from '@/lib/map-style';
@@ -62,6 +63,7 @@ export default function MapPage() {
   const [loading, setLoading] = useState(true);
   const [viewerFile, setViewerFile] = useState<FilePin | null>(null);
   const [showApprox, setShowApprox] = useState(true);
+  const [filters, setFilters] = useState<MapFilters>({});
   const [dark, setDark] = useState(() => document.documentElement.classList.contains('dark'));
   // Whether the basemap .pmtiles is provisioned. Until it is (or if the probe
   // fails), the map renders a clean empty background rather than 404-ing on a
@@ -85,11 +87,11 @@ export default function MapPage() {
     if (!wsId) return;
     setLoading(true);
     try {
-      const data = await fetchMapPins(wsId);
+      const data = await fetchMapPins(wsId, filters);
       if (data.ok) { setPins(data.pins); setCounts(data.counts); }
     } catch { /* leave empty state */ }
     setLoading(false);
-  }, [wsId]);
+  }, [wsId, filters]);
 
   useEffect(() => { loadPins(); }, [loadPins]);
   useEffect(() => subscribeThemeChange(() => setDark(document.documentElement.classList.contains('dark'))), []);
@@ -258,6 +260,14 @@ export default function MapPage() {
           <MapPinIcon className="size-4 text-muted-foreground" />
           <span>{countParts.join(' · ')}</span>
         </div>
+
+        {/* Filters: folder scope (recursive) + date range. Resetting the fit guard
+            re-frames the map to the filtered pins, like Apple Photos. */}
+        <MapFilterPanel
+          value={filters}
+          onChange={(next) => { didFitRef.current = false; setFilters(next); }}
+          workspaceId={wsId}
+        />
 
         {/* Approximate-locations filter */}
         <button
