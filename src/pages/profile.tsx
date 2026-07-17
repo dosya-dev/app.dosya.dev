@@ -37,9 +37,18 @@ interface ApiKey {
   id: string; name: string; scope: string; key_prefix: string;
   created_at: number; s3_access_key_id: string | null;
 }
+// Mirrors what GET /api/me/sessions actually returns. It previously declared
+// ip/user_agent/login_method/last_active_at — none of which the API sends — so every
+// row rendered "undefined · undefined · undefined NaN". `device`/`browser`/`meta` come
+// pre-formatted from the server, which also classifies mobile app devices.
 interface Session {
-  id: string; ip: string; user_agent: string; login_method: string;
-  created_at: number; last_active_at: number; is_current: boolean;
+  id: string;
+  device: string;
+  kind: 'desktop' | 'mobile' | 'tablet' | 'unknown';
+  browser: string;
+  meta: string;
+  is_current: boolean;
+  created_at: number;
 }
 interface Workspace {
   id: string; name: string; icon_initials: string; icon_color: string;
@@ -942,15 +951,6 @@ function SessionsSection({ sessions, onChanged }: { sessions: Session[]; onChang
     setRevoking(false);
   };
 
-  const parseUA = (ua: string | null | undefined) => {
-    if (!ua) return 'Browser';
-    if (ua.includes('Chrome')) return 'Chrome';
-    if (ua.includes('Firefox')) return 'Firefox';
-    if (ua.includes('Safari')) return 'Safari';
-    if (ua.includes('Edge')) return 'Edge';
-    return 'Browser';
-  };
-
   return (
     <section id="section-sessions">
       <h2 className="text-base font-semibold mb-3">Active sessions</h2>
@@ -963,11 +963,13 @@ function SessionsSection({ sessions, onChanged }: { sessions: Session[]; onChang
               {sessions.map((s) => (
                 <div key={s.id} className="flex items-center gap-3 py-3 border-b last:border-b-0">
                   <div className="w-9 h-9 rounded-lg bg-muted flex items-center justify-center shrink-0">
-                    <Monitor className="size-4 text-muted-foreground" />
+                    {s.kind === 'mobile' || s.kind === 'tablet'
+                      ? <Smartphone className="size-4 text-muted-foreground" />
+                      : <Monitor className="size-4 text-muted-foreground" />}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-xs font-medium">{parseUA(s.user_agent)} {s.is_current && <Badge className="ml-1 text-[9px] bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-400">Current</Badge>}</p>
-                    <p className="text-[11px] text-muted-foreground">{s.ip} · {s.login_method} · {timeAgo(s.last_active_at)}</p>
+                    <p className="text-xs font-medium">{s.device} {s.is_current && <Badge className="ml-1 text-[9px] bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-400">Current</Badge>}</p>
+                    <p className="text-[11px] text-muted-foreground truncate">{s.meta}</p>
                   </div>
                 </div>
               ))}
