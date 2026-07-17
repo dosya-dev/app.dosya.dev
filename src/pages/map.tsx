@@ -206,7 +206,10 @@ export default function MapPage() {
       attributionControl: { compact: true },
     });
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
-    map.on('moveend', () => renderMarkers());
+    // Use the ref, not the captured closure: this handler is registered once on
+    // mount, so a bare renderMarkers() would forever call the first render's
+    // version (when pins were empty) and wipe markers on every pan/zoom.
+    map.on('moveend', () => renderMarkersRef.current());
     // Safety: if the flex/absolute container finished sizing after init, make the
     // canvas match it (a 0-height container at init is a classic blank-map cause).
     map.once('load', () => map.resize());
