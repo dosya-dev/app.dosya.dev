@@ -13,6 +13,7 @@ import { highlightToHtml } from '@/lib/text-highlight';
 import { useInFileFind } from '@/lib/use-in-file-find';
 import { TextFindBar } from '@/components/text-find-bar';
 import { TextEditorOverlay } from '@/components/text-editor';
+import { VCardView } from '@/components/vcard-viewer';
 
 
 // ── Types ─────────────────────────────────────────────────
@@ -43,6 +44,7 @@ interface FileViewerProps {
 // ── Helpers ───────────────────────────────────────────────
 
 function isPdf(name: string) { return extOf(name) === 'pdf'; }
+function isVcard(name: string) { const e = extOf(name); return e === 'vcf' || e === 'vcard'; }
 function isEditable(name: string) { return isImage(name) || isVideo(name); }
 
 const THUMB_WINDOW = 6;
@@ -53,6 +55,61 @@ function getThumbWindow(activeIdx: number, total: number) {
   let end = start + THUMB_WINDOW;
   if (end > total) { end = total; start = end - THUMB_WINDOW; }
   return { start, end };
+}
+
+// ── Pintura theme bridge ──────────────────────────────────
+// Pintura derives its whole palette from --color-background / --color-foreground,
+// supplied as "R, G, B" channels (it wraps them as rgba(var(--color-background), α)).
+// Its default is black-on-white, so on a dark app theme the editor renders light and
+// clashes. The app's theme lives in oklch() CSS vars, which pure CSS can't convert into
+// Pintura's RGB channels — so resolve them to concrete sRGB here and set them inline on
+// the editor root (an inline style beats Pintura's own stylesheet rule), matching any of
+// the app's themes and light/dark modes.
+
+/** Paint a CSS color onto a 1×1 canvas and read back its sRGB triple. Handles oklch()
+ *  (and every other CSS color form); returns null if the browser can't parse it. */
+function resolveRgb(cssColor: string): [number, number, number] | null {
+  const value = cssColor.trim();
+  if (!value) return null;
+  const ctx = document.createElement('canvas').getContext('2d');
+  if (!ctx) return null;
+  const sentinel = '#010203';
+  ctx.fillStyle = sentinel;
+  ctx.fillStyle = value;
+  // An unparseable value leaves fillStyle unchanged (e.g. no oklch canvas support).
+  if (ctx.fillStyle === sentinel && value.toLowerCase() !== sentinel) return null;
+  ctx.fillRect(0, 0, 1, 1);
+  const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
+  return [r, g, b];
+}
+
+function themeVar(name: string): string {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
+/** Recolor a freshly-created Pintura editor to match the active app theme + mode. The
+ *  editor root is class-tagged by Svelte a tick after appendEditor(), so retry briefly. */
+function applyEditorTheme(container: HTMLElement, attempt = 0): void {
+  const root = container.querySelector<HTMLElement>('.pintura-editor, pintura-editor');
+  if (!root) {
+    if (attempt < 5) requestAnimationFrame(() => applyEditorTheme(container, attempt + 1));
+    return;
+  }
+  const channels = (name: string) => { const rgb = resolveRgb(themeVar(name)); return rgb && rgb.join(', '); };
+  const color = (name: string) => { const rgb = resolveRgb(themeVar(name)); return rgb && `rgb(${rgb.join(', ')})`; };
+
+  const bg = channels('--background');
+  const fg = channels('--foreground');
+  const primary = color('--primary');
+  const primaryText = color('--primary-foreground');
+
+  if (bg) root.style.setProperty('--color-background', bg);
+  if (fg) root.style.setProperty('--color-foreground', fg);
+  if (primary) {
+    root.style.setProperty('--color-primary', primary);
+    root.style.setProperty('--color-primary-dark', primary);
+  }
+  if (primaryText) root.style.setProperty('--color-primary-text', primaryText);
 }
 
 // ── Component ─────────────────────────────────────────────
@@ -204,7 +261,8 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
           );
           defaults.locale = { ...defaults.locale, ...pinturaVideo.plugin_trim_locale_en_gb };
 
-          const res = await fetch(src);
+          const res = await fetch(src, { credentials: 'include' });
+          if (!res.ok) throw new Error(`Failed to load video (HTTP ${res.status})`);
           const blob = await res.blob();
           const ext = extOf(file.name);
           const mimeMap: Record<string, string> = {
@@ -217,11 +275,22 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
             ...defaults, src: videoFile, imageCropAspectRatio: undefined,
           } as any);
         } else {
+          // Pintura fetches `src` itself. A cross-origin URL to api.dosya.dev fails
+          // the browser CORS check on Pintura's XHR, so fetch the image here (the
+          // app's own credentialed request works) and hand Pintura a local File —
+          // same approach as the video branch above.
+          const res = await fetch(src, { credentials: 'include' });
+          if (!res.ok) throw new Error(`Failed to load image (HTTP ${res.status})`);
+          const blob = await res.blob();
           if (cancelled || !editorContainerRef.current) return;
+          const imageFile = new File([blob], file.name, { type: blob.type || file.mime_type });
           editorInstanceRef.current = pintura.appendEditor(editorContainerRef.current, {
-            ...defaults, src, imageCropAspectRatio: undefined,
+            ...defaults, src: imageFile, imageCropAspectRatio: undefined,
           } as any);
         }
+
+        // Recolor the editor chrome to match the active app theme + light/dark mode.
+        if (editorContainerRef.current) applyEditorTheme(editorContainerRef.current);
 
         editorInstanceRef.current.on('process', async (res: any) => {
           const blob = res.dest as Blob;
@@ -258,8 +327,12 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
             toast.error('Save failed', 'Failed to save edited file.');
           }
         });
-      } catch {
-        toast.error('Editor unavailable', 'Image editor not available.');
+      } catch (err) {
+        // Surface the real reason instead of swallowing it — e.g. a failed dynamic
+        // import means the Pintura chunk didn't load (commonly the private-registry
+        // package installed as the public stub because NPM_TOKEN was missing at build).
+        console.error('[pintura] failed to load/init editor', err);
+        toast.error('Editor unavailable', err instanceof Error ? err.message : 'Image editor not available.');
         setEditingOpen(false);
       }
     })();
@@ -328,7 +401,7 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
         <div className="flex-1 flex min-h-0">
           {/* File content */}
           <div className="flex-1 min-h-0 min-w-0 flex items-center justify-center bg-muted/30 overflow-auto p-6">
-            <FileContent file={file} rawUrl={rawUrl()} downloadUrl={downloadUrl} version={previewVersion} />
+            <FileContent file={file} rawUrl={rawUrl()} downloadUrl={downloadUrl} version={previewVersion} workspaceId={workspaceId} onSaved={() => { onRefresh(); loadVersions(); }} />
           </div>
 
           {/* Version sidebar */}
@@ -446,8 +519,12 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
 
 // ── File content renderer ─────────────────────────────────
 
-function FileContent({ file, rawUrl, downloadUrl, version }: { file: FileItem; rawUrl: string; downloadUrl: string; version?: number }) {
+function FileContent({ file, rawUrl, downloadUrl, version, workspaceId, onSaved }: { file: FileItem; rawUrl: string; downloadUrl: string; version?: number; workspaceId: string; onSaved: () => void }) {
   const ext = extOf(file.name);
+
+  if (isVcard(file.name)) {
+    return <VCardView file={file} rawUrl={rawUrl} workspaceId={workspaceId} onSaved={onSaved} />;
+  }
 
   if (isImage(file.name)) {
     return (
