@@ -57,7 +57,8 @@ interface WsData {
   plan_limits?: { storage_gb?: number };
   roles: { id: string; name: string; is_default: number }[];
   permissions: Record<string, { [perm: string]: boolean }>;
-  members?: { id: string; name: string; email: string; role_id: string }[];
+  /** Shape mirrors /api/team: the row id is `membership_id`; there is no `id`. */
+  members?: { membership_id: string; user_id: string; name: string; email: string; role_id: string }[];
   /** Current user's permission map — used to disable controls up front */
   my_permissions?: Record<string, boolean>;
 }
@@ -105,7 +106,7 @@ export default function SettingsPage() {
         api<{ ok: boolean } & WsData>(`/api/workspaces/${wsId}`),
         api<{ ok: boolean; regions: RegionInfo[] }>('/api/regions'),
         api<{ ok: boolean; roles: { id: string; name: string; is_default: number; is_builtin: boolean; is_custom: boolean; permissions: Record<string, boolean> }[] }>(`/api/roles?workspace_id=${wsId}`),
-        api<{ ok: boolean; members?: { id: string; name: string; email: string; role_id: string; is_you?: boolean }[] }>(`/api/team?workspace_id=${wsId}`),
+        api<{ ok: boolean; members?: { membership_id: string; user_id: string; name: string; email: string; role_id: string; is_you?: boolean }[] }>(`/api/team?workspace_id=${wsId}`),
       ]);
       if (wsRes.ok) {
         const d = wsRes;
@@ -702,12 +703,12 @@ function DangerSection({ data, wsId, isOwner, navigate, onSaved }: { data: WsDat
           <p className="text-xs text-muted-foreground mb-2">Select a member to become the new owner. You will become a regular member.</p>
           <div className="max-h-48 overflow-y-auto border rounded-lg">
             {members.filter((m) => m.role_id !== 'role_owner').map((m) => (
-              <button key={m.id}
-                className={`w-full flex items-center gap-2.5 px-3 py-2.5 text-xs border-b last:border-b-0 hover:bg-muted/50 text-left ${transferTarget === m.id ? 'bg-green-50 dark:bg-green-950/30' : ''}`}
-                onClick={() => setTransferTarget(m.id)}>
+              <button key={m.membership_id}
+                className={`w-full flex items-center gap-2.5 px-3 py-2.5 text-xs border-b last:border-b-0 hover:bg-muted/50 text-left ${transferTarget === m.user_id ? 'bg-green-50 dark:bg-green-950/30' : ''}`}
+                onClick={() => setTransferTarget(m.user_id)}>
                 <span className="flex-1 truncate font-medium">{m.name}</span>
                 <span className="text-muted-foreground truncate">{m.email}</span>
-                {transferTarget === m.id && <Check className="size-3 text-green-600 shrink-0" />}
+                {transferTarget === m.user_id && <Check className="size-3 text-green-600 shrink-0" />}
               </button>
             ))}
             {members.filter((m) => m.role_id !== 'role_owner').length === 0 && (
