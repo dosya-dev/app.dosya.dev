@@ -106,7 +106,21 @@ export default function BillingPage() {
             style={{ '--storage-color': storageColor } as React.CSSProperties}
           />
           {storagePct >= 80 && (
-            storagePct >= 95 ? (
+            storagePct >= 100 ? (
+              <button
+                type="button"
+                onClick={() => setShowChooser(true)}
+                className="flex items-start gap-1.5 mt-2 text-xs w-full text-left hover:underline"
+                style={{ color: '#ef4444' }}
+              >
+                <AlertTriangle className="size-3 shrink-0 mt-0.5" />
+                <span>
+                  <strong className="font-medium">You're over your storage limit.</strong>{' '}
+                  Uploads are paused across all your workspaces until you free up space or upgrade.
+                  Nothing has been deleted.
+                </span>
+              </button>
+            ) : storagePct >= 95 ? (
               <button
                 type="button"
                 onClick={() => setShowChooser(true)}
