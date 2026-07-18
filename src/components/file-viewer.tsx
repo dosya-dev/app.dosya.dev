@@ -57,6 +57,61 @@ function getThumbWindow(activeIdx: number, total: number) {
   return { start, end };
 }
 
+// ── Pintura theme bridge ──────────────────────────────────
+// Pintura derives its whole palette from --color-background / --color-foreground,
+// supplied as "R, G, B" channels (it wraps them as rgba(var(--color-background), α)).
+// Its default is black-on-white, so on a dark app theme the editor renders light and
+// clashes. The app's theme lives in oklch() CSS vars, which pure CSS can't convert into
+// Pintura's RGB channels — so resolve them to concrete sRGB here and set them inline on
+// the editor root (an inline style beats Pintura's own stylesheet rule), matching any of
+// the app's themes and light/dark modes.
+
+/** Paint a CSS color onto a 1×1 canvas and read back its sRGB triple. Handles oklch()
+ *  (and every other CSS color form); returns null if the browser can't parse it. */
+function resolveRgb(cssColor: string): [number, number, number] | null {
+  const value = cssColor.trim();
+  if (!value) return null;
+  const ctx = document.createElement('canvas').getContext('2d');
+  if (!ctx) return null;
+  const sentinel = '#010203';
+  ctx.fillStyle = sentinel;
+  ctx.fillStyle = value;
+  // An unparseable value leaves fillStyle unchanged (e.g. no oklch canvas support).
+  if (ctx.fillStyle === sentinel && value.toLowerCase() !== sentinel) return null;
+  ctx.fillRect(0, 0, 1, 1);
+  const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
+  return [r, g, b];
+}
+
+function themeVar(name: string): string {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
+/** Recolor a freshly-created Pintura editor to match the active app theme + mode. The
+ *  editor root is class-tagged by Svelte a tick after appendEditor(), so retry briefly. */
+function applyEditorTheme(container: HTMLElement, attempt = 0): void {
+  const root = container.querySelector<HTMLElement>('.pintura-editor, pintura-editor');
+  if (!root) {
+    if (attempt < 5) requestAnimationFrame(() => applyEditorTheme(container, attempt + 1));
+    return;
+  }
+  const channels = (name: string) => { const rgb = resolveRgb(themeVar(name)); return rgb && rgb.join(', '); };
+  const color = (name: string) => { const rgb = resolveRgb(themeVar(name)); return rgb && `rgb(${rgb.join(', ')})`; };
+
+  const bg = channels('--background');
+  const fg = channels('--foreground');
+  const primary = color('--primary');
+  const primaryText = color('--primary-foreground');
+
+  if (bg) root.style.setProperty('--color-background', bg);
+  if (fg) root.style.setProperty('--color-foreground', fg);
+  if (primary) {
+    root.style.setProperty('--color-primary', primary);
+    root.style.setProperty('--color-primary-dark', primary);
+  }
+  if (primaryText) root.style.setProperty('--color-primary-text', primaryText);
+}
+
 // ── Component ─────────────────────────────────────────────
 
 export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRefresh }: FileViewerProps) {
@@ -233,6 +288,9 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
             ...defaults, src: imageFile, imageCropAspectRatio: undefined,
           } as any);
         }
+
+        // Recolor the editor chrome to match the active app theme + light/dark mode.
+        if (editorContainerRef.current) applyEditorTheme(editorContainerRef.current);
 
         editorInstanceRef.current.on('process', async (res: any) => {
           const blob = res.dest as Blob;
