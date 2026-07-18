@@ -29,6 +29,9 @@ interface UserProfile {
   id: string; name: string; email: string; initials: string;
   avatar_url: string | null; preferred_language: string;
   created_at: number; email_verified_at: number | null; workspace_count: number;
+  // False for OAuth-created accounts: their stored password is a random value they were
+  // never told, so every password-gated action fails permanently.
+  has_password: boolean;
 }
 interface TfaStatus {
   method: string | null; totp_enabled: boolean; recovery_codes_remaining: number;
@@ -37,9 +40,18 @@ interface ApiKey {
   id: string; name: string; scope: string; key_prefix: string;
   created_at: number; s3_access_key_id: string | null;
 }
+// Mirrors what GET /api/me/sessions actually returns. It previously declared
+// ip/user_agent/login_method/last_active_at — none of which the API sends — so every
+// row rendered "undefined · undefined · undefined NaN". `device`/`browser`/`meta` come
+// pre-formatted from the server, which also classifies mobile app devices.
 interface Session {
-  id: string; ip: string; user_agent: string; login_method: string;
-  created_at: number; last_active_at: number; is_current: boolean;
+  id: string;
+  device: string;
+  kind: 'desktop' | 'mobile' | 'tablet' | 'unknown';
+  browser: string;
+  meta: string;
+  is_current: boolean;
+  created_at: number;
 }
 interface Workspace {
   id: string; name: string; icon_initials: string; icon_color: string;
@@ -176,7 +188,9 @@ export default function ProfilePage() {
         <ProfileHero user={user} onAvatarChanged={loadProfile} />
         <IdentitySection user={user} onSaved={loadProfile} />
         <AppearanceSection />
-        <PasswordSection tfa={tfa} onTfaChanged={load2fa} />
+        {/* Default to true while /api/me is loading: better to show an action that may
+            401 than to hide a working one from someone who does have a password. */}
+        <PasswordSection tfa={tfa} onTfaChanged={load2fa} hasPassword={user?.has_password ?? true} />
         <ApiKeysSection keys={keys} onChanged={loadKeys} />
         <SessionsSection sessions={sessions} onChanged={loadSessions} />
         <NotificationsSection />
@@ -472,7 +486,7 @@ function AppearanceSection() {
 
 // ── Password & 2FA ─────────────────────────────────────────
 
-function PasswordSection({ tfa, onTfaChanged }: { tfa: TfaStatus | null; onTfaChanged: () => void }) {
+function PasswordSection({ tfa, onTfaChanged, hasPassword }: { tfa: TfaStatus | null; onTfaChanged: () => void; hasPassword: boolean }) {
   const [passwordModal, setPasswordModal] = useState(false);
   const [current, setCurrent] = useState('');
   const [newPw, setNewPw] = useState('');
@@ -511,9 +525,20 @@ function PasswordSection({ tfa, onTfaChanged }: { tfa: TfaStatus | null; onTfaCh
       <h2 className="text-base font-semibold mb-3">Password & two-factor auth</h2>
       <Card>
         <CardContent className="divide-y">
-          <SettingRow label="Password" desc="Min. 8 characters. Mix of upper, lower, and numbers.">
-            <Button variant="outline" size="sm" className="text-xs" onClick={() => setPasswordModal(true)}>Change password</Button>
-          </SettingRow>
+          {hasPassword ? (
+            // The API also requires a special character and rejects reusing the current
+            // password; the old copy mentioned neither, so users hit a 400 unprepared.
+            <SettingRow label="Password" desc="Min. 8 characters, with upper and lower case, a number, and a special character.">
+              <Button variant="outline" size="sm" className="text-xs" onClick={() => setPasswordModal(true)}>Change password</Button>
+            </SettingRow>
+          ) : (
+            <SettingRow
+              label="Password"
+              desc="You signed up with Google or GitHub, so this account has no password yet. Use “Forgot password” to set one — you'll need it to turn two-factor authentication off later."
+            >
+              <Badge variant="secondary" className="text-[10px]">Not set</Badge>
+            </SettingRow>
+          )}
 
           <SettingRow
             label="Two-factor authentication"
@@ -526,8 +551,14 @@ function PasswordSection({ tfa, onTfaChanged }: { tfa: TfaStatus | null; onTfaCh
             {method ? (
               <div className="flex items-center gap-2">
                 <Badge className="text-[10px] gap-1"><ShieldCheck className="size-3" />{method === 'totp' ? 'Authenticator' : 'Email'}</Badge>
-                <Button variant="outline" size="sm" className="text-xs" onClick={() => setDisableModal(true)}>Disable</Button>
+                <Button variant="outline" size="sm" className="text-xs" onClick={() => setDisableModal(true)} disabled={!hasPassword}>Disable</Button>
               </div>
+            ) : !hasPassword ? (
+              // Enrolling needs no password but disabling verifies one, so without a
+              // password this is a one-way door. Block the door, don't just warn later.
+              <p className="text-[11px] text-muted-foreground max-w-[16rem] text-right">
+                Set a password first — turning 2FA off later requires one.
+              </p>
             ) : (
               <div className="flex items-center gap-2">
                 <Button variant="outline" size="sm" className="text-xs" onClick={enableEmail} disabled={enablingEmail}>
@@ -540,9 +571,18 @@ function PasswordSection({ tfa, onTfaChanged }: { tfa: TfaStatus | null; onTfaCh
             )}
           </SettingRow>
 
+          {method && !hasPassword && (
+            <SettingRow
+              label="Password required"
+              desc="Turning two-factor authentication off requires a password. Use “Forgot password” to set one first."
+            >
+              <span />
+            </SettingRow>
+          )}
+
           {method === 'totp' && (
             <SettingRow label="Recovery codes" desc={`${tfa?.recovery_codes_remaining ?? 0} of 10 codes remaining`}>
-              <Button variant="outline" size="sm" className="text-xs gap-1" onClick={() => setRegenModal(true)}>
+              <Button variant="outline" size="sm" className="text-xs gap-1" onClick={() => setRegenModal(true)} disabled={!hasPassword}>
                 <RefreshCw className="size-3" /> Regenerate codes
               </Button>
             </SettingRow>
@@ -942,15 +982,6 @@ function SessionsSection({ sessions, onChanged }: { sessions: Session[]; onChang
     setRevoking(false);
   };
 
-  const parseUA = (ua: string | null | undefined) => {
-    if (!ua) return 'Browser';
-    if (ua.includes('Chrome')) return 'Chrome';
-    if (ua.includes('Firefox')) return 'Firefox';
-    if (ua.includes('Safari')) return 'Safari';
-    if (ua.includes('Edge')) return 'Edge';
-    return 'Browser';
-  };
-
   return (
     <section id="section-sessions">
       <h2 className="text-base font-semibold mb-3">Active sessions</h2>
@@ -963,11 +994,13 @@ function SessionsSection({ sessions, onChanged }: { sessions: Session[]; onChang
               {sessions.map((s) => (
                 <div key={s.id} className="flex items-center gap-3 py-3 border-b last:border-b-0">
                   <div className="w-9 h-9 rounded-lg bg-muted flex items-center justify-center shrink-0">
-                    <Monitor className="size-4 text-muted-foreground" />
+                    {s.kind === 'mobile' || s.kind === 'tablet'
+                      ? <Smartphone className="size-4 text-muted-foreground" />
+                      : <Monitor className="size-4 text-muted-foreground" />}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-xs font-medium">{parseUA(s.user_agent)} {s.is_current && <Badge className="ml-1 text-[9px] bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-400">Current</Badge>}</p>
-                    <p className="text-[11px] text-muted-foreground">{s.ip} · {s.login_method} · {timeAgo(s.last_active_at)}</p>
+                    <p className="text-xs font-medium">{s.device} {s.is_current && <Badge className="ml-1 text-[9px] bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-400">Current</Badge>}</p>
+                    <p className="text-[11px] text-muted-foreground truncate">{s.meta}</p>
                   </div>
                 </div>
               ))}
