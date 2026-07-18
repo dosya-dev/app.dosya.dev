@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { api } from '@/api/client';
+import { api, API_BASE } from '@/api/client';
 import { useWorkspace } from '@/stores/workspace';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -314,6 +314,7 @@ export default function ActivityPage() {
 
 function ActivityRow({ activity: a }: { activity: Activity }) {
   const [open, setOpen] = useState(false);
+  const [avatarFailed, setAvatarFailed] = useState(false);
   const label = ACTION_LABELS[a.action] ?? a.action;
   const color = ACTION_COLORS[a.action] ?? '#706e69';
   // `meta` is the parsed, possibly server-gated metadata (Task 3); fall back
@@ -332,8 +333,17 @@ function ActivityRow({ activity: a }: { activity: Activity }) {
           className="size-8 rounded-full shrink-0 flex items-center justify-center text-[10px] font-bold text-white mt-0.5"
           style={{ background: bgColor }}
         >
-          {a.user_avatar ? (
-            <img src={a.user_avatar} alt="" className="w-full h-full rounded-full object-cover" />
+          {/* avatar_url is an R2 object key, not a URL — treat it as a "has photo"
+              flag and load the image through the API (cookie-authenticated),
+              falling back to initials if it's missing or fails to load. */}
+          {a.user_avatar && a.user_id && !avatarFailed ? (
+            <img
+              src={`${API_BASE}/api/users/${a.user_id}/avatar`}
+              alt=""
+              crossOrigin="use-credentials"
+              className="w-full h-full rounded-full object-cover"
+              onError={() => setAvatarFailed(true)}
+            />
           ) : (
             initials(a.user_name ?? 'Unknown')
           )}
