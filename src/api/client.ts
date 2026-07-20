@@ -23,7 +23,9 @@ export function apiErrorMessage(err: unknown, fallback = 'Network error. Please 
       const parsed = JSON.parse(err.body) as { error?: string };
       if (parsed.error) return parsed.error;
     } catch { /* non-JSON body */ }
-    return err.body || fallback;
+    // A non-JSON body is a gateway/HTML error page — not something to show users.
+    if (err.body && !err.body.trimStart().startsWith('<')) return err.body;
+    return `Request failed (${err.status}). Please try again.`;
   }
   return fallback;
 }

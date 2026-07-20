@@ -3,7 +3,8 @@ import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { SidebarProvider, SidebarInset } from '@/components/ui/sidebar';
 import { DashboardSidebar } from './dashboard-sidebar';
 import { DashboardTopbar } from './dashboard-topbar';
-import { API_BASE } from '@/api/client';
+import { api, API_BASE } from '@/api/client';
+import { useWorkspace } from '@/stores/workspace';
 import UploadDock from '@/components/uploads/upload-dock';
 import { NotificationPoller } from '../notifications/notification-poller';
 import { applyTheme, writeCache, readCache, initSystemListener } from '@/lib/theme';
@@ -13,6 +14,7 @@ export function DashboardLayout() {
   const navigate = useNavigate();
   const location = useLocation();
   const [authed, setAuthed] = useState<boolean | null>(null);
+  const [wsReady, setWsReady] = useState(false);
 
   useEffect(() => {
     const stopListener = initSystemListener(readCache);
@@ -43,7 +45,34 @@ export function DashboardLayout() {
     return stopListener;
   }, [navigate]);
 
-  if (authed === null) {
+  // Workspace gate (mirrors mobile's WorkspaceGate): a signed-in user with no
+  // workspaces only ever sees the create-workspace screen, and a missing/stale
+  // selection (e.g. after switching accounts) heals to the first workspace.
+  // API errors pass through rather than locking the user out of the app.
+  useEffect(() => {
+    if (!authed) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await api<{ ok: boolean; workspaces: { id: string }[] }>('/api/workspaces');
+        if (cancelled) return;
+        if (data.ok) {
+          if (data.workspaces.length === 0) {
+            navigate('/create-workspace', { replace: true });
+            return;
+          }
+          const { activeId, setActiveId } = useWorkspace.getState();
+          if (!data.workspaces.some((w) => w.id === activeId)) {
+            setActiveId(data.workspaces[0].id);
+          }
+        }
+      } catch { /* offline or API error: don't lock the app */ }
+      if (!cancelled) setWsReady(true);
+    })();
+    return () => { cancelled = true; };
+  }, [authed, navigate]);
+
+  if (authed === null || (authed && !wsReady)) {
     return (
       <div className="h-screen flex items-center justify-center">
         <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />

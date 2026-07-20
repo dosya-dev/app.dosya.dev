@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { api, API_BASE } from '@/api/client';
+import { api, API_BASE, ApiError, apiErrorMessage } from '@/api/client';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -148,8 +148,11 @@ export function FileDetailPanel({ file, onClose, onDownload, onCopy, onDelete, o
         setLockError(res.error ?? 'Incorrect password');
         setLockPassword('');
       }
-    } catch {
-      setLockError('Network error. Try again.');
+    } catch (err) {
+      // api() throws on non-2xx, so a rejected password lands here — surface
+      // the server's message and reset the field like the else-branch does.
+      setLockError(apiErrorMessage(err, "Can't reach the server. Check your connection and try again."));
+      if (err instanceof ApiError) setLockPassword('');
     }
     setUnlocking(false);
   };

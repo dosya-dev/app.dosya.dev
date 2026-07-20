@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, type MouseEvent as ReactMouseEvent } from 'react';
 import { useSearchParams, Link, useNavigate } from 'react-router-dom';
-import { api, API_BASE } from '@/api/client';
+import { api, API_BASE, ApiError, apiErrorMessage } from '@/api/client';
 import { useDocumentTitle } from '@/lib/page-title';
 import { folderNavParams, filterNavParams, groupNavParams } from '@/lib/files-params';
 import { useWorkspace } from '@/stores/workspace';
@@ -209,8 +209,11 @@ export default function FilesPage() {
         setUnlockError(res.error ?? 'Incorrect password');
         setUnlockPassword('');
       }
-    } catch {
-      setUnlockError('Network error');
+    } catch (err) {
+      // api() throws on non-2xx, so a rejected password lands here — surface
+      // the server's message and reset the field like the else-branch does.
+      setUnlockError(apiErrorMessage(err, "Can't reach the server. Check your connection and try again."));
+      if (err instanceof ApiError) setUnlockPassword('');
     }
     setUnlocking(false);
   };
