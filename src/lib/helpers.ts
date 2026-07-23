@@ -140,19 +140,61 @@ export function regionLabel(code: string): string {
   return REGION_LABELS[code] ?? code;
 }
 
+// Full action → human label map (superset of the activity page's list) so
+// every feed that renders raw audit actions gets a readable sentence.
 const ACTION_LABELS: Record<string, string> = {
-  file_uploaded: 'uploaded',
-  file_deleted: 'deleted',
-  file_shared: 'shared',
-  file_downloaded: 'downloaded',
-  link_revoked: 'revoked link for',
-  member_invited: 'invited',
-  member_removed: 'removed',
+  file_uploaded: 'uploaded', file_version_uploaded: 'uploaded a new version of',
+  file_downloaded: 'downloaded', file_deleted: 'deleted', file_permanently_deleted: 'permanently deleted',
+  file_restored: 'restored', file_renamed: 'renamed', file_moved: 'moved', file_copied: 'copied',
+  file_locked: 'locked', file_unlocked: 'unlocked', file_hidden: 'changed visibility of', file_unhidden: 'changed visibility of',
+  files_batch_deleted: 'deleted multiple files',
+  folder_created: 'created folder', folder_renamed: 'renamed folder', folder_moved: 'moved folder', folder_deleted: 'deleted folder',
+  folder_locked: 'locked folder', folder_unlocked: 'unlocked folder',
+  folder_hidden: 'changed visibility of folder', folder_unhidden: 'changed visibility of folder',
+  file_shared: 'shared', file_shared_email: 'shared via email', folder_shared: 'shared folder',
+  link_revoked: 'revoked link for', share_link_unlocked: 'unlocked share link',
+  file_request_created: 'created file request',
+  file_request_uploaded: 'uploaded to request', file_request_revoked: 'revoked file request',
+  member_invited: 'invited', member_joined: 'joined', member_removed: 'removed',
+  member_left: 'left the workspace', invite_revoked: 'revoked invite for',
+  ownership_transferred: 'transferred ownership to',
+  workspace_created: 'created workspace', workspace_updated: 'updated workspace',
+  workspace_settings_changed: 'changed settings', settings_updated: 'updated settings',
+  role_created: 'created role', role_updated: 'updated role', role_deleted: 'deleted role',
   role_changed: 'changed role of',
-  settings_updated: 'updated settings',
-  workspace_created: 'created workspace',
+  comment_added: 'commented on', comment_edited: 'edited comment on', comment_deleted: 'deleted comment on',
+  favourite_added: 'favourited', favourite_removed: 'unfavourited',
+  group_created: 'created group', group_updated: 'updated group', group_deleted: 'deleted group',
+  group_item_added: 'added to group', group_item_removed: 'removed from group',
+  dmca_reported: 'reported (DMCA)',
+  sync_session_started: 'started a sync', sync_session_completed: 'completed a sync', sync_session_failed: 'sync failed',
+  profile_updated: 'updated profile', plan_changed: 'changed plan',
 };
 
 export function actionLabel(action: string): string {
   return ACTION_LABELS[action] ?? action;
+}
+
+// Actions whose target no longer exists — linking to it would be a dead click.
+const GONE_ACTIONS = new Set(['file_deleted', 'file_permanently_deleted', 'files_batch_deleted', 'folder_deleted']);
+
+/**
+ * Deep link for an activity row's target: files open in the viewer
+ * (`/files?view=`), folders navigate into the folder (`/files?folder=`).
+ * Null when the target isn't openable (deleted, or not a file/folder).
+ */
+export function activityLink(entityType: string | null | undefined, entityId: string | null | undefined, action: string): string | null {
+  if (!entityId || GONE_ACTIONS.has(action)) return null;
+  if (entityType === 'file') return `/files?view=${entityId}`;
+  if (entityType === 'folder') return `/files?folder=${entityId}`;
+  return null;
+}
+
+/** Compact absolute timestamp for feed rows, e.g. "Jul 23, 14:05". */
+export function shortDateTime(ts: number): string {
+  const d = new Date(ts * 1000);
+  const m = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  return `${m[d.getMonth()]} ${d.getDate()}, ${hh}:${mm}`;
 }

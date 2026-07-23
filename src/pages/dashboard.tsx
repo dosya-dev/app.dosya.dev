@@ -6,16 +6,37 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Upload } from 'lucide-react';
+import { Upload, ChevronDown } from 'lucide-react';
 import { FilePreviewImage } from '@/components/file-preview-image';
 import {
-  greeting, todayStr, humanSize, humanSizeShort, timeAgo,
+  greeting, todayStr, humanSize, humanSizeShort, timeAgo, shortDateTime,
   colorFor, extOf, avatarColor, initials,
-  regionLabel, actionLabel,
+  regionLabel, actionLabel, activityLink,
 } from '@/lib/helpers';
+import { parseUA } from '@/lib/ua';
+
+interface DashboardActivity {
+  id: string;
+  action: string;
+  entity_type: string | null;
+  entity_id: string | null;
+  created_at: number;
+  user_id: string | null;
+  user_name: string | null;
+  user_avatar: string | null;
+  // Forensic fields — nulled server-side (shapeActivityRow) for
+  // non-privileged viewers looking at another member's row.
+  source_ip?: string | null;
+  user_agent?: string | null;
+  outcome?: string | null;
+  source?: string | null;
+  resource_name?: string | null;
+  meta?: ({ geo?: { country?: string | null; city?: string | null } | null } & Record<string, any>) | null;
+}
 
 interface DashboardData {
   user_name: string;
+  workspace_name: string | null;
   stats: {
     total_files: number;
     files_this_week: number;
@@ -28,7 +49,7 @@ interface DashboardData {
   region_breakdown: { region: string; bytes: number; file_count: number; color: string }[];
   recent_files: { id: string; name: string; size_bytes: number; created_at: number }[];
   team_stats: { user_id: string; name: string; email: string; avatar_url: string | null; file_count: number; total_bytes: number }[];
-  activity: { user_id: string; user_name: string; action: string; meta: { name?: string }; created_at: number }[];
+  activity: DashboardActivity[];
 }
 
 const PLAN_LABELS: Record<string, string> = { free: 'Free', starter: 'Starter', plus: 'Plus', pro: 'Pro', business: 'Business' };
@@ -229,18 +250,8 @@ export default function DashboardPage() {
                 <p className="py-5 text-center text-xs text-muted-foreground">No activity yet</p>
               ) : (
                 <div className="space-y-0">
-                  {data.activity.map((a, i) => (
-                    <div key={i} className="flex items-start gap-2.5 py-2.5 border-b last:border-b-0">
-                      <div className="w-7 h-7 rounded-full shrink-0 flex items-center justify-center text-[10px] font-semibold text-white mt-0.5" style={{ background: avatarColor(a.user_id ?? '') }}>{initials(a.user_name ?? 'Unknown')}</div>
-                      <div className="flex-1">
-                        <p className="text-xs text-muted-foreground leading-relaxed">
-                          <span className="font-semibold text-foreground">{a.user_name ?? 'Unknown'}</span>{' '}
-                          {actionLabel(a.action)}{' '}
-                          {a.meta?.name && <span className="font-semibold text-foreground">{a.meta.name}</span>}
-                        </p>
-                        <p className="text-[11px] text-muted-foreground mt-0.5">{timeAgo(a.created_at)}</p>
-                      </div>
-                    </div>
+                  {data.activity.map((a) => (
+                    <ActivityItem key={a.id} a={a} workspaceName={data.workspace_name} />
                   ))}
                 </div>
               )}
@@ -275,6 +286,110 @@ export default function DashboardPage() {
           </Card>
         </div>
       </div>
+    </div>
+  );
+}
+
+function ActivityItem({ a, workspaceName }: { a: DashboardActivity; workspaceName: string | null }) {
+  const [open, setOpen] = useState(false);
+  const [avatarFailed, setAvatarFailed] = useState(false);
+  const failed = a.outcome === 'failure' || a.outcome === 'denied';
+  const device = parseUA(a.user_agent);
+  const geo = a.meta?.geo;
+  const resourceName = a.resource_name ?? a.meta?.name;
+  const link = activityLink(a.entity_type, a.entity_id, a.action);
+
+  return (
+    <div className="border-b last:border-b-0">
+      {/* div, not button: the resource name inside is a Link and interactive
+          elements can't nest. Clicking the row toggles the detail. */}
+      <div role="button" tabIndex={0} onClick={() => setOpen((v) => !v)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpen((v) => !v); } }} className="w-full text-left flex items-start gap-2.5 py-2.5 cursor-pointer">
+        <div className="w-7 h-7 rounded-full shrink-0 flex items-center justify-center text-[10px] font-semibold text-white mt-0.5" style={{ background: avatarColor(a.user_id ?? '') }}>
+          {/* avatar_url is an R2 object key, not a URL — treat it as a "has photo"
+              flag and load the image through the API (cookie-authenticated),
+              falling back to initials if it's missing or fails to load. */}
+          {a.user_avatar && a.user_id && !avatarFailed ? (
+            <img
+              src={`${API_BASE}/api/users/${a.user_id}/avatar`}
+              alt=""
+              crossOrigin="use-credentials"
+              className="w-full h-full rounded-full object-cover"
+              onError={() => setAvatarFailed(true)}
+            />
+          ) : (
+            initials(a.user_name ?? 'Unknown')
+          )}
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-xs text-muted-foreground leading-relaxed">
+            <span className="font-semibold text-foreground">{a.user_name ?? 'Unknown'}</span>{' '}
+            {actionLabel(a.action)}{' '}
+            {resourceName && (
+              link ? (
+                <Link to={link} onClick={(e) => e.stopPropagation()} className="font-semibold text-foreground hover:underline">{resourceName}</Link>
+              ) : (
+                <span className="font-semibold text-foreground">{resourceName}</span>
+              )
+            )}
+          </p>
+          <p className="text-[11px] text-muted-foreground mt-0.5">
+            {timeAgo(a.created_at)} · {shortDateTime(a.created_at)}
+            {geo?.country ? ` · ${geo.city ? `${geo.city}, ` : ''}${geo.country}` : ''}
+            {failed ? ` · ${a.outcome}` : ''}
+          </p>
+        </div>
+        <ChevronDown className={`size-3 shrink-0 mt-1.5 text-muted-foreground transition-transform ${open ? 'rotate-180' : ''}`} />
+      </div>
+
+      {open && (
+        <dl className="pl-9.5 pb-2.5 grid grid-cols-[72px_1fr] gap-x-2.5 gap-y-1 text-[11px]">
+          {workspaceName && (
+            <>
+              <dt className="text-muted-foreground">Workspace</dt>
+              <dd className="truncate">{workspaceName}</dd>
+            </>
+          )}
+          <dt className="text-muted-foreground">When</dt>
+          <dd>{new Date(a.created_at * 1000).toLocaleString()} · {timeAgo(a.created_at)}</dd>
+
+          {(resourceName || a.entity_type) && (
+            <>
+              <dt className="text-muted-foreground">{a.entity_type === 'file' ? 'File' : 'Resource'}</dt>
+              <dd className="truncate">
+                {link ? (
+                  <Link to={link} className="hover:underline">{resourceName ?? `${a.entity_type} ${a.entity_id ?? ''}`}</Link>
+                ) : (
+                  resourceName ?? `${a.entity_type} ${a.entity_id ?? ''}`
+                )}
+              </dd>
+            </>
+          )}
+          {a.source_ip && (
+            <>
+              <dt className="text-muted-foreground">Where</dt>
+              <dd>{a.source_ip}{geo?.country ? ` · ${geo.city ? `${geo.city}, ` : ''}${geo.country}` : ''}</dd>
+            </>
+          )}
+          {a.user_agent && (
+            <>
+              <dt className="text-muted-foreground">Device</dt>
+              <dd title={a.user_agent}>{device.browser}{device.os ? ` · ${device.os}` : ''}</dd>
+            </>
+          )}
+          {a.source && (
+            <>
+              <dt className="text-muted-foreground">Source</dt>
+              <dd>{a.source}</dd>
+            </>
+          )}
+          {a.outcome && (
+            <>
+              <dt className="text-muted-foreground">Outcome</dt>
+              <dd>{a.outcome}{a.meta?.reason ? ` (${a.meta.reason})` : ''}</dd>
+            </>
+          )}
+        </dl>
+      )}
     </div>
   );
 }
