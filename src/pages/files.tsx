@@ -37,7 +37,8 @@ import { LockModal } from '@/components/lock-modal';
 import { HideModal } from '@/components/hide-modal';
 import { FilesSidebar } from '@/components/files-sidebar';
 import { FilePreviewImage } from '@/components/file-preview-image';
-import { humanSize, timeAgo, extOf, fileIconSrc, folderIconSrc, colorFor } from '@/lib/helpers';
+import { OriginBadge } from '@/components/origin-badge';
+import { humanSize, timeAgo, extOf, fileIconSrc, folderIconSrc, colorFor, originLabel } from '@/lib/helpers';
 import { toast } from '@/lib/toast';
 import { FolderPickerDialog } from '@/components/folder-picker-dialog';
 
@@ -48,12 +49,14 @@ interface FileItem {
   region: string; created_at: number; updated_at: number; current_version: number;
   lock_mode: string; is_hidden: number; uploaded_by: string; uploader_name: string;
   share_count: number; comment_count: number; is_synced: number;
+  origin: string | null;
 }
 interface FolderItem {
   id: string; name: string; created_at: number; updated_at: number; file_count: number;
   lock_mode: string; is_hidden: number; is_synced: number;
   total_size_bytes: number; content_updated_at: number; region: string | null;
   uploader_name: string | null; share_count: number; comment_count: number;
+  origin: string | null;
 }
 interface Breadcrumb { id: string; name: string }
 interface Pagination { page: number; per_page: number; total_files: number; total_pages: number }
@@ -73,7 +76,7 @@ const SORT_OPTIONS: { value: SortMode; label: string }[] = [
 
 // ── Table columns ─────────────────────────────────────────
 
-type ColumnKey = 'name' | 'size' | 'created' | 'modified' | 'type' | 'extension' | 'version' | 'uploader' | 'region' | 'shares' | 'comments';
+type ColumnKey = 'name' | 'size' | 'created' | 'modified' | 'type' | 'extension' | 'version' | 'uploader' | 'region' | 'origin' | 'shares' | 'comments';
 
 interface ColumnDef {
   key: ColumnKey;
@@ -94,6 +97,7 @@ const ALL_COLUMNS: ColumnDef[] = [
   { key: 'version', label: 'Version', defaultVisible: false, width: 'w-16', render: (f) => f.current_version > 1 ? `v${f.current_version}` : '—' },
   { key: 'uploader', label: 'Uploader', defaultVisible: false, width: 'w-28', render: (f) => f.uploader_name ?? '—', renderFolder: (f) => f.uploader_name ?? '—' },
   { key: 'region', label: 'Region', defaultVisible: false, width: 'w-20', render: (f) => f.region || '—', renderFolder: (f) => f.region === 'multi' ? 'Multiple' : (f.region || '—') },
+  { key: 'origin', label: 'Origin', defaultVisible: true, width: 'w-20', render: (f) => originLabel(f.origin), renderFolder: (f) => originLabel(f.origin) },
   { key: 'shares', label: 'Shares', defaultVisible: false, width: 'w-14', render: (f) => f.share_count > 0 ? String(f.share_count) : '—', renderFolder: (f) => f.share_count > 0 ? String(f.share_count) : '—' },
   { key: 'comments', label: 'Comments', defaultVisible: false, width: 'w-14', render: (f) => f.comment_count > 0 ? String(f.comment_count) : '—', renderFolder: (f) => f.comment_count > 0 ? String(f.comment_count) : '—' },
 ];
@@ -854,7 +858,10 @@ export default function FilesPage() {
                         onContextMenu={(e) => onContextMenu(e, 'folder', f)}
                       >
                         <div className="w-4 shrink-0" />
-                        <img src={folderIconSrc(f.file_count, !!f.is_synced)} alt="" className="w-7 h-7 shrink-0 object-contain" />
+                        <span className="relative shrink-0">
+                          <img src={folderIconSrc(f.file_count, !!f.is_synced)} alt="" className="w-7 h-7 object-contain" />
+                          <OriginBadge origin={f.origin} />
+                        </span>
                         {cols.map((col) => {
                           if (col.key === 'name') {
                             return (
@@ -1134,7 +1141,7 @@ export default function FilesPage() {
           files={files}
           workspaceId={wsId}
           onClose={() => setViewerFile(null)}
-          onNavigate={(f) => setViewerFile(f)}
+          onNavigate={(f) => setViewerFile(f as FileItem)}
           onRefresh={loadFiles}
         />
       )}
@@ -1153,7 +1160,10 @@ function FolderCard({ folder, onClick, onContextMenu }: {
   return (
     <Card className="gap-0 py-0 p-3 hover:shadow-md hover:-translate-y-px transition-all cursor-pointer group" onClick={onClick} onContextMenu={onContextMenu}>
       <div className="flex items-center gap-2 mb-2">
-        <img src={iconSrc} alt="" className="size-6" />
+        <span className="relative">
+          <img src={iconSrc} alt="" className="size-6" />
+          <OriginBadge origin={folder.origin} />
+        </span>
         {folder.lock_mode !== 'none' && <Lock className="size-3 text-muted-foreground ml-auto" />}
       </div>
       <p className="text-xs font-medium truncate">{folder.name}</p>

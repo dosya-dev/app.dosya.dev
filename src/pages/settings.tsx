@@ -22,6 +22,7 @@ import {
   Lock, Trash2, LogOut, Upload, X, Plus, ArrowRightLeft,
 } from 'lucide-react';
 import { toast } from '@/lib/toast';
+import { humanSize } from '@/lib/helpers';
 
 
 // ── Types ──────────────────────────────────────────────────
@@ -50,11 +51,12 @@ interface WsSettings {
 }
 
 interface WsData {
-  workspace: { id: string; name: string; icon_initials: string; icon_color: string; icon_image_url: string | null; default_region: string; plan: string };
+  workspace: { id: string; name: string; icon_initials: string; icon_color: string; icon_image_url: string | null; default_region: string; plan: string; storage_used_bytes?: number };
   settings: WsSettings | null;
   is_owner: boolean;
   plan: string;
   plan_limits?: { storage_gb?: number };
+  allocation?: { plan_gb: number; allocated_gb: number; remaining_gb: number };
   roles: { id: string; name: string; is_default: number }[];
   permissions: Record<string, { [perm: string]: boolean }>;
   /** Shape mirrors /api/team: the row id is `membership_id`; there is no `id`. */
@@ -162,7 +164,7 @@ export default function SettingsPage() {
           <p className="text-sm text-muted-foreground mt-1">{data.workspace.name} · you are {data.is_owner ? 'the owner' : 'a member'}</p>
         </div>
         <WorkspaceInfoSection data={data} wsId={wsId} regions={regions} onSaved={load} />
-        <HardLimitsSection data={data} wsId={wsId} />
+        <HardLimitsSection data={data} wsId={wsId} onSaved={load} />
         <SecuritySection data={data} wsId={wsId} onSaved={load} />
         <RolesSection data={data} wsId={wsId} onSaved={load} />
         <DangerSection data={data} wsId={wsId} isOwner={data.is_owner} navigate={navigate} onSaved={load} />
@@ -327,9 +329,16 @@ function WorkspaceInfoSection({ data, wsId, regions, onSaved }: { data: WsData; 
 
 // ── Hard Limits ────────────────────────────────────────────
 
-function HardLimitsSection({ data, wsId }: { data: WsData; wsId: string }) {
+function HardLimitsSection({ data, wsId, onSaved }: { data: WsData; wsId: string; onSaved: () => void }) {
   const s = data.settings;
   const planCap = data.plan_limits?.storage_gb;
+  const alloc = data.allocation;
+  const savedCap = s?.max_total_storage_gb ?? null;
+  // Headroom for THIS workspace's cap: unallocated pool + its own current cap
+  const capRemaining = alloc ? Math.max(0, alloc.plan_gb - alloc.allocated_gb + (savedCap ?? 0)) : null;
+  const usedBytes = data.workspace.storage_used_bytes ?? 0;
+  const overAllocated = !!alloc && alloc.allocated_gb > alloc.plan_gb;
+  const overCap = savedCap !== null && usedBytes > savedCap * 1073741824;
   const [limits, setLimits] = useState({
     max_file_size_gb: s?.max_file_size_gb ?? '', max_storage_per_member_gb: s?.max_storage_per_member_gb ?? '',
     max_total_storage_gb: s?.max_total_storage_gb ?? '', max_concurrent_uploads: s?.max_concurrent_uploads ?? '',
@@ -343,6 +352,7 @@ function HardLimitsSection({ data, wsId }: { data: WsData; wsId: string }) {
       const val = (limits as Record<string, unknown>)[field];
       await api(`/api/workspaces/${wsId}/settings`, { method: 'PUT', body: JSON.stringify({ [field]: val === '' ? null : val }) });
       toast.success('Limit updated', 'Your hard limit has been saved.');
+      onSaved();
     } catch (err) { toast.error('Couldn\'t save', apiErrorMessage(err, 'Your hard limit was not updated.')); }
     setSaving(null);
   };
@@ -369,6 +379,17 @@ function HardLimitsSection({ data, wsId }: { data: WsData; wsId: string }) {
   return (
     <section id="section-limits">
       <SectionHeader title="Hard limits" desc="Enforced caps on uploads and storage." />
+      {overAllocated && alloc && (
+        <div className="mb-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-2.5 text-xs text-amber-700 dark:text-amber-400">
+          Your workspace storage limits add up to {alloc.allocated_gb} GB, but your plan includes {alloc.plan_gb} GB.
+          Lower this workspace's limit (or another's) to fit your plan — until then, the next limit change must satisfy the plan total.
+        </div>
+      )}
+      {overCap && (
+        <div className="mb-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-2.5 text-xs text-amber-700 dark:text-amber-400">
+          This workspace uses {humanSize(usedBytes)}, above its {savedCap} GB limit. New uploads are blocked until usage drops below the limit.
+        </div>
+      )}
       <Card>
         <CardContent className="divide-y">
           {rows.map((row) => (
@@ -378,7 +399,8 @@ function HardLimitsSection({ data, wsId }: { data: WsData; wsId: string }) {
                   onChange={(e: React.ChangeEvent<HTMLInputElement>) => setLimits((prev) => ({ ...prev, [row.field]: e.target.value }))}
                   className="h-8 text-xs w-24" type={row.unit ? 'number' : 'text'} placeholder={row.unit ? '0' : 'e.g. .exe,.bat'} />
                 {row.unit && <span className="text-[11px] text-muted-foreground">{row.unit}</span>}
-                {row.showCap && planCap && <Badge variant="outline" className="text-[9px] text-muted-foreground">plan max: {planCap} GB</Badge>}
+                {row.showCap && row.field !== 'max_total_storage_gb' && planCap && <Badge variant="outline" className="text-[9px] text-muted-foreground">plan max: {planCap} GB</Badge>}
+                {row.field === 'max_total_storage_gb' && capRemaining !== null && <Badge variant="outline" className="text-[9px] text-muted-foreground">{capRemaining} GB left to allocate</Badge>}
                 <SaveBtn loading={saving === row.field} onClick={() => saveLimit(row.field)}
                   disabled={!canPerm(data, LIMIT_PERMS[row.field])}
                   disabledReason={NO_PERM(row.label.toLowerCase())} />
