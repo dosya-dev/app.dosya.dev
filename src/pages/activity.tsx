@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import { api, API_BASE } from '@/api/client';
 import { useWorkspace } from '@/stores/workspace';
 import { Button } from '@/components/ui/button';
@@ -10,7 +11,7 @@ import {
 import {
   DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { timeAgo, avatarColor, initials } from '@/lib/helpers';
+import { timeAgo, avatarColor, initials, activityLink } from '@/lib/helpers';
 import { parseUA } from '@/lib/ua';
 
 // ── Types ─────────────────────────────────────────────────
@@ -324,10 +325,13 @@ function ActivityRow({ activity: a }: { activity: Activity }) {
   const failed = a.outcome === 'failure' || a.outcome === 'denied';
   const device = parseUA(a.user_agent);
   const geo = a.meta?.geo;
+  const link = activityLink(a.entity_type, a.entity_id, a.action);
 
   return (
     <div className="border-b last:border-b-0">
-      <button type="button" onClick={() => setOpen((v) => !v)} className="w-full text-left flex items-start gap-3 py-3">
+      {/* div, not button: the resource name inside is a Link and interactive
+          elements can't nest. Clicking the row toggles the detail. */}
+      <div role="button" tabIndex={0} onClick={() => setOpen((v) => !v)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpen((v) => !v); } }} className="w-full text-left flex items-start gap-3 py-3 cursor-pointer">
         {/* Avatar */}
         <div
           className="size-8 rounded-full shrink-0 flex items-center justify-center text-[10px] font-bold text-white mt-0.5"
@@ -356,7 +360,12 @@ function ActivityRow({ activity: a }: { activity: Activity }) {
             <span className="text-muted-foreground">{label}</span>
             {(a.resource_name || meta?.name) && (
               <>
-                {' '}<span className="font-semibold">{a.resource_name ?? meta?.name}</span>
+                {' '}
+                {link ? (
+                  <Link to={link} onClick={(e) => e.stopPropagation()} className="font-semibold hover:underline">{a.resource_name ?? meta?.name}</Link>
+                ) : (
+                  <span className="font-semibold">{a.resource_name ?? meta?.name}</span>
+                )}
               </>
             )}
           </p>
@@ -397,7 +406,7 @@ function ActivityRow({ activity: a }: { activity: Activity }) {
 
         {/* Color dot */}
         <div className="size-2 rounded-full shrink-0 mt-2" style={{ background: color }} />
-      </button>
+      </div>
 
       {open && (
         <dl className="pl-11 pb-3 grid grid-cols-[80px_1fr] gap-x-3 gap-y-1 text-[11px]">
@@ -431,7 +440,13 @@ function ActivityRow({ activity: a }: { activity: Activity }) {
           {(a.resource_name || a.entity_type) && (
             <>
               <dt className="text-muted-foreground">Resource</dt>
-              <dd>{a.resource_name ?? `${a.entity_type} ${a.entity_id ?? ''}`}</dd>
+              <dd>
+                {link ? (
+                  <Link to={link} className="hover:underline">{a.resource_name ?? `${a.entity_type} ${a.entity_id ?? ''}`}</Link>
+                ) : (
+                  a.resource_name ?? `${a.entity_type} ${a.entity_id ?? ''}`
+                )}
+              </dd>
             </>
           )}
           {a.session_id && (
