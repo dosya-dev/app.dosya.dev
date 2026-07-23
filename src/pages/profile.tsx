@@ -94,7 +94,7 @@ async function req<T extends OkResult = OkResult>(path: string, options?: Reques
       try { return JSON.parse(e.body) as T; } catch { /* not json */ }
       return { ok: false, error: e.body || `Request failed (${e.status})` } as T;
     }
-    return { ok: false, error: 'Network error' } as T;
+    return { ok: false, error: "Can't reach the server. Check your connection and try again." } as T;
   }
 }
 
@@ -222,7 +222,7 @@ function ProfileHero({ user, onAvatarChanged }: { user: UserProfile | null; onAv
       const data = await res.json().catch(() => ({ ok: false })) as OkResult;
       if (res.ok && data.ok) { toast.success('Avatar updated', 'Your new profile photo is live.'); setBust(Date.now()); onAvatarChanged(); }
       else toast.error('Upload failed', data.error ?? 'Upload failed');
-    } catch { toast.error('Something went wrong', 'Network error'); }
+    } catch { toast.error('Something went wrong', "Can't reach the server. Check your connection and try again."); }
     setUploading(false);
   };
 

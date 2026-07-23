@@ -32,7 +32,7 @@ export default function VerifyPage() {
       const data = await res.json();
       if (res.ok && data.ok) navigate(data.redirect ?? '/create-workspace');
       else setError(data.error ?? 'Verification failed');
-    } catch { setError('Network error'); }
+    } catch { setError("Can't reach the server. Check your connection and try again."); }
     setLoading(false);
   };
 
@@ -49,7 +49,7 @@ export default function VerifyPage() {
       const data = await res.json();
       if (res.ok && data.ok) setInfo('A new code has been sent to your email.');
       else setError(data.error ?? 'Could not resend code');
-    } catch { setError('Network error'); }
+    } catch { setError("Can't reach the server. Check your connection and try again."); }
     setResending(false);
   };
 

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { api, API_BASE } from '@/api/client';
+import { api, API_BASE, ApiError, apiErrorMessage } from '@/api/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
@@ -75,8 +75,15 @@ export default function CreateWorkspacePage() {
       } else {
         setError(res.error ?? 'Failed to create workspace');
       }
-    } catch {
-      setError('Network error. Please try again.');
+    } catch (err) {
+      // api() throws ApiError on any non-2xx, so the server's own message
+      // (plan limit, duplicate slug, validation) surfaces here — the generic
+      // copy is reserved for real connectivity failures.
+      setError(
+        err instanceof ApiError && err.status === 401
+          ? 'Your session has expired. Please sign in again.'
+          : apiErrorMessage(err, "Can't reach the server. Check your connection and try again."),
+      );
     }
     setCreating(false);
   };

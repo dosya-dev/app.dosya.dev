@@ -652,7 +652,7 @@ function DangerSection({ data, wsId, isOwner, navigate, onSaved }: { data: WsDat
 
   const handleDelete = async () => {
     setActing(true);
-    try { const res = await api<{ ok: boolean }>(`/api/workspaces/${wsId}`, { method: 'DELETE' }); if (res.ok) { toast.success('Workspace deleted', 'The workspace and all its files have been removed.'); navigate('/'); } } catch { toast.error('Couldn\'t delete', 'The workspace could not be deleted.'); }
+    try { const res = await api<{ ok: boolean }>(`/api/workspaces/${wsId}`, { method: 'DELETE' }); if (res.ok) { toast.success('Workspace deleted', 'The workspace and all its files have been removed.'); navigate('/'); } } catch (err) { toast.error('Couldn\'t delete', apiErrorMessage(err, 'The workspace could not be deleted.')); }
     setActing(false);
   };
 

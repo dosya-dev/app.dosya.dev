@@ -136,6 +136,7 @@ const REGION_LABELS: Record<string, string> = {
 };
 
 export function regionLabel(code: string): string {
+  if (code === 'multi') return 'Multiple regions';
   return REGION_LABELS[code] ?? code;
 }
 

@@ -14,6 +14,7 @@ interface FileLike {
 }
 interface FolderLike {
   id: string; name: string; created_at: number; file_count: number; lock_mode: string; is_hidden: number;
+  total_size_bytes: number; content_updated_at: number; region: string | null; uploader_name?: string | null;
 }
 
 export type InfoTarget =
@@ -135,12 +136,16 @@ function FolderInfo({ folder, location }: { folder: FolderLike; location?: strin
   return (
     <>
       <Header thumb={<img src={folderIconSrc(folder.file_count)} alt="" className="size-9" />} name={folder.name}
-        subtitle={`Folder · ${folder.file_count} ${folder.file_count === 1 ? 'item' : 'items'}`} />
+        subtitle={`Folder · ${folder.file_count} ${folder.file_count === 1 ? 'item' : 'items'} · ${humanSize(folder.total_size_bytes)}`} />
       <div className="divide-y">
         <Row label="Kind">Folder</Row>
         <Row label="Items">{folder.file_count} {folder.file_count === 1 ? 'item' : 'items'}</Row>
+        <Row label="Size">{humanSize(folder.total_size_bytes)} <span className="text-muted-foreground">({folder.total_size_bytes.toLocaleString()} bytes)</span></Row>
         {location && <Row label="Where">{location}</Row>}
         <Row label="Created">{fullDate(folder.created_at)}</Row>
+        <Row label="Modified">{fullDate(folder.content_updated_at)}</Row>
+        {folder.uploader_name != null && <Row label="Created by">{folder.uploader_name || '—'}</Row>}
+        <Row label="Region">{folder.region ? regionLabel(folder.region) : '—'}</Row>
         <Row label="Status"><StatusBadges lock_mode={folder.lock_mode} is_hidden={folder.is_hidden} /></Row>
         <Row label="ID"><CopyableId id={folder.id} /></Row>
       </div>

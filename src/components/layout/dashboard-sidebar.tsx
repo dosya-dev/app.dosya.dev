@@ -16,10 +16,12 @@ import {
 } from 'lucide-react';
 import { api, API_BASE } from '@/api/client';
 import { useWorkspace } from '@/stores/workspace';
+import { formatBytes } from '@/lib/billing/cart-math';
 
 interface Workspace {
   id: string; name: string; slug: string; icon_initials: string; icon_color: string;
   icon_image_url: string | null; role_id: string;
+  storage?: { used: number; total: number } | null;
 }
 
 interface StorageInfo {
@@ -206,7 +208,14 @@ export function DashboardSidebar() {
                 <div className="w-6 h-6 rounded-[5px] flex items-center justify-center text-[10px] font-bold text-white shrink-0" style={{ background: ws.icon_color }}>
                   {ws.icon_initials}
                 </div>
-                <span className="flex-1 truncate text-xs">{ws.name}</span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-xs leading-tight">{ws.name}</p>
+                  {ws.storage && ws.storage.total > 0 && (
+                    <p className="text-[10px] leading-tight text-muted-foreground">
+                      {formatBytes(Math.max(0, ws.storage.total - ws.storage.used))} free of {formatBytes(ws.storage.total)}
+                    </p>
+                  )}
+                </div>
                 {ws.id === activeId && <Check className="size-3 text-green-600" />}
               </DropdownMenuItem>
             ))}

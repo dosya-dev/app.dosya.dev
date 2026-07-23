@@ -1,73 +1,89 @@
-# React + TypeScript + Vite
+# dosya web
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+The official web application for [dosya.dev](https://dosya.dev) — files, sharing, and
+workspaces in the browser. This is the code running at
+[app.dosya.dev](https://app.dosya.dev).
 
-Currently, two official plugins are available:
+## Features
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- **File manager** — Upload, preview, organize; file detail panel, version history,
+  favourites, locked/hidden files
+- **Previews & editing** — Image editing (Pintura), HEIC support, video, and a
+  syntax-highlighted code viewer/editor (CodeMirror + Shiki)
+- **Sharing** — Share links with passwords and expiry, plus a "shared with me" view
+- **Workspaces & teams** — Members, custom roles, and per-workspace settings
+- **Uploads** — Resumable multipart uploads with progress and parallelism
+- **Photo map** — Geotagged photos on an interactive map (MapLibre + clustering)
+- **Search** — Full-text search across files and folders
+- **Activity feed** — Who did what, when, from where
+- **Comments & file requests** — Collaborate on files, receive files from external users
+- **Notifications** — In-app inbox and web push
+- **Account** — Profile, settings, billing, and two-factor login
 
-## React Compiler
+## Tech Stack
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- **React 19** + **TypeScript** — UI
+- **Vite 8** — Build tooling
+- **Tailwind CSS 4** — Styling
+- **Zustand** — State management
+- **React Router 7** — Routing
+- **Cloudflare Pages** — Hosting
 
-## Expanding the ESLint configuration
+## Development
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+### Prerequisites
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+- Node.js >= 18
+- npm
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+### Commands
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm install        # Install dependencies
+npm run dev        # Start dev server
+npm run build      # Typecheck + production build
+npm run test       # Run vitest suite
+npm run preview    # Preview the production build
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+The app talks to the dosya.dev API (`api.dosya.dev`).
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+## Transparency
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+Every dosya.dev client is source-available. Your files are yours — this repository lets
+you verify exactly what the app sends to and receives from our servers: what gets
+uploaded, what metadata travels with it, and what comes back. If a claim we make about
+privacy or sync behavior can't be verified in this code, open an issue and call it out.
+
+## License
+
+Source-available under the [Dosya Source Available License 1.0](LICENSE):
+
+- **You can** read and audit the code, build and run it with the official
+  [dosya.dev](https://dosya.dev) service, and contribute improvements.
+- **You can't** redistribute it, use it with any backend other than dosya.dev, or offer
+  it as a service.
+
+See [LICENSE](LICENSE) for the exact terms.
+
+## Contributing
+
+Issues and pull requests are welcome. By submitting a contribution you license it to
+dosya.dev under the contribution terms in [LICENSE](LICENSE).
+
+## Security
+
+Found a vulnerability? Please report it privately via
+[GitHub private vulnerability reporting](../../security/advisories/new) rather than a
+public issue.
+
+## The dosya.dev client family
+
+| Repository | What it is | License |
+|---|---|---|
+| [desktop](https://github.com/dosya-dev/desktop) | Desktop client — sync, upload, manage | Source-available |
+| [cli](https://github.com/dosya-dev/cli) | Command-line interface | Source-available |
+| [app.dosya.dev](https://github.com/dosya-dev/app.dosya.dev) | Web application | Source-available |
+| [shared](https://github.com/dosya-dev/shared) | Shared TypeScript types & utilities | Source-available |
+| [dosya-js](https://github.com/dosya-dev/dosya-js) | Official JavaScript SDK | MIT |
+| [dosya-java](https://github.com/dosya-dev/dosya-java) | Official Java SDK | MIT |

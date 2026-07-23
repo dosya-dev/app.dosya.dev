@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, type MouseEvent as ReactMouseEvent } from 'react';
 import { useSearchParams, Link, useNavigate } from 'react-router-dom';
-import { api, API_BASE } from '@/api/client';
+import { api, API_BASE, ApiError, apiErrorMessage } from '@/api/client';
 import { useDocumentTitle } from '@/lib/page-title';
 import { folderNavParams, filterNavParams, groupNavParams } from '@/lib/files-params';
 import { useWorkspace } from '@/stores/workspace';
@@ -50,8 +50,10 @@ interface FileItem {
   share_count: number; comment_count: number; is_synced: number;
 }
 interface FolderItem {
-  id: string; name: string; created_at: number; file_count: number;
+  id: string; name: string; created_at: number; updated_at: number; file_count: number;
   lock_mode: string; is_hidden: number; is_synced: number;
+  total_size_bytes: number; content_updated_at: number; region: string | null;
+  uploader_name: string | null; share_count: number; comment_count: number;
 }
 interface Breadcrumb { id: string; name: string }
 interface Pagination { page: number; per_page: number; total_files: number; total_pages: number }
@@ -79,20 +81,21 @@ interface ColumnDef {
   defaultVisible: boolean;
   width?: string;
   render: (f: FileItem) => React.ReactNode;
+  renderFolder?: (f: FolderItem) => React.ReactNode;
 }
 
 const ALL_COLUMNS: ColumnDef[] = [
   { key: 'name', label: 'Name', defaultVisible: true, width: 'flex-1 min-w-40', render: () => null /* handled separately */ },
-  { key: 'size', label: 'Size', defaultVisible: true, width: 'w-20', render: (f) => humanSize(f.size_bytes) },
-  { key: 'created', label: 'Created', defaultVisible: true, width: 'w-24', render: (f) => timeAgo(f.created_at) },
-  { key: 'modified', label: 'Modified', defaultVisible: false, width: 'w-24', render: (f) => timeAgo(f.updated_at) },
-  { key: 'type', label: 'Type', defaultVisible: false, width: 'w-28', render: (f) => f.mime_type },
+  { key: 'size', label: 'Size', defaultVisible: true, width: 'w-20', render: (f) => humanSize(f.size_bytes), renderFolder: (f) => humanSize(f.total_size_bytes) },
+  { key: 'created', label: 'Created', defaultVisible: true, width: 'w-24', render: (f) => timeAgo(f.created_at), renderFolder: (f) => timeAgo(f.created_at) },
+  { key: 'modified', label: 'Modified', defaultVisible: false, width: 'w-24', render: (f) => timeAgo(f.updated_at), renderFolder: (f) => timeAgo(f.content_updated_at) },
+  { key: 'type', label: 'Type', defaultVisible: false, width: 'w-28', render: (f) => f.mime_type, renderFolder: () => 'Folder' },
   { key: 'extension', label: 'Extension', defaultVisible: false, width: 'w-16', render: (f) => (f.extension || extOf(f.name) || '—').toUpperCase() },
   { key: 'version', label: 'Version', defaultVisible: false, width: 'w-16', render: (f) => f.current_version > 1 ? `v${f.current_version}` : '—' },
-  { key: 'uploader', label: 'Uploader', defaultVisible: false, width: 'w-28', render: (f) => f.uploader_name ?? '—' },
-  { key: 'region', label: 'Region', defaultVisible: false, width: 'w-20', render: (f) => f.region || '—' },
-  { key: 'shares', label: 'Shares', defaultVisible: false, width: 'w-14', render: (f) => f.share_count > 0 ? String(f.share_count) : '—' },
-  { key: 'comments', label: 'Comments', defaultVisible: false, width: 'w-14', render: (f) => f.comment_count > 0 ? String(f.comment_count) : '—' },
+  { key: 'uploader', label: 'Uploader', defaultVisible: false, width: 'w-28', render: (f) => f.uploader_name ?? '—', renderFolder: (f) => f.uploader_name ?? '—' },
+  { key: 'region', label: 'Region', defaultVisible: false, width: 'w-20', render: (f) => f.region || '—', renderFolder: (f) => f.region === 'multi' ? 'Multiple' : (f.region || '—') },
+  { key: 'shares', label: 'Shares', defaultVisible: false, width: 'w-14', render: (f) => f.share_count > 0 ? String(f.share_count) : '—', renderFolder: (f) => f.share_count > 0 ? String(f.share_count) : '—' },
+  { key: 'comments', label: 'Comments', defaultVisible: false, width: 'w-14', render: (f) => f.comment_count > 0 ? String(f.comment_count) : '—', renderFolder: (f) => f.comment_count > 0 ? String(f.comment_count) : '—' },
 ];
 
 const DEFAULT_VISIBLE: Set<ColumnKey> = new Set(ALL_COLUMNS.filter((c) => c.defaultVisible).map((c) => c.key));
@@ -209,8 +212,11 @@ export default function FilesPage() {
         setUnlockError(res.error ?? 'Incorrect password');
         setUnlockPassword('');
       }
-    } catch {
-      setUnlockError('Network error');
+    } catch (err) {
+      // api() throws on non-2xx, so a rejected password lands here — surface
+      // the server's message and reset the field like the else-branch does.
+      setUnlockError(apiErrorMessage(err, "Can't reach the server. Check your connection and try again."));
+      if (err instanceof ApiError) setUnlockPassword('');
     }
     setUnlocking(false);
   };
@@ -787,17 +793,14 @@ export default function FilesPage() {
             </div>
           ) : (
             <>
-              {folders.length > 0 && (
+              {folders.length > 0 && view === 'grid' && (
                 <div className="mb-5">
                   <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">Folders</p>
-                  <div className={view === 'grid' ? 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3' : 'space-y-0.5'}>
+                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
                     {folders.map((f) => (
-                      <FolderCard key={f.id} folder={f} view={view}
+                      <FolderCard key={f.id} folder={f}
                         onClick={() => navigateToFolder(f.id)}
-                        onContextMenu={(e) => onContextMenu(e, 'folder', f)}
-                        onRename={() => { setRenameTarget({ id: f.id, name: f.name, type: 'folder' }); setRenameName(f.name); }}
-                        onDelete={() => setDeleteTarget({ id: f.id, name: f.name, type: 'folder' })}
-                        onAddToGroup={() => openAddToGroup(f.id, f.name, 'folder')} />
+                        onContextMenu={(e) => onContextMenu(e, 'folder', f)} />
                     ))}
                   </div>
                 </div>
@@ -830,9 +833,8 @@ export default function FilesPage() {
                   </div>
                 </div>
               )}
-              {files.length > 0 && view === 'list' && (
+              {view === 'list' && (files.length > 0 || folders.length > 0) && (
                 <div>
-                  <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">Files</p>
                   {/* Table header */}
                   <div className="flex items-center gap-3 px-3 py-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider border-b mb-0.5">
                     <div className="w-7 shrink-0" />
@@ -841,6 +843,40 @@ export default function FilesPage() {
                     ))}
                     <div className="w-8 shrink-0" />
                   </div>
+                  {/* Folder rows — pinned above files, same columns */}
+                  {folders.map((f) => {
+                    const cols = ALL_COLUMNS.filter((c) => visibleColumns.has(c.key));
+                    return (
+                      <div
+                        key={f.id}
+                        className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-muted/50 cursor-pointer group"
+                        onClick={() => navigateToFolder(f.id)}
+                        onContextMenu={(e) => onContextMenu(e, 'folder', f)}
+                      >
+                        <div className="w-4 shrink-0" />
+                        <img src={folderIconSrc(f.file_count, !!f.is_synced)} alt="" className="w-7 h-7 shrink-0 object-contain" />
+                        {cols.map((col) => {
+                          if (col.key === 'name') {
+                            return (
+                              <div key="name" className="flex-1 min-w-40 flex items-center gap-2">
+                                <span className="text-sm font-medium truncate">{f.name}</span>
+                                <span className="text-xs text-muted-foreground shrink-0">{f.file_count} files</span>
+                                {f.lock_mode !== 'none' && <Lock className="size-3 text-muted-foreground shrink-0" />}
+                              </div>
+                            );
+                          }
+                          return <div key={col.key} className={`text-xs text-muted-foreground truncate ${col.width}`}>{col.renderFolder ? col.renderFolder(f) : '—'}</div>;
+                        })}
+                        <div className="w-8 shrink-0">
+                          <FileDropdown
+                            onRename={() => { setRenameTarget({ id: f.id, name: f.name, type: 'folder' }); setRenameName(f.name); }}
+                            onDelete={() => setDeleteTarget({ id: f.id, name: f.name, type: 'folder' })}
+                            onAddToGroup={() => openAddToGroup(f.id, f.name, 'folder')}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
                   {/* Table rows */}
                   {files.map((f) => {
                     const isActive = selectedFile?.id === f.id || highlightId === f.id;
@@ -1109,22 +1145,11 @@ export default function FilesPage() {
 
 // ── Folder Card ────────────────────────────────────────────
 
-function FolderCard({ folder, view, onClick, onContextMenu, onRename, onDelete, onAddToGroup }: {
-  folder: FolderItem; view: ViewMode; onClick: () => void; onContextMenu: (e: ReactMouseEvent) => void; onRename: () => void; onDelete: () => void; onAddToGroup?: () => void;
+function FolderCard({ folder, onClick, onContextMenu }: {
+  folder: FolderItem; onClick: () => void; onContextMenu: (e: ReactMouseEvent) => void;
 }) {
   const iconSrc = folderIconSrc(folder.file_count, !!folder.is_synced);
 
-  if (view === 'list') {
-    return (
-      <div className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-muted/50 cursor-pointer group" onClick={onClick} onContextMenu={onContextMenu}>
-        <img src={iconSrc} alt="" className="size-5 shrink-0" />
-        <span className="text-sm font-medium flex-1 truncate">{folder.name}</span>
-        <span className="text-xs text-muted-foreground">{folder.file_count} files</span>
-        {folder.lock_mode !== 'none' && <Lock className="size-3 text-muted-foreground" />}
-        <FileDropdown onRename={onRename} onDelete={onDelete} onAddToGroup={onAddToGroup} />
-      </div>
-    );
-  }
   return (
     <Card className="gap-0 py-0 p-3 hover:shadow-md hover:-translate-y-px transition-all cursor-pointer group" onClick={onClick} onContextMenu={onContextMenu}>
       <div className="flex items-center gap-2 mb-2">

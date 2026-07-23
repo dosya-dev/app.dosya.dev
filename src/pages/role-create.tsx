@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
-import { api } from '@/api/client';
+import { api, apiErrorMessage } from '@/api/client';
 import { useWorkspace } from '@/stores/workspace';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -132,7 +132,7 @@ export default function RoleCreatePage() {
         if (res.ok) { toast.success('Role created', 'Your new role is ready to assign.'); window.location.href = '/settings#roles'; }
         else setError(res.error ?? 'Failed');
       }
-    } catch { setError('Network error'); }
+    } catch (err) { setError(apiErrorMessage(err, "Can't reach the server. Check your connection and try again.")); }
     setSaving(false);
   };
 
