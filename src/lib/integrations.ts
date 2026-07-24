@@ -130,6 +130,6 @@ export function desktopDownload(apiBase: string, platform: 'windows' | 'mac' | '
 export function restExample(): string {
   return [
     `curl ${API_HOST}/api/me \\`,
-    '  -H "Authorization: Bearer dos_your_api_key"',
+    '  -H "Authorization: Bearer dos_your_api_key"', // gitleaks:allow (documentation placeholder, not a real token)
   ].join('\n');
 }
