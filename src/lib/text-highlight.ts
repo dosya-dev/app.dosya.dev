@@ -1,6 +1,7 @@
 import type { HighlighterCore } from 'shiki/core';
 
 const THEME = 'github-dark-default';
+const THEME_LIGHT = 'github-light-default';
 
 // Lang id → dynamic grammar import. Only these ship (on demand).
 const LANG_LOADERS: Record<string, () => Promise<unknown>> = {
@@ -64,9 +65,10 @@ async function getHighlighter(): Promise<HighlighterCore> {
     highlighterPromise = (async () => {
       const { createHighlighterCore } = await import('shiki/core');
       const { createJavaScriptRegexEngine } = await import('@shikijs/engine-javascript');
-      const theme = await import('shiki/themes/github-dark-default.mjs');
+      const darkTheme = await import('shiki/themes/github-dark-default.mjs');
+      const lightTheme = await import('shiki/themes/github-light-default.mjs');
       return createHighlighterCore({
-        themes: [theme.default],
+        themes: [darkTheme.default, lightTheme.default],
         langs: [],
         engine: createJavaScriptRegexEngine(),
       });
@@ -81,20 +83,43 @@ async function getHighlighter(): Promise<HighlighterCore> {
   return highlighterPromise;
 }
 
+async function ensureLang(hl: HighlighterCore, lang: string): Promise<string> {
+  const loader = LANG_LOADERS[lang];
+  if (loader && !loaded.has(lang)) {
+    try {
+      await hl.loadLanguage(loader() as never);
+      loaded.add(lang);
+    } catch {
+      /* fall through to plaintext */
+    }
+  }
+  return loaded.has(lang) ? lang : 'text';
+}
+
 export async function highlightToHtml(code: string, lang: string): Promise<string> {
   try {
     const hl = await getHighlighter();
-    const loader = LANG_LOADERS[lang];
-    if (loader && !loaded.has(lang)) {
-      try {
-        await hl.loadLanguage(loader() as never);
-        loaded.add(lang);
-      } catch {
-        /* fall through to plaintext */
-      }
-    }
-    const effective = loaded.has(lang) ? lang : 'text';
+    const effective = await ensureLang(hl, lang);
     return hl.codeToHtml(code, { lang: effective, theme: THEME });
+  } catch {
+    return `<pre class="shiki">${escapeHtml(code)}</pre>`;
+  }
+}
+
+/**
+ * Dual-theme variant for UI that must adapt to the app's light/dark mode.
+ * Emits CSS variables (--shiki-light / --shiki-dark) instead of fixed colors;
+ * a `.dark` ancestor switches between them (see `.cb-shiki` in index.css).
+ */
+export async function highlightToHtmlThemed(code: string, lang: string): Promise<string> {
+  try {
+    const hl = await getHighlighter();
+    const effective = await ensureLang(hl, lang);
+    return hl.codeToHtml(code, {
+      lang: effective,
+      themes: { light: THEME_LIGHT, dark: THEME },
+      defaultColor: false,
+    });
   } catch {
     return `<pre class="shiki">${escapeHtml(code)}</pre>`;
   }
