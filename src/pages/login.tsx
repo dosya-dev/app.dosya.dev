@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -7,11 +7,43 @@ import { Loader2, Eye, EyeOff } from 'lucide-react';
 import { API_BASE } from '@/api/client';
 import { PublicNav } from '@/components/public-nav';
 
+// OAuth callbacks redirect here as /login?error=<provider>_<reason> on failure.
+const PROVIDER_LABELS: Record<string, string> = { github: 'GitHub', google: 'Google', apple: 'Apple' };
+
+function oauthErrorMessage(code: string | null): string {
+  if (!code) return '';
+  const sep = code.indexOf('_');
+  if (sep === -1) return '';
+  const provider = PROVIDER_LABELS[code.slice(0, sep)];
+  if (!provider) return '';
+  const reason = code.slice(sep + 1);
+  switch (reason) {
+    case 'no_email':
+      return `We couldn't get an email address from your ${provider} account. Make sure it has a verified, public email address and that you granted email access, then try again.`;
+    case 'denied':
+      return `${provider} sign-in was cancelled. Please try again.`;
+    case 'failed':
+      return `${provider} sign-in failed. Please try again or use another sign-in method.`;
+    default:
+      return `${provider} sign-in didn't work. Please try again.`;
+  }
+}
+
 export default function LoginPage() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
+  const [error, setError] = useState<string>(() => oauthErrorMessage(searchParams.get('error')));
+
+  // Strip ?error= from the URL after capturing it, so a manual refresh doesn't resurface the banner.
+  useEffect(() => {
+    if (searchParams.has('error')) {
+      searchParams.delete('error');
+      setSearchParams(searchParams, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   // Which OAuth method was used last (for the "Last used" badge). Defaults to Google, matching the old page.

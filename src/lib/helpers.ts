@@ -99,6 +99,15 @@ export function folderIconSrc(fileCount: number, isSynced?: boolean): string {
   return fileCount > 0 ? '/file-icons/folder-full.svg' : '/file-icons/folder-empty.svg';
 }
 
+const ORIGIN_LABELS: Record<string, string> = {
+  web: 'Web', desktop: 'Desktop', mobile: 'Mobile', cli: 'CLI',
+  webdav: 'WebDAV', s3: 'S3', ftp: 'FTP', import: 'Import',
+};
+
+export function originLabel(origin: string | null | undefined): string {
+  return (origin && ORIGIN_LABELS[origin]) || '—';
+}
+
 const AVATAR_COLORS = ['#7C3AED', '#059669', '#2563EB', '#EA580C', '#DB2777', '#0891B2', '#D97706'];
 export function avatarColor(userId: string): string {
   let hash = 0;

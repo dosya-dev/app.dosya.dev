@@ -23,6 +23,8 @@ interface Workspace {
   icon_image_url?: string | null; role_id?: string;
 }
 
+interface Allocation { plan_gb: number; allocated_gb: number; remaining_gb: number }
+
 export default function CreateWorkspacePage() {
   const navigate = useNavigate();
   const setActiveId = useWorkspace((s: { setActiveId: (id: string) => void }) => s.setActiveId);
@@ -35,15 +37,20 @@ export default function CreateWorkspacePage() {
   const [color, setColor] = useState('#22c55e');
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState('');
+  const [storageLimit, setStorageLimit] = useState('');
+  const [allocation, setAllocation] = useState<Allocation | null>(null);
 
   // Load the user's existing workspaces — if they have any, default to the picker.
   useEffect(() => {
     (async () => {
       try {
-        const res = await api<{ ok: boolean; workspaces: Workspace[] }>('/api/workspaces');
-        if (res.ok && res.workspaces.length > 0) {
-          setWorkspaces(res.workspaces);
-          setMode('select');
+        const res = await api<{ ok: boolean; workspaces: Workspace[]; allocation?: Allocation }>('/api/workspaces');
+        if (res.ok) {
+          setAllocation(res.allocation ?? null);
+          if (res.workspaces.length > 0) {
+            setWorkspaces(res.workspaces);
+            setMode('select');
+          }
         }
       } catch { /* fall back to create */ }
       setLoading(false);
@@ -62,12 +69,23 @@ export default function CreateWorkspacePage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) { setError('Workspace name is required'); return; }
+    const limitGb = storageLimit.trim() === '' ? null : Number(storageLimit);
+    if (limitGb !== null && (!Number.isFinite(limitGb) || limitGb <= 0)) {
+      setError('Storage limit must be a positive number of GB.'); return;
+    }
+    if (limitGb !== null && allocation && limitGb > allocation.remaining_gb) {
+      setError(`Only ${allocation.remaining_gb} GB of your plan is unallocated. Enter ${allocation.remaining_gb} GB or less.`); return;
+    }
     setError('');
     setCreating(true);
     try {
       const res = await api<{ ok: boolean; workspace?: { id: string }; error?: string }>('/api/workspaces', {
         method: 'POST',
-        body: JSON.stringify({ name: name.trim(), icon_color: color }),
+        body: JSON.stringify({
+          name: name.trim(),
+          icon_color: color,
+          ...(limitGb !== null ? { max_total_storage_gb: limitGb } : {}),
+        }),
       });
       if (res.ok && res.workspace) {
         setActiveId(res.workspace.id);
@@ -191,6 +209,28 @@ export default function CreateWorkspacePage() {
                         />
                       ))}
                     </div>
+                  </div>
+
+                  <div>
+                    <Label className="text-xs font-medium text-muted-foreground mb-2 block">
+                      Storage limit <span className="font-normal">(optional)</span>
+                    </Label>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        value={storageLimit}
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setStorageLimit(e.target.value)}
+                        type="number"
+                        min={1}
+                        placeholder="No limit"
+                        className="h-10 w-32"
+                      />
+                      <span className="text-xs text-muted-foreground">GB</span>
+                    </div>
+                    {allocation && (
+                      <p className="text-[11px] text-muted-foreground mt-1.5">
+                        {allocation.remaining_gb} GB of {allocation.plan_gb} GB unallocated
+                      </p>
+                    )}
                   </div>
 
                   <Button type="submit" className="w-full h-10" disabled={creating}>
