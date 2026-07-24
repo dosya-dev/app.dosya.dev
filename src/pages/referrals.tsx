@@ -40,7 +40,8 @@ export default function ReferralsPage() {
     );
   }
 
-  const pct = Math.round((data.credited_count / data.max_rewards) * 100);
+  const joined = Math.min(data.credited_count, data.max_rewards);
+  const pct = Math.round((joined / data.max_rewards) * 100);
   const atCap = data.credited_count >= data.max_rewards;
 
   return (
@@ -68,7 +69,7 @@ export default function ReferralsPage() {
 
         <div className="space-y-2">
           <div className="flex items-center justify-between text-sm">
-            <span className="text-muted-foreground">{data.credited_count} of {data.max_rewards} friends joined</span>
+            <span className="text-muted-foreground">{joined} of {data.max_rewards} friends joined</span>
             <span className="font-medium">+{data.bonus_label} earned</span>
           </div>
           <Progress value={pct} />
@@ -93,7 +94,7 @@ export default function ReferralsPage() {
             <div key={i} className="flex items-center justify-between px-5 py-3 border-b last:border-b-0">
               <span className="text-sm">{f.email_masked}</span>
               <Badge variant={f.status === 'credited' ? 'default' : 'secondary'}>
-                {f.status === 'credited' ? 'Joined · +5 GB' : 'Pending'}
+                {f.status === 'credited' ? 'Joined' : 'Pending'}
               </Badge>
             </div>
           ))

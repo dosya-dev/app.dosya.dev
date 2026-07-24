@@ -43,6 +43,7 @@ export default function SignUpPage() {
       });
       const data = await res.json();
       if (res.ok && data.ok) {
+        try { sessionStorage.removeItem('dosya_ref'); } catch { /* */ }
         navigate(data.redirect ?? '/verify');
       } else {
         setError(data.error ?? 'Sign-up failed');
