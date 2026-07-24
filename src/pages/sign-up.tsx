@@ -53,8 +53,16 @@ export default function SignUpPage() {
     setLoading(false);
   };
 
-  const handleGoogle = () => { try { localStorage.setItem('dosya_last_login_method', 'google'); } catch { /* */ } window.location.href = `${API_BASE}/api/auth/google`; };
-  const handleGithub = () => { try { localStorage.setItem('dosya_last_login_method', 'github'); } catch { /* */ } window.location.href = `${API_BASE}/api/auth/github`; };
+  const handleGoogle = () => {
+    try { localStorage.setItem('dosya_last_login_method', 'google'); } catch { /* */ }
+    const ref = searchParams.get('ref') ?? sessionStorage.getItem('dosya_ref') ?? undefined;
+    window.location.href = `${API_BASE}/api/auth/google${ref ? `?ref=${encodeURIComponent(ref)}` : ''}`;
+  };
+  const handleGithub = () => {
+    try { localStorage.setItem('dosya_last_login_method', 'github'); } catch { /* */ }
+    const ref = searchParams.get('ref') ?? sessionStorage.getItem('dosya_ref') ?? undefined;
+    window.location.href = `${API_BASE}/api/auth/github${ref ? `?ref=${encodeURIComponent(ref)}` : ''}`;
+  };
   const handleApple = () => { try { localStorage.setItem('dosya_last_login_method', 'apple'); } catch { /* */ } window.location.href = `${API_BASE}/api/auth/apple`; };
 
   const lastUsedBadge = (
