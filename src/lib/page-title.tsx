@@ -4,7 +4,7 @@ import {
   LayoutDashboard, FolderOpen, Upload, Share2, Users, Settings, User, Inbox,
   MessageSquare, Activity, Search, CreditCard, Shield, ShieldCheck, LogIn,
   Building2, Bell, MapPin, Plug, RefreshCw, HardDrive, Server, Cloud, Monitor,
-  Terminal, Code2, FolderInput, type LucideIcon,
+  Terminal, Code2, FolderInput, Gift, type LucideIcon,
 } from 'lucide-react';
 
 // Single source of truth for each route's browser tab title AND in-app header icon.
@@ -37,6 +37,7 @@ const TITLES: Record<string, string> = {
   '/notifications': 'Notifications',
   '/search': 'Search',
   '/billing': 'Billing',
+  '/referrals': 'Refer friends',
   '/role-create': 'Create role',
   '/login': 'Sign in',
   '/login/2fa': 'Two-factor authentication',
@@ -72,6 +73,7 @@ const ICONS: Record<string, LucideIcon> = {
   '/notifications': Bell,
   '/search': Search,
   '/billing': CreditCard,
+  '/referrals': Gift,
   '/role-create': Shield,
   '/login': LogIn,
   '/login/2fa': ShieldCheck,

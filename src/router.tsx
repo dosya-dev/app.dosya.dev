@@ -16,6 +16,7 @@ import ActivityPage from '@/pages/activity';
 import NotificationsPage from '@/pages/notifications';
 import SearchPage from '@/pages/search';
 import BillingPage from '@/pages/billing';
+import ReferralsPage from '@/pages/referrals';
 import RoleCreatePage from '@/pages/role-create';
 import IntegrationsPage from '@/pages/integrations';
 import RcloneSetup from '@/pages/integrations/rclone';
@@ -78,6 +79,7 @@ export const router = createBrowserRouter([
       { path: '/notifications', element: <NotificationsPage /> },
       { path: '/search', element: <SearchPage /> },
       { path: '/billing', element: <BillingPage /> },
+      { path: '/referrals', element: <ReferralsPage /> },
       { path: '/role-create', element: <RoleCreatePage /> },
     ],
   },
