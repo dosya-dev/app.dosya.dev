@@ -12,7 +12,7 @@ export default function WebdavSetup() {
       <ApiKeyCallout />
       <Step n={1} title="Endpoint & credentials">
         <p>Connect any WebDAV client to this URL:</p>
-        <CodeBlock code={webdavUrl(ctx)} />
+        <CodeBlock code={webdavUrl(ctx)} lang="text" />
         <p>
           Sign in with <strong>HTTP Basic auth</strong> — username is your account email
           (<code>{ctx.email}</code>) and the password is your <code>dos_…</code> API key.
@@ -23,10 +23,10 @@ export default function WebdavSetup() {
       </Step>
       <Step n={3} title="Windows">
         <p>Map a network drive from an elevated prompt:</p>
-        <CodeBlock code={webdavWindowsMount(ctx)} />
+        <CodeBlock code={webdavWindowsMount(ctx)} lang="powershell" />
       </Step>
       <Step n={4} title="Linux (davfs2)">
-        <CodeBlock code={webdavLinuxMount(ctx)} />
+        <CodeBlock code={webdavLinuxMount(ctx)} lang="bash" />
       </Step>
     </IntegrationLayout>
   );

@@ -1,5 +1,5 @@
 import {
-  RefreshCw, HardDrive, Cloud, Monitor, Code2, type LucideIcon,
+  RefreshCw, HardDrive, Server, Cloud, Monitor, Terminal, Code2, type LucideIcon,
 } from 'lucide-react';
 
 export interface IntegrationCtx {
@@ -7,7 +7,8 @@ export interface IntegrationCtx {
   email: string;
 }
 
-export type IntegrationSlug = 'rclone' | 'webdav' | 's3' | 'desktop' | 'rest-api';
+export type IntegrationSlug =
+  | 'rclone' | 'webdav' | 'sftp' | 's3' | 'desktop' | 'cli' | 'rest-api' | 'google';
 
 export interface IntegrationMeta {
   slug: IntegrationSlug;
@@ -15,6 +16,8 @@ export interface IntegrationMeta {
   description: string;
   tag: string;
   icon: LucideIcon;
+  /** Optional brand-logo image (public path). When set, cards/headers render it instead of `icon`. */
+  iconSrc?: string;
 }
 
 export const API_HOST = 'https://api.dosya.dev';
@@ -38,6 +41,13 @@ export const INTEGRATIONS: IntegrationMeta[] = [
     icon: HardDrive,
   },
   {
+    slug: 'sftp',
+    title: 'SFTP',
+    description: 'Upload and manage files with any SFTP client — FileZilla, WinSCP, Cyberduck or the terminal.',
+    tag: 'Secure transfer',
+    icon: Server,
+  },
+  {
     slug: 's3',
     title: 'S3',
     description: 'Point any S3-compatible tool or SDK at your workspace.',
@@ -47,9 +57,16 @@ export const INTEGRATIONS: IntegrationMeta[] = [
   {
     slug: 'desktop',
     title: 'Desktop apps',
-    description: 'Download the desktop app and CLI for your platform.',
-    tag: 'Apps & CLI',
+    description: 'Download the desktop app for macOS, Windows and Linux.',
+    tag: 'Apps',
     icon: Monitor,
+  },
+  {
+    slug: 'cli',
+    title: 'CLI',
+    description: 'Script uploads, downloads and folder sync from your terminal with the dosya CLI.',
+    tag: 'Terminal',
+    icon: Terminal,
   },
   {
     slug: 'rest-api',
@@ -57,6 +74,14 @@ export const INTEGRATIONS: IntegrationMeta[] = [
     description: 'Automate everything with the dosya REST API and bearer tokens.',
     tag: 'HTTP API',
     icon: Code2,
+  },
+  {
+    slug: 'google',
+    title: 'Google Drive',
+    description: 'Import files directly from your Google Drive into a workspace.',
+    tag: 'Import',
+    icon: HardDrive,
+    iconSrc: '/google-color.svg',
   },
 ];
 
@@ -97,6 +122,24 @@ export function webdavWindowsMount(ctx: IntegrationCtx): string {
   return `net use Z: ${webdavUrl(ctx)} /user:${ctx.email} dos_your_api_key`;
 }
 
+// ---- SFTP ----
+export const SFTP_HOST = 'sftp.dosya.dev';
+export const SFTP_PORT = 2222;
+
+export function sftpConnect(ctx: IntegrationCtx): string {
+  // Username is your dosya.dev email; SFTP prompts for the password (your API key).
+  return `sftp -P ${SFTP_PORT} ${ctx.email}@${SFTP_HOST}`;
+}
+
+export function sftpConfig(ctx: IntegrationCtx): string {
+  return [
+    'Host dosya',
+    `    HostName ${SFTP_HOST}`,
+    `    Port ${SFTP_PORT}`,
+    `    User ${ctx.email}`,
+  ].join('\n');
+}
+
 // ---- S3 ----
 export function s3Endpoint(): string {
   return `${API_HOST}/s3`;
@@ -118,13 +161,24 @@ export function s3Examples(ctx: IntegrationCtx): string {
   ].join('\n');
 }
 
-// ---- Desktop / CLI ----
-export const cliInstall = `curl -fsSL ${API_HOST}/api/cli/install | sh`;
-
+// ---- Desktop ----
 export function desktopDownload(apiBase: string, platform: 'windows' | 'mac' | 'linux'): string {
   const base = apiBase || API_HOST;
   return `${base}/api/desktop/latest?platform=${platform}`;
 }
+
+// ---- CLI ----
+export const cliInstall = `curl -fsSL ${API_HOST}/api/cli/install | sh`;
+export const cliInstallWindows = `curl -fsSL -o dosya.exe ${API_HOST}/api/cli/latest?platform=windows`;
+
+export const cliExamples = [
+  'dosya auth login',
+  'dosya upload ./report.pdf',
+  'dosya ls',
+  'dosya download report.pdf',
+  'dosya share report.pdf',
+  'dosya sync run',
+].join('\n');
 
 // ---- REST API ----
 export function restExample(): string {

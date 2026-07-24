@@ -3,8 +3,8 @@ import { useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, FolderOpen, Upload, Share2, Users, Settings, User, Inbox,
   MessageSquare, Activity, Search, CreditCard, Shield, ShieldCheck, LogIn,
-  Building2, Bell, MapPin, Plug, RefreshCw, HardDrive, Cloud, Monitor, Code2,
-  type LucideIcon,
+  Building2, Bell, MapPin, Plug, RefreshCw, HardDrive, Server, Cloud, Monitor,
+  Terminal, Code2, FolderInput, type LucideIcon,
 } from 'lucide-react';
 
 // Single source of truth for each route's browser tab title AND in-app header icon.
@@ -25,9 +25,12 @@ const TITLES: Record<string, string> = {
   '/integrations': 'Integrations',
   '/integrations/rclone': 'rclone',
   '/integrations/webdav': 'WebDAV',
+  '/integrations/sftp': 'SFTP',
   '/integrations/s3': 'S3',
   '/integrations/desktop': 'Desktop apps',
+  '/integrations/cli': 'CLI',
   '/integrations/rest-api': 'REST API',
+  '/integrations/google': 'Google Drive',
   '/shared': 'Shared links',
   '/comments': 'Comments',
   '/activity': 'Activity',
@@ -57,9 +60,12 @@ const ICONS: Record<string, LucideIcon> = {
   '/integrations': Plug,
   '/integrations/rclone': RefreshCw,
   '/integrations/webdav': HardDrive,
+  '/integrations/sftp': Server,
   '/integrations/s3': Cloud,
   '/integrations/desktop': Monitor,
+  '/integrations/cli': Terminal,
   '/integrations/rest-api': Code2,
+  '/integrations/google': FolderInput,
   '/shared': Share2,
   '/comments': MessageSquare,
   '/activity': Activity,

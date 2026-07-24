@@ -12,15 +12,15 @@ export default function RcloneSetup() {
       <ApiKeyCallout />
       <Step n={1} title="Install the dosya rclone build">
         <p>dosya ships a small fork of rclone with a native backend. Install it with Go:</p>
-        <CodeBlock code={rcloneInstall} />
+        <CodeBlock code={rcloneInstall} lang="bash" />
       </Step>
       <Step n={2} title="Configure the remote">
         <p>Add this block to your <code>rclone.conf</code> (run <code>rclone config file</code> to find it):</p>
-        <CodeBlock code={rcloneConfig(ctx)} caption="rclone.conf" />
+        <CodeBlock code={rcloneConfig(ctx)} lang="ini" caption="rclone.conf" />
       </Step>
       <Step n={3} title="Use it">
         <p>Your workspace is now the <code>dosya:</code> remote.</p>
-        <CodeBlock code={rcloneExamples} />
+        <CodeBlock code={rcloneExamples} lang="bash" />
       </Step>
     </IntegrationLayout>
   );

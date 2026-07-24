@@ -1,8 +1,8 @@
+import { Link } from 'react-router-dom';
 import { Monitor, Apple, Terminal } from 'lucide-react';
 import { IntegrationLayout, Step } from '@/components/integrations/integration-layout';
-import { CodeBlock } from '@/components/integrations/code-block';
 import { API_BASE } from '@/api/client';
-import { getIntegration, desktopDownload, cliInstall } from '@/lib/integrations';
+import { getIntegration, desktopDownload } from '@/lib/integrations';
 
 const meta = getIntegration('desktop')!;
 
@@ -28,9 +28,14 @@ export default function DesktopSetup() {
           ))}
         </div>
       </Step>
-      <Step n={2} title="Or install the CLI">
-        <p>One line on macOS and Linux:</p>
-        <CodeBlock code={cliInstall} />
+      <Step n={2} title="Prefer the terminal?">
+        <p>
+          The{' '}
+          <Link to="/integrations/cli" className="underline underline-offset-2 hover:text-foreground">
+            dosya CLI
+          </Link>{' '}
+          gives you scriptable uploads, downloads and folder sync from the command line.
+        </p>
       </Step>
     </IntegrationLayout>
   );

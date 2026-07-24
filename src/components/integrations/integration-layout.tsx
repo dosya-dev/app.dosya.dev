@@ -3,9 +3,10 @@ import { Link } from 'react-router-dom';
 import { ArrowLeft, KeyRound, type LucideIcon } from 'lucide-react';
 
 export function IntegrationLayout({
-  icon: Icon, title, description, children,
+  icon: Icon, iconSrc, title, description, children,
 }: {
   icon: LucideIcon;
+  iconSrc?: string;
   title: string;
   description: string;
   children: ReactNode;
@@ -20,7 +21,7 @@ export function IntegrationLayout({
       </Link>
       <div className="mb-6 flex items-start gap-3">
         <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted">
-          <Icon className="size-5" />
+          {iconSrc ? <img src={iconSrc} alt="" className="size-5" /> : <Icon className="size-5" />}
         </div>
         <div>
           <h1 className="text-lg font-semibold leading-tight">{title}</h1>
