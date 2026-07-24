@@ -19,18 +19,18 @@ export default function RestApiSetup() {
       </Step>
       <Step n={2} title="Call the API">
         <p>Base URL is <code>{API_HOST}</code>. Authenticate with a bearer token:</p>
-        <CodeBlock code={restExample()} />
+        <CodeBlock code={restExample()} lang="bash" />
       </Step>
       <Step n={3} title="Reference">
         <p>
           Every endpoint is documented in the{' '}
           <a
-            href="https://dosya.dev/developer"
+            href="https://dosya.dev/developer/api"
             target="_blank"
             rel="noreferrer"
             className="underline underline-offset-2 hover:text-foreground"
           >
-            developer documentation
+            API documentation
           </a>
           .
         </p>

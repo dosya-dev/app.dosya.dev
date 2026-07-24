@@ -22,6 +22,7 @@ export default function S3Setup() {
       </Step>
       <Step n={2} title="Connection settings">
         <CodeBlock
+          lang="text"
           code={[
             `Endpoint   ${s3Endpoint()}`,
             `Region     ${S3_REGION}`,
@@ -31,9 +32,9 @@ export default function S3Setup() {
       </Step>
       <Step n={3} title="AWS CLI">
         <p>Store your credentials:</p>
-        <CodeBlock code={s3AwsConfig()} />
+        <CodeBlock code={s3AwsConfig()} lang="bash" />
         <p>Then operate on your workspace bucket:</p>
-        <CodeBlock code={s3Examples(ctx)} />
+        <CodeBlock code={s3Examples(ctx)} lang="bash" />
       </Step>
     </IntegrationLayout>
   );

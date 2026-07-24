@@ -20,7 +20,9 @@ export default function IntegrationsPage() {
           >
             <div className="mb-3 flex items-center justify-between">
               <div className="flex size-9 items-center justify-center rounded-lg bg-muted">
-                <it.icon className="size-[18px]" />
+                {it.iconSrc
+                  ? <img src={it.iconSrc} alt="" className="size-4.5" />
+                  : <it.icon className="size-4.5" />}
               </div>
               <ArrowRight className="size-4 -translate-x-1 text-muted-foreground opacity-0 transition-all group-hover:translate-x-0 group-hover:opacity-100" />
             </div>

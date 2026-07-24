@@ -20,9 +20,12 @@ import RoleCreatePage from '@/pages/role-create';
 import IntegrationsPage from '@/pages/integrations';
 import RcloneSetup from '@/pages/integrations/rclone';
 import WebdavSetup from '@/pages/integrations/webdav';
+import SftpSetup from '@/pages/integrations/sftp';
 import S3Setup from '@/pages/integrations/s3';
 import DesktopSetup from '@/pages/integrations/desktop';
+import CliSetup from '@/pages/integrations/cli';
 import RestApiSetup from '@/pages/integrations/rest-api';
+import GoogleSetup from '@/pages/integrations/google';
 import FileRequestDetailPage from '@/pages/file-request-detail';
 import LoginPage from '@/pages/login';
 import Login2faPage from '@/pages/login-2fa';
@@ -63,9 +66,12 @@ export const router = createBrowserRouter([
       { path: '/integrations', element: <IntegrationsPage /> },
       { path: '/integrations/rclone', element: <RcloneSetup /> },
       { path: '/integrations/webdav', element: <WebdavSetup /> },
+      { path: '/integrations/sftp', element: <SftpSetup /> },
       { path: '/integrations/s3', element: <S3Setup /> },
       { path: '/integrations/desktop', element: <DesktopSetup /> },
+      { path: '/integrations/cli', element: <CliSetup /> },
       { path: '/integrations/rest-api', element: <RestApiSetup /> },
+      { path: '/integrations/google', element: <GoogleSetup /> },
       { path: '/shared', element: <SharedPage /> },
       { path: '/comments', element: <CommentsPage /> },
       { path: '/activity', element: <ActivityPage /> },
