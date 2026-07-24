@@ -487,3 +487,11 @@ body {
   border-left: 7px solid transparent; border-right: 7px solid transparent; border-top: 10px solid #fff; }
 /* approximate (IP-derived, not exact EXIF GPS): dashed frame so it's never disguised as precise */
 .dosya-pin--approx .dosya-pin__frame { border-style: dashed; opacity: 0.92; }
+
+/* Integration setup code blocks: shiki dual-theme output (defaultColor:false).
+   Each token carries --shiki-light / --shiki-dark; pick one by app mode so the
+   syntax colors read correctly on every theme's light and dark surface. */
+.cb-shiki pre,
+.cb-shiki span { color: var(--shiki-light); }
+.dark .cb-shiki pre,
+.dark .cb-shiki span { color: var(--shiki-dark); }
