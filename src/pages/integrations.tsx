@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { ArrowRight } from 'lucide-react';
+import { ArrowRight, ExternalLink } from 'lucide-react';
 import { INTEGRATIONS } from '@/lib/integrations';
 
 export default function IntegrationsPage() {
@@ -13,10 +13,9 @@ export default function IntegrationsPage() {
       </div>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {INTEGRATIONS.map((it) => (
-          <Link
+          <div
             key={it.slug}
-            to={`/integrations/${it.slug}`}
-            className="group flex flex-col rounded-xl border bg-card p-4 transition-colors hover:border-foreground/20 hover:bg-muted/30"
+            className="group relative flex flex-col rounded-xl border bg-card p-4 transition-colors hover:border-foreground/20 hover:bg-muted/30"
           >
             <div className="mb-3 flex items-center justify-between">
               <div className="flex size-9 items-center justify-center rounded-lg bg-muted">
@@ -28,10 +27,30 @@ export default function IntegrationsPage() {
             </div>
             <p className="text-sm font-semibold">{it.title}</p>
             <p className="mt-1 flex-1 text-xs text-muted-foreground">{it.description}</p>
-            <span className="mt-3 inline-flex w-fit items-center rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
-              {it.tag}
-            </span>
-          </Link>
+            <div className="mt-3 flex items-center justify-between gap-2">
+              <span className="inline-flex w-fit items-center rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                {it.tag}
+              </span>
+              {it.docsUrl && (
+                <a
+                  href={it.docsUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="relative z-10 inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                >
+                  Read docs <ExternalLink className="size-3" />
+                </a>
+              )}
+            </div>
+            {/* Stretched primary link — opens the in-app setup page. It's the last
+                child so it overlays the static content, but the "Read docs" anchor
+                (z-10) stays above it and remains clickable. */}
+            <Link
+              to={`/integrations/${it.slug}`}
+              className="absolute inset-0 rounded-xl"
+              aria-label={`Open ${it.title} setup`}
+            />
+          </div>
         ))}
       </div>
     </div>

@@ -18,6 +18,8 @@ export interface IntegrationMeta {
   icon: LucideIcon;
   /** Optional brand-logo image (public path). When set, cards/headers render it instead of `icon`. */
   iconSrc?: string;
+  /** External marketing docs page for this integration (omitted when none exists, e.g. Google Drive). */
+  docsUrl?: string;
 }
 
 export const API_HOST = 'https://api.dosya.dev';
@@ -32,6 +34,7 @@ export const INTEGRATIONS: IntegrationMeta[] = [
     description: 'Copy, sync and mount your files from the command line with rclone.',
     tag: 'Sync & mount',
     icon: RefreshCw,
+    docsUrl: 'https://dosya.dev/developer/rclone',
   },
   {
     slug: 'webdav',
@@ -39,6 +42,7 @@ export const INTEGRATIONS: IntegrationMeta[] = [
     description: 'Mount your workspace as a network drive on macOS, Windows or Linux.',
     tag: 'Mount as drive',
     icon: HardDrive,
+    docsUrl: 'https://dosya.dev/developer/webdav',
   },
   {
     slug: 'sftp',
@@ -46,6 +50,7 @@ export const INTEGRATIONS: IntegrationMeta[] = [
     description: 'Upload and manage files with any SFTP client — FileZilla, WinSCP, Cyberduck or the terminal.',
     tag: 'Secure transfer',
     icon: Server,
+    docsUrl: 'https://dosya.dev/developer/sftp',
   },
   {
     slug: 's3',
@@ -53,6 +58,7 @@ export const INTEGRATIONS: IntegrationMeta[] = [
     description: 'Point any S3-compatible tool or SDK at your workspace.',
     tag: 'S3 API',
     icon: Cloud,
+    docsUrl: 'https://dosya.dev/developer/s3',
   },
   {
     slug: 'desktop',
@@ -60,6 +66,7 @@ export const INTEGRATIONS: IntegrationMeta[] = [
     description: 'Download the desktop app for macOS, Windows and Linux.',
     tag: 'Apps',
     icon: Monitor,
+    docsUrl: 'https://dosya.dev/desktop',
   },
   {
     slug: 'cli',
@@ -67,6 +74,7 @@ export const INTEGRATIONS: IntegrationMeta[] = [
     description: 'Script uploads, downloads and folder sync from your terminal with the dosya CLI.',
     tag: 'Terminal',
     icon: Terminal,
+    docsUrl: 'https://dosya.dev/developer/cli',
   },
   {
     slug: 'rest-api',
@@ -74,6 +82,7 @@ export const INTEGRATIONS: IntegrationMeta[] = [
     description: 'Automate everything with the dosya REST API and bearer tokens.',
     tag: 'HTTP API',
     icon: Code2,
+    docsUrl: 'https://dosya.dev/developer/api',
   },
   {
     slug: 'google',

@@ -23,6 +23,20 @@ export default function CliSetup() {
       <Step n={3} title="Everyday commands">
         <CodeBlock code={cliExamples} lang="bash" />
       </Step>
+      <Step n={4} title="Full reference">
+        <p>
+          See the{' '}
+          <a
+            href={meta.docsUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="underline underline-offset-2 hover:text-foreground"
+          >
+            CLI documentation
+          </a>{' '}
+          for every command and flag.
+        </p>
+      </Step>
     </IntegrationLayout>
   );
 }

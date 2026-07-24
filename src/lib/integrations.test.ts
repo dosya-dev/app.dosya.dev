@@ -22,6 +22,12 @@ describe('integrations metadata', () => {
   it('google uses a brand-logo iconSrc', () => {
     expect(getIntegration('google')?.iconSrc).toBe('/google-color.svg');
   });
+  it('code integrations link to their marketing docs; google has none', () => {
+    expect(getIntegration('cli')?.docsUrl).toBe('https://dosya.dev/developer/cli');
+    expect(getIntegration('rest-api')?.docsUrl).toBe('https://dosya.dev/developer/api');
+    expect(getIntegration('desktop')?.docsUrl).toBe('https://dosya.dev/desktop');
+    expect(getIntegration('google')?.docsUrl).toBeUndefined();
+  });
 });
 
 describe('snippet builders inject context + use the API host', () => {
