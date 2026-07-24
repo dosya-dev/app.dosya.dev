@@ -17,6 +17,12 @@ import NotificationsPage from '@/pages/notifications';
 import SearchPage from '@/pages/search';
 import BillingPage from '@/pages/billing';
 import RoleCreatePage from '@/pages/role-create';
+import IntegrationsPage from '@/pages/integrations';
+import RcloneSetup from '@/pages/integrations/rclone';
+import WebdavSetup from '@/pages/integrations/webdav';
+import S3Setup from '@/pages/integrations/s3';
+import DesktopSetup from '@/pages/integrations/desktop';
+import RestApiSetup from '@/pages/integrations/rest-api';
 import FileRequestDetailPage from '@/pages/file-request-detail';
 import LoginPage from '@/pages/login';
 import Login2faPage from '@/pages/login-2fa';
@@ -54,6 +60,12 @@ export const router = createBrowserRouter([
       { path: '/settings', element: <SettingsPage /> },
       { path: '/profile', element: <ProfilePage /> },
       { path: '/teams', element: <TeamsPage /> },
+      { path: '/integrations', element: <IntegrationsPage /> },
+      { path: '/integrations/rclone', element: <RcloneSetup /> },
+      { path: '/integrations/webdav', element: <WebdavSetup /> },
+      { path: '/integrations/s3', element: <S3Setup /> },
+      { path: '/integrations/desktop', element: <DesktopSetup /> },
+      { path: '/integrations/rest-api', element: <RestApiSetup /> },
       { path: '/shared', element: <SharedPage /> },
       { path: '/comments', element: <CommentsPage /> },
       { path: '/activity', element: <ActivityPage /> },

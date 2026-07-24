@@ -12,7 +12,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import {
   LayoutDashboard, FolderOpen, Upload, Share2, Users, Settings,
-  ChevronsUpDown, Plus, Check, Loader2,
+  ChevronsUpDown, Plus, Check, Loader2, Plug,
 } from 'lucide-react';
 import { api, API_BASE } from '@/api/client';
 import { useWorkspace } from '@/stores/workspace';
@@ -38,6 +38,7 @@ const navItems = [
 
 const workspaceItems = [
   { title: 'Team', url: '/teams', icon: Users },
+  { title: 'Integrations', url: '/integrations', icon: Plug },
   { title: 'Settings', url: '/settings', icon: Settings },
 ];
 

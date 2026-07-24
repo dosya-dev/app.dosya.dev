@@ -3,7 +3,8 @@ import { useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, FolderOpen, Upload, Share2, Users, Settings, User, Inbox,
   MessageSquare, Activity, Search, CreditCard, Shield, ShieldCheck, LogIn,
-  Building2, Bell, MapPin, type LucideIcon,
+  Building2, Bell, MapPin, Plug, RefreshCw, HardDrive, Cloud, Monitor, Code2,
+  type LucideIcon,
 } from 'lucide-react';
 
 // Single source of truth for each route's browser tab title AND in-app header icon.
@@ -21,6 +22,12 @@ const TITLES: Record<string, string> = {
   '/settings': 'Settings',
   '/profile': 'Profile',
   '/teams': 'Team',
+  '/integrations': 'Integrations',
+  '/integrations/rclone': 'rclone',
+  '/integrations/webdav': 'WebDAV',
+  '/integrations/s3': 'S3',
+  '/integrations/desktop': 'Desktop apps',
+  '/integrations/rest-api': 'REST API',
   '/shared': 'Shared links',
   '/comments': 'Comments',
   '/activity': 'Activity',
@@ -47,6 +54,12 @@ const ICONS: Record<string, LucideIcon> = {
   '/settings': Settings,
   '/profile': User,
   '/teams': Users,
+  '/integrations': Plug,
+  '/integrations/rclone': RefreshCw,
+  '/integrations/webdav': HardDrive,
+  '/integrations/s3': Cloud,
+  '/integrations/desktop': Monitor,
+  '/integrations/rest-api': Code2,
   '/shared': Share2,
   '/comments': MessageSquare,
   '/activity': Activity,
@@ -62,12 +75,14 @@ const ICONS: Record<string, LucideIcon> = {
 export function titleForPath(pathname: string): string {
   if (pathname in TITLES) return TITLES[pathname];
   if (pathname.startsWith('/file-requests/')) return 'File request';
+  if (pathname.startsWith('/integrations')) return 'Integrations';
   return '';
 }
 
 export function iconForPath(pathname: string): LucideIcon | null {
   if (pathname in ICONS) return ICONS[pathname];
   if (pathname.startsWith('/file-requests/')) return Inbox;
+  if (pathname.startsWith('/integrations')) return Plug;
   return null;
 }
 
