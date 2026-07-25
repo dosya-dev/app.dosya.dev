@@ -12,7 +12,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import {
   LayoutDashboard, FolderOpen, Upload, Share2, Users, Settings,
-  ChevronsUpDown, Plus, Check, Loader2, Plug,
+  ChevronsUpDown, Plus, Check, Loader2, Plug, LayoutGrid,
 } from 'lucide-react';
 import { api, API_BASE } from '@/api/client';
 import { useWorkspace } from '@/stores/workspace';
@@ -221,6 +221,14 @@ export function DashboardSidebar() {
               </DropdownMenuItem>
             ))}
             <DropdownMenuSeparator />
+            <Link to="/workspaces">
+              <DropdownMenuItem className="gap-2">
+                <div className="w-6 h-6 rounded-[5px] bg-muted flex items-center justify-center shrink-0">
+                  <LayoutGrid className="size-3 text-muted-foreground" />
+                </div>
+                <span className="text-xs text-muted-foreground">Workspace dashboard</span>
+              </DropdownMenuItem>
+            </Link>
             <Link to="/create-workspace">
               <DropdownMenuItem className="gap-2">
                 <div className="w-6 h-6 rounded-[5px] bg-muted flex items-center justify-center shrink-0">
