@@ -7,7 +7,7 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem,
   DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Search, User, LogOut, Settings, CreditCard, HelpCircle, Sun, Moon, Palette } from 'lucide-react';
+import { Search, User, LogOut, Settings, CreditCard, HelpCircle, Sun, Moon, Palette, Gift } from 'lucide-react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { api, API_BASE } from '@/api/client';
 import { readCache, writeCache, applyTheme, subscribeThemeChange } from '@/lib/theme';
@@ -234,6 +234,7 @@ export function DashboardTopbar() {
             )}
             <Link to="/profile"><DropdownMenuItem><User className="size-3.5 mr-2" /> Profile</DropdownMenuItem></Link>
             <Link to="/profile?section=appearance"><DropdownMenuItem><Palette className="size-3.5 mr-2" /> Appearance</DropdownMenuItem></Link>
+            <Link to="/referrals"><DropdownMenuItem><Gift className="size-3.5 mr-2" /> Refer friends</DropdownMenuItem></Link>
             <Link to="/settings"><DropdownMenuItem><Settings className="size-3.5 mr-2" /> Settings</DropdownMenuItem></Link>
             <Link to="/billing"><DropdownMenuItem><CreditCard className="size-3.5 mr-2" /> Billing</DropdownMenuItem></Link>
             <a href="https://dosya.dev/help" target="_blank" rel="noreferrer"><DropdownMenuItem><HelpCircle className="size-3.5 mr-2" /> Help</DropdownMenuItem></a>
