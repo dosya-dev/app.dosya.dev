@@ -25,6 +25,17 @@ describe('stackedSegments', () => {
     expect(segs[0].color).toBe(WS_SEGMENT_COLORS[0]);
     expect(segs[1].color).toBe(WS_SEGMENT_COLORS[1]);
   });
+  it('assigns colors by filtered index (zero-usage row first)', () => {
+    const segs = stackedSegments([ws('a', 0), ws('b', 30), ws('c', 10)], 40);
+    expect(segs.map((s) => s.id)).toEqual(['b', 'c']);
+    expect(segs[0].color).toBe(WS_SEGMENT_COLORS[0]);
+    expect(segs[1].color).toBe(WS_SEGMENT_COLORS[1]);
+  });
+  it('divides by usedBytes parameter, not array sum', () => {
+    const segs = stackedSegments([ws('a', 60), ws('b', 20)], 80);
+    expect(segs[0].widthPct).toBeCloseTo(75);
+    expect(segs[1].widthPct).toBeCloseTo(25);
+  });
   it('returns [] when nothing is used', () => {
     expect(stackedSegments([ws('a', 0)], 0)).toEqual([]);
   });
@@ -34,6 +45,7 @@ describe('roleLabel', () => {
   it('maps known roles and falls back to Member', () => {
     expect(roleLabel('role_owner')).toBe('Owner');
     expect(roleLabel('role_admin')).toBe('Admin');
+    expect(roleLabel('role_member')).toBe('Member');
     expect(roleLabel('role_viewer')).toBe('Viewer');
     expect(roleLabel('role_custom_xyz')).toBe('Member');
   });
