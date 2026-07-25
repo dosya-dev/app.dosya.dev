@@ -78,9 +78,13 @@ export default function WorkspaceDashboardPage() {
                 <div className="h-full flex rounded-full overflow-hidden" style={{ width: `${pct}%` }}>
                   {segments.length === 0 ? (
                     <div className="h-full w-full" style={{ background: storageColor(pct) }} />
-                  ) : segments.map((seg) => (
-                    <div key={seg.id} className="h-full" style={{ width: `${seg.widthPct}%`, background: seg.color }} title={`${seg.name}: ${formatBytes(owned.find((w) => w.id === seg.id)?.used_bytes ?? 0)}`} />
-                  ))}
+                  ) : segments.map((seg) => {
+                    const ownedIdx = owned.findIndex((w) => w.id === seg.id);
+                    const color = WS_SEGMENT_COLORS[ownedIdx % WS_SEGMENT_COLORS.length];
+                    return (
+                      <div key={seg.id} className="h-full" style={{ width: `${seg.widthPct}%`, background: color }} title={`${seg.name}: ${formatBytes(owned.find((w) => w.id === seg.id)?.used_bytes ?? 0)}`} />
+                    );
+                  })}
                 </div>
               </div>
               <p className="text-[11px] text-muted-foreground mt-1.5">{pct}% of your total space used</p>
