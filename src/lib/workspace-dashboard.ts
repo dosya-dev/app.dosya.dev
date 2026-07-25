@@ -44,7 +44,6 @@ export function storageColor(pct: number): string {
 export interface StackSegment {
   id: string;
   name: string;
-  color: string;
   widthPct: number; // share of the FILLED portion of the bar
 }
 
@@ -53,10 +52,9 @@ export function stackedSegments(owned: OwnedWorkspace[], usedBytes: number): Sta
   if (usedBytes <= 0) return [];
   return owned
     .filter((w) => w.used_bytes > 0)
-    .map((w, i) => ({
+    .map((w) => ({
       id: w.id,
       name: w.name,
-      color: WS_SEGMENT_COLORS[i % WS_SEGMENT_COLORS.length],
       widthPct: (w.used_bytes / usedBytes) * 100,
     }));
 }

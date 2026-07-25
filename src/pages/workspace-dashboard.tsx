@@ -7,7 +7,7 @@ import {
 } from '@/lib/workspace-dashboard';
 import { useWorkspace } from '@/stores/workspace';
 import { formatBytes } from '@/lib/billing/cart-math';
-import { api, API_BASE } from '@/api/client';
+import { API_BASE } from '@/api/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
@@ -29,7 +29,7 @@ export default function WorkspaceDashboardPage() {
   useEffect(() => {
     getWorkspaceDashboard()
       .then((d) => setData(d))
-      .catch(() => {})
+      .catch((err) => { console.error('Failed to load workspace dashboard', err); })
       .finally(() => setLoading(false));
   }, []);
 

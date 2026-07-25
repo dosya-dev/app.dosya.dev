@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { storageColor, stackedSegments, roleLabel, WS_SEGMENT_COLORS, type OwnedWorkspace } from './workspace-dashboard';
+import { storageColor, stackedSegments, roleLabel, type OwnedWorkspace } from './workspace-dashboard';
 
 const ws = (id: string, used_bytes: number): OwnedWorkspace => ({
   id, name: id, icon_initials: 'X', icon_color: '#000', icon_image_url: null,
@@ -22,19 +22,15 @@ describe('stackedSegments', () => {
     expect(segs.map((s) => s.id)).toEqual(['a', 'b']);
     expect(segs[0].widthPct).toBeCloseTo(75);
     expect(segs[1].widthPct).toBeCloseTo(25);
-    expect(segs[0].color).toBe(WS_SEGMENT_COLORS[0]);
-    expect(segs[1].color).toBe(WS_SEGMENT_COLORS[1]);
   });
-  it('assigns colors by filtered index (zero-usage row first)', () => {
+  it('excludes zero-usage rows regardless of position', () => {
     const segs = stackedSegments([ws('a', 0), ws('b', 30), ws('c', 10)], 40);
     expect(segs.map((s) => s.id)).toEqual(['b', 'c']);
-    expect(segs[0].color).toBe(WS_SEGMENT_COLORS[0]);
-    expect(segs[1].color).toBe(WS_SEGMENT_COLORS[1]);
   });
-  it('divides by usedBytes parameter, not array sum', () => {
-    const segs = stackedSegments([ws('a', 60), ws('b', 20)], 80);
-    expect(segs[0].widthPct).toBeCloseTo(75);
-    expect(segs[1].widthPct).toBeCloseTo(25);
+  it('divides by the usedBytes parameter, not the array sum', () => {
+    const segs = stackedSegments([ws('a', 30), ws('b', 10)], 50);
+    expect(segs[0].widthPct).toBeCloseTo(60);
+    expect(segs[1].widthPct).toBeCloseTo(20);
   });
   it('returns [] when nothing is used', () => {
     expect(stackedSegments([ws('a', 0)], 0)).toEqual([]);
