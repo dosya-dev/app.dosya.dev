@@ -784,7 +784,9 @@ export default function FilesPage() {
           ) : (
             <>
               <Button variant="outline" size="sm" className="h-7 text-xs" onClick={bulkDownloadZip}><Download className="size-3 mr-1" /> Download ZIP</Button>
-              <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => { if (selected.size > 0) openShare(Array.from(selected)[0], `${selected.size} files`); }}><Share2 className="size-3 mr-1" /> Share</Button>
+              {selected.size > 0 && (
+                <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => openShare(Array.from(selected)[0], `${selected.size} files`)}><Share2 className="size-3 mr-1" /> Share</Button>
+              )}
               <Button variant="outline" size="sm" className="h-7 text-xs" onClick={bulkMove}><Move className="size-3 mr-1" /> Move</Button>
               <Button variant="outline" size="sm" className="h-7 text-xs text-destructive border-destructive/30" onClick={bulkDelete}><Trash2 className="size-3 mr-1" /> Delete</Button>
             </>
