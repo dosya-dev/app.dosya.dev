@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { api, API_BASE } from '@/api/client';
+import { api } from '@/api/client';
 import { FilesSidebar } from '@/components/files-sidebar';
 import { useWorkspace } from '@/stores/workspace';
 import { Input } from '@/components/ui/input';
@@ -19,11 +19,12 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import {
   Plus, ArrowLeft, Mail, Copy, Check, Send, Trash2, Loader2,
-  ChevronDown, FolderOpen, Home, Download, X, Search,
+  ChevronDown, FolderOpen, Home, X, Search,
 } from 'lucide-react';
-import { humanSize, timeAgo, fileIconSrc } from '@/lib/helpers';
+import { timeAgo } from '@/lib/helpers';
 import { toast } from '@/lib/toast';
 import { FolderPickerDialog } from '@/components/folder-picker-dialog';
+import { FileRequestEditDialog } from '@/components/file-request-edit-dialog';
 
 
 // ── Types ─────────────────────────────────────────────────
@@ -38,6 +39,12 @@ interface FileRequest {
   created_at: number;
   created_by_name: string | null;
   upload_count: number;
+  message: string | null;
+  folder_id: string | null;
+  folder_name: string | null;
+  allowed_extensions: string | null;
+  max_file_size_bytes: number | null;
+  max_files: number | null;
 }
 
 interface Recipient {
@@ -45,18 +52,6 @@ interface Recipient {
   email: string;
   sent_at: number | null;
   uploaded_at: number | null;
-}
-
-interface Upload {
-  id: string;
-  file_id: string;
-  uploader_email: string | null;
-  uploader_name: string | null;
-  created_at: number;
-  file_name: string;
-  size_bytes: number;
-  mime_type: string;
-  extension: string | null;
 }
 
 
@@ -69,7 +64,7 @@ export default function FileRequestsPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [recipientModal, setRecipientModal] = useState<string | null>(null);
-  const [uploadsModal, setUploadsModal] = useState<string | null>(null);
+  const [editRequest, setEditRequest] = useState<FileRequest | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
 
   const loadRequests = useCallback(async () => {
@@ -158,7 +153,7 @@ export default function FileRequestsPage() {
               <RequestRow key={r.id} request={r} revoked={revoked} expired={expired} isActive={isActive}
                 onRevoke={loadRequests}
                 onOpenRecipients={() => setRecipientModal(r.id)}
-                onOpenUploads={() => setUploadsModal(r.id)}
+                onEdit={() => setEditRequest(r)}
               />
             );
           })
@@ -179,9 +174,14 @@ export default function FileRequestsPage() {
         <RecipientsDialog requestId={recipientModal} onClose={() => setRecipientModal(null)} />
       )}
 
-      {/* Uploads modal */}
-      {uploadsModal && (
-        <UploadsDialog requestId={uploadsModal} onClose={() => setUploadsModal(null)} />
+      {/* Edit modal */}
+      {editRequest && (
+        <FileRequestEditDialog
+          request={editRequest}
+          workspaceId={workspaceId}
+          onClose={() => setEditRequest(null)}
+          onSaved={() => { setEditRequest(null); loadRequests(); }}
+        />
       )}
         </div>
       </div>
@@ -191,10 +191,11 @@ export default function FileRequestsPage() {
 
 // ── Request Row ───────────────────────────────────────────
 
-function RequestRow({ request: r, revoked, expired, isActive, onRevoke, onOpenRecipients, onOpenUploads }: {
+function RequestRow({ request: r, revoked, expired, isActive, onRevoke, onOpenRecipients, onEdit }: {
   request: FileRequest; revoked: boolean; expired: boolean; isActive: boolean;
-  onRevoke: () => void; onOpenRecipients: () => void; onOpenUploads: () => void;
+  onRevoke: () => void; onOpenRecipients: () => void; onEdit: () => void;
 }) {
+  const navigate = useNavigate();
   const [revoking, setRevoking] = useState(false);
   const [copied, setCopied] = useState(false);
 
@@ -225,7 +226,7 @@ function RequestRow({ request: r, revoked, expired, isActive, onRevoke, onOpenRe
       <div className="h-9 w-9 rounded-lg bg-muted flex items-center justify-center shrink-0 text-muted-foreground">
         <Mail className="size-4" />
       </div>
-      <div className="flex-1 min-w-0">
+      <div className="flex-1 min-w-0 cursor-pointer" onClick={() => navigate(`/file-requests/${r.id}`)}>
         <p className={`text-sm font-medium truncate ${revoked ? 'line-through' : ''}`}>
           {r.title || 'Untitled request'}
         </p>
@@ -248,9 +249,12 @@ function RequestRow({ request: r, revoked, expired, isActive, onRevoke, onOpenRe
       <div className="flex gap-1.5 shrink-0">
         <Button variant="outline" size="sm" className="h-7 text-xs" onClick={onOpenRecipients}>Recipients</Button>
         {r.upload_count > 0 && (
-          <Button variant="outline" size="sm" className="h-7 text-xs" onClick={onOpenUploads}>
+          <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => navigate(`/file-requests/${r.id}`)}>
             Uploads ({r.upload_count})
           </Button>
+        )}
+        {!revoked && (
+          <Button variant="outline" size="sm" className="h-7 text-xs" onClick={onEdit}>Edit</Button>
         )}
         {!revoked && (
           <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={handleCopy}>
@@ -702,56 +706,3 @@ function RecipientRow({ recipient: r, requestId, onUpdate }: {
   );
 }
 
-// ── Uploads Dialog ────────────────────────────────────────
-
-function UploadsDialog({ requestId, onClose }: { requestId: string; onClose: () => void }) {
-  const [uploads, setUploads] = useState<Upload[]>([]);
-  const [title, setTitle] = useState('Uploads');
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    api<{ ok: boolean; uploads: Upload[]; title: string | null }>(
-      `/api/file-requests/${requestId}/uploads`,
-    ).then((data) => {
-      if (data.ok) {
-        setUploads(data.uploads);
-        if (data.title) setTitle(`Uploads: ${data.title}`);
-      }
-    }).catch(() => {}).finally(() => setLoading(false));
-  }, [requestId]);
-
-  return (
-    <Dialog open onOpenChange={() => onClose()}>
-      <DialogContent className="max-w-lg">
-        <DialogHeader>
-          <DialogTitle>{title}</DialogTitle>
-        </DialogHeader>
-
-        <div className="max-h-80 overflow-y-auto -mx-4 px-4">
-          {loading ? (
-            <div className="space-y-2 py-4">{[1, 2, 3].map((i) => <Skeleton key={i} className="h-12 w-full" />)}</div>
-          ) : uploads.length === 0 ? (
-            <p className="py-8 text-center text-xs text-muted-foreground">No uploads yet.</p>
-          ) : (
-            uploads.map((u) => (
-              <div key={u.id} className="flex items-center gap-3 py-2.5 border-b last:border-b-0">
-                <div className="size-9 rounded-lg bg-muted/50 flex items-center justify-center shrink-0">
-                  <img src={fileIconSrc(u.file_name)} alt="" className="size-5" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate">{u.file_name}</p>
-                  <p className="text-[11px] text-muted-foreground">
-                    {humanSize(u.size_bytes)} · {u.uploader_name || u.uploader_email || 'Anonymous'} · {timeAgo(u.created_at)}
-                  </p>
-                </div>
-                <a href={`${API_BASE}/api/files/${u.file_id}/download`} download className="size-7 rounded-md flex items-center justify-center hover:bg-muted shrink-0" title="Download">
-                  <Download className="size-3.5 text-muted-foreground" />
-                </a>
-              </div>
-            ))
-          )}
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
-}
