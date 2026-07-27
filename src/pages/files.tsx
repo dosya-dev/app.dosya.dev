@@ -249,6 +249,7 @@ export default function FilesPage() {
   const [renameTarget, setRenameTarget] = useState<{ id: string; name: string; type: 'file' | 'folder' } | null>(null);
   const [renameName, setRenameName] = useState('');
   const [moveOpen, setMoveOpen] = useState<{ id: string; type: 'file' | 'folder' } | null>(null);
+  const [bulkMoveOpen, setBulkMoveOpen] = useState(false);
   const [highlightId, setHighlightId] = useState<string | null>(null);
   const highlightTimer = useRef<number | null>(null);
   // Guards the one-shot restore of an open file/viewer from the URL on first load,
@@ -529,31 +530,47 @@ export default function FilesPage() {
 
   const bulkDelete = async () => {
     try {
-      await api('/api/files/batch-delete', { method: 'POST', body: JSON.stringify({ file_ids: Array.from(selected), workspace_id: wsId }) });
-      toast.success('Deleted', `${selected.size} files were deleted.`); clearSelection(); loadFiles();
-    } catch { toast.error('Delete failed', 'The selected files could not be deleted.'); }
+      await api('/api/files/batch-delete', { method: 'POST', body: JSON.stringify({
+        workspace_id: wsId,
+        file_ids: Array.from(selected),
+        folder_ids: Array.from(selectedFolders),
+      }) });
+      toast.success('Deleted', `${totalSelected} item${totalSelected === 1 ? '' : 's'} deleted.`);
+      clearSelection(); loadFiles();
+    } catch { toast.error('Delete failed', 'The selected items could not be deleted.'); }
   };
 
   const bulkDownloadZip = async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/files/download-zip`, {
+      const res = await fetch(`${API_BASE}/api/files/download-archive`, {
         method: 'POST', credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ file_ids: Array.from(selected) }),
+        body: JSON.stringify({ file_ids: Array.from(selected), folder_ids: Array.from(selectedFolders) }),
       });
       if (!res.ok) { toast.error('Download failed', 'The download could not be prepared.'); return; }
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
-      const a = document.createElement('a'); a.href = url; a.download = 'files.zip'; a.click();
+      const a = document.createElement('a'); a.href = url; a.download = 'dosya-download.zip'; a.click();
       URL.revokeObjectURL(url);
       toast.success('Downloaded', 'Download started');
     } catch { toast.error('Download failed', 'The download could not be prepared.'); }
   };
 
-  const bulkMove = () => {
-    if (selected.size === 0) return;
-    // Use the first selected file to open move modal
-    setMoveOpen({ id: Array.from(selected)[0], type: 'file' });
+  const bulkMove = () => { if (totalSelected > 0) setBulkMoveOpen(true); };
+
+  const applyBulkMove = async (destFolderId: string | null) => {
+    let ok = 0, fail = 0;
+    for (const id of selected) {
+      try { await api(`/api/files/${id}/move`, { method: 'PUT', body: JSON.stringify({ folder_id: destFolderId }) }); ok++; }
+      catch { fail++; }
+    }
+    for (const id of selectedFolders) {
+      try { await api(`/api/folders/${id}/move`, { method: 'PUT', body: JSON.stringify({ parent_id: destFolderId }) }); ok++; }
+      catch { fail++; } // circular-move / already-here errors land here
+    }
+    setBulkMoveOpen(false); clearSelection(); loadFiles();
+    if (fail === 0) toast.success('Moved', `${ok} item${ok === 1 ? '' : 's'} moved.`);
+    else toast.info('Move finished', `${ok} moved, ${fail} skipped (e.g. can't move a folder into itself).`);
   };
 
   const bulkRestore = async () => {
@@ -756,9 +773,9 @@ export default function FilesPage() {
       </div>
 
       {/* Bulk bar */}
-      {selected.size > 0 && (
+      {totalSelected > 0 && (
         <div className="flex items-center gap-2 px-5 py-2 bg-primary/10 border-b shrink-0 flex-wrap">
-          <Badge variant="secondary">{selected.size} selected</Badge>
+          <Badge variant="secondary">{totalSelected} selected</Badge>
           {isDeletedView ? (
             <>
               <Button variant="outline" size="sm" className="h-7 text-xs" onClick={bulkRestore}><RotateCcw className="size-3 mr-1" /> Restore</Button>
@@ -1034,6 +1051,20 @@ export default function FilesPage() {
           title="Move to folder"
           confirmLabel="Move"
           excludeId={moveOpen.type === 'folder' ? moveOpen.id : null}
+        />
+      )}
+
+      {/* Bulk move dialog */}
+      {bulkMoveOpen && (
+        <FolderPickerDialog
+          open
+          onClose={() => setBulkMoveOpen(false)}
+          workspaceId={wsId}
+          selectedId={null}
+          onSelect={(id) => applyBulkMove(id)}
+          title="Move to folder"
+          confirmLabel="Move"
+          excludeId={null}
         />
       )}
 
