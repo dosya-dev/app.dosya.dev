@@ -3,24 +3,67 @@ import type { UploadItem } from './upload-types';
 const KEY = 'dosya_uploads';
 const MAX_PERSISTED = 50;
 
-/** Persist the most recent items (bytes are never stored — items carry none). */
-export function saveItems(items: UploadItem[]): void {
+interface Envelope {
+  v: 2;
+  /** id of the account that wrote these items; null = pre-v2 legacy payload */
+  owner: string | null;
+  items: UploadItem[];
+}
+
+function loadEnvelope(): Envelope {
   try {
-    localStorage.setItem(KEY, JSON.stringify(items.slice(-MAX_PERSISTED)));
+    const raw = localStorage.getItem(KEY);
+    if (!raw) return { v: 2, owner: null, items: [] };
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) return { v: 2, owner: null, items: parsed as UploadItem[] }; // legacy
+    if (parsed && Array.isArray(parsed.items)) {
+      return { v: 2, owner: parsed.owner ?? null, items: parsed.items as UploadItem[] };
+    }
+    return { v: 2, owner: null, items: [] };
+  } catch {
+    return { v: 2, owner: null, items: [] };
+  }
+}
+
+function saveEnvelope(env: Envelope): void {
+  try {
+    localStorage.setItem(
+      KEY,
+      JSON.stringify({ ...env, items: env.items.slice(-MAX_PERSISTED) }),
+    );
   } catch {
     // quota exceeded or storage unavailable — non-fatal
   }
 }
 
+/** Persist the most recent items, preserving the current owner stamp. */
+export function saveItems(items: UploadItem[]): void {
+  saveEnvelope({ ...loadEnvelope(), items });
+}
+
 export function loadItems(): UploadItem[] {
+  return loadEnvelope().items;
+}
+
+export function clearPersisted(): void {
   try {
-    const raw = localStorage.getItem(KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? (parsed as UploadItem[]) : [];
+    localStorage.removeItem(KEY);
   } catch {
-    return [];
+    // non-fatal
   }
+}
+
+/**
+ * Called once the logged-in user is known. If the persisted items belong to a
+ * DIFFERENT account, wipe them (they must never resurface in this session's
+ * dock); either way stamp the storage with the current owner and return the
+ * surviving items.
+ */
+export function claimOwner(userId: string): UploadItem[] {
+  const env = loadEnvelope();
+  const items = env.owner !== null && env.owner !== userId ? [] : env.items;
+  saveEnvelope({ v: 2, owner: userId, items });
+  return items;
 }
 
 /**

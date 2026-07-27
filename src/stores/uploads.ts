@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { UploadItem } from '@/lib/upload-types';
-import { saveItems, loadAndHydrate } from '@/lib/upload-persistence';
+import { saveItems, loadAndHydrate, clearPersisted, claimOwner } from '@/lib/upload-persistence';
 
 export interface UploadSummary {
   total: number;
@@ -44,6 +44,10 @@ interface UploadsState {
   clearFinished: () => void;
   setItems: (items: UploadItem[]) => void;
   hydrate: () => void;
+  /** Logout: drop everything, memory + localStorage. */
+  reset: () => void;
+  /** After /api/me resolves: discard items persisted by a different account. */
+  pruneForOwner: (userId: string) => void;
 }
 
 export const useUploads = create<UploadsState>((set, get) => ({
@@ -78,5 +82,12 @@ export const useUploads = create<UploadsState>((set, get) => ({
     const items = loadAndHydrate();
     set({ items });
     saveItems(items);
+  },
+  reset: () => {
+    set({ items: [] });
+    clearPersisted();
+  },
+  pruneForOwner: (userId) => {
+    set({ items: claimOwner(userId) });
   },
 }));
