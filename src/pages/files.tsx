@@ -23,7 +23,7 @@ import {
   DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Card } from '@/components/ui/card';
-import { Checkbox } from '@/components/ui/checkbox';
+import { SelectCheckbox } from '@/components/select-checkbox';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -905,10 +905,9 @@ export default function FilesPage() {
                         onClick={(e) => { if (e.ctrlKey || e.metaKey) { e.stopPropagation(); toggleSelectFolder(f.id); } else navigateToFolder(f.id); }}
                         onContextMenu={(e) => onContextMenu(e, 'folder', f)}
                       >
-                        <Checkbox
+                        <SelectCheckbox
                           checked={selectedFolders.has(f.id)}
                           onCheckedChange={() => toggleSelectFolder(f.id)}
-                          onClick={(e) => e.stopPropagation()}
                           className={`size-4 shrink-0 transition-all ${selectedFolders.has(f.id) ? '' : 'opacity-0 group-hover:opacity-100'} ${totalSelected > 0 ? 'opacity-100!' : ''}`}
                         />
                         <span className="relative shrink-0">
@@ -952,10 +951,9 @@ export default function FilesPage() {
                         onClick={(e) => { e.stopPropagation(); if (e.ctrlKey || e.metaKey) toggleSelect(f.id); else openFileWithLockCheck(f, 'detail'); }}
                         onContextMenu={(e) => onContextMenu(e, 'file', f)}
                       >
-                        <Checkbox
+                        <SelectCheckbox
                           checked={isSel}
                           onCheckedChange={() => toggleSelect(f.id)}
-                          onClick={(e) => e.stopPropagation()}
                           className={`size-4 shrink-0 transition-all ${isSel ? '' : 'opacity-0 group-hover:opacity-100'} ${selected.size > 0 ? 'opacity-100!' : ''}`}
                         />
                         <RowThumbnail fileId={f.id} fileName={f.name} />
@@ -1229,10 +1227,9 @@ function FolderCard({ folder, selected, anySelected, onClick, onSelect, onContex
 
   return (
     <Card className={`gap-0 py-0 p-3 hover:shadow-md hover:-translate-y-px transition-all cursor-pointer group relative ${selected ? 'ring-2 ring-primary' : ''}`} onClick={onClick} onContextMenu={onContextMenu}>
-      <Checkbox
+      <SelectCheckbox
         checked={!!selected}
         onCheckedChange={() => onSelect()}
-        onClick={(e) => e.stopPropagation()}
         className={`absolute top-2 right-2 z-20 size-4 transition-all ${selected ? '' : 'opacity-0 group-hover:opacity-100'} ${anySelected ? 'opacity-100!' : ''}`}
       />
       <div className="flex items-center gap-2 mb-2">
@@ -1260,10 +1257,9 @@ function FileCard({ file, view, selected, anySelected, active, highlight, domId,
   if (view === 'list') {
     return (
       <div id={domId} className={`flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-muted/50 cursor-pointer group ${highlight ? 'animate-upload-flash ' : ''}${active ? 'bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-900' : selected ? 'bg-primary/10' : ''}`} onClick={onClick} onContextMenu={onContextMenu}>
-        <Checkbox
+        <SelectCheckbox
           checked={selected}
           onCheckedChange={() => onSelect()}
-          onClick={(e) => e.stopPropagation()}
           className={`size-4 shrink-0 transition-all ${selected ? '' : 'opacity-0 group-hover:opacity-100'} ${anySelected ? 'opacity-100!' : ''}`}
         />
         <img src={fileIconSrc(file.name)} alt={ext} className="w-7 h-7 shrink-0" />
@@ -1290,10 +1286,9 @@ function FileCard({ file, view, selected, anySelected, active, highlight, domId,
 
       {/* Top-left: multi-select checkbox (hidden for fully-locked files) */}
       {file.lock_mode !== 'full_lock' && (
-        <Checkbox
+        <SelectCheckbox
           checked={selected}
           onCheckedChange={() => onSelect()}
-          onClick={(e) => e.stopPropagation()}
           className={`absolute top-2 left-2 z-20 size-5 rounded-full border-white/70 bg-black/30 backdrop-blur-sm transition-all data-[state=checked]:bg-primary data-[state=checked]:border-primary ${selected ? '' : 'opacity-0 group-hover:opacity-100'} ${anySelected ? 'opacity-100!' : ''}`}
         />
       )}
