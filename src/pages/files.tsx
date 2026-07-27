@@ -160,6 +160,7 @@ export default function FilesPage() {
     });
   };
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [selectedFolders, setSelectedFolders] = useState<Set<string>>(new Set());
   const [dragging, setDragging] = useState(false);
 
   // Detail panel
@@ -296,7 +297,7 @@ export default function FilesPage() {
         lastItemCount.current = data.folders.length + data.files.length;
         setBreadcrumbs(data.breadcrumbs);
         if (data.pagination) setPagination(data.pagination);
-        setSelected(new Set());
+        clearSelection();
       }
     } catch { /* */ }
     setLoading(false);
@@ -435,6 +436,7 @@ export default function FilesPage() {
   // ── Actions ────────────────────────────────────────────────
 
   const navigateToFolder = (folderId: string | null) => {
+    clearSelection();
     setSearchParams(folderNavParams(searchParams, folderId));
   };
 
@@ -513,14 +515,22 @@ export default function FilesPage() {
     setSelected((prev) => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
   };
 
+  const toggleSelectFolder = (id: string) => {
+    setSelectedFolders((prev) => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
+  };
+
   const selectAll = useCallback(() => {
     setSelected(new Set(files.filter((f) => f.lock_mode !== 'full_lock' || unlockedFiles.has(f.id)).map((f) => f.id)));
-  }, [files, unlockedFiles]);
+    setSelectedFolders(new Set(folders.map((f) => f.id)));
+  }, [files, folders, unlockedFiles]);
+
+  const clearSelection = () => { setSelected(new Set()); setSelectedFolders(new Set()); };
+  const totalSelected = selected.size + selectedFolders.size;
 
   const bulkDelete = async () => {
     try {
       await api('/api/files/batch-delete', { method: 'POST', body: JSON.stringify({ file_ids: Array.from(selected), workspace_id: wsId }) });
-      toast.success('Deleted', `${selected.size} files were deleted.`); setSelected(new Set()); loadFiles();
+      toast.success('Deleted', `${selected.size} files were deleted.`); clearSelection(); loadFiles();
     } catch { toast.error('Delete failed', 'The selected files could not be deleted.'); }
   };
 
@@ -550,14 +560,14 @@ export default function FilesPage() {
     for (const id of selected) {
       try { await api(`/api/files/${id}`, { method: 'PUT' }); } catch {}
     }
-    toast.success('Restored', `${selected.size} files restored`); setSelected(new Set()); loadFiles();
+    toast.success('Restored', `${selected.size} files restored`); clearSelection(); loadFiles();
   };
 
   const bulkPermanentDelete = async () => {
     for (const id of selected) {
       try { await api(`/api/files/${id}/permanent`, { method: 'DELETE' }); } catch {}
     }
-    toast.success('Deleted', `${selected.size} files permanently deleted`); setSelected(new Set()); loadFiles();
+    toast.success('Deleted', `${selected.size} files permanently deleted`); clearSelection(); loadFiles();
   };
 
 
@@ -764,7 +774,7 @@ export default function FilesPage() {
           )}
           <div className="ml-auto flex gap-1.5">
             <Button variant="outline" size="sm" className="h-7 text-xs" onClick={selectAll}>Select all</Button>
-            <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setSelected(new Set())}>Clear</Button>
+            <Button variant="outline" size="sm" className="h-7 text-xs" onClick={clearSelection}>Clear</Button>
           </div>
         </div>
       )}
@@ -803,7 +813,10 @@ export default function FilesPage() {
                   <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
                     {folders.map((f) => (
                       <FolderCard key={f.id} folder={f}
-                        onClick={() => navigateToFolder(f.id)}
+                        selected={selectedFolders.has(f.id)}
+                        anySelected={totalSelected > 0}
+                        onClick={(e) => { if (e.ctrlKey || e.metaKey) { e.stopPropagation(); toggleSelectFolder(f.id); } else navigateToFolder(f.id); }}
+                        onSelect={() => toggleSelectFolder(f.id)}
                         onContextMenu={(e) => onContextMenu(e, 'folder', f)} />
                     ))}
                   </div>
@@ -853,11 +866,16 @@ export default function FilesPage() {
                     return (
                       <div
                         key={f.id}
-                        className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-muted/50 cursor-pointer group"
-                        onClick={() => navigateToFolder(f.id)}
+                        className={`flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-muted/50 cursor-pointer group ${selectedFolders.has(f.id) ? 'bg-primary/10' : ''}`}
+                        onClick={(e) => { if (e.ctrlKey || e.metaKey) { e.stopPropagation(); toggleSelectFolder(f.id); } else navigateToFolder(f.id); }}
                         onContextMenu={(e) => onContextMenu(e, 'folder', f)}
                       >
-                        <div className="w-4 shrink-0" />
+                        <Checkbox
+                          checked={selectedFolders.has(f.id)}
+                          onCheckedChange={() => toggleSelectFolder(f.id)}
+                          onClick={(e) => e.stopPropagation()}
+                          className={`size-4 shrink-0 transition-all ${selectedFolders.has(f.id) ? '' : 'opacity-0 group-hover:opacity-100'} ${totalSelected > 0 ? 'opacity-100!' : ''}`}
+                        />
                         <span className="relative shrink-0">
                           <img src={folderIconSrc(f.file_count, !!f.is_synced)} alt="" className="w-7 h-7 object-contain" />
                           <OriginBadge origin={f.origin} />
@@ -1152,13 +1170,20 @@ export default function FilesPage() {
 
 // ── Folder Card ────────────────────────────────────────────
 
-function FolderCard({ folder, onClick, onContextMenu }: {
-  folder: FolderItem; onClick: () => void; onContextMenu: (e: ReactMouseEvent) => void;
+function FolderCard({ folder, selected, anySelected, onClick, onSelect, onContextMenu }: {
+  folder: FolderItem; selected?: boolean; anySelected?: boolean;
+  onClick: (e: ReactMouseEvent) => void; onSelect: () => void; onContextMenu: (e: ReactMouseEvent) => void;
 }) {
   const iconSrc = folderIconSrc(folder.file_count, !!folder.is_synced);
 
   return (
-    <Card className="gap-0 py-0 p-3 hover:shadow-md hover:-translate-y-px transition-all cursor-pointer group" onClick={onClick} onContextMenu={onContextMenu}>
+    <Card className={`gap-0 py-0 p-3 hover:shadow-md hover:-translate-y-px transition-all cursor-pointer group relative ${selected ? 'ring-2 ring-primary' : ''}`} onClick={onClick} onContextMenu={onContextMenu}>
+      <Checkbox
+        checked={!!selected}
+        onCheckedChange={() => onSelect()}
+        onClick={(e) => e.stopPropagation()}
+        className={`absolute top-2 right-2 z-20 size-4 transition-all ${selected ? '' : 'opacity-0 group-hover:opacity-100'} ${anySelected ? 'opacity-100!' : ''}`}
+      />
       <div className="flex items-center gap-2 mb-2">
         <span className="relative">
           <img src={iconSrc} alt="" className="size-6" />
