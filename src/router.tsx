@@ -7,6 +7,7 @@ import UploadsPage from '@/pages/uploads';
 import SettingsPage from '@/pages/settings';
 import ProfilePage from '@/pages/profile';
 import FilesPage from '@/pages/files';
+import EncryptedPage from '@/pages/encrypted';
 import MapPage from '@/pages/map';
 import CreateWorkspacePage from '@/pages/create-workspace';
 import TeamsPage from '@/pages/teams';
@@ -76,6 +77,7 @@ export const router = createBrowserRouter([
       { path: '/integrations/rest-api', element: <RestApiSetup /> },
       { path: '/integrations/google', element: <GoogleSetup /> },
       { path: '/shared', element: <SharedPage /> },
+      { path: '/encrypted', element: <EncryptedPage /> },
       { path: '/comments', element: <CommentsPage /> },
       { path: '/activity', element: <ActivityPage /> },
       { path: '/notifications', element: <NotificationsPage /> },

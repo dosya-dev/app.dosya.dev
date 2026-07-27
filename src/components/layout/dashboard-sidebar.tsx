@@ -12,7 +12,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import {
   LayoutDashboard, FolderOpen, Upload, Share2, Users, Settings,
-  ChevronsUpDown, Plus, Check, Loader2, Plug,
+  ChevronsUpDown, Plus, Check, Loader2, Plug, Lock,
 } from 'lucide-react';
 import { api, API_BASE } from '@/api/client';
 import { useWorkspace } from '@/stores/workspace';
@@ -34,6 +34,7 @@ const navItems = [
   { title: 'Files', url: '/files', icon: FolderOpen },
   { title: 'Uploads', url: '/uploads', icon: Upload },
   { title: 'Shared', url: '/shared', icon: Share2 },
+  { title: 'Encrypted', url: '/encrypted', icon: Lock },
 ];
 
 const workspaceItems = [
