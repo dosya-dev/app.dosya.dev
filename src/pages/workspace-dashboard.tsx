@@ -75,7 +75,7 @@ export default function WorkspaceDashboardPage() {
               </div>
               {/* Stacked-by-workspace usage bar */}
               <div className="h-2.5 bg-border rounded-full overflow-hidden">
-                <div className="h-full flex rounded-full overflow-hidden" style={{ width: `${pct}%` }}>
+                <div className="h-full flex overflow-hidden" style={{ width: `${pct}%` }}>
                   {segments.length === 0 ? (
                     <div className="h-full w-full" style={{ background: storageColor(pct) }} />
                   ) : segments.map((seg) => {
