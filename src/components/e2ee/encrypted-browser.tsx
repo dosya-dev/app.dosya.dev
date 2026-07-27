@@ -1,5 +1,6 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useE2ee, type EncryptedEntry } from '@/stores/e2ee';
+import { MembersPanel } from '@/components/e2ee/members-panel';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
@@ -10,7 +11,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
 import {
-  ShieldCheck, LogOut, Plus, Folder, File, Upload, Download, Info, ChevronRight,
+  ShieldCheck, LogOut, Plus, Folder, File, Upload, Download, Info, ChevronRight, Users,
 } from 'lucide-react';
 
 /**
@@ -30,12 +31,15 @@ export function EncryptedBrowser() {
   const lock = useE2ee((s) => s.lock);
   const createWorkspace = useE2ee((s) => s.createWorkspace);
   const openWorkspace = useE2ee((s) => s.openWorkspace);
+  const refreshSharedWorkspaces = useE2ee((s) => s.refreshSharedWorkspaces);
   const refreshFolder = useE2ee((s) => s.refreshFolder);
+  const refreshMembers = useE2ee((s) => s.refreshMembers);
   const uploadFiles = useE2ee((s) => s.uploadFiles);
   const downloadEntry = useE2ee((s) => s.downloadEntry);
 
   const [newWsOpen, setNewWsOpen] = useState(false);
   const [newWsName, setNewWsName] = useState('');
+  const [membersOpen, setMembersOpen] = useState(false);
   const [dragging, setDragging] = useState(false);
   // Subfolder navigation: the store's refreshFolder/uploadFiles/downloadEntry
   // all accept an optional folderId, and listFolder can return kind:'folder'
@@ -48,6 +52,14 @@ export function EncryptedBrowser() {
   const activeWorkspace = workspaces.find((w) => w.id === activeWorkspaceId) ?? null;
   const currentFolderId = folderPath.length > 0 ? folderPath[folderPath.length - 1].id : '';
 
+  // On mount (i.e. right after unlock — this component only renders once
+  // status === 'unlocked') pull in any workspaces shared with this account,
+  // so an invitee sees them in the bar below without a manual refresh.
+  useEffect(() => {
+    refreshSharedWorkspaces();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const handleSelectWorkspace = async (id: string) => {
     setFolderPath([]);
     await openWorkspace(id);
@@ -57,6 +69,7 @@ export function EncryptedBrowser() {
     // "Could not load folder." message.
     if (useE2ee.getState().activeWorkspaceId === id) {
       await refreshFolder('');
+      await refreshMembers();
     }
   };
 
@@ -146,13 +159,16 @@ export function EncryptedBrowser() {
           <button
             key={ws.id}
             onClick={() => handleSelectWorkspace(ws.id)}
-            className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+            className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
               ws.id === activeWorkspaceId
                 ? 'border-primary bg-primary/10 text-primary'
                 : 'text-muted-foreground hover:bg-muted/60'
             }`}
           >
             {ws.name}
+            {!ws.selfFounded && (
+              <Badge variant="secondary" className="text-[9px]">Shared</Badge>
+            )}
           </button>
         ))}
         <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setNewWsOpen(true)}>
@@ -191,9 +207,14 @@ export function EncryptedBrowser() {
                 </span>
               ))}
             </div>
-            <Button size="sm" className="gap-1.5 shrink-0" onClick={() => fileInputRef.current?.click()} disabled={busy}>
-              <Upload className="size-3.5" /> Upload
-            </Button>
+            <div className="flex shrink-0 items-center gap-1.5">
+              <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setMembersOpen(true)}>
+                <Users className="size-3.5" /> Members
+              </Button>
+              <Button size="sm" className="gap-1.5" onClick={() => fileInputRef.current?.click()} disabled={busy}>
+                <Upload className="size-3.5" /> Upload
+              </Button>
+            </div>
             <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFileInput} />
           </div>
 
@@ -254,6 +275,15 @@ export function EncryptedBrowser() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Members panel — invite/revoke + the §11/§8 disclosures */}
+      {activeWorkspace && (
+        <MembersPanel
+          open={membersOpen}
+          onOpenChange={setMembersOpen}
+          workspaceName={activeWorkspace.name}
+        />
+      )}
     </div>
   );
 }
