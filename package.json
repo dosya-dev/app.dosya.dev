@@ -14,6 +14,8 @@
     "deploy": "npm run build && wrangler pages deploy dist --project-name=dosya-web"
   },
   "dependencies": {
+    "@dosya-dev/e2ee-core": "file:../../packages/e2ee-core",
+    "@cloudflare/voprf-ts": "^1.0.0",
     "@base-ui/react": "^1.4.1",
     "@codemirror/lang-css": "^6.3.1",
     "@codemirror/lang-go": "^6.0.1",
