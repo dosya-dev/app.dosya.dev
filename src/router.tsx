@@ -36,9 +36,6 @@ import ForgotPasswordPage from '@/pages/forgot-password';
 import ResetPasswordPage from '@/pages/reset-password';
 import NotFoundPage from '@/pages/not-found';
 import ErrorPage from '@/pages/error-page';
-// SPIKE (feat/e2ee-core) — throwaway route, removed alongside the real E2EE
-// UI work. See apps/web/src/pages/e2ee-browser-check.tsx.
-import E2eeBrowserCheckPage from '@/pages/e2ee-browser-check';
 
 // Root layout: keeps the browser tab title in sync with the route for every page.
 function RootLayout() {
@@ -94,10 +91,6 @@ export const router = createBrowserRouter([
   { path: '/reset-password', element: <ResetPasswordPage /> },
   { path: '/dashboard', element: <Navigate to="/" replace /> },
   { path: '/create-workspace', element: <CreateWorkspacePage /> },
-  // SPIKE (feat/e2ee-core) — public/unauthenticated on purpose, so the
-  // Playwright check doesn't need a logged-in session. Remove with the rest
-  // of the spike.
-  { path: '/e2ee-browser-check', element: <E2eeBrowserCheckPage /> },
   { path: '*', element: <NotFoundPage /> },
     ],
   },
