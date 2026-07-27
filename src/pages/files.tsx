@@ -475,6 +475,21 @@ export default function FilesPage() {
 
   const handleDownload = (fileId: string) => { window.open(`${API_BASE}/api/files/${fileId}/download`, '_blank'); };
 
+  const handleDownloadFolder = async (folderId: string) => {
+    try {
+      const res = await fetch(`${API_BASE}/api/files/download-archive`, {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ folder_ids: [folderId] }),
+      });
+      if (!res.ok) { toast.error('Download failed', 'The folder could not be prepared.'); return; }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = 'dosya-download.zip'; a.click();
+      URL.revokeObjectURL(url);
+    } catch { toast.error('Download failed', 'The folder could not be prepared.'); }
+  };
+
   const handleCopy = async (fileId: string) => {
     try {
       await api(`/api/files/${fileId}/copy`, { method: 'POST', body: JSON.stringify({ folder_id: currentFolderId }) });
@@ -664,6 +679,7 @@ export default function FilesPage() {
 
   const folderCtxItems = (f: FolderItem) => [
     { label: 'Open', icon: <FolderOpen />, onClick: () => navigateToFolder(f.id) },
+    { label: 'Download', icon: <Download />, onClick: () => handleDownloadFolder(f.id) },
     { label: 'Get info', icon: <Info />, onClick: () => setInfoTarget({ type: 'folder', item: f }) },
     { label: '', separator: true, onClick: () => {}, icon: null },
     { label: 'Rename', icon: <Pencil />, onClick: () => { setRenameTarget({ id: f.id, name: f.name, type: 'folder' }); setRenameName(f.name); } },
@@ -913,7 +929,9 @@ export default function FilesPage() {
                         })}
                         <div className="w-8 shrink-0">
                           <FileDropdown
+                            onDownload={() => handleDownloadFolder(f.id)}
                             onRename={() => { setRenameTarget({ id: f.id, name: f.name, type: 'folder' }); setRenameName(f.name); }}
+                            onMove={() => openMoveModal(f.id, 'folder')}
                             onDelete={() => setDeleteTarget({ id: f.id, name: f.name, type: 'folder' })}
                             onAddToGroup={() => openAddToGroup(f.id, f.name, 'folder')}
                           />
