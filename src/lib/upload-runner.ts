@@ -265,6 +265,11 @@ export function cancel(id: string): void {
   updateUnloadGuard();
 }
 
+/** Abort every in-flight upload — used by logout so no XHR outlives the session. */
+export function cancelAll(): void {
+  for (const id of Array.from(activeXhr.keys())) cancel(id);
+}
+
 /** Retry an errored item whose File is still in memory (no re-pick needed). */
 export function retry(id: string): void {
   const item = getItem(id);
