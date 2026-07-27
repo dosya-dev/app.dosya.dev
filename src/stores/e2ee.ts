@@ -8,6 +8,9 @@ import {
   listFolder as engineListFolder,
   uploadFile as engineUploadFile,
   downloadFile as engineDownloadFile,
+  grantAccess as engineGrantAccess,
+  revokeAccess as engineRevokeAccess,
+  listMembers as engineListMembers,
   type Session,
   type Workspace,
   type FileDeps,
@@ -19,7 +22,8 @@ import { toast } from '@/lib/toast';
 
 export type E2eeStatus = 'locked' | 'unlocking' | 'unlocked';
 export type EncryptedEntry = { id: string; name: string; kind: 'file' | 'folder' };
-export type KnownWorkspace = { id: string; name: string };
+export type KnownWorkspace = { id: string; name: string; selfFounded: boolean };
+export type WorkspaceMember = { userId: string; email: string; ed25519Pub: string };
 
 /**
  * Crypto boundary: everything that touches keys/Session/Workspace lives
@@ -34,10 +38,24 @@ export interface E2eeEngine {
   unlock(passphrase: string): Promise<void>;
   lock(): void;
   createWorkspace(id: string): Promise<void>;
-  openWorkspace(id: string): Promise<void>;
+  /**
+   * `selfFounded` is CALLER-supplied (never derived here from anything the
+   * server returns) — see `Workspace.selfFounded`'s doc comment in
+   * `workspace.ts`. The store sources this from the caller's OWN persisted
+   * `KnownWorkspace.selfFounded`, never from the server's `my-workspaces`.
+   */
+  openWorkspace(id: string, selfFounded: boolean): Promise<void>;
   listFolder(folderId: string): Promise<EncryptedEntry[]>;
   uploadFile(folderId: string, name: string, bytes: Uint8Array): Promise<void>;
   downloadFile(folderId: string, entryId: string): Promise<Uint8Array>;
+  /** The currently-open workspace's members (email + ed25519 signing pubkey for display/revoke). */
+  listMembers(): Promise<WorkspaceMember[]>;
+  /** Invite a dosya user (by email) into the currently-open workspace. */
+  inviteMember(email: string): Promise<void>;
+  /** Revoke a member's access to the currently-open workspace. `ed25519Pub` is their signing pubkey (from `listMembers`). */
+  revokeMember(userId: string, ed25519Pub: string): Promise<void>;
+  /** Discovery (P2c): every workspace id the caller is currently a member of, per the server. */
+  listMyWorkspaces(): Promise<{ workspaceId: string }[]>;
 }
 
 /**
@@ -80,17 +98,15 @@ export function defaultEngine(): E2eeEngine {
       ws = await engineCreateWorkspace(api, session, id);
     },
 
-    async openWorkspace(id) {
+    async openWorkspace(id, selfFounded) {
       if (!session) throw new Error('e2ee: locked');
       // e2ee-core (P2b-log Task 2 fix): `selfFounded` must come from OUR OWN
       // persisted state, never from anything the server returns while
       // opening — see workspace.ts's `openWorkspace` doc comment for why a
-      // server-derived value is a forge vector. Every id in the store's
-      // `workspaces` list got there via `createWorkspace` (this account
-      // created it), so it's always safe/correct to assert founder status
-      // here.
-      // TODO(P2c): shared workspaces pass selfFounded:false
-      ws = await engineOpenWorkspace(api, session, id, { selfFounded: true });
+      // server-derived value is a forge vector. The store (never this
+      // facade) decides the value: true for a workspace this account
+      // created, false for one merely discovered/shared (TOFU).
+      ws = await engineOpenWorkspace(api, session, id, { selfFounded });
     },
 
     async listFolder(folderId) {
@@ -106,6 +122,25 @@ export function defaultEngine(): E2eeEngine {
     async downloadFile(folderId, entryId) {
       return await engineDownloadFile(fileDeps(), folderId, entryId);
     },
+
+    async listMembers() {
+      if (!ws) throw new Error('e2ee: no active workspace');
+      return await engineListMembers(api, ws);
+    },
+
+    async inviteMember(email) {
+      if (!session || !ws) throw new Error('e2ee: no active workspace');
+      await engineGrantAccess(api, session, ws, email);
+    },
+
+    async revokeMember(userId, ed25519Pub) {
+      if (!session || !ws) throw new Error('e2ee: no active workspace');
+      await engineRevokeAccess(api, session, ws, userId, ed25519Pub);
+    },
+
+    async listMyWorkspaces() {
+      return await api.listMyWorkspaces();
+    },
   };
 }
 
@@ -117,6 +152,8 @@ interface E2eeState {
   workspaces: KnownWorkspace[];
   activeWorkspaceId: string | null;
   entries: EncryptedEntry[];
+  /** The currently-open workspace's members. In-memory only — cleared on lock, never persisted. */
+  members: WorkspaceMember[];
   busy: boolean;
   /** The recovery key, shown ONCE right after setup. Never persisted. */
   recoveryKeyOnce: string | null;
@@ -129,9 +166,17 @@ interface E2eeState {
   lock(): void;
   createWorkspace(name: string): Promise<void>;
   openWorkspace(id: string): Promise<void>;
+  /** Discover workspaces shared with this account (P2c) and merge any not already known as `selfFounded:false`, WITHOUT ever downgrading an existing created (`selfFounded:true`) entry. */
+  refreshSharedWorkspaces(): Promise<void>;
   refreshFolder(folderId?: string): Promise<void>;
   uploadFiles(files: FileList | File[], folderId?: string): Promise<void>;
   downloadEntry(entryId: string, name: string, folderId?: string): Promise<void>;
+  /** Refresh `members` from the currently-open workspace. */
+  refreshMembers(): Promise<void>;
+  /** Invite a dosya user (by email) into the currently-open workspace, then refresh `members`. */
+  inviteMember(email: string): Promise<void>;
+  /** Revoke a member's access to the currently-open workspace, then refresh `members`. */
+  revokeMember(userId: string, ed25519Pub: string): Promise<void>;
   dismissRecoveryKey(): void;
   /** Test seam: swap in a fake `E2eeEngine`. */
   __setEngine(engine: E2eeEngine): void;
@@ -153,6 +198,7 @@ export const useE2ee = create<E2eeState>()(
       workspaces: [],
       activeWorkspaceId: null,
       entries: [],
+      members: [],
       busy: false,
       recoveryKeyOnce: null,
       saver: saveBytes,
@@ -207,7 +253,7 @@ export const useE2ee = create<E2eeState>()(
 
       lock() {
         get().engine.lock();
-        set({ status: 'locked', entries: [], activeWorkspaceId: null, error: null });
+        set({ status: 'locked', entries: [], activeWorkspaceId: null, members: [], error: null });
       },
 
       async createWorkspace(name) {
@@ -216,7 +262,10 @@ export const useE2ee = create<E2eeState>()(
         try {
           await get().engine.createWorkspace(id);
           set((s) => ({
-            workspaces: [...s.workspaces, { id, name }],
+            // SECURITY: this account created `id` — it is hard-anchored,
+            // selfFounded:true, forever (persisted below via `partialize`).
+            // A later `refreshSharedWorkspaces()` must never downgrade this.
+            workspaces: [...s.workspaces, { id, name, selfFounded: true }],
             activeWorkspaceId: id,
             busy: false,
           }));
@@ -228,10 +277,32 @@ export const useE2ee = create<E2eeState>()(
       async openWorkspace(id) {
         set({ busy: true, error: null });
         try {
-          await get().engine.openWorkspace(id);
-          set({ activeWorkspaceId: id, busy: false });
+          // SECURITY: `selfFounded` comes ONLY from our own persisted
+          // `workspaces` list (client-authored — created via createWorkspace,
+          // or merged in as false by refreshSharedWorkspaces) — NEVER from
+          // the server. Default false (safe) for an id we don't recognize at
+          // all: a genuinely-shared workspace we haven't discovered yet via
+          // refreshSharedWorkspaces should still open as TOFU, not founder.
+          const known = get().workspaces.find((w) => w.id === id);
+          await get().engine.openWorkspace(id, known?.selfFounded ?? false);
+          set({ activeWorkspaceId: id, members: [], busy: false });
         } catch (e) {
           set({ busy: false, error: errorMessage(e, 'Could not open workspace.') });
+        }
+      },
+
+      async refreshSharedWorkspaces() {
+        try {
+          const mine = await get().engine.listMyWorkspaces();
+          set((s) => {
+            const known = new Set(s.workspaces.map((w) => w.id));
+            const discovered: KnownWorkspace[] = mine
+              .filter((m) => !known.has(m.workspaceId))
+              .map((m) => ({ id: m.workspaceId, name: 'Shared workspace', selfFounded: false }));
+            return discovered.length > 0 ? { workspaces: [...s.workspaces, ...discovered] } : {};
+          });
+        } catch (e) {
+          set({ error: errorMessage(e, 'Could not check for shared workspaces.') });
         }
       },
 
@@ -274,6 +345,49 @@ export const useE2ee = create<E2eeState>()(
         }
       },
 
+      async refreshMembers() {
+        set({ busy: true, error: null });
+        try {
+          const members = await get().engine.listMembers();
+          set({ members, busy: false });
+        } catch (e) {
+          set({ busy: false, error: errorMessage(e, 'Could not load members.') });
+        }
+      },
+
+      async inviteMember(email) {
+        set({ busy: true, error: null });
+        try {
+          await get().engine.inviteMember(email);
+          await get().refreshMembers();
+          set({ busy: false });
+          toast.success('Invited', email);
+        } catch (e) {
+          // The engine's directory-lookup failure is worded for a developer
+          // ("that user has no E2EE identity"); surface a friendly,
+          // user-facing message instead of leaking that phrasing verbatim.
+          const message =
+            e instanceof Error && e.message.includes('no E2EE identity')
+              ? "That user hasn't set up encryption yet"
+              : errorMessage(e, 'Could not invite that user.');
+          set({ busy: false, error: message });
+          toast.error('Invite failed', message);
+        }
+      },
+
+      async revokeMember(userId, ed25519Pub) {
+        set({ busy: true, error: null });
+        try {
+          await get().engine.revokeMember(userId, ed25519Pub);
+          await get().refreshMembers();
+          set({ busy: false });
+          toast.success('Access revoked');
+        } catch (e) {
+          set({ busy: false, error: errorMessage(e, 'Could not revoke that member.') });
+          toast.error('Revoke failed', errorMessage(e, 'Could not revoke that member.'));
+        }
+      },
+
       dismissRecoveryKey() {
         set({ recoveryKeyOnce: null });
       },
@@ -290,7 +404,12 @@ export const useE2ee = create<E2eeState>()(
       name: 'dosya_e2ee',
       // The KEK/Session/private keys/recovery key live in memory ONLY —
       // never write them (or the engine instance itself) to localStorage.
-      // Persist ONLY the non-secret workspace id+name hints.
+      // Persist ONLY the non-secret workspace id+name+selfFounded hints
+      // (selfFounded is itself the client-authored anchor `openWorkspace`
+      // relies on — see its doc comment above — so it MUST persist here).
+      // `members` is likewise in-memory only (cleared on lock/workspace
+      // switch) and deliberately excluded: this is an ALLOWLIST, so it drops
+      // anything not named here regardless.
       partialize: (state) => ({ workspaces: state.workspaces }),
     },
   ),
