@@ -82,7 +82,15 @@ export function defaultEngine(): E2eeEngine {
 
     async openWorkspace(id) {
       if (!session) throw new Error('e2ee: locked');
-      ws = await engineOpenWorkspace(api, session, id);
+      // e2ee-core (P2b-log Task 2 fix): `selfFounded` must come from OUR OWN
+      // persisted state, never from anything the server returns while
+      // opening — see workspace.ts's `openWorkspace` doc comment for why a
+      // server-derived value is a forge vector. Every id in the store's
+      // `workspaces` list got there via `createWorkspace` (this account
+      // created it), so it's always safe/correct to assert founder status
+      // here.
+      // TODO(P2c): shared workspaces pass selfFounded:false
+      ws = await engineOpenWorkspace(api, session, id, { selfFounded: true });
     },
 
     async listFolder(folderId) {
