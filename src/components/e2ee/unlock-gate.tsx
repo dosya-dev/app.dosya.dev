@@ -43,7 +43,13 @@ export function UnlockGate() {
         </p>
       </div>
 
-      {hasIdentity === null && (
+      {/* hasIdentity is null while we're checking, OR when checkIdentity
+          couldn't tell (transient error). Only the latter gets an `error` —
+          never fall through to Setup here, or a network blip would let
+          `setup()` silently overwrite a returning user's real identity keys. */}
+      {hasIdentity === null && error && <RetryCard error={error} onRetry={checkIdentity} />}
+
+      {hasIdentity === null && !error && (
         <Card className="w-full">
           <CardHeader>
             <Skeleton className="h-5 w-40" />
@@ -56,13 +62,38 @@ export function UnlockGate() {
         </Card>
       )}
 
-      {hasIdentity === false && <SetupCard error={error} onRetry={checkIdentity} />}
+      {hasIdentity === false && <SetupCard error={error} />}
       {hasIdentity === true && <UnlockCard error={error} />}
     </div>
   );
 }
 
-function SetupCard({ error, onRetry }: { error: string | null; onRetry: () => void }) {
+/** hasIdentity===null with an error: checkIdentity couldn't determine
+ * whether an identity exists (e.g. transient network failure). Deliberately
+ * distinct from SetupCard/UnlockCard — offers a retry, not a form that could
+ * end up overwriting real keys. */
+function RetryCard({ error, onRetry }: { error: string; onRetry: () => void }) {
+  return (
+    <Card className="w-full">
+      <CardHeader>
+        <CardTitle className="text-base">Couldn&apos;t check encryption status</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="flex items-start gap-2 rounded-lg border border-amber-300/60 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-400">
+          <TriangleAlert className="mt-0.5 size-3.5 shrink-0" />
+          <div className="flex-1">
+            <p>{error}</p>
+            <button type="button" onClick={onRetry} className="mt-1 font-medium underline underline-offset-2">
+              Retry
+            </button>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function SetupCard({ error }: { error: string | null }) {
   const setup = useE2ee((s) => s.setup);
   const busy = useE2ee((s) => s.busy);
   const [pass, setPass] = useState('');
@@ -88,22 +119,11 @@ function SetupCard({ error, onRetry }: { error: string | null; onRetry: () => vo
       </CardHeader>
       <form onSubmit={handleSubmit}>
         <CardContent className="space-y-3">
-          {/* checkIdentity's catch swallows network/transient failures into
-              hasIdentity=false without necessarily setting `error` — but if a
-              caller-visible error IS present, don't let it masquerade as "no
-              identity found": surface it with a way back out instead of
-              silently pushing the user into first-time setup. */}
-          {error && (
-            <div className="flex items-start gap-2 rounded-lg border border-amber-300/60 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-400">
-              <TriangleAlert className="mt-0.5 size-3.5 shrink-0" />
-              <div className="flex-1">
-                <p>{error}</p>
-                <button type="button" onClick={onRetry} className="mt-1 font-medium underline underline-offset-2">
-                  Retry
-                </button>
-              </div>
-            </div>
-          )}
+          {/* Only ever a real `setup()` submission failure here (e.g. the
+              server call failed) — checkIdentity's own "couldn't tell"
+              errors never reach this card, since hasIdentity stays `null`
+              (not `false`) in that case; see the top-level RetryCard. */}
+          {error && <p className="text-xs text-destructive">{error}</p>}
           <div className="space-y-1.5">
             <Label htmlFor="e2ee-setup-pass">Passphrase</Label>
             <Input

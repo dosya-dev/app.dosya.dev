@@ -152,9 +152,15 @@ export const useE2ee = create<E2eeState>()(
       async checkIdentity() {
         try {
           const hasIdentity = await get().engine.hasIdentity();
-          set({ hasIdentity });
-        } catch {
-          set({ hasIdentity: false });
+          set({ hasIdentity, error: null });
+        } catch (e) {
+          // We genuinely don't know whether an identity exists — do NOT set
+          // `false` here. That would route a transient network blip into the
+          // first-time Setup flow, and `setup()` unconditionally upserts new
+          // identity keys, silently orphaning any real encrypted workspaces.
+          // Leave `hasIdentity` as `null` (unknown) and surface `error` so the
+          // gate shows a retry banner instead of Setup.
+          set({ hasIdentity: null, error: errorMessage(e, 'Could not check encryption status.') });
         }
       },
 

@@ -147,12 +147,37 @@ describe('useE2ee: lock', () => {
 });
 
 describe('useE2ee: checkIdentity', () => {
-  it('sets hasIdentity from the engine', async () => {
+  it('success (identity exists) sets hasIdentity=true and clears error', async () => {
+    useE2ee.getState().__setEngine(makeFakeEngine({ hasIdentity: async () => true }));
+
+    await useE2ee.getState().checkIdentity();
+
+    expect(useE2ee.getState().hasIdentity).toBe(true);
+    expect(useE2ee.getState().error).toBeNull();
+  });
+
+  it('success (no identity yet) sets hasIdentity=false and clears error', async () => {
     useE2ee.getState().__setEngine(makeFakeEngine({ hasIdentity: async () => false }));
 
     await useE2ee.getState().checkIdentity();
 
     expect(useE2ee.getState().hasIdentity).toBe(false);
+    expect(useE2ee.getState().error).toBeNull();
+  });
+
+  it('a transient error leaves hasIdentity=null (never false) and sets error — regression guard: showing Setup on a network blip lets setupIdentity silently overwrite real keys', async () => {
+    useE2ee.getState().__setEngine(
+      makeFakeEngine({
+        hasIdentity: async () => {
+          throw new Error('network blip');
+        },
+      }),
+    );
+
+    await useE2ee.getState().checkIdentity();
+
+    expect(useE2ee.getState().hasIdentity).toBeNull();
+    expect(useE2ee.getState().error).not.toBeNull();
   });
 });
 
