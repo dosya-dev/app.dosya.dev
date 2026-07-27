@@ -13,7 +13,7 @@ import { api, API_BASE } from '@/api/client';
 import { readCache, writeCache, applyTheme, subscribeThemeChange } from '@/lib/theme';
 import { useWorkspace } from '@/stores/workspace';
 import { useUploads } from '@/stores/uploads';
-import { cancelAll } from '@/lib/upload-runner';
+import { logoutAndRedirect } from '@/lib/logout';
 import { humanSize, colorFor, labelFor, initials } from '@/lib/helpers';
 import { titleForPath, iconForPath } from '@/lib/page-title';
 import { NotificationBell } from '../notifications/notification-bell';
@@ -78,15 +78,7 @@ export function DashboardTopbar() {
   };
 
   // Logout
-  const logout = async () => {
-    // Kill in-flight uploads and forget this account's upload history BEFORE
-    // leaving: localStorage survives the redirect, and the dock would rehydrate
-    // the previous account's items for whoever logs in next.
-    cancelAll();
-    useUploads.getState().reset();
-    await fetch(`${API_BASE}/api/auth/logout`, { method: 'POST', credentials: 'include' });
-    window.location.href = '/login';
-  };
+  const logout = logoutAndRedirect;
 
   // Search
   const performSearch = useCallback(async (q: string) => {

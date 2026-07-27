@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { api, API_BASE, ApiError, apiErrorMessage } from '@/api/client';
+import { api, ApiError, apiErrorMessage } from '@/api/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Loader2, LogOut, Plus, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useWorkspace } from '@/stores/workspace';
+import { logoutAndRedirect } from '@/lib/logout';
 
 const COLORS = [
   { value: '#22c55e', label: 'Green' },
@@ -106,10 +107,7 @@ export default function CreateWorkspacePage() {
     setCreating(false);
   };
 
-  const logout = async () => {
-    await fetch(`${API_BASE}/api/auth/logout`, { method: 'POST', credentials: 'include' });
-    window.location.href = '/login';
-  };
+  const logout = logoutAndRedirect;
 
   const showPicker = mode === 'select' && workspaces.length > 0;
 
