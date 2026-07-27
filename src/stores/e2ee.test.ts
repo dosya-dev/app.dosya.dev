@@ -1,6 +1,23 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useE2ee, type E2eeEngine, type EncryptedEntry, type KnownWorkspace } from './e2ee';
 
+// jsdom (this vitest env, v25.0.1) implements Blob/File storage but not the
+// async read methods (`arrayBuffer`/`text`) real browsers have long shipped —
+// only `FileReader` can pull bytes out. Polyfill just enough for the
+// `uploadFiles` test below to exercise the SAME `file.arrayBuffer()` call the
+// production store code makes; this is a test-environment shim only, never
+// shipped, and does not change what the store does in a real browser.
+if (typeof File.prototype.arrayBuffer !== 'function') {
+  File.prototype.arrayBuffer = function (this: File) {
+    return new Promise<ArrayBuffer>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as ArrayBuffer);
+      reader.onerror = () => reject(reader.error);
+      reader.readAsArrayBuffer(this);
+    });
+  };
+}
+
 function makeFakeEngine(overrides: Partial<E2eeEngine> = {}): E2eeEngine {
   return {
     hasIdentity: async () => true,
@@ -10,6 +27,8 @@ function makeFakeEngine(overrides: Partial<E2eeEngine> = {}): E2eeEngine {
     createWorkspace: async () => {},
     openWorkspace: async () => {},
     listFolder: async () => [],
+    uploadFile: async () => {},
+    downloadFile: async () => new Uint8Array(),
     ...overrides,
   };
 }
@@ -134,6 +153,59 @@ describe('useE2ee: checkIdentity', () => {
     await useE2ee.getState().checkIdentity();
 
     expect(useE2ee.getState().hasIdentity).toBe(false);
+  });
+});
+
+describe('useE2ee: uploadFiles', () => {
+  it('uploads each file\'s bytes via the engine, then refreshes the folder', async () => {
+    const uploadCalls: { folderId: string; name: string; text: string }[] = [];
+    let listFolderCalled = false;
+    useE2ee.getState().__setEngine(
+      makeFakeEngine({
+        uploadFile: async (folderId, name, bytes) => {
+          uploadCalls.push({ folderId, name, text: new TextDecoder().decode(bytes) });
+        },
+        listFolder: async () => {
+          listFolderCalled = true;
+          return [{ id: '1', name: 'a.txt', kind: 'file' }];
+        },
+      }),
+    );
+
+    const file = new File(['hello'], 'a.txt', { type: 'text/plain' });
+    await useE2ee.getState().uploadFiles([file]);
+
+    expect(uploadCalls).toHaveLength(1);
+    expect(uploadCalls[0].name).toBe('a.txt');
+    expect(uploadCalls[0].text).toBe('hello');
+    expect(uploadCalls[0].folderId).toBe('');
+    expect(listFolderCalled).toBe(true);
+    expect(useE2ee.getState().entries).toHaveLength(1);
+    expect(useE2ee.getState().busy).toBe(false);
+  });
+});
+
+describe('useE2ee: downloadEntry', () => {
+  it('downloads bytes via the engine and hands them to the injected saver', async () => {
+    const fakeBytes = new TextEncoder().encode('secret content');
+    let downloadedArgs: [string, string] | null = null;
+    useE2ee.getState().__setEngine(
+      makeFakeEngine({
+        downloadFile: async (_folderId, entryId) => {
+          expect(entryId).toBe('id1');
+          return fakeBytes;
+        },
+      }),
+    );
+    useE2ee.getState().__setSaver((name, bytes) => {
+      downloadedArgs = [name, new TextDecoder().decode(bytes)];
+    });
+
+    await useE2ee.getState().downloadEntry('id1', 'a.txt');
+
+    expect(downloadedArgs).toEqual(['a.txt', 'secret content']);
+    expect(useE2ee.getState().busy).toBe(false);
+    expect(useE2ee.getState().error).toBeNull();
   });
 });
 

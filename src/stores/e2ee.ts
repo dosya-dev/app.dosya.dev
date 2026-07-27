@@ -6,11 +6,16 @@ import {
   createWorkspace as engineCreateWorkspace,
   openWorkspace as engineOpenWorkspace,
   listFolder as engineListFolder,
+  uploadFile as engineUploadFile,
+  downloadFile as engineDownloadFile,
   type Session,
   type Workspace,
+  type FileDeps,
 } from '@dosya-dev/e2ee-client';
 import { toHex } from '@dosya-dev/e2ee-core';
 import { buildE2eeClient } from '@/lib/e2ee/client';
+import { saveBytes } from '@/lib/e2ee/save';
+import { toast } from '@/lib/toast';
 
 export type E2eeStatus = 'locked' | 'unlocking' | 'unlocked';
 export type EncryptedEntry = { id: string; name: string; kind: 'file' | 'folder' };
@@ -31,6 +36,8 @@ export interface E2eeEngine {
   createWorkspace(id: string): Promise<void>;
   openWorkspace(id: string): Promise<void>;
   listFolder(folderId: string): Promise<EncryptedEntry[]>;
+  uploadFile(folderId: string, name: string, bytes: Uint8Array): Promise<void>;
+  downloadFile(folderId: string, entryId: string): Promise<Uint8Array>;
 }
 
 /**
@@ -38,9 +45,15 @@ export interface E2eeEngine {
  * `Session`/`Workspace` in closure — neither is ever exposed to callers.
  */
 export function defaultEngine(): E2eeEngine {
-  const { api } = buildE2eeClient();
+  const { api, transport } = buildE2eeClient();
   let session: Session | null = null;
   let ws: Workspace | null = null;
+
+  /** Builds a fresh `FileDeps` for a single call, after asserting we're unlocked with an open workspace. */
+  function fileDeps(): FileDeps {
+    if (!session || !ws) throw new Error('e2ee: no active workspace');
+    return { api, transport, session, ws };
+  }
 
   return {
     async hasIdentity() {
@@ -77,6 +90,14 @@ export function defaultEngine(): E2eeEngine {
       const state = await engineListFolder(api, session, ws, folderId);
       return [...state.values()].map((e) => ({ id: e.id, name: e.name, kind: e.kind }));
     },
+
+    async uploadFile(folderId, name, bytes) {
+      await engineUploadFile(fileDeps(), folderId, name, bytes);
+    },
+
+    async downloadFile(folderId, entryId) {
+      return await engineDownloadFile(fileDeps(), folderId, entryId);
+    },
   };
 }
 
@@ -91,6 +112,8 @@ interface E2eeState {
   busy: boolean;
   /** The recovery key, shown ONCE right after setup. Never persisted. */
   recoveryKeyOnce: string | null;
+  /** Where `downloadEntry` hands decrypted bytes off to trigger a save. Swappable in tests (no DOM). */
+  saver: (name: string, bytes: Uint8Array) => void;
 
   checkIdentity(): Promise<void>;
   setup(passphrase: string): Promise<void>;
@@ -99,9 +122,13 @@ interface E2eeState {
   createWorkspace(name: string): Promise<void>;
   openWorkspace(id: string): Promise<void>;
   refreshFolder(folderId?: string): Promise<void>;
+  uploadFiles(files: FileList | File[], folderId?: string): Promise<void>;
+  downloadEntry(entryId: string, name: string, folderId?: string): Promise<void>;
   dismissRecoveryKey(): void;
   /** Test seam: swap in a fake `E2eeEngine`. */
   __setEngine(engine: E2eeEngine): void;
+  /** Test seam: swap in a fake saver (production default is the real `saveBytes`, DOM-dependent). */
+  __setSaver(saver: (name: string, bytes: Uint8Array) => void): void;
 }
 
 function errorMessage(e: unknown, fallback: string): string {
@@ -120,6 +147,7 @@ export const useE2ee = create<E2eeState>()(
       entries: [],
       busy: false,
       recoveryKeyOnce: null,
+      saver: saveBytes,
 
       async checkIdentity() {
         try {
@@ -203,12 +231,45 @@ export const useE2ee = create<E2eeState>()(
         }
       },
 
+      async uploadFiles(files, folderId = '') {
+        set({ busy: true, error: null });
+        try {
+          for (const file of Array.from(files)) {
+            const bytes = new Uint8Array(await file.arrayBuffer());
+            await get().engine.uploadFile(folderId, file.name, bytes);
+          }
+          await get().refreshFolder(folderId);
+          set({ busy: false });
+          toast.success('Uploaded', files.length === 1 ? Array.from(files)[0].name : `${files.length} files`);
+        } catch (e) {
+          set({ busy: false, error: errorMessage(e, 'Could not upload file.') });
+          toast.error('Upload failed', errorMessage(e, 'Could not upload file.'));
+        }
+      },
+
+      async downloadEntry(entryId, name, folderId = '') {
+        set({ busy: true, error: null });
+        try {
+          const bytes = await get().engine.downloadFile(folderId, entryId);
+          get().saver(name, bytes);
+          set({ busy: false });
+          toast.success('Downloaded', name);
+        } catch (e) {
+          set({ busy: false, error: errorMessage(e, 'Could not download file.') });
+          toast.error('Download failed', errorMessage(e, 'Could not download file.'));
+        }
+      },
+
       dismissRecoveryKey() {
         set({ recoveryKeyOnce: null });
       },
 
       __setEngine(engine) {
         set({ engine });
+      },
+
+      __setSaver(saver) {
+        set({ saver });
       },
     }),
     {
