@@ -191,8 +191,8 @@ describe('useE2ee: openWorkspace (store action)', () => {
 
 describe('useE2ee: members (refreshMembers/inviteMember/revokeMember)', () => {
   const fakeMembers = [
-    { userId: 'u1', email: 'a@example.com', ed25519Pub: 'ed-a' },
-    { userId: 'u2', email: 'b@example.com', ed25519Pub: 'ed-b' },
+    { userId: 'u1', email: 'a@example.com', ed25519Pub: 'ed-a', x25519Pub: 'x-a' },
+    { userId: 'u2', email: 'b@example.com', ed25519Pub: 'ed-b', x25519Pub: 'x-b' },
   ];
 
   it('refreshMembers populates members from the engine', async () => {
@@ -277,7 +277,7 @@ describe('useE2ee: lock', () => {
       makeFakeEngine({
         unlock: async () => {},
         listFolder: async () => [{ id: '1', name: 'a.txt', kind: 'file' }],
-        listMembers: async () => [{ userId: 'u1', email: 'a@example.com', ed25519Pub: 'ed-a' }],
+        listMembers: async () => [{ userId: 'u1', email: 'a@example.com', ed25519Pub: 'ed-a', x25519Pub: 'x-a' }],
         lock: () => {
           lockCalled = true;
         },
@@ -406,7 +406,7 @@ describe('useE2ee: persistence', () => {
       workspaces: knownWorkspaces,
       session: { kek: new Uint8Array(32), identity: {} },
       recoveryKeyOnce: 'should-not-persist',
-      members: [{ userId: 'u1', email: 'a@example.com', ed25519Pub: 'ed-a' }],
+      members: [{ userId: 'u1', email: 'a@example.com', ed25519Pub: 'ed-a', x25519Pub: 'x-a' }],
     };
 
     const persisted = partialize!(stateWithSecrets) as Record<string, unknown>;

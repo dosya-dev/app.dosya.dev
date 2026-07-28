@@ -23,7 +23,7 @@ import { toast } from '@/lib/toast';
 export type E2eeStatus = 'locked' | 'unlocking' | 'unlocked';
 export type EncryptedEntry = { id: string; name: string; kind: 'file' | 'folder' };
 export type KnownWorkspace = { id: string; name: string; selfFounded: boolean };
-export type WorkspaceMember = { userId: string; email: string; ed25519Pub: string };
+export type WorkspaceMember = { userId: string; email: string; ed25519Pub: string; x25519Pub: string };
 
 /**
  * Crypto boundary: everything that touches keys/Session/Workspace lives
