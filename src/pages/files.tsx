@@ -23,7 +23,7 @@ import {
   DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Card } from '@/components/ui/card';
-import { Checkbox } from '@/components/ui/checkbox';
+import { SelectCheckbox } from '@/components/select-checkbox';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -160,6 +160,7 @@ export default function FilesPage() {
     });
   };
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [selectedFolders, setSelectedFolders] = useState<Set<string>>(new Set());
   const [dragging, setDragging] = useState(false);
 
   // Detail panel
@@ -248,6 +249,7 @@ export default function FilesPage() {
   const [renameTarget, setRenameTarget] = useState<{ id: string; name: string; type: 'file' | 'folder' } | null>(null);
   const [renameName, setRenameName] = useState('');
   const [moveOpen, setMoveOpen] = useState<{ id: string; type: 'file' | 'folder' } | null>(null);
+  const [bulkMoveOpen, setBulkMoveOpen] = useState(false);
   const [highlightId, setHighlightId] = useState<string | null>(null);
   const highlightTimer = useRef<number | null>(null);
   // Guards the one-shot restore of an open file/viewer from the URL on first load,
@@ -296,7 +298,7 @@ export default function FilesPage() {
         lastItemCount.current = data.folders.length + data.files.length;
         setBreadcrumbs(data.breadcrumbs);
         if (data.pagination) setPagination(data.pagination);
-        setSelected(new Set());
+        clearSelection();
       }
     } catch { /* */ }
     setLoading(false);
@@ -435,6 +437,7 @@ export default function FilesPage() {
   // ── Actions ────────────────────────────────────────────────
 
   const navigateToFolder = (folderId: string | null) => {
+    clearSelection();
     setSearchParams(folderNavParams(searchParams, folderId));
   };
 
@@ -471,6 +474,21 @@ export default function FilesPage() {
   };
 
   const handleDownload = (fileId: string) => { window.open(`${API_BASE}/api/files/${fileId}/download`, '_blank'); };
+
+  const handleDownloadFolder = async (folderId: string) => {
+    try {
+      const res = await fetch(`${API_BASE}/api/files/download-archive`, {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ folder_ids: [folderId] }),
+      });
+      if (!res.ok) { toast.error('Download failed', 'The folder could not be prepared.'); return; }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = 'dosya-download.zip'; a.click();
+      URL.revokeObjectURL(url);
+    } catch { toast.error('Download failed', 'The folder could not be prepared.'); }
+  };
 
   const handleCopy = async (fileId: string) => {
     try {
@@ -513,51 +531,75 @@ export default function FilesPage() {
     setSelected((prev) => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
   };
 
+  const toggleSelectFolder = (id: string) => {
+    setSelectedFolders((prev) => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
+  };
+
   const selectAll = useCallback(() => {
     setSelected(new Set(files.filter((f) => f.lock_mode !== 'full_lock' || unlockedFiles.has(f.id)).map((f) => f.id)));
-  }, [files, unlockedFiles]);
+    setSelectedFolders(new Set(folders.map((f) => f.id)));
+  }, [files, folders, unlockedFiles]);
+
+  const clearSelection = () => { setSelected(new Set()); setSelectedFolders(new Set()); };
+  const totalSelected = selected.size + selectedFolders.size;
 
   const bulkDelete = async () => {
     try {
-      await api('/api/files/batch-delete', { method: 'POST', body: JSON.stringify({ file_ids: Array.from(selected), workspace_id: wsId }) });
-      toast.success('Deleted', `${selected.size} files were deleted.`); setSelected(new Set()); loadFiles();
-    } catch { toast.error('Delete failed', 'The selected files could not be deleted.'); }
+      await api('/api/files/batch-delete', { method: 'POST', body: JSON.stringify({
+        workspace_id: wsId,
+        file_ids: Array.from(selected),
+        folder_ids: Array.from(selectedFolders),
+      }) });
+      toast.success('Deleted', `${totalSelected} item${totalSelected === 1 ? '' : 's'} deleted.`);
+      clearSelection(); loadFiles();
+    } catch { toast.error('Delete failed', 'The selected items could not be deleted.'); }
   };
 
   const bulkDownloadZip = async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/files/download-zip`, {
+      const res = await fetch(`${API_BASE}/api/files/download-archive`, {
         method: 'POST', credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ file_ids: Array.from(selected) }),
+        body: JSON.stringify({ file_ids: Array.from(selected), folder_ids: Array.from(selectedFolders) }),
       });
       if (!res.ok) { toast.error('Download failed', 'The download could not be prepared.'); return; }
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
-      const a = document.createElement('a'); a.href = url; a.download = 'files.zip'; a.click();
+      const a = document.createElement('a'); a.href = url; a.download = 'dosya-download.zip'; a.click();
       URL.revokeObjectURL(url);
       toast.success('Downloaded', 'Download started');
     } catch { toast.error('Download failed', 'The download could not be prepared.'); }
   };
 
-  const bulkMove = () => {
-    if (selected.size === 0) return;
-    // Use the first selected file to open move modal
-    setMoveOpen({ id: Array.from(selected)[0], type: 'file' });
+  const bulkMove = () => { if (totalSelected > 0) setBulkMoveOpen(true); };
+
+  const applyBulkMove = async (destFolderId: string | null) => {
+    let ok = 0, fail = 0;
+    for (const id of selected) {
+      try { await api(`/api/files/${id}/move`, { method: 'PUT', body: JSON.stringify({ folder_id: destFolderId }) }); ok++; }
+      catch { fail++; }
+    }
+    for (const id of selectedFolders) {
+      try { await api(`/api/folders/${id}/move`, { method: 'PUT', body: JSON.stringify({ parent_id: destFolderId }) }); ok++; }
+      catch { fail++; } // circular-move / already-here errors land here
+    }
+    setBulkMoveOpen(false); clearSelection(); loadFiles();
+    if (fail === 0) toast.success('Moved', `${ok} item${ok === 1 ? '' : 's'} moved.`);
+    else toast.info('Move finished', `${ok} moved, ${fail} skipped (e.g. can't move a folder into itself).`);
   };
 
   const bulkRestore = async () => {
     for (const id of selected) {
       try { await api(`/api/files/${id}`, { method: 'PUT' }); } catch {}
     }
-    toast.success('Restored', `${selected.size} files restored`); setSelected(new Set()); loadFiles();
+    toast.success('Restored', `${selected.size} files restored`); clearSelection(); loadFiles();
   };
 
   const bulkPermanentDelete = async () => {
     for (const id of selected) {
       try { await api(`/api/files/${id}/permanent`, { method: 'DELETE' }); } catch {}
     }
-    toast.success('Deleted', `${selected.size} files permanently deleted`); setSelected(new Set()); loadFiles();
+    toast.success('Deleted', `${selected.size} files permanently deleted`); clearSelection(); loadFiles();
   };
 
 
@@ -637,6 +679,7 @@ export default function FilesPage() {
 
   const folderCtxItems = (f: FolderItem) => [
     { label: 'Open', icon: <FolderOpen />, onClick: () => navigateToFolder(f.id) },
+    { label: 'Download', icon: <Download />, onClick: () => handleDownloadFolder(f.id) },
     { label: 'Get info', icon: <Info />, onClick: () => setInfoTarget({ type: 'folder', item: f }) },
     { label: '', separator: true, onClick: () => {}, icon: null },
     { label: 'Rename', icon: <Pencil />, onClick: () => { setRenameTarget({ id: f.id, name: f.name, type: 'folder' }); setRenameName(f.name); } },
@@ -746,9 +789,9 @@ export default function FilesPage() {
       </div>
 
       {/* Bulk bar */}
-      {selected.size > 0 && (
+      {totalSelected > 0 && (
         <div className="flex items-center gap-2 px-5 py-2 bg-primary/10 border-b shrink-0 flex-wrap">
-          <Badge variant="secondary">{selected.size} selected</Badge>
+          <Badge variant="secondary">{totalSelected} selected</Badge>
           {isDeletedView ? (
             <>
               <Button variant="outline" size="sm" className="h-7 text-xs" onClick={bulkRestore}><RotateCcw className="size-3 mr-1" /> Restore</Button>
@@ -757,14 +800,16 @@ export default function FilesPage() {
           ) : (
             <>
               <Button variant="outline" size="sm" className="h-7 text-xs" onClick={bulkDownloadZip}><Download className="size-3 mr-1" /> Download ZIP</Button>
-              <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => { if (selected.size > 0) openShare(Array.from(selected)[0], `${selected.size} files`); }}><Share2 className="size-3 mr-1" /> Share</Button>
+              {selected.size > 0 && (
+                <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => openShare(Array.from(selected)[0], `${selected.size} files`)}><Share2 className="size-3 mr-1" /> Share</Button>
+              )}
               <Button variant="outline" size="sm" className="h-7 text-xs" onClick={bulkMove}><Move className="size-3 mr-1" /> Move</Button>
               <Button variant="outline" size="sm" className="h-7 text-xs text-destructive border-destructive/30" onClick={bulkDelete}><Trash2 className="size-3 mr-1" /> Delete</Button>
             </>
           )}
           <div className="ml-auto flex gap-1.5">
             <Button variant="outline" size="sm" className="h-7 text-xs" onClick={selectAll}>Select all</Button>
-            <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setSelected(new Set())}>Clear</Button>
+            <Button variant="outline" size="sm" className="h-7 text-xs" onClick={clearSelection}>Clear</Button>
           </div>
         </div>
       )}
@@ -803,7 +848,10 @@ export default function FilesPage() {
                   <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
                     {folders.map((f) => (
                       <FolderCard key={f.id} folder={f}
-                        onClick={() => navigateToFolder(f.id)}
+                        selected={selectedFolders.has(f.id)}
+                        anySelected={totalSelected > 0}
+                        onClick={(e) => { if (e.ctrlKey || e.metaKey) { e.stopPropagation(); toggleSelectFolder(f.id); } else navigateToFolder(f.id); }}
+                        onSelect={() => toggleSelectFolder(f.id)}
                         onContextMenu={(e) => onContextMenu(e, 'folder', f)} />
                     ))}
                   </div>
@@ -853,11 +901,15 @@ export default function FilesPage() {
                     return (
                       <div
                         key={f.id}
-                        className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-muted/50 cursor-pointer group"
-                        onClick={() => navigateToFolder(f.id)}
+                        className={`flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-muted/50 cursor-pointer group ${selectedFolders.has(f.id) ? 'bg-primary/10' : ''}`}
+                        onClick={(e) => { if (e.ctrlKey || e.metaKey) { e.stopPropagation(); toggleSelectFolder(f.id); } else navigateToFolder(f.id); }}
                         onContextMenu={(e) => onContextMenu(e, 'folder', f)}
                       >
-                        <div className="w-4 shrink-0" />
+                        <SelectCheckbox
+                          checked={selectedFolders.has(f.id)}
+                          onCheckedChange={() => toggleSelectFolder(f.id)}
+                          className={`size-4 shrink-0 transition-all ${selectedFolders.has(f.id) ? '' : 'opacity-0 group-hover:opacity-100'} ${totalSelected > 0 ? 'opacity-100!' : ''}`}
+                        />
                         <span className="relative shrink-0">
                           <img src={folderIconSrc(f.file_count, !!f.is_synced)} alt="" className="w-7 h-7 object-contain" />
                           <OriginBadge origin={f.origin} />
@@ -876,7 +928,9 @@ export default function FilesPage() {
                         })}
                         <div className="w-8 shrink-0">
                           <FileDropdown
+                            onDownload={() => handleDownloadFolder(f.id)}
                             onRename={() => { setRenameTarget({ id: f.id, name: f.name, type: 'folder' }); setRenameName(f.name); }}
+                            onMove={() => openMoveModal(f.id, 'folder')}
                             onDelete={() => setDeleteTarget({ id: f.id, name: f.name, type: 'folder' })}
                             onAddToGroup={() => openAddToGroup(f.id, f.name, 'folder')}
                           />
@@ -897,10 +951,9 @@ export default function FilesPage() {
                         onClick={(e) => { e.stopPropagation(); if (e.ctrlKey || e.metaKey) toggleSelect(f.id); else openFileWithLockCheck(f, 'detail'); }}
                         onContextMenu={(e) => onContextMenu(e, 'file', f)}
                       >
-                        <Checkbox
+                        <SelectCheckbox
                           checked={isSel}
                           onCheckedChange={() => toggleSelect(f.id)}
-                          onClick={(e) => e.stopPropagation()}
                           className={`size-4 shrink-0 transition-all ${isSel ? '' : 'opacity-0 group-hover:opacity-100'} ${selected.size > 0 ? 'opacity-100!' : ''}`}
                         />
                         <RowThumbnail fileId={f.id} fileName={f.name} />
@@ -1016,6 +1069,20 @@ export default function FilesPage() {
           title="Move to folder"
           confirmLabel="Move"
           excludeId={moveOpen.type === 'folder' ? moveOpen.id : null}
+        />
+      )}
+
+      {/* Bulk move dialog */}
+      {bulkMoveOpen && (
+        <FolderPickerDialog
+          open
+          onClose={() => setBulkMoveOpen(false)}
+          workspaceId={wsId}
+          selectedId={null}
+          onSelect={(id) => applyBulkMove(id)}
+          title="Move to folder"
+          confirmLabel="Move"
+          excludeId={null}
         />
       )}
 
@@ -1152,13 +1219,19 @@ export default function FilesPage() {
 
 // ── Folder Card ────────────────────────────────────────────
 
-function FolderCard({ folder, onClick, onContextMenu }: {
-  folder: FolderItem; onClick: () => void; onContextMenu: (e: ReactMouseEvent) => void;
+function FolderCard({ folder, selected, anySelected, onClick, onSelect, onContextMenu }: {
+  folder: FolderItem; selected?: boolean; anySelected?: boolean;
+  onClick: (e: ReactMouseEvent) => void; onSelect: () => void; onContextMenu: (e: ReactMouseEvent) => void;
 }) {
   const iconSrc = folderIconSrc(folder.file_count, !!folder.is_synced);
 
   return (
-    <Card className="gap-0 py-0 p-3 hover:shadow-md hover:-translate-y-px transition-all cursor-pointer group" onClick={onClick} onContextMenu={onContextMenu}>
+    <Card className={`gap-0 py-0 p-3 hover:shadow-md hover:-translate-y-px transition-all cursor-pointer group relative ${selected ? 'ring-2 ring-primary' : ''}`} onClick={onClick} onContextMenu={onContextMenu}>
+      <SelectCheckbox
+        checked={!!selected}
+        onCheckedChange={() => onSelect()}
+        className={`absolute top-2 right-2 z-20 size-4 transition-all ${selected ? '' : 'opacity-0 group-hover:opacity-100'} ${anySelected ? 'opacity-100!' : ''}`}
+      />
       <div className="flex items-center gap-2 mb-2">
         <span className="relative">
           <img src={iconSrc} alt="" className="size-6" />
@@ -1184,10 +1257,9 @@ function FileCard({ file, view, selected, anySelected, active, highlight, domId,
   if (view === 'list') {
     return (
       <div id={domId} className={`flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-muted/50 cursor-pointer group ${highlight ? 'animate-upload-flash ' : ''}${active ? 'bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-900' : selected ? 'bg-primary/10' : ''}`} onClick={onClick} onContextMenu={onContextMenu}>
-        <Checkbox
+        <SelectCheckbox
           checked={selected}
           onCheckedChange={() => onSelect()}
-          onClick={(e) => e.stopPropagation()}
           className={`size-4 shrink-0 transition-all ${selected ? '' : 'opacity-0 group-hover:opacity-100'} ${anySelected ? 'opacity-100!' : ''}`}
         />
         <img src={fileIconSrc(file.name)} alt={ext} className="w-7 h-7 shrink-0" />
@@ -1214,10 +1286,9 @@ function FileCard({ file, view, selected, anySelected, active, highlight, domId,
 
       {/* Top-left: multi-select checkbox (hidden for fully-locked files) */}
       {file.lock_mode !== 'full_lock' && (
-        <Checkbox
+        <SelectCheckbox
           checked={selected}
           onCheckedChange={() => onSelect()}
-          onClick={(e) => e.stopPropagation()}
           className={`absolute top-2 left-2 z-20 size-5 rounded-full border-white/70 bg-black/30 backdrop-blur-sm transition-all data-[state=checked]:bg-primary data-[state=checked]:border-primary ${selected ? '' : 'opacity-0 group-hover:opacity-100'} ${anySelected ? 'opacity-100!' : ''}`}
         />
       )}

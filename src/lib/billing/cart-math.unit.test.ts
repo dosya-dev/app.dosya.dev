@@ -10,6 +10,7 @@ const catalog: Catalog = {
     ],
     addons: [
         { id: "addon_1tb", name: "+1 TB", storage_bytes: 1 * TB, storage_label: "1 TB", price_monthly: 1500, price_yearly: 15000, price_monthly_label: "$15", price_yearly_label: "$150", max_quantity: 20, has_monthly: true, has_yearly: true },
+        { id: "addon_monthly_only", name: "+500 GB", storage_bytes: 500 * GB, storage_label: "500 GB", price_monthly: 800, price_yearly: null, price_monthly_label: "$8", price_yearly_label: null, max_quantity: 10, has_monthly: true, has_yearly: false },
     ],
 };
 
@@ -39,6 +40,14 @@ describe("computeCart", () => {
         const r = computeCart(state, catalog);
         expect(r.totalCents).toBe(0);
         expect(r.discountCents).toBe(1999);
+    });
+
+    it("drops add-ons not sold at the chosen interval (no $0 lines, no phantom storage)", () => {
+        const state: CartState = { interval: "year", planId: "pro", addonQty: { addon_monthly_only: 2 }, coupon: null };
+        const r = computeCart(state, catalog);
+        expect(r.lines).toHaveLength(1); // plan only
+        expect(r.subtotalCents).toBe(19990);
+        expect(r.effectiveBytes).toBe(1 * TB);
     });
 
     it("ignores add-on quantities when the free plan is selected", () => {

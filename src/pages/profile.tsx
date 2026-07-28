@@ -654,6 +654,7 @@ function TotpSetupModal({ open, onOpenChange, onEnabled }: { open: boolean; onOp
   const [code, setCode] = useState('');
   const [verifying, setVerifying] = useState(false);
   const [codes, setCodes] = useState<string[] | null>(null);
+  const [qrDataUrl, setQrDataUrl] = useState('');
 
   useEffect(() => {
     if (!open) { setSecret(''); setUri(''); setCode(''); setCodes(null); return; }
@@ -663,6 +664,43 @@ function TotpSetupModal({ open, onOpenChange, onEnabled }: { open: boolean; onOp
       else toast.error('Setup failed', res.error ?? 'Authenticator setup could not be started.');
     })();
   }, [open]);
+
+  // The otpauth:// URI embeds the raw TOTP shared secret, so the QR must be
+  // rendered on-device — never sent to a third-party image service. Error
+  // correction H (30% recovery) leaves room for the centered logo overlay
+  // (~4% of the area), which authenticator scanners handle fine.
+  useEffect(() => {
+    if (!uri) { setQrDataUrl(''); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const QRCode = await import('qrcode');
+        const size = 360;
+        const canvas = document.createElement('canvas');
+        await QRCode.toCanvas(canvas, uri, { width: size, margin: 1, errorCorrectionLevel: 'H' });
+        try {
+          const logo = new Image();
+          logo.src = '/logo.svg';
+          await new Promise<void>((res, rej) => { logo.onload = () => res(); logo.onerror = () => rej(new Error('logo load failed')); });
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            const badge = 76;
+            const bx = (size - badge) / 2;
+            ctx.fillStyle = '#fff';
+            ctx.beginPath();
+            ctx.roundRect(bx, bx, badge, badge, 14);
+            ctx.fill();
+            const icon = 56;
+            ctx.drawImage(logo, (size - icon) / 2, (size - icon) / 2, icon, icon);
+          }
+        } catch { /* logo unavailable — ship the plain QR */ }
+        if (!cancelled) setQrDataUrl(canvas.toDataURL('image/png'));
+      } catch {
+        if (!cancelled) toast.error('Setup failed', 'Could not render the QR code.');
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [uri]);
 
   const verify = async () => {
     if (code.length !== 6) return;
@@ -688,8 +726,8 @@ function TotpSetupModal({ open, onOpenChange, onEnabled }: { open: boolean; onOp
           <>
             <p className="text-xs text-muted-foreground">Scan this QR code with your authenticator app, then enter the 6-digit code.</p>
             <div className="flex justify-center">
-              {uri ? (
-                <img src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(uri)}`} alt="QR code" width={180} height={180} className="rounded-md border" />
+              {qrDataUrl ? (
+                <img src={qrDataUrl} alt="QR code" width={180} height={180} className="rounded-md border" />
               ) : <Skeleton className="size-[180px]" />}
             </div>
             {secret && <code className="block text-[11px] bg-muted px-3 py-2 rounded-md break-all text-center font-mono">{secret}</code>}

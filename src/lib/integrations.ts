@@ -1,5 +1,5 @@
 import {
-  RefreshCw, HardDrive, Server, Cloud, Monitor, Terminal, Code2, type LucideIcon,
+  RefreshCw, HardDrive, Server, Cloud, Monitor, Terminal, Code2, Webhook, type LucideIcon,
 } from 'lucide-react';
 
 export interface IntegrationCtx {
@@ -8,7 +8,7 @@ export interface IntegrationCtx {
 }
 
 export type IntegrationSlug =
-  | 'rclone' | 'webdav' | 'sftp' | 's3' | 'desktop' | 'cli' | 'rest-api' | 'google';
+  | 'rclone' | 'webdav' | 'sftp' | 's3' | 'desktop' | 'cli' | 'rest-api' | 'google' | 'webhooks';
 
 export interface IntegrationMeta {
   slug: IntegrationSlug;
@@ -91,6 +91,14 @@ export const INTEGRATIONS: IntegrationMeta[] = [
     tag: 'Import',
     icon: HardDrive,
     iconSrc: '/google-color.svg',
+  },
+  {
+    slug: 'webhooks',
+    title: 'Webhooks',
+    description: 'Get realtime HTTP notifications when files are uploaded, deleted, or shares are accessed.',
+    tag: 'Events',
+    icon: Webhook,
+    docsUrl: 'https://dosya.dev/developer/api#webhooks',
   },
 ];
 

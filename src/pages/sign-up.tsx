@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,6 +10,7 @@ import { PublicNav } from '@/components/public-nav';
 
 export default function SignUpPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -22,20 +23,27 @@ export default function SignUpPage() {
   });
   const lastUsed = lastMethod ?? 'google';
 
+  useEffect(() => {
+    const r = searchParams.get('ref');
+    if (r) sessionStorage.setItem('dosya_ref', r);
+  }, [searchParams]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     if (!terms) { setError('Please accept the Terms of Service to continue.'); return; }
     setLoading(true);
     try {
+      const ref = searchParams.get('ref') ?? sessionStorage.getItem('dosya_ref') ?? undefined;
       const res = await fetch(`${API_BASE}/api/auth/signup`, {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, email, password }),
+        body: JSON.stringify({ name, email, password, ...(ref ? { ref } : {}) }),
       });
       const data = await res.json();
       if (res.ok && data.ok) {
+        try { sessionStorage.removeItem('dosya_ref'); } catch { /* */ }
         navigate(data.redirect ?? '/verify');
       } else {
         setError(data.error ?? 'Sign-up failed');
@@ -46,8 +54,16 @@ export default function SignUpPage() {
     setLoading(false);
   };
 
-  const handleGoogle = () => { try { localStorage.setItem('dosya_last_login_method', 'google'); } catch { /* */ } window.location.href = `${API_BASE}/api/auth/google`; };
-  const handleGithub = () => { try { localStorage.setItem('dosya_last_login_method', 'github'); } catch { /* */ } window.location.href = `${API_BASE}/api/auth/github`; };
+  const handleGoogle = () => {
+    try { localStorage.setItem('dosya_last_login_method', 'google'); } catch { /* */ }
+    const ref = searchParams.get('ref') ?? sessionStorage.getItem('dosya_ref') ?? undefined;
+    window.location.href = `${API_BASE}/api/auth/google${ref ? `?ref=${encodeURIComponent(ref)}` : ''}`;
+  };
+  const handleGithub = () => {
+    try { localStorage.setItem('dosya_last_login_method', 'github'); } catch { /* */ }
+    const ref = searchParams.get('ref') ?? sessionStorage.getItem('dosya_ref') ?? undefined;
+    window.location.href = `${API_BASE}/api/auth/github${ref ? `?ref=${encodeURIComponent(ref)}` : ''}`;
+  };
   const handleApple = () => { try { localStorage.setItem('dosya_last_login_method', 'apple'); } catch { /* */ } window.location.href = `${API_BASE}/api/auth/apple`; };
 
   const lastUsedBadge = (

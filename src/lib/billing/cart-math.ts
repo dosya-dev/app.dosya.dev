@@ -26,6 +26,9 @@ function planPrice(plan: CatalogPlan, interval: "month" | "year"): number {
 function addonPrice(a: CatalogAddon, interval: "month" | "year"): number {
     return interval === "year" ? (a.price_yearly ?? 0) : a.price_monthly;
 }
+export function addonAvailableAt(a: CatalogAddon, interval: "month" | "year"): boolean {
+    return interval === "year" ? a.has_yearly : a.has_monthly;
+}
 
 export function computeCart(state: CartState, catalog: Catalog) {
     const plan = catalog.plans.find((p) => p.id === state.planId);
@@ -42,6 +45,9 @@ export function computeCart(state: CartState, catalog: Catalog) {
         for (const addon of catalog.addons) {
             const qty = state.addonQty[addon.id] ?? 0;
             if (qty <= 0) continue;
+            // An add-on not sold at this interval is dropped from the cart entirely —
+            // pricing it at $0 (and still counting its storage) would misstate the order.
+            if (!addonAvailableAt(addon, state.interval)) continue;
             const unitA = addonPrice(addon, state.interval);
             lines.push({ label: `${addon.name} × ${qty}`, qty, unitCents: unitA, totalCents: unitA * qty });
             subtotalCents += unitA * qty;

@@ -1,14 +1,14 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { AlertTriangle, X } from "lucide-react";
 import {
-    getCatalog, startCheckout, updateSubscription, validateCoupon,
+    getCatalog, startCheckout, updateSubscription, previewSubscription, validateCoupon,
     type Catalog, type CartPayload, type CouponInfo,
 } from "@/api/billing";
 import { apiErrorMessage } from "@/api/client";
-import { computeCart, formatCents, formatBytes, type CartState } from "@/lib/billing/cart-math";
+import { computeCart, formatCents, formatBytes, addonAvailableAt, type CartState } from "@/lib/billing/cart-math";
 import { PlanSelector } from "./plan-selector";
 import { AddonRow } from "./addon-row";
 
@@ -42,10 +42,46 @@ export function PlanChooser({ hasSubscription, initial, usedBytes, onUpdated, on
         || (state.interval === "year" ? selectedPlan.has_yearly : selectedPlan.has_monthly);
     const cart = catalog ? computeCart(state, catalog) : null;
     const downgradeWarning = cart ? cart.effectiveBytes < usedBytes : false;
+    // Selected add-ons the chosen interval doesn't sell — dropped from the cart, warn about them.
+    const droppedAddons = catalog
+        ? catalog.addons.filter((a) => (state.addonQty[a.id] ?? 0) > 0 && !addonAvailableAt(a, state.interval))
+        : [];
 
     const setInterval = (interval: "month" | "year") => setState((s) => ({ ...s, interval }));
     const setPlan = (planId: string) => setState((s) => ({ ...s, planId }));
     const setQty = (id: string, qty: number) => setState((s) => ({ ...s, addonQty: { ...s.addonQty, [id]: qty } }));
+
+    const buildPayload = (cat: Catalog): CartPayload => ({
+        interval: state.interval, plan_id: state.planId,
+        addons: Object.entries(state.addonQty)
+            .filter(([id, q]) => {
+                const a = cat.addons.find((x) => x.id === id);
+                return q > 0 && !!a && addonAvailableAt(a, state.interval);
+            })
+            .map(([id, qty]) => ({ id, qty })),
+        promo_code: state.coupon?.code,
+    });
+
+    // Proration preview for existing subscribers: what the next invoice looks like
+    // with this cart applied (prorations land there under create_prorations).
+    const [previewCents, setPreviewCents] = useState<number | null>(null);
+    const previewSeq = useRef(0);
+    useEffect(() => {
+        if (!hasSubscription || !catalog) return;
+        const seq = ++previewSeq.current;
+        setPreviewCents(null);
+        const plan = catalog.plans.find((p) => p.id === state.planId);
+        const planOk = !!plan && plan.price_monthly > 0
+            && (state.interval === "year" ? plan.has_yearly : plan.has_monthly);
+        if (!planOk) return;
+        const t = setTimeout(() => {
+            previewSubscription(buildPayload(catalog))
+                .then((r) => { if (previewSeq.current === seq) setPreviewCents(r.amount_due); })
+                .catch(() => { if (previewSeq.current === seq) setPreviewCents(null); });
+        }, 400);
+        return () => clearTimeout(t);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [hasSubscription, catalog, state.planId, state.interval, state.addonQty]);
 
     const applyCoupon = async () => {
         setCouponError(null);
@@ -56,13 +92,7 @@ export function PlanChooser({ hasSubscription, initial, usedBytes, onUpdated, on
     const submit = async () => {
         if (!catalog) return;
         setSubmitting(true); setError(null);
-        const payload: CartPayload = {
-            interval: state.interval, plan_id: state.planId,
-            addons: Object.entries(state.addonQty)
-                .filter(([id, q]) => q > 0 && catalog.addons.some((a) => a.id === id))
-                .map(([id, qty]) => ({ id, qty })),
-            promo_code: state.coupon?.code,
-        };
+        const payload = buildPayload(catalog);
         try {
             if (hasSubscription) { await updateSubscription(payload); onUpdated(); onClose(); }
             else { const { url } = await startCheckout(payload); window.location.href = url; }
@@ -115,7 +145,14 @@ export function PlanChooser({ hasSubscription, initial, usedBytes, onUpdated, on
                         <Button type="button" variant="outline" size="sm" onClick={applyCoupon} disabled={!codeInput.trim()}>Apply</Button>
                     </div>
                     {couponError && <p className="text-xs text-red-600">{couponError}</p>}
-                    {state.coupon && <p className="text-xs text-green-600">Code {state.coupon.code} applied.</p>}
+                    {state.coupon && (
+                        <p className="text-xs text-green-600">
+                            Code {state.coupon.code} applied
+                            {state.coupon.duration === "once" ? " — discounts your first payment only" : ""}
+                            {state.coupon.duration === "repeating" && state.coupon.duration_in_months
+                                ? ` — applies for ${state.coupon.duration_in_months} months` : ""}.
+                        </p>
+                    )}
 
                     {/* Cart summary */}
                     {cart && (
@@ -128,6 +165,18 @@ export function PlanChooser({ hasSubscription, initial, usedBytes, onUpdated, on
                                 <span>Total</span><span>{formatCents(cart.totalCents)}/{state.interval === "year" ? "yr" : "mo"}</span>
                             </div>
                             <p className="mt-1 text-xs text-muted-foreground">New storage: {formatBytes(cart.effectiveBytes)}</p>
+                            {hasSubscription && previewCents != null && (
+                                <p className="mt-1 text-xs text-muted-foreground">
+                                    Estimated next invoice (incl. proration): {formatCents(previewCents)}
+                                </p>
+                            )}
+                        </div>
+                    )}
+
+                    {droppedAddons.length > 0 && (
+                        <div className="flex items-start gap-1.5 text-xs text-amber-600">
+                            <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+                            {droppedAddons.map((a) => a.name).join(", ")} isn&apos;t sold on {state.interval === "year" ? "annual" : "monthly"} billing and won&apos;t be included.
                         </div>
                     )}
 

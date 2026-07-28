@@ -17,6 +17,8 @@ import ActivityPage from '@/pages/activity';
 import NotificationsPage from '@/pages/notifications';
 import SearchPage from '@/pages/search';
 import BillingPage from '@/pages/billing';
+import ReferralsPage from '@/pages/referrals';
+import WorkspaceDashboardPage from '@/pages/workspace-dashboard';
 import RoleCreatePage from '@/pages/role-create';
 import IntegrationsPage from '@/pages/integrations';
 import RcloneSetup from '@/pages/integrations/rclone';
@@ -27,6 +29,7 @@ import DesktopSetup from '@/pages/integrations/desktop';
 import CliSetup from '@/pages/integrations/cli';
 import RestApiSetup from '@/pages/integrations/rest-api';
 import GoogleSetup from '@/pages/integrations/google';
+import WebhooksPage from '@/pages/integrations/webhooks';
 import FileRequestDetailPage from '@/pages/file-request-detail';
 import LoginPage from '@/pages/login';
 import Login2faPage from '@/pages/login-2fa';
@@ -73,6 +76,7 @@ export const router = createBrowserRouter([
       { path: '/integrations/cli', element: <CliSetup /> },
       { path: '/integrations/rest-api', element: <RestApiSetup /> },
       { path: '/integrations/google', element: <GoogleSetup /> },
+      { path: '/integrations/webhooks', element: <WebhooksPage /> },
       { path: '/shared', element: <SharedPage /> },
       { path: '/vault', element: <EncryptedPage /> },
       { path: '/comments', element: <CommentsPage /> },
@@ -80,6 +84,8 @@ export const router = createBrowserRouter([
       { path: '/notifications', element: <NotificationsPage /> },
       { path: '/search', element: <SearchPage /> },
       { path: '/billing', element: <BillingPage /> },
+      { path: '/referrals', element: <ReferralsPage /> },
+      { path: '/workspaces', element: <WorkspaceDashboardPage /> },
       { path: '/role-create', element: <RoleCreatePage /> },
     ],
   },

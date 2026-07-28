@@ -7,16 +7,19 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem,
   DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Search, User, LogOut, Settings, CreditCard, HelpCircle, Sun, Moon, Palette } from 'lucide-react';
+import { Search, User, LogOut, Settings, CreditCard, HelpCircle, Sun, Moon, Palette, Gift } from 'lucide-react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { api, API_BASE } from '@/api/client';
 import { readCache, writeCache, applyTheme, subscribeThemeChange } from '@/lib/theme';
 import { useWorkspace } from '@/stores/workspace';
+import { useUploads } from '@/stores/uploads';
+import { logoutAndRedirect } from '@/lib/logout';
 import { humanSize, colorFor, labelFor, initials } from '@/lib/helpers';
 import { titleForPath, iconForPath } from '@/lib/page-title';
 import { NotificationBell } from '../notifications/notification-bell';
 
 interface UserInfo {
+  id: string;
   name: string;
   email: string;
   avatar_url: string | null;
@@ -55,7 +58,10 @@ export function DashboardTopbar() {
     (async () => {
       try {
         const data = await api<{ ok: boolean; user: UserInfo }>('/api/me');
-        if (data.ok) setUser(data.user);
+        if (data.ok) {
+          setUser(data.user);
+          useUploads.getState().pruneForOwner(data.user.id);
+        }
       } catch { /* */ }
     })();
   }, []);
@@ -72,10 +78,7 @@ export function DashboardTopbar() {
   };
 
   // Logout
-  const logout = async () => {
-    await fetch(`${API_BASE}/api/auth/logout`, { method: 'POST', credentials: 'include' });
-    window.location.href = '/login';
-  };
+  const logout = logoutAndRedirect;
 
   // Search
   const performSearch = useCallback(async (q: string) => {
@@ -216,7 +219,7 @@ export function DashboardTopbar() {
           <DropdownMenuTrigger>
             <div className="size-9 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-semibold cursor-pointer overflow-hidden">
               {user?.avatar_url ? (
-                <img src={`${API_BASE}/api/me/avatar`} alt="" crossOrigin="use-credentials" className="w-full h-full object-cover" />
+                <img src={`${API_BASE}/api/me/avatar?u=${encodeURIComponent(user.id)}`} alt="" crossOrigin="use-credentials" className="w-full h-full object-cover" />
               ) : (
                 initials(user?.name || '?')
               )}
@@ -234,6 +237,7 @@ export function DashboardTopbar() {
             )}
             <Link to="/profile"><DropdownMenuItem><User className="size-3.5 mr-2" /> Profile</DropdownMenuItem></Link>
             <Link to="/profile?section=appearance"><DropdownMenuItem><Palette className="size-3.5 mr-2" /> Appearance</DropdownMenuItem></Link>
+            <Link to="/referrals"><DropdownMenuItem><Gift className="size-3.5 mr-2" /> Refer friends</DropdownMenuItem></Link>
             <Link to="/settings"><DropdownMenuItem><Settings className="size-3.5 mr-2" /> Settings</DropdownMenuItem></Link>
             <Link to="/billing"><DropdownMenuItem><CreditCard className="size-3.5 mr-2" /> Billing</DropdownMenuItem></Link>
             <a href="https://dosya.dev/help" target="_blank" rel="noreferrer"><DropdownMenuItem><HelpCircle className="size-3.5 mr-2" /> Help</DropdownMenuItem></a>

@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useUploads, uploadSummary } from './uploads';
+import { claimOwner, loadItems, saveItems } from '@/lib/upload-persistence';
 import type { UploadItem } from '@/lib/upload-types';
 
 function item(over: Partial<UploadItem>): UploadItem {
@@ -64,5 +65,44 @@ describe('useUploads', () => {
     useUploads.setState({ items: [] });
     useUploads.getState().hydrate();
     expect(useUploads.getState().items[0].status).toBe('interrupted');
+  });
+});
+
+describe('owner-scoped persistence', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    useUploads.setState({ items: [] });
+  });
+
+  it('claimOwner keeps items for the same owner', () => {
+    saveItems([item({ id: 'a' })]);
+    claimOwner('user-1'); // first login stamps the owner
+    expect(claimOwner('user-1')).toHaveLength(1);
+  });
+
+  it('claimOwner wipes items persisted by a different user', () => {
+    saveItems([item({ id: 'a' })]);
+    claimOwner('user-1');
+    expect(claimOwner('user-2')).toHaveLength(0);
+    expect(loadItems()).toHaveLength(0); // storage wiped too, not just filtered
+  });
+
+  it('legacy plain-array payloads are readable (owner: null)', () => {
+    localStorage.setItem('dosya_uploads', JSON.stringify([item({ id: 'a' })]));
+    expect(loadItems()).toHaveLength(1);
+  });
+
+  it('store reset() empties items and storage', () => {
+    useUploads.getState().setItems([item({ id: 'a' })]);
+    useUploads.getState().reset();
+    expect(useUploads.getState().items).toHaveLength(0);
+    expect(localStorage.getItem('dosya_uploads')).toBeNull();
+  });
+
+  it('store pruneForOwner discards items persisted by a different owner', () => {
+    useUploads.getState().setItems([item({ id: 'a' })]);
+    claimOwner('user-1');
+    useUploads.getState().pruneForOwner('user-2');
+    expect(useUploads.getState().items).toHaveLength(0);
   });
 });
