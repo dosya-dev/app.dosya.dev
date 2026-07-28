@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { useE2ee, type EncryptedEntry } from '@/stores/e2ee';
+import { useE2ee, type EncryptedEntry, type KnownWorkspace } from '@/stores/e2ee';
+import { useWorkspace } from '@/stores/workspace';
 import { MembersPanel } from '@/components/e2ee/members-panel';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -25,6 +26,11 @@ import {
 export function EncryptedBrowser() {
   const workspaces = useE2ee((s) => s.workspaces);
   const activeWorkspaceId = useE2ee((s) => s.activeWorkspaceId);
+  // P2e: the active GLOBAL storage workspace (separate from the E2EE Space
+  // above) — drives which Spaces show under "My Spaces" and is re-read on
+  // every render this component does, so switching global workspaces
+  // re-filters the list (see mySpaces/sharedSpacesList below).
+  const activeGlobalId = useWorkspace((s) => s.activeId);
   const entries = useE2ee((s) => s.entries);
   const busy = useE2ee((s) => s.busy);
   const error = useE2ee((s) => s.error);
@@ -52,13 +58,26 @@ export function EncryptedBrowser() {
   const activeWorkspace = workspaces.find((w) => w.id === activeWorkspaceId) ?? null;
   const currentFolderId = folderPath.length > 0 ? folderPath[folderPath.length - 1].id : '';
 
+  // P2e: split the flat Space list into this account's OWN Spaces scoped to
+  // the active global workspace ("My Spaces" — plus a null-scope legacy
+  // fallback so pre-P2e Spaces don't vanish) and every Space shared WITH this
+  // account ("Shared with me" — shown regardless of the active workspace).
+  // Recomputed on every render, which is correct here: the component already
+  // re-renders whenever `workspaces` or `activeGlobalId` changes (both are
+  // subscribed above), so these always reflect the live values.
+  const mySpaces = workspaces.filter(
+    (w) => !w.shared && (w.globalWorkspaceId === activeGlobalId || w.globalWorkspaceId == null),
+  );
+  const sharedSpacesList = workspaces.filter((w) => w.shared);
+
   // On mount (i.e. right after unlock — this component only renders once
-  // status === 'unlocked') pull in any workspaces shared with this account,
-  // so an invitee sees them in the bar below without a manual refresh.
+  // status === 'unlocked') AND whenever the active global workspace changes,
+  // pull in this account's Spaces (own + shared) so both switching workspaces
+  // and a fresh invite show up in the bar below without a manual refresh.
   useEffect(() => {
     refreshMyWorkspaces();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [activeGlobalId]);
 
   const handleSelectWorkspace = async (id: string) => {
     setFolderPath([]);
@@ -153,27 +172,50 @@ export function EncryptedBrowser() {
         </div>
       )}
 
-      {/* Workspace bar */}
-      <div className="flex flex-wrap items-center gap-2">
-        {workspaces.map((ws) => (
-          <button
-            key={ws.id}
-            onClick={() => handleSelectWorkspace(ws.id)}
-            className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
-              ws.id === activeWorkspaceId
-                ? 'border-primary bg-primary/10 text-primary'
-                : 'text-muted-foreground hover:bg-muted/60'
-            }`}
-          >
-            {ws.name}
-            {!ws.selfFounded && (
-              <Badge variant="secondary" className="text-[9px]">Shared</Badge>
-            )}
-          </button>
-        ))}
-        <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setNewWsOpen(true)}>
-          <Plus className="size-3.5" /> New Space
-        </Button>
+      {/* Workspace bar — split into "My Spaces" (scoped to the active global
+          workspace, see mySpaces above) and "Shared with me" (always shown).
+          The "New Space" button lives with the "My Spaces" group and stays
+          visible even when that group is empty, so there's always a way to
+          create the first Space. Each heading hides when its own group is
+          empty; the pre-existing "Select or create a Space" empty state
+          below still covers the case where BOTH groups are empty (it keys
+          off `activeWorkspace`, which is null whenever there are no Spaces
+          at all). */}
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-1.5">
+          {mySpaces.length > 0 && (
+            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">My Spaces</p>
+          )}
+          <div className="flex flex-wrap items-center gap-2">
+            {mySpaces.map((ws) => (
+              <SpaceChip
+                key={ws.id}
+                workspace={ws}
+                active={ws.id === activeWorkspaceId}
+                onClick={() => handleSelectWorkspace(ws.id)}
+              />
+            ))}
+            <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setNewWsOpen(true)}>
+              <Plus className="size-3.5" /> New Space
+            </Button>
+          </div>
+        </div>
+
+        {sharedSpacesList.length > 0 && (
+          <div className="flex flex-col gap-1.5">
+            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Shared with me</p>
+            <div className="flex flex-wrap items-center gap-2">
+              {sharedSpacesList.map((ws) => (
+                <SpaceChip
+                  key={ws.id}
+                  workspace={ws}
+                  active={ws.id === activeWorkspaceId}
+                  onClick={() => handleSelectWorkspace(ws.id)}
+                />
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Folder view */}
@@ -289,6 +331,27 @@ export function EncryptedBrowser() {
 }
 
 // ── Lightweight cards mirroring files.tsx's FolderCard/FileCard look ───────
+
+/** A single selectable Space chip, shared by the "My Spaces" and "Shared with me" groups. */
+function SpaceChip({
+  workspace, active, onClick,
+}: { workspace: KnownWorkspace; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+        active
+          ? 'border-primary bg-primary/10 text-primary'
+          : 'text-muted-foreground hover:bg-muted/60'
+      }`}
+    >
+      {workspace.name}
+      {workspace.shared && (
+        <Badge variant="secondary" className="text-[9px]">Shared</Badge>
+      )}
+    </button>
+  );
+}
 
 function EncryptedFolderCard({ name, onClick }: { name: string; onClick: () => void }) {
   return (
