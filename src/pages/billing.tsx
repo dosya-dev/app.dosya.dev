@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { getBillingStatus, type BillingStatus } from '@/api/billing';
+import { getBillingStatus, syncBilling, createPortalSession, type BillingStatus } from '@/api/billing';
+import { apiErrorMessage } from '@/api/client';
 import { formatBytes, formatCents } from '@/lib/billing/cart-math';
 import { PlanChooser } from '@/components/billing/plan-chooser';
 import { Button } from '@/components/ui/button';
@@ -19,6 +20,8 @@ export default function BillingPage() {
   const [data, setData] = useState<BillingStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [showChooser, setShowChooser] = useState(false);
+  const [portalOpening, setPortalOpening] = useState(false);
+  const [portalError, setPortalError] = useState<string | null>(null);
 
   const reload = () => getBillingStatus().then((d) => setData(d)).catch(() => {});
 
@@ -33,13 +36,22 @@ export default function BillingPage() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('success')) {
-      // Stripe redirect back — the webhook may lag a moment; refetch after a short delay.
-      const t = setTimeout(() => getBillingStatus().then((d) => setData(d)).catch(() => {}), 2500);
+      // Stripe redirect back — the webhook may lag, so ask the API to reconcile
+      // from Stripe directly, then refetch (again after a delay as a fallback).
+      syncBilling().catch(() => {}).then(reload);
+      const t = setTimeout(reload, 2500);
       window.history.replaceState({}, '', '/billing');
       return () => clearTimeout(t);
     }
     if (params.get('canceled')) window.history.replaceState({}, '', '/billing');
   }, []);
+
+  const openPortal = () => {
+    setPortalOpening(true); setPortalError(null);
+    createPortalSession()
+      .then(({ url }) => { window.location.href = url; })
+      .catch((e) => { setPortalError(apiErrorMessage(e)); setPortalOpening(false); });
+  };
 
   // POST /billing/subscription only calls Stripe — the D1 mirror is updated
   // asynchronously by the webhook, so refetch immediately AND after a short delay
@@ -85,7 +97,10 @@ export default function BillingPage() {
               {sub.status === 'active' && <Badge variant="outline" className="text-[10px] text-green-600 border-green-200">Active</Badge>}
               {sub.cancel_at_period_end && <Badge variant="outline" className="text-[10px] text-amber-600 border-amber-200">Cancelling</Badge>}
             </div>
-            <p className="text-2xl font-bold">{formatCents(plan.price_monthly)}<span className="text-sm font-normal text-muted-foreground">/mo</span></p>
+            <p className="text-2xl font-bold">
+              {formatCents(data.interval === 'year' && plan.price_yearly != null ? plan.price_yearly : plan.price_monthly)}
+              <span className="text-sm font-normal text-muted-foreground">/{data.interval === 'year' ? 'yr' : 'mo'}</span>
+            </p>
             {sub.current_period_end && (
               <p className="text-xs text-muted-foreground mt-1">
                 {sub.cancel_at_period_end ? 'Cancels' : 'Renews'} {new Date(sub.current_period_end * 1000).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
@@ -155,6 +170,11 @@ export default function BillingPage() {
               <span>{i.total_label}</span>
             </div>
           ))}
+          {data.referral_bonus_bytes > 0 && (
+            <div className="flex justify-between text-xs text-muted-foreground">
+              <span>Referral bonus</span><span>{formatBytes(data.referral_bonus_bytes)}</span>
+            </div>
+          )}
           <div className="flex justify-between border-t pt-1 text-xs font-semibold">
             <span>Total</span><span>{formatBytes(data.usage.limit_bytes)}</span>
           </div>
@@ -168,12 +188,13 @@ export default function BillingPage() {
           {data.subscription.has_subscription && (
             <Button size="sm" variant="outline" onClick={() => setShowChooser(true)}>Add storage</Button>
           )}
-          {data.portal_url && (
-            <a href={data.portal_url} target="_blank" rel="noreferrer">
-              <Button size="sm" variant="ghost">Manage billing</Button>
-            </a>
+          {data.subscription.has_subscription && (
+            <Button size="sm" variant="ghost" onClick={openPortal} disabled={portalOpening}>
+              {portalOpening ? "Opening…" : "Manage billing"}
+            </Button>
           )}
         </div>
+        {portalError && <p className="mt-2 text-xs text-red-600">{portalError}</p>}
       </Card>
 
       {/* Inline plan chooser — opens in-page (not a modal) on Upgrade / Change plan / Add storage */}

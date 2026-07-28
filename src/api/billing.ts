@@ -21,20 +21,27 @@ export type SubscriptionItemView = {
     storage_bytes: number; total_bytes: number; total_label: string; interval: "month" | "year";
 };
 export type BillingStatus = {
-    plan: { id: string; name: string; storage_bytes: number; storage_label: string; price_monthly: number };
+    plan: { id: string; name: string; storage_bytes: number; storage_label: string; price_monthly: number; price_yearly: number | null };
     usage: { used_bytes: number; used_label: string; limit_bytes: number; pct: number };
     subscription: { status: string | null; current_period_end: number | null; has_subscription: boolean; cancel_at_period_end: boolean; grace_period_end: number | null };
     interval: "month" | "year";
     items: SubscriptionItemView[];
+    referral_bonus_bytes: number;
     invoices: { id: string; period_start: number; period_end: number; amount: number; status: string; pdf_url: string | null }[];
-    portal_url?: string | null;
 };
 
 export type CartPayload = { interval: "month" | "year"; plan_id: string; addons: { id: string; qty: number }[]; promo_code?: string };
 export type CouponInfo = { code: string; type: "percent" | "amount"; value: number; currency: string | null; duration: string; duration_in_months: number | null };
 
 export const getCatalog = () => api<{ ok: true } & Catalog>("/api/billing/catalog");
-export const getBillingStatus = () => api<{ ok: true } & BillingStatus>("/api/billing/status");
+// no-store: after checkout/plan changes we refetch to pick up webhook-settled
+// state — the browser HTTP cache must never satisfy that from the old response.
+export const getBillingStatus = () => api<{ ok: true } & BillingStatus>("/api/billing/status", { cache: "no-store" });
+
+/** Reconcile plan/items from Stripe now (webhook may lag right after checkout). */
+export const syncBilling = () => api<{ ok: true }>("/api/billing/sync", { method: "POST" });
+/** Create a Stripe Customer Portal session (cancel, payment method, invoices). */
+export const createPortalSession = () => api<{ ok: true; url: string }>("/api/billing/portal", { method: "POST" });
 
 export const startCheckout = (cart: CartPayload) =>
     api<{ ok: true; url: string }>("/api/billing/checkout", { method: "POST", body: JSON.stringify(cart) });
