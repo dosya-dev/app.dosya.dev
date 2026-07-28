@@ -34,7 +34,7 @@ const navItems = [
   { title: 'Files', url: '/files', icon: FolderOpen },
   { title: 'Uploads', url: '/uploads', icon: Upload },
   { title: 'Shared', url: '/shared', icon: Share2 },
-  { title: 'Encrypted', url: '/encrypted', icon: Lock },
+  { title: 'Vault', url: '/vault', icon: Lock },
 ];
 
 const workspaceItems = [

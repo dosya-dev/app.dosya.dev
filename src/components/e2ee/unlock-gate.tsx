@@ -36,7 +36,7 @@ export function UnlockGate() {
         <div className="flex size-10 items-center justify-center rounded-full bg-primary/10 text-primary">
           <Lock className="size-5" />
         </div>
-        <h1 className="text-lg font-semibold">Encrypted workspaces</h1>
+        <h1 className="text-lg font-semibold">Vault</h1>
         <p className="text-xs text-muted-foreground">
           Your files are encrypted in this browser before they ever leave your device — dosya only ever
           stores ciphertext.
@@ -115,7 +115,7 @@ function SetupCard({ error }: { error: string | null }) {
         <CardTitle className="flex items-center gap-2 text-base">
           <ShieldCheck className="size-4 text-primary" /> Set up encryption
         </CardTitle>
-        <CardDescription>Choose a passphrase to protect your encrypted workspaces.</CardDescription>
+        <CardDescription>Choose a passphrase to protect your Vault.</CardDescription>
       </CardHeader>
       <form onSubmit={handleSubmit}>
         <CardContent className="space-y-3">
@@ -181,7 +181,7 @@ function UnlockCard({ error }: { error: string | null }) {
     <Card className="w-full">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
-          <Lock className="size-4 text-primary" /> Unlock encrypted workspaces
+          <Lock className="size-4 text-primary" /> Unlock Vault
         </CardTitle>
         <CardDescription>Enter your passphrase to decrypt your files in this browser.</CardDescription>
       </CardHeader>

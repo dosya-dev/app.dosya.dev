@@ -130,7 +130,7 @@ export function EncryptedBrowser() {
           <Badge variant="secondary" className="gap-1">
             <ShieldCheck className="size-3 text-green-600" /> End-to-end encrypted
           </Badge>
-          <h1 className="text-lg font-semibold">Encrypted</h1>
+          <h1 className="text-lg font-semibold">Vault</h1>
         </div>
         <Button variant="outline" size="sm" className="gap-1.5" onClick={() => lock()}>
           <LogOut className="size-3.5" /> Lock
@@ -172,7 +172,7 @@ export function EncryptedBrowser() {
           </button>
         ))}
         <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setNewWsOpen(true)}>
-          <Plus className="size-3.5" /> New encrypted workspace
+          <Plus className="size-3.5" /> New Space
         </Button>
       </div>
 
@@ -248,7 +248,7 @@ export function EncryptedBrowser() {
       ) : (
         <div className="flex flex-col items-center justify-center rounded-xl border border-dashed py-16 text-center">
           <ShieldCheck className="mb-3 size-10 text-muted-foreground/30" />
-          <p className="text-sm text-muted-foreground">Select or create an encrypted workspace to get started.</p>
+          <p className="text-sm text-muted-foreground">Select or create a Space to get started.</p>
         </div>
       )}
 
@@ -256,7 +256,7 @@ export function EncryptedBrowser() {
       <Dialog open={newWsOpen} onOpenChange={setNewWsOpen}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>New encrypted workspace</DialogTitle>
+            <DialogTitle>New Space</DialogTitle>
           </DialogHeader>
           <div className="space-y-1.5">
             <Label htmlFor="e2ee-ws-name">Name</Label>
@@ -266,7 +266,7 @@ export function EncryptedBrowser() {
               value={newWsName}
               onChange={(e) => setNewWsName(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') handleCreateWorkspace(); }}
-              placeholder="e.g. Personal vault"
+              placeholder="e.g. Personal documents"
             />
           </div>
           <DialogFooter>

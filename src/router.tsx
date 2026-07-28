@@ -74,7 +74,7 @@ export const router = createBrowserRouter([
       { path: '/integrations/rest-api', element: <RestApiSetup /> },
       { path: '/integrations/google', element: <GoogleSetup /> },
       { path: '/shared', element: <SharedPage /> },
-      { path: '/encrypted', element: <EncryptedPage /> },
+      { path: '/vault', element: <EncryptedPage /> },
       { path: '/comments', element: <CommentsPage /> },
       { path: '/activity', element: <ActivityPage /> },
       { path: '/notifications', element: <NotificationsPage /> },

@@ -282,7 +282,7 @@ export const useE2ee = create<E2eeState>()(
             busy: false,
           }));
         } catch (e) {
-          set({ busy: false, error: errorMessage(e, 'Could not create workspace.') });
+          set({ busy: false, error: errorMessage(e, 'Could not create Space.') });
         }
       },
 
@@ -299,7 +299,7 @@ export const useE2ee = create<E2eeState>()(
           await get().engine.openWorkspace(id, known?.selfFounded ?? false);
           set({ activeWorkspaceId: id, members: [], busy: false });
         } catch (e) {
-          set({ busy: false, error: errorMessage(e, 'Could not open workspace.') });
+          set({ busy: false, error: errorMessage(e, 'Could not open Space.') });
         }
       },
 
@@ -310,11 +310,11 @@ export const useE2ee = create<E2eeState>()(
             const known = new Set(s.workspaces.map((w) => w.id));
             const discovered: KnownWorkspace[] = mine
               .filter((m) => !known.has(m.workspaceId))
-              .map((m) => ({ id: m.workspaceId, name: 'Shared workspace', selfFounded: false }));
+              .map((m) => ({ id: m.workspaceId, name: 'Shared Space', selfFounded: false }));
             return discovered.length > 0 ? { workspaces: [...s.workspaces, ...discovered] } : {};
           });
         } catch (e) {
-          set({ error: errorMessage(e, 'Could not check for shared workspaces.') });
+          set({ error: errorMessage(e, 'Could not check for shared Spaces.') });
         }
       },
 
