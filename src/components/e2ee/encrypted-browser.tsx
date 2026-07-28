@@ -31,7 +31,7 @@ export function EncryptedBrowser() {
   const lock = useE2ee((s) => s.lock);
   const createWorkspace = useE2ee((s) => s.createWorkspace);
   const openWorkspace = useE2ee((s) => s.openWorkspace);
-  const refreshSharedWorkspaces = useE2ee((s) => s.refreshSharedWorkspaces);
+  const refreshMyWorkspaces = useE2ee((s) => s.refreshMyWorkspaces);
   const refreshFolder = useE2ee((s) => s.refreshFolder);
   const refreshMembers = useE2ee((s) => s.refreshMembers);
   const uploadFiles = useE2ee((s) => s.uploadFiles);
@@ -56,7 +56,7 @@ export function EncryptedBrowser() {
   // status === 'unlocked') pull in any workspaces shared with this account,
   // so an invitee sees them in the bar below without a manual refresh.
   useEffect(() => {
-    refreshSharedWorkspaces();
+    refreshMyWorkspaces();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

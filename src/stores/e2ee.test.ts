@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useE2ee, type E2eeEngine, type EncryptedEntry, type KnownWorkspace } from './e2ee';
+import { useWorkspace } from '@/stores/workspace';
 
 // jsdom (this vitest env, v25.0.1) implements Blob/File storage but not the
 // async read methods (`arrayBuffer`/`text`) real browsers have long shipped —
@@ -25,6 +26,7 @@ function makeFakeEngine(overrides: Partial<E2eeEngine> = {}): E2eeEngine {
     unlock: async () => {},
     lock: () => {},
     createWorkspace: async () => {},
+    setWorkspaceScope: async () => {},
     openWorkspace: async () => {},
     listFolder: async () => [],
     uploadFile: async () => {},
@@ -51,6 +53,10 @@ beforeEach(() => {
     recoveryKeyOnce: null,
     members: [],
   });
+  // The active GLOBAL workspace (a separate store, `stores/workspace.ts`) —
+  // reset to its own default between cases; individual tests below set
+  // `activeId` explicitly where the active workspace matters.
+  useWorkspace.setState({ activeId: '' });
 });
 
 describe('useE2ee: unlock', () => {
@@ -97,7 +103,8 @@ describe('useE2ee: setup', () => {
 });
 
 describe('useE2ee: createWorkspace', () => {
-  it('adds {id,name,selfFounded:true} to workspaces and makes it the active workspace', async () => {
+  it('adds {id,name,selfFounded:true,shared:false,globalWorkspaceId} to workspaces and makes it the active workspace', async () => {
+    useWorkspace.setState({ activeId: 'gw-1' });
     useE2ee.getState().__setEngine(makeFakeEngine({ createWorkspace: async () => {} }));
 
     await useE2ee.getState().createWorkspace('Docs');
@@ -111,32 +118,95 @@ describe('useE2ee: createWorkspace', () => {
     // source of truth) it is set here, never derived from anything the
     // server returns.
     expect(workspaces[0].selfFounded).toBe(true);
+    // P2e: scoped to the ACTIVE global workspace at creation time — read
+    // from `useWorkspace`, display-only, never affects selfFounded above.
+    expect(workspaces[0].globalWorkspaceId).toBe('gw-1');
+    expect(workspaces[0].shared).toBe(false);
     expect(activeWorkspaceId).toBe(workspaces[0].id);
+  });
+
+  it('records the workspace scope via engine.setWorkspaceScope(id, activeGlobalId)', async () => {
+    useWorkspace.setState({ activeId: 'gw-1' });
+    let seenScope: { workspaceId: string; globalWorkspaceId: string } | null = null;
+    useE2ee.getState().__setEngine(
+      makeFakeEngine({
+        setWorkspaceScope: async (workspaceId, globalWorkspaceId) => {
+          seenScope = { workspaceId, globalWorkspaceId };
+        },
+      }),
+    );
+
+    await useE2ee.getState().createWorkspace('Docs');
+
+    const { workspaces } = useE2ee.getState();
+    expect(seenScope).toEqual({ workspaceId: workspaces[0].id, globalWorkspaceId: 'gw-1' });
   });
 });
 
-describe('useE2ee: refreshSharedWorkspaces', () => {
-  it('adds a discovered workspace id as {selfFounded:false} when not already known', async () => {
+describe('useE2ee: refreshMyWorkspaces', () => {
+  it('adds a discovered createdByMe:false entry as {shared:true, selfFounded:false} with its globalWorkspaceId', async () => {
     useE2ee.getState().__setEngine(
-      makeFakeEngine({ listMyWorkspaces: async () => [{ workspaceId: 'ws-shared-1' }] }),
+      makeFakeEngine({
+        listMyWorkspaces: async () => [
+          { workspaceId: 'ws-shared-1', globalWorkspaceId: 'gw-1', createdByMe: false },
+        ],
+      }),
     );
 
-    await useE2ee.getState().refreshSharedWorkspaces();
+    await useE2ee.getState().refreshMyWorkspaces();
 
     const { workspaces } = useE2ee.getState();
     expect(workspaces).toHaveLength(1);
-    expect(workspaces[0]).toEqual({ id: 'ws-shared-1', name: 'Shared workspace', selfFounded: false });
+    expect(workspaces[0]).toEqual({
+      id: 'ws-shared-1',
+      name: 'Shared Space',
+      globalWorkspaceId: 'gw-1',
+      shared: true,
+      selfFounded: false,
+    });
   });
 
-  it('does NOT overwrite an existing created workspace\'s selfFounded:true, even if the server also lists it in my-workspaces (forge-resistance)', async () => {
-    useE2ee.setState({
-      workspaces: [{ id: 'ws-mine', name: 'Docs', selfFounded: true }],
-    });
+  it('adds a discovered createdByMe:true entry as {shared:false, selfFounded:false} -- SECURITY: createdByMe is server-reported and display-only, it must NEVER set selfFounded:true (that is reserved for this client\'s OWN createWorkspace call -- see the P2e forge-defense invariant)', async () => {
     useE2ee.getState().__setEngine(
-      makeFakeEngine({ listMyWorkspaces: async () => [{ workspaceId: 'ws-mine' }, { workspaceId: 'ws-shared-1' }] }),
+      makeFakeEngine({
+        listMyWorkspaces: async () => [
+          { workspaceId: 'ws-other-device', globalWorkspaceId: 'gw-2', createdByMe: true },
+        ],
+      }),
     );
 
-    await useE2ee.getState().refreshSharedWorkspaces();
+    await useE2ee.getState().refreshMyWorkspaces();
+
+    const { workspaces } = useE2ee.getState();
+    expect(workspaces).toHaveLength(1);
+    expect(workspaces[0]).toEqual({
+      id: 'ws-other-device',
+      name: 'Space',
+      globalWorkspaceId: 'gw-2',
+      shared: false,
+      selfFounded: false,
+    });
+    // Explicit, isolated assertion of the security invariant: a
+    // createdByMe:true discovered entry must NOT become selfFounded:true.
+    expect(workspaces[0].selfFounded).toBe(false);
+  });
+
+  it('does NOT overwrite an existing created workspace\'s selfFounded:true (or its globalWorkspaceId), even if the server also lists it in my-workspaces with createdByMe:true (forge-resistance)', async () => {
+    useE2ee.setState({
+      workspaces: [
+        { id: 'ws-mine', name: 'Docs', selfFounded: true, shared: false, globalWorkspaceId: 'gw-1' },
+      ],
+    });
+    useE2ee.getState().__setEngine(
+      makeFakeEngine({
+        listMyWorkspaces: async () => [
+          { workspaceId: 'ws-mine', globalWorkspaceId: 'gw-1', createdByMe: true },
+          { workspaceId: 'ws-shared-1', globalWorkspaceId: 'gw-1', createdByMe: false },
+        ],
+      }),
+    );
+
+    await useE2ee.getState().refreshMyWorkspaces();
 
     const { workspaces } = useE2ee.getState();
     expect(workspaces).toHaveLength(2);
@@ -144,7 +214,50 @@ describe('useE2ee: refreshSharedWorkspaces', () => {
     const shared = workspaces.find((w) => w.id === 'ws-shared-1');
     expect(mine?.selfFounded).toBe(true);
     expect(mine?.name).toBe('Docs');
-    expect(shared).toEqual({ id: 'ws-shared-1', name: 'Shared workspace', selfFounded: false });
+    expect(mine?.globalWorkspaceId).toBe('gw-1');
+    expect(shared).toEqual({
+      id: 'ws-shared-1',
+      name: 'Shared Space',
+      globalWorkspaceId: 'gw-1',
+      shared: true,
+      selfFounded: false,
+    });
+  });
+});
+
+describe('useE2ee: mySpacesForActiveWorkspace / sharedSpaces selectors', () => {
+  const workspaces: KnownWorkspace[] = [
+    { id: 'ws-a', name: 'Docs', selfFounded: true, shared: false, globalWorkspaceId: 'gw-1' },
+    { id: 'ws-b', name: 'Other Space', selfFounded: false, shared: false, globalWorkspaceId: 'gw-2' },
+    { id: 'ws-legacy', name: 'Legacy', selfFounded: true, shared: false, globalWorkspaceId: null },
+    { id: 'ws-shared', name: 'Shared Space', selfFounded: false, shared: true, globalWorkspaceId: 'gw-1' },
+  ];
+
+  it('mySpacesForActiveWorkspace returns only non-shared entries matching the active global id, plus null-scope legacy fallback', () => {
+    useWorkspace.setState({ activeId: 'gw-1' });
+    useE2ee.setState({ workspaces });
+
+    const mine = useE2ee.getState().mySpacesForActiveWorkspace();
+
+    expect(mine.map((w) => w.id).sort()).toEqual(['ws-a', 'ws-legacy'].sort());
+  });
+
+  it('mySpacesForActiveWorkspace excludes a non-shared Space scoped to a DIFFERENT global workspace', () => {
+    useWorkspace.setState({ activeId: 'gw-2' });
+    useE2ee.setState({ workspaces });
+
+    const mine = useE2ee.getState().mySpacesForActiveWorkspace();
+
+    expect(mine.map((w) => w.id).sort()).toEqual(['ws-b', 'ws-legacy'].sort());
+  });
+
+  it('sharedSpaces returns every shared:true entry regardless of the active global workspace', () => {
+    useWorkspace.setState({ activeId: 'gw-2' });
+    useE2ee.setState({ workspaces });
+
+    const shared = useE2ee.getState().sharedSpaces();
+
+    expect(shared.map((w) => w.id)).toEqual(['ws-shared']);
   });
 });
 
@@ -152,7 +265,7 @@ describe('useE2ee: openWorkspace (store action)', () => {
   it('passes the KnownWorkspace\'s stored selfFounded:true through to the engine', async () => {
     let seen: { id: string; selfFounded: boolean } | null = null;
     useE2ee.setState({
-      workspaces: [{ id: 'ws-mine', name: 'Docs', selfFounded: true }],
+      workspaces: [{ id: 'ws-mine', name: 'Docs', selfFounded: true, shared: false, globalWorkspaceId: 'gw-1' }],
     });
     useE2ee.getState().__setEngine(
       makeFakeEngine({
@@ -171,7 +284,9 @@ describe('useE2ee: openWorkspace (store action)', () => {
   it('passes selfFounded:false for a known-shared workspace, and defaults to false (safe) for an unknown id', async () => {
     let seen: { id: string; selfFounded: boolean } | null = null;
     useE2ee.setState({
-      workspaces: [{ id: 'ws-shared', name: 'Shared workspace', selfFounded: false }],
+      workspaces: [
+        { id: 'ws-shared', name: 'Shared workspace', selfFounded: false, shared: true, globalWorkspaceId: 'gw-1' },
+      ],
     });
     useE2ee.getState().__setEngine(
       makeFakeEngine({
@@ -390,13 +505,13 @@ describe('useE2ee: downloadEntry', () => {
 });
 
 describe('useE2ee: persistence', () => {
-  it('partialize excludes session/engine/members (secrets/in-memory-only) and persists only workspaces (with selfFounded — non-secret)', () => {
+  it('partialize excludes session/engine/members (secrets/in-memory-only) and persists only workspaces (with selfFounded/globalWorkspaceId/shared — all non-secret)', () => {
     const partialize = useE2ee.persist.getOptions().partialize;
     expect(partialize).toBeTypeOf('function');
 
     const knownWorkspaces: KnownWorkspace[] = [
-      { id: 'w1', name: 'Docs', selfFounded: true },
-      { id: 'w2', name: 'Shared workspace', selfFounded: false },
+      { id: 'w1', name: 'Docs', selfFounded: true, shared: false, globalWorkspaceId: 'gw-1' },
+      { id: 'w2', name: 'Shared workspace', selfFounded: false, shared: true, globalWorkspaceId: 'gw-1' },
     ];
     // Simulate a state object carrying secret-shaped fields (as if someone
     // accidentally added them to the store) to prove partialize is an

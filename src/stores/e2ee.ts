@@ -19,10 +19,26 @@ import { toHex } from '@dosya-dev/e2ee-core';
 import { buildE2eeClient } from '@/lib/e2ee/client';
 import { saveBytes } from '@/lib/e2ee/save';
 import { toast } from '@/lib/toast';
+import { useWorkspace } from '@/stores/workspace';
 
 export type E2eeStatus = 'locked' | 'unlocking' | 'unlocked';
 export type EncryptedEntry = { id: string; name: string; kind: 'file' | 'folder' };
-export type KnownWorkspace = { id: string; name: string; selfFounded: boolean };
+/**
+ * `globalWorkspaceId` (P2e) is the active global storage workspace this Space
+ * was scoped to at creation (or `null` for a legacy/unscoped Space) and
+ * `shared` is whether this Space was DISCOVERED (shared with us) rather than
+ * created by us — BOTH are DISPLAY-ONLY (server-sourced, for Vault grouping).
+ * `selfFounded` remains the security-critical, CLIENT-SOURCED anchor — its
+ * semantics are UNCHANGED by P2e (see `E2eeEngine.openWorkspace`'s doc
+ * comment and `createWorkspace`/`refreshMyWorkspaces` below).
+ */
+export type KnownWorkspace = {
+  id: string;
+  name: string;
+  selfFounded: boolean;
+  globalWorkspaceId: string | null;
+  shared: boolean;
+};
 export type WorkspaceMember = { userId: string; email: string; ed25519Pub: string; x25519Pub: string };
 
 /**
@@ -38,6 +54,13 @@ export interface E2eeEngine {
   unlock(passphrase: string): Promise<void>;
   lock(): void;
   createWorkspace(id: string): Promise<void>;
+  /**
+   * P2e: records that `workspaceId` belongs to `globalWorkspaceId` (the
+   * active global storage workspace at creation time) via
+   * `PUT /api/e2ee/workspace-scope` — plaintext metadata, not crypto, purely
+   * for per-workspace Vault UI grouping. Called right after `createWorkspace`.
+   */
+  setWorkspaceScope(workspaceId: string, globalWorkspaceId: string): Promise<void>;
   /**
    * `selfFounded` is CALLER-supplied (never derived here from anything the
    * server returns) — see `Workspace.selfFounded`'s doc comment in
@@ -61,8 +84,13 @@ export interface E2eeEngine {
    * `busy` state for the duration.
    */
   revokeMember(userId: string, ed25519Pub: string): Promise<void>;
-  /** Discovery (P2c): every workspace id the caller is currently a member of, per the server. */
-  listMyWorkspaces(): Promise<{ workspaceId: string }[]>;
+  /**
+   * Discovery (P2c), extended by P2e: every workspace id the caller is
+   * currently a member of, per the server, plus the DISPLAY-ONLY
+   * `globalWorkspaceId`/`createdByMe` scope hints (see `putWorkspaceScope`'s
+   * doc comment — never wired into `selfFounded`).
+   */
+  listMyWorkspaces(): Promise<{ workspaceId: string; globalWorkspaceId: string | null; createdByMe: boolean }[]>;
 }
 
 /**
@@ -103,6 +131,10 @@ export function defaultEngine(): E2eeEngine {
     async createWorkspace(id) {
       if (!session) throw new Error('e2ee: locked');
       ws = await engineCreateWorkspace(api, session, id);
+    },
+
+    async setWorkspaceScope(workspaceId, globalWorkspaceId) {
+      await api.putWorkspaceScope(workspaceId, globalWorkspaceId);
     },
 
     async openWorkspace(id, selfFounded) {
@@ -178,8 +210,27 @@ interface E2eeState {
   lock(): void;
   createWorkspace(name: string): Promise<void>;
   openWorkspace(id: string): Promise<void>;
-  /** Discover workspaces shared with this account (P2c) and merge any not already known as `selfFounded:false`, WITHOUT ever downgrading an existing created (`selfFounded:true`) entry. */
-  refreshSharedWorkspaces(): Promise<void>;
+  /**
+   * Discover every workspace this account is a member of (P2c), extended by
+   * P2e's scope metadata, and merge any not already known — a
+   * `createdByMe:false` entry as `{shared:true, selfFounded:false}`, a
+   * `createdByMe:true` entry as `{shared:false, selfFounded:false}` — NEVER
+   * touching an already-known entry (esp. never downgrading/upgrading its
+   * `selfFounded`). `selfFounded` is `false` for EVERY discovered entry,
+   * regardless of `createdByMe`: only `createWorkspace` (this client's own
+   * act of creation) is allowed to set it `true` — see the CRITICAL security
+   * invariant in this module's `openWorkspace`/`E2eeEngine` doc comments.
+   */
+  refreshMyWorkspaces(): Promise<void>;
+  /**
+   * This account's OWN Spaces scoped to the active global workspace
+   * (`useWorkspace.getState().activeId`) — never-shared entries whose
+   * `globalWorkspaceId` matches the active id, plus a legacy/unscoped
+   * (`globalWorkspaceId == null`) fallback so pre-P2e Spaces don't vanish.
+   */
+  mySpacesForActiveWorkspace(): KnownWorkspace[];
+  /** Every Space shared WITH this account (`shared:true`), regardless of the active global workspace. */
+  sharedSpaces(): KnownWorkspace[];
   refreshFolder(folderId?: string): Promise<void>;
   uploadFiles(files: FileList | File[], folderId?: string): Promise<void>;
   downloadEntry(entryId: string, name: string, folderId?: string): Promise<void>;
@@ -270,14 +321,20 @@ export const useE2ee = create<E2eeState>()(
 
       async createWorkspace(name) {
         set({ busy: true, error: null });
+        const gw = useWorkspace.getState().activeId;
         const id = crypto.randomUUID();
         try {
           await get().engine.createWorkspace(id);
+          // P2e: record the workspace→global-workspace association right
+          // after creation — plaintext metadata, not crypto (see
+          // `setWorkspaceScope`'s doc comment). This is DISPLAY-ONLY: it
+          // never feeds `selfFounded` below.
+          await get().engine.setWorkspaceScope(id, gw);
           set((s) => ({
             // SECURITY: this account created `id` — it is hard-anchored,
             // selfFounded:true, forever (persisted below via `partialize`).
-            // A later `refreshSharedWorkspaces()` must never downgrade this.
-            workspaces: [...s.workspaces, { id, name, selfFounded: true }],
+            // A later `refreshMyWorkspaces()` must never downgrade this.
+            workspaces: [...s.workspaces, { id, name, selfFounded: true, shared: false, globalWorkspaceId: gw }],
             activeWorkspaceId: id,
             busy: false,
           }));
@@ -291,10 +348,10 @@ export const useE2ee = create<E2eeState>()(
         try {
           // SECURITY: `selfFounded` comes ONLY from our own persisted
           // `workspaces` list (client-authored — created via createWorkspace,
-          // or merged in as false by refreshSharedWorkspaces) — NEVER from
+          // or merged in as false by refreshMyWorkspaces) — NEVER from
           // the server. Default false (safe) for an id we don't recognize at
           // all: a genuinely-shared workspace we haven't discovered yet via
-          // refreshSharedWorkspaces should still open as TOFU, not founder.
+          // refreshMyWorkspaces should still open as TOFU, not founder.
           const known = get().workspaces.find((w) => w.id === id);
           await get().engine.openWorkspace(id, known?.selfFounded ?? false);
           set({ activeWorkspaceId: id, members: [], busy: false });
@@ -303,19 +360,44 @@ export const useE2ee = create<E2eeState>()(
         }
       },
 
-      async refreshSharedWorkspaces() {
+      async refreshMyWorkspaces() {
         try {
           const mine = await get().engine.listMyWorkspaces();
           set((s) => {
             const known = new Set(s.workspaces.map((w) => w.id));
+            // SECURITY: `selfFounded` is ALWAYS `false` here, regardless of
+            // the server's `createdByMe` — a discovered entry (one this
+            // client did not itself `createWorkspace`) is TOFU, never the
+            // hard-anchored founder. `createdByMe`/`globalWorkspaceId` are
+            // DISPLAY-ONLY (they drive `shared` + the active-workspace
+            // grouping below) — see this module's top-level doc comments and
+            // the CRITICAL security invariant in the P2e plan. Do NOT wire
+            // `createdByMe` into `selfFounded`.
             const discovered: KnownWorkspace[] = mine
               .filter((m) => !known.has(m.workspaceId))
-              .map((m) => ({ id: m.workspaceId, name: 'Shared Space', selfFounded: false }));
+              .map((m) => ({
+                id: m.workspaceId,
+                name: m.createdByMe ? 'Space' : 'Shared Space',
+                globalWorkspaceId: m.globalWorkspaceId,
+                shared: !m.createdByMe,
+                selfFounded: false,
+              }));
             return discovered.length > 0 ? { workspaces: [...s.workspaces, ...discovered] } : {};
           });
         } catch (e) {
           set({ error: errorMessage(e, 'Could not check for shared Spaces.') });
         }
+      },
+
+      mySpacesForActiveWorkspace() {
+        const activeId = useWorkspace.getState().activeId;
+        return get().workspaces.filter(
+          (w) => !w.shared && (w.globalWorkspaceId === activeId || w.globalWorkspaceId == null),
+        );
+      },
+
+      sharedSpaces() {
+        return get().workspaces.filter((w) => w.shared);
       },
 
       async refreshFolder(folderId = '') {
@@ -416,12 +498,14 @@ export const useE2ee = create<E2eeState>()(
       name: 'dosya_e2ee',
       // The KEK/Session/private keys/recovery key live in memory ONLY —
       // never write them (or the engine instance itself) to localStorage.
-      // Persist ONLY the non-secret workspace id+name+selfFounded hints
-      // (selfFounded is itself the client-authored anchor `openWorkspace`
-      // relies on — see its doc comment above — so it MUST persist here).
-      // `members` is likewise in-memory only (cleared on lock/workspace
-      // switch) and deliberately excluded: this is an ALLOWLIST, so it drops
-      // anything not named here regardless.
+      // Persist ONLY the non-secret workspace id+name+selfFounded+
+      // globalWorkspaceId+shared hints (selfFounded is itself the
+      // client-authored anchor `openWorkspace` relies on — see its doc
+      // comment above — so it MUST persist here; globalWorkspaceId/shared
+      // are P2e's DISPLAY-ONLY grouping hints, equally non-secret — plain
+      // ids, no key material). `members` is likewise in-memory only (cleared
+      // on lock/workspace switch) and deliberately excluded: this is an
+      // ALLOWLIST, so it drops anything not named here regardless.
       partialize: (state) => ({ workspaces: state.workspaces }),
     },
   ),
