@@ -52,7 +52,14 @@ export interface E2eeEngine {
   listMembers(): Promise<WorkspaceMember[]>;
   /** Invite a dosya user (by email) into the currently-open workspace. */
   inviteMember(email: string): Promise<void>;
-  /** Revoke a member's access to the currently-open workspace. `ed25519Pub` is their signing pubkey (from `listMembers`). */
+  /**
+   * Revoke a member's access to the currently-open workspace. `ed25519Pub` is
+   * their signing pubkey (from `listMembers`). P2d Task 3: this now ROTATES
+   * the workspace key (re-keying every file/folder and re-sealing to every
+   * remaining member) rather than merely dropping the membership row — it
+   * can take noticeably longer on a large workspace, so callers should show
+   * `busy` state for the duration.
+   */
   revokeMember(userId: string, ed25519Pub: string): Promise<void>;
   /** Discovery (P2c): every workspace id the caller is currently a member of, per the server. */
   listMyWorkspaces(): Promise<{ workspaceId: string }[]>;
@@ -135,7 +142,12 @@ export function defaultEngine(): E2eeEngine {
 
     async revokeMember(userId, ed25519Pub) {
       if (!session || !ws) throw new Error('e2ee: no active workspace');
-      await engineRevokeAccess(api, session, ws, userId, ed25519Pub);
+      // P2d Task 3: revokeAccess now ROTATES the workspace key (WK_v1->v2)
+      // instead of just appending a remove-entry -- it mutates `ws` IN PLACE
+      // (wk/wkVersion/lastSeen) on success, so this facade's closed-over `ws`
+      // reference is immediately at v2 for every subsequent call
+      // (listFolder/uploadFile/downloadFile) with no re-open needed.
+      await engineRevokeAccess(api, session, ws, { userId, ed25519Pub });
     },
 
     async listMyWorkspaces() {
