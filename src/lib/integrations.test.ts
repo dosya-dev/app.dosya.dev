@@ -6,7 +6,7 @@ import {
   cliExamples, restExample,
 } from './integrations';
 
-const ctx = { workspaceId: 'ws_abc123', email: 'ada@example.com' };
+const ctx = { workspaceId: 'ws_abc123', workspaceName: 'My Team', email: 'ada@example.com' };
 
 describe('integrations metadata', () => {
   it('exposes exactly the ten integrations in order', () => {
@@ -39,10 +39,13 @@ describe('snippet builders inject context + use the API host', () => {
     expect(cfg).toContain(`api_url = ${API_HOST}`);
     expect(cfg).toContain('api_key = dos_your_api_key');
   });
-  it('webdav url + mounts use the api host and workspace id', () => {
-    expect(webdavUrl(ctx)).toBe('https://api.dosya.dev/webdav/ws_abc123/');
-    expect(webdavLinuxMount(ctx)).toContain('mount -t davfs https://api.dosya.dev/webdav/ws_abc123/');
+  it('webdav url prefers the encoded workspace name (Finder volume name)', () => {
+    expect(webdavUrl(ctx)).toBe('https://api.dosya.dev/webdav/My%20Team/');
+    expect(webdavLinuxMount(ctx)).toContain('mount -t davfs https://api.dosya.dev/webdav/My%20Team/');
     expect(webdavWindowsMount(ctx)).toContain('/user:ada@example.com');
+  });
+  it('webdav url falls back to the workspace id while the name loads', () => {
+    expect(webdavUrl({ ...ctx, workspaceName: '' })).toBe('https://api.dosya.dev/webdav/ws_abc123/');
   });
   it('sftp connect uses email as username, host and port 2222', () => {
     expect(sftpConnect(ctx)).toBe('sftp -P 2222 ada@example.com@sftp.dosya.dev');

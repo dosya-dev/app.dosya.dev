@@ -4,6 +4,8 @@ import {
 
 export interface IntegrationCtx {
   workspaceId: string;
+  /** Display name of the active workspace; '' until loaded. */
+  workspaceName: string;
   email: string;
 }
 
@@ -135,8 +137,10 @@ export const rcloneExamples = [
 ].join('\n');
 
 // ---- WebDAV ----
+// The first path segment doubles as Finder's volume name, so prefer the
+// human-readable workspace name; the API also accepts slug and ws_ id.
 export function webdavUrl(ctx: IntegrationCtx): string {
-  return `${API_HOST}/webdav/${ctx.workspaceId}/`;
+  return `${API_HOST}/webdav/${encodeURIComponent(ctx.workspaceName || ctx.workspaceId)}/`;
 }
 
 export function webdavLinuxMount(ctx: IntegrationCtx): string {
