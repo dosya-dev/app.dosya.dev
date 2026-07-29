@@ -1,5 +1,5 @@
 import {
-  RefreshCw, HardDrive, Server, Cloud, Monitor, Terminal, Code2, Webhook, type LucideIcon,
+  RefreshCw, HardDrive, Server, Cloud, Monitor, Terminal, Code2, Webhook, CloudDownload, type LucideIcon,
 } from 'lucide-react';
 
 export interface IntegrationCtx {
@@ -8,7 +8,8 @@ export interface IntegrationCtx {
 }
 
 export type IntegrationSlug =
-  | 'rclone' | 'webdav' | 'sftp' | 's3' | 'desktop' | 'cli' | 'rest-api' | 'google' | 'webhooks';
+  | 'rclone' | 'webdav' | 'sftp' | 's3' | 'desktop' | 'cli' | 'rest-api' | 'google' | 'webhooks'
+  | 'remote-download';
 
 export interface IntegrationMeta {
   slug: IntegrationSlug;
@@ -99,6 +100,13 @@ export const INTEGRATIONS: IntegrationMeta[] = [
     tag: 'Events',
     icon: Webhook,
     docsUrl: 'https://dosya.dev/developer/api#webhooks',
+  },
+  {
+    slug: 'remote-download',
+    title: 'Remote download',
+    description: 'Paste a direct file link and dosya downloads it into your workspace server-side — ideal on slow connections.',
+    tag: 'Import',
+    icon: CloudDownload,
   },
 ];
 
