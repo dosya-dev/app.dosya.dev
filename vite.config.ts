@@ -22,11 +22,12 @@ export default defineConfig({
       // monorepo (hoisted) and points outside the standalone deploy repo, breaking the CF
       // build. Standard resolution finds pintura in both layouts.
       //
-      // e2ee-client's committed dist re-exports from "@dosya-dev/e2ee-core". In a fresh
-      // `npm ci`, that bare specifier resolves relative to packages/e2ee-client/ (its own
-      // location), which has no node_modules/@dosya-dev/e2ee-core — only apps/web's does.
-      // Alias both directly to the committed dist so resolution is deterministic regardless
-      // of node_modules layout.
+      // packages/e2ee-core and packages/e2ee-client build to a fully self-contained,
+      // bundled ESM dist/index.js (all third-party deps — libsodium-wrappers-sumo,
+      // @hpke/core, @hpke/chacha20poly1305, @cloudflare/voprf-ts — inlined by esbuild;
+      // e2ee-client's dist also inlines e2ee-core). Alias both directly to that
+      // committed dist so resolution is deterministic regardless of node_modules
+      // layout — a plain `npm ci && tsc -b && vite build` needs nothing else.
       '@dosya-dev/e2ee-core': path.resolve(__dirname, '../../packages/e2ee-core/dist/index.js'),
       '@dosya-dev/e2ee-client': path.resolve(__dirname, '../../packages/e2ee-client/dist/index.js'),
     },
