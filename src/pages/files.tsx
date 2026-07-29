@@ -17,6 +17,7 @@ import {
   FolderOpen, Grid3X3, List, Loader2,
   Lock, Pencil, Copy, Move, Eye, EyeOff, History,
   MessageSquare, Star, SlidersHorizontal, RotateCcw, RefreshCw, Info,
+  ArrowUp, ArrowDown,
 } from 'lucide-react';
 import {
   DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem,
@@ -39,6 +40,7 @@ import { FilesSidebar } from '@/components/files-sidebar';
 import { FilePreviewImage } from '@/components/file-preview-image';
 import { OriginBadge } from '@/components/origin-badge';
 import { humanSize, timeAgo, extOf, fileIconSrc, folderIconSrc, colorFor, originLabel } from '@/lib/helpers';
+import { serializeSort, parseSort, toggleSort, DEFAULT_SORT, type SortKey, type SortSpec } from '@/lib/list-sort';
 import { toast } from '@/lib/toast';
 import { FolderPickerDialog } from '@/components/folder-picker-dialog';
 
@@ -62,9 +64,8 @@ interface Breadcrumb { id: string; name: string }
 interface Pagination { page: number; per_page: number; total_files: number; total_pages: number }
 
 type ViewMode = 'grid' | 'list';
-type SortMode = 'newest' | 'oldest' | 'name_asc' | 'name_desc' | 'largest' | 'smallest';
 
-const SORT_OPTIONS: { value: SortMode; label: string }[] = [
+const SORT_OPTIONS: { value: string; label: string }[] = [
   { value: 'newest', label: 'Newest' },
   { value: 'oldest', label: 'Oldest' },
   { value: 'name_asc', label: 'Name A-Z' },
@@ -76,7 +77,8 @@ const SORT_OPTIONS: { value: SortMode; label: string }[] = [
 
 // ── Table columns ─────────────────────────────────────────
 
-type ColumnKey = 'name' | 'size' | 'created' | 'modified' | 'type' | 'extension' | 'version' | 'uploader' | 'region' | 'origin' | 'shares' | 'comments';
+// Every table column doubles as a sort key (the API whitelists them all).
+type ColumnKey = SortKey;
 
 interface ColumnDef {
   key: ColumnKey;
@@ -141,7 +143,17 @@ export default function FilesPage() {
   const [pagination, setPagination] = useState<Pagination | null>(null);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [sort, setSort] = useState<SortMode>('newest');
+  const [sort, setSort] = useState<SortSpec>(DEFAULT_SORT);
+  const sortParam = serializeSort(sort);
+  const changeSort = (next: SortSpec) => {
+    setSort(next);
+    // A page number only means something within one ordering — restart at 1.
+    if (searchParams.get('page')) {
+      const p = new URLSearchParams(searchParams);
+      p.delete('page');
+      setSearchParams(p, { replace: true });
+    }
+  };
   const [view, setView] = useState<ViewMode>(loadSavedView);
   const changeView = (next: ViewMode) => {
     setView(next);
@@ -280,7 +292,7 @@ export default function FilesPage() {
   const loadFiles = useCallback(async () => {
     if (!wsId) return;
     setLoading(true);
-    const params = new URLSearchParams({ workspace_id: wsId, sort, page: String(currentPage), per_page: '100' });
+    const params = new URLSearchParams({ workspace_id: wsId, sort: sortParam, page: String(currentPage), per_page: '100' });
     if (search) params.set('q', search);
     if (currentFolderId) params.set('folder_id', currentFolderId);
     if (isDeletedView) params.set('deleted', '1');
@@ -302,7 +314,7 @@ export default function FilesPage() {
       }
     } catch { /* */ }
     setLoading(false);
-  }, [wsId, sort, currentPage, search, currentFolderId, isDeletedView, currentFilter, currentGroup]);
+  }, [wsId, sortParam, currentPage, search, currentFolderId, isDeletedView, currentFilter, currentGroup]);
 
   useEffect(() => { loadFiles(); }, [loadFiles]);
 
@@ -701,6 +713,15 @@ export default function FilesPage() {
 
   const uploadHref = `/uploads${currentFolderId ? `?folder=${currentFolderId}&folder_name=${encodeURIComponent(breadcrumbs.at(-1)?.name ?? '')}` : ''}`;
 
+  // Column-header sorts (e.g. Uploader ↑) aren't among the six dropdown
+  // presets — append a synthetic entry so the trigger still shows a label.
+  const sortSelectItems = SORT_OPTIONS.some((o) => o.value === sortParam)
+    ? SORT_OPTIONS
+    : [...SORT_OPTIONS, {
+        value: sortParam,
+        label: `${ALL_COLUMNS.find((c) => c.key === sort.key)?.label ?? sort.key} ${sort.dir === 'asc' ? '↑' : '↓'}`,
+      }];
+
   return (
     <div className="flex h-full overflow-hidden">
       {/* Files sidebar */}
@@ -746,10 +767,10 @@ export default function FilesPage() {
           <Search className="size-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <Input value={search} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearch(e.target.value)} placeholder="Search files..." className="h-8 text-xs pl-8" />
         </div>
-        <Select value={sort} onValueChange={(v) => setSort(v as SortMode)} items={SORT_OPTIONS}>
+        <Select value={sortParam} onValueChange={(v) => changeSort(parseSort(v ?? ''))} items={sortSelectItems}>
           <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
           <SelectContent>
-            {SORT_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value} className="text-xs">{o.label}</SelectItem>)}
+            {sortSelectItems.map((o) => <SelectItem key={o.value} value={o.value} className="text-xs">{o.label}</SelectItem>)}
           </SelectContent>
         </Select>
         <div className="flex border rounded-md overflow-hidden">
@@ -887,11 +908,21 @@ export default function FilesPage() {
               )}
               {view === 'list' && (files.length > 0 || folders.length > 0) && (
                 <div>
-                  {/* Table header */}
+                  {/* Table header — click a column to sort by it, click again to flip */}
                   <div className="flex items-center gap-3 px-3 py-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider border-b mb-0.5">
                     <div className="w-7 shrink-0" />
                     {ALL_COLUMNS.filter((c) => visibleColumns.has(c.key)).map((col) => (
-                      <div key={col.key} className={col.key === 'name' ? 'flex-1 min-w-40' : col.width}>{col.label}</div>
+                      <button
+                        key={col.key}
+                        onClick={() => changeSort(toggleSort(sort, col.key))}
+                        title={`Sort by ${col.label.toLowerCase()}`}
+                        className={`flex items-center gap-1 text-left uppercase tracking-wider hover:text-foreground transition-colors ${col.key === 'name' ? 'flex-1 min-w-40' : col.width} ${sort.key === col.key ? 'text-foreground' : ''}`}
+                      >
+                        <span className="truncate">{col.label}</span>
+                        {sort.key === col.key && (sort.dir === 'asc'
+                          ? <ArrowUp className="size-2.5 shrink-0" />
+                          : <ArrowDown className="size-2.5 shrink-0" />)}
+                      </button>
                     ))}
                     <div className="w-8 shrink-0" />
                   </div>
