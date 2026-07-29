@@ -30,6 +30,7 @@ import CliSetup from '@/pages/integrations/cli';
 import RestApiSetup from '@/pages/integrations/rest-api';
 import GoogleSetup from '@/pages/integrations/google';
 import WebhooksPage from '@/pages/integrations/webhooks';
+import RemoteDownloadPage from '@/pages/integrations/remote-download';
 import FileRequestDetailPage from '@/pages/file-request-detail';
 import LoginPage from '@/pages/login';
 import Login2faPage from '@/pages/login-2fa';
@@ -77,6 +78,7 @@ export const router = createBrowserRouter([
       { path: '/integrations/rest-api', element: <RestApiSetup /> },
       { path: '/integrations/google', element: <GoogleSetup /> },
       { path: '/integrations/webhooks', element: <WebhooksPage /> },
+      { path: '/integrations/remote-download', element: <RemoteDownloadPage /> },
       { path: '/shared', element: <SharedPage /> },
       { path: '/vault', element: <EncryptedPage /> },
       { path: '/comments', element: <CommentsPage /> },
