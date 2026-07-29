@@ -38,6 +38,7 @@ export default function ApiAnalyticsPage() {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
   // Bumped on every load() call; in-flight responses check this before applying
   // state so a slow, stale request (from a since-changed key/range, or a
   // loadMore superseded by a fresh load) can't clobber newer results.
@@ -53,6 +54,7 @@ export default function ApiAnalyticsPage() {
     const requestId = ++requestIdRef.current;
     setLoading(true);
     setError(null);
+    setLoadMoreError(null);
     Promise.all([getAnalyticsSeries(selectedKey, range), getAnalyticsLogs(selectedKey, range)])
       .then(([s, l]) => {
         if (requestIdRef.current !== requestId) return;
@@ -78,6 +80,7 @@ export default function ApiAnalyticsPage() {
     if (!oldest) return;
     const requestId = requestIdRef.current;
     setLoadingMore(true);
+    setLoadMoreError(null);
     getAnalyticsLogs(selectedKey, range, oldest.t)
       .then((l) => {
         if (requestIdRef.current !== requestId) return;
@@ -86,7 +89,7 @@ export default function ApiAnalyticsPage() {
       })
       .catch((err) => {
         if (requestIdRef.current !== requestId) return;
-        setError(apiErrorMessage(err));
+        setLoadMoreError(apiErrorMessage(err));
       })
       .finally(() => {
         if (requestIdRef.current === requestId) setLoadingMore(false);
@@ -288,10 +291,13 @@ export default function ApiAnalyticsPage() {
                     </TableBody>
                   </Table>
                   {hasMore && (
-                    <div className="pt-3 text-center">
+                    <div className="pt-3 text-center space-y-2">
                       <Button variant="outline" size="sm" onClick={loadMore} disabled={loadingMore}>
                         {loadingMore ? 'Loading…' : 'Load more'}
                       </Button>
+                      {loadMoreError && (
+                        <p className="text-xs text-destructive">{loadMoreError}</p>
+                      )}
                     </div>
                   )}
                 </>
