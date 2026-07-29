@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, Link } from 'react-router-dom';
 import { api, API_BASE, ApiError } from '@/api/client';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -15,7 +15,7 @@ import {
 import {
   User, Lock, Key, Monitor, Bell, Plug, Building2, Trash2,
   Plus, Copy, Check, Loader2, LogOut, X, Camera, ShieldCheck,
-  Smartphone, Download, RefreshCw, Mail, Palette,
+  Smartphone, Download, RefreshCw, Mail, Palette, ChartColumn,
 } from 'lucide-react';
 import { toast } from '@/lib/toast';
 import { timeAgo } from '@/lib/helpers';
@@ -889,7 +889,7 @@ function ApiKeysSection({ keys, onChanged }: { keys: ApiKey[]; onChanged: () => 
       <Card>
         <CardContent>
           {/* Header */}
-          <div className="grid grid-cols-[1.2fr_1.3fr_0.8fr_0.7fr_auto_36px] gap-2 px-1 pb-2 border-b">
+          <div className="grid grid-cols-[1.2fr_1.3fr_0.8fr_0.7fr_auto_64px] gap-2 px-1 pb-2 border-b">
             <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Name</span>
             <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Token</span>
             <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Scope</span>
@@ -902,7 +902,7 @@ function ApiKeysSection({ keys, onChanged }: { keys: ApiKey[]; onChanged: () => 
             <p className="py-8 text-center text-xs text-muted-foreground">No API keys yet</p>
           ) : (
             keys.map((k) => (
-              <div key={k.id} className="grid grid-cols-[1.2fr_1.3fr_0.8fr_0.7fr_auto_36px] gap-2 px-1 py-3 border-b last:border-b-0 items-center group">
+              <div key={k.id} className="grid grid-cols-[1.2fr_1.3fr_0.8fr_0.7fr_auto_64px] gap-2 px-1 py-3 border-b last:border-b-0 items-center group">
                 <span className="text-xs font-medium truncate">{k.name}</span>
                 <span className="text-[11px] text-muted-foreground font-mono">dos_···· {k.key_prefix.slice(0, 4)}</span>
                 <Badge variant={k.scope === 'full' ? 'default' : 'secondary'} className="text-[10px] w-fit">{SCOPE_LABELS[k.scope] ?? k.scope}</Badge>
@@ -918,9 +918,16 @@ function ApiKeysSection({ keys, onChanged }: { keys: ApiKey[]; onChanged: () => 
                     </button>
                   )}
                 </span>
-                <Button variant="outline" size="sm" className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 text-destructive border-destructive/30" onClick={() => deleteKey(k.id)}>
-                  <X className="size-3" />
-                </Button>
+                <div className="flex items-center gap-1 justify-end">
+                  <Link to={`/api-analytics?key=${k.id}`} title="View analytics">
+                    <Button variant="outline" size="sm" className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100">
+                      <ChartColumn className="size-3" />
+                    </Button>
+                  </Link>
+                  <Button variant="outline" size="sm" className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 text-destructive border-destructive/30" onClick={() => deleteKey(k.id)}>
+                    <X className="size-3" />
+                  </Button>
+                </div>
               </div>
             ))
           )}

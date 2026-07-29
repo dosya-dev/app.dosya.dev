@@ -13,6 +13,7 @@ const FileRequestsPage = lazy(() => import('@/pages/file-requests'));
 const UploadsPage = lazy(() => import('@/pages/uploads'));
 const SettingsPage = lazy(() => import('@/pages/settings'));
 const ProfilePage = lazy(() => import('@/pages/profile'));
+const ApiAnalyticsPage = lazy(() => import('@/pages/api-analytics'));
 const FilesPage = lazy(() => import('@/pages/files'));
 const EncryptedPage = lazy(() => import('@/pages/encrypted'));
 const MapPage = lazy(() => import('@/pages/map'));
@@ -84,6 +85,7 @@ export const router = createBrowserRouter([
       { path: '/uploads', element: <UploadsPage /> },
       { path: '/settings', element: <SettingsPage /> },
       { path: '/profile', element: <ProfilePage /> },
+      { path: '/api-analytics', element: <ApiAnalyticsPage /> },
       { path: '/teams', element: <TeamsPage /> },
       { path: '/integrations', element: <IntegrationsPage /> },
       { path: '/integrations/rclone', element: <RcloneSetup /> },
