@@ -22,7 +22,9 @@
     "noUnusedParameters": false,
     "noFallthroughCasesInSwitch": true,
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@dosya-dev/e2ee-core": ["../../packages/e2ee-core/dist/index.d.ts"],
+      "@dosya-dev/e2ee-client": ["../../packages/e2ee-client/dist/index.d.ts"]
     }
   },
   "include": ["src"]

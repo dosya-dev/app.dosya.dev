@@ -21,6 +21,14 @@ export default defineConfig({
       // NOTE: don't alias @pqina/* to ../../node_modules — that path only exists in the
       // monorepo (hoisted) and points outside the standalone deploy repo, breaking the CF
       // build. Standard resolution finds pintura in both layouts.
+      //
+      // e2ee-client's committed dist re-exports from "@dosya-dev/e2ee-core". In a fresh
+      // `npm ci`, that bare specifier resolves relative to packages/e2ee-client/ (its own
+      // location), which has no node_modules/@dosya-dev/e2ee-core — only apps/web's does.
+      // Alias both directly to the committed dist so resolution is deterministic regardless
+      // of node_modules layout.
+      '@dosya-dev/e2ee-core': path.resolve(__dirname, '../../packages/e2ee-core/dist/index.js'),
+      '@dosya-dev/e2ee-client': path.resolve(__dirname, '../../packages/e2ee-client/dist/index.js'),
     },
   },
   server: {
