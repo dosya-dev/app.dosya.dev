@@ -4,3 +4,8 @@
   Referrer-Policy: strict-origin-when-cross-origin
   Strict-Transport-Security: max-age=31536000; includeSubDomains
   Permissions-Policy: geolocation=(), microphone=(), camera=()
+
+# Vite content-hashes everything under /assets/, so cache forever. Unhashed
+# files (theme-init.js, sw.js, favicons) keep the Pages default revalidation.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable

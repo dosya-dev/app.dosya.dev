@@ -1,52 +1,69 @@
+import { lazy, Suspense } from 'react';
 import { createBrowserRouter, Outlet, Navigate } from 'react-router-dom';
 import { DashboardLayout } from '@/components/layout/dashboard-layout';
 import { RouteTitle } from '@/lib/page-title';
-import DashboardPage from '@/pages/dashboard';
-import FileRequestsPage from '@/pages/file-requests';
-import UploadsPage from '@/pages/uploads';
-import SettingsPage from '@/pages/settings';
-import ProfilePage from '@/pages/profile';
-import FilesPage from '@/pages/files';
-import EncryptedPage from '@/pages/encrypted';
-import MapPage from '@/pages/map';
-import CreateWorkspacePage from '@/pages/create-workspace';
-import TeamsPage from '@/pages/teams';
-import SharedPage from '@/pages/shared';
-import CommentsPage from '@/pages/comments';
-import ActivityPage from '@/pages/activity';
-import NotificationsPage from '@/pages/notifications';
-import SearchPage from '@/pages/search';
-import BillingPage from '@/pages/billing';
-import ReferralsPage from '@/pages/referrals';
-import WorkspaceDashboardPage from '@/pages/workspace-dashboard';
-import RoleCreatePage from '@/pages/role-create';
-import IntegrationsPage from '@/pages/integrations';
-import RcloneSetup from '@/pages/integrations/rclone';
-import WebdavSetup from '@/pages/integrations/webdav';
-import SftpSetup from '@/pages/integrations/sftp';
-import S3Setup from '@/pages/integrations/s3';
-import DesktopSetup from '@/pages/integrations/desktop';
-import CliSetup from '@/pages/integrations/cli';
-import RestApiSetup from '@/pages/integrations/rest-api';
-import GoogleSetup from '@/pages/integrations/google';
-import WebhooksPage from '@/pages/integrations/webhooks';
-import RemoteDownloadPage from '@/pages/integrations/remote-download';
-import FileRequestDetailPage from '@/pages/file-request-detail';
-import LoginPage from '@/pages/login';
-import Login2faPage from '@/pages/login-2fa';
-import SignUpPage from '@/pages/sign-up';
-import VerifyPage from '@/pages/verify';
-import ForgotPasswordPage from '@/pages/forgot-password';
-import ResetPasswordPage from '@/pages/reset-password';
-import NotFoundPage from '@/pages/not-found';
 import ErrorPage from '@/pages/error-page';
 
-// Root layout: keeps the browser tab title in sync with the route for every page.
+// Every page is a lazy chunk: the entry bundle carries only the shell
+// (layout, sidebar, boot gate), so first paint doesn't wait for feature code
+// like the map engine or the vault's crypto bundle. ErrorPage stays eager —
+// it must render even when a chunk fails to download.
+const DashboardPage = lazy(() => import('@/pages/dashboard'));
+const FileRequestsPage = lazy(() => import('@/pages/file-requests'));
+const UploadsPage = lazy(() => import('@/pages/uploads'));
+const SettingsPage = lazy(() => import('@/pages/settings'));
+const ProfilePage = lazy(() => import('@/pages/profile'));
+const FilesPage = lazy(() => import('@/pages/files'));
+const EncryptedPage = lazy(() => import('@/pages/encrypted'));
+const MapPage = lazy(() => import('@/pages/map'));
+const CreateWorkspacePage = lazy(() => import('@/pages/create-workspace'));
+const TeamsPage = lazy(() => import('@/pages/teams'));
+const SharedPage = lazy(() => import('@/pages/shared'));
+const CommentsPage = lazy(() => import('@/pages/comments'));
+const ActivityPage = lazy(() => import('@/pages/activity'));
+const NotificationsPage = lazy(() => import('@/pages/notifications'));
+const SearchPage = lazy(() => import('@/pages/search'));
+const BillingPage = lazy(() => import('@/pages/billing'));
+const ReferralsPage = lazy(() => import('@/pages/referrals'));
+const WorkspaceDashboardPage = lazy(() => import('@/pages/workspace-dashboard'));
+const RoleCreatePage = lazy(() => import('@/pages/role-create'));
+const IntegrationsPage = lazy(() => import('@/pages/integrations'));
+const RcloneSetup = lazy(() => import('@/pages/integrations/rclone'));
+const WebdavSetup = lazy(() => import('@/pages/integrations/webdav'));
+const SftpSetup = lazy(() => import('@/pages/integrations/sftp'));
+const S3Setup = lazy(() => import('@/pages/integrations/s3'));
+const DesktopSetup = lazy(() => import('@/pages/integrations/desktop'));
+const CliSetup = lazy(() => import('@/pages/integrations/cli'));
+const RestApiSetup = lazy(() => import('@/pages/integrations/rest-api'));
+const GoogleSetup = lazy(() => import('@/pages/integrations/google'));
+const WebhooksPage = lazy(() => import('@/pages/integrations/webhooks'));
+const RemoteDownloadPage = lazy(() => import('@/pages/integrations/remote-download'));
+const FileRequestDetailPage = lazy(() => import('@/pages/file-request-detail'));
+const LoginPage = lazy(() => import('@/pages/login'));
+const Login2faPage = lazy(() => import('@/pages/login-2fa'));
+const SignUpPage = lazy(() => import('@/pages/sign-up'));
+const VerifyPage = lazy(() => import('@/pages/verify'));
+const ForgotPasswordPage = lazy(() => import('@/pages/forgot-password'));
+const ResetPasswordPage = lazy(() => import('@/pages/reset-password'));
+const NotFoundPage = lazy(() => import('@/pages/not-found'));
+
+// Root layout: keeps the browser tab title in sync with the route for every
+// page. The Suspense boundary covers routes outside DashboardLayout (login,
+// sign-up, …) with the same centered spinner the boot gate and the static
+// index.html splash use, so the handoff is seamless.
 function RootLayout() {
   return (
     <>
       <RouteTitle />
-      <Outlet />
+      <Suspense
+        fallback={
+          <div className="h-screen flex items-center justify-center">
+            <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+          </div>
+        }
+      >
+        <Outlet />
+      </Suspense>
     </>
   );
 }

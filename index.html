@@ -10,9 +10,44 @@
     <title>dosya.dev</title>
     <meta name="description" content="dosya.dev — secure file storage, sharing and requests." />
     <script src="/theme-init.js"></script>
+    <style>
+      /* Static splash: paints before any JS parses so a cold load is never a
+         blank page. Colors mirror --background/--primary from src/index.css
+         (default theme, light + dark); theme-init.js has already put .dark on
+         <html> when applicable. React's first render replaces #root's
+         children with the identical boot spinner, so the handoff is seamless. */
+      html { background: #eff5fa; background: oklch(0.9813 0.01 238.5069); }
+      html.dark { background: #0b1219; background: oklch(0.1289 0.0199 238.9108); }
+      #splash {
+        height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      #splash .spin {
+        width: 24px;
+        height: 24px;
+        border: 2px solid #27a468;
+        border-color: oklch(0.6236 0.1833 147.4139);
+        border-top-color: transparent;
+        border-radius: 9999px;
+        animation: splash-spin 1s linear infinite;
+      }
+      html.dark #splash .spin {
+        border-color: #35c380;
+        border-color: oklch(0.7007 0.1804 148.9872);
+        border-top-color: transparent;
+      }
+      @keyframes splash-spin { to { transform: rotate(360deg); } }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div id="splash">
+        <div class="spin"></div>
+        <noscript>dosya.dev needs JavaScript enabled.</noscript>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
