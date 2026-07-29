@@ -4,7 +4,7 @@ import {
   LayoutDashboard, FolderOpen, Upload, Share2, Users, Settings, User, Inbox,
   MessageSquare, Activity, Search, CreditCard, Shield, ShieldCheck, LogIn,
   Building2, Bell, MapPin, Plug, RefreshCw, HardDrive, Server, Cloud, Monitor,
-  Terminal, Code2, FolderInput, Gift, LayoutGrid, type LucideIcon,
+  Terminal, Code2, FolderInput, Gift, LayoutGrid, BarChart3, type LucideIcon,
 } from 'lucide-react';
 
 // Single source of truth for each route's browser tab title AND in-app header icon.
@@ -21,6 +21,7 @@ const TITLES: Record<string, string> = {
   '/uploads': 'Upload',
   '/settings': 'Settings',
   '/profile': 'Profile',
+  '/api-analytics': 'API analytics',
   '/teams': 'Team',
   '/integrations': 'Integrations',
   '/integrations/rclone': 'rclone',
@@ -58,6 +59,7 @@ const ICONS: Record<string, LucideIcon> = {
   '/uploads': Upload,
   '/settings': Settings,
   '/profile': User,
+  '/api-analytics': BarChart3,
   '/teams': Users,
   '/integrations': Plug,
   '/integrations/rclone': RefreshCw,

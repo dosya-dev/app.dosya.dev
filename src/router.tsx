@@ -6,6 +6,7 @@ import FileRequestsPage from '@/pages/file-requests';
 import UploadsPage from '@/pages/uploads';
 import SettingsPage from '@/pages/settings';
 import ProfilePage from '@/pages/profile';
+import ApiAnalyticsPage from '@/pages/api-analytics';
 import FilesPage from '@/pages/files';
 import EncryptedPage from '@/pages/encrypted';
 import MapPage from '@/pages/map';
@@ -67,6 +68,7 @@ export const router = createBrowserRouter([
       { path: '/uploads', element: <UploadsPage /> },
       { path: '/settings', element: <SettingsPage /> },
       { path: '/profile', element: <ProfilePage /> },
+      { path: '/api-analytics', element: <ApiAnalyticsPage /> },
       { path: '/teams', element: <TeamsPage /> },
       { path: '/integrations', element: <IntegrationsPage /> },
       { path: '/integrations/rclone', element: <RcloneSetup /> },
