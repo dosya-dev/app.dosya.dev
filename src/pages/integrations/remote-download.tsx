@@ -136,7 +136,16 @@ export default function RemoteDownloadPage() {
       {jobs === null ? (
         <Skeleton className="h-24 w-full" />
       ) : jobs.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No remote downloads yet.</p>
+        <Card className="gap-0 py-12 text-center">
+          <div className="mx-auto flex size-11 items-center justify-center rounded-full bg-muted">
+            <CloudDownload className="size-5 text-muted-foreground" />
+          </div>
+          <p className="mt-3 text-sm font-medium">No remote downloads yet</p>
+          <p className="mx-auto mt-1 max-w-sm text-sm text-muted-foreground">
+            Paste a direct file link above and dosya will download it into your
+            workspace for you — no matter how slow your own connection is.
+          </p>
+        </Card>
       ) : (
         <Table>
           <TableHeader>
