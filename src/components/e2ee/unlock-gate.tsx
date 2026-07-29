@@ -38,9 +38,17 @@ export function UnlockGate() {
         </div>
         <h1 className="text-lg font-semibold">Vault</h1>
         <p className="text-xs text-muted-foreground">
-          Your files are encrypted in this browser before they ever leave your device — dosya only ever
+          Your files are encrypted in this browser before they ever leave your device. dosya only ever
           stores ciphertext.
         </p>
+        <a
+          href="https://dosya.dev/vault"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-xs font-medium text-primary underline underline-offset-2 hover:opacity-80"
+        >
+          What is Vault? Learn more
+        </a>
       </div>
 
       {/* hasIdentity is null while we're checking, OR when checkIdentity
@@ -152,7 +160,7 @@ function SetupCard({ error }: { error: string | null }) {
           </div>
           <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
             If you lose this passphrase <strong>and</strong> your recovery key, your encrypted files are
-            unrecoverable — we cannot reset it.
+            unrecoverable. We cannot reset it.
           </div>
         </CardContent>
         <CardFooter>
@@ -248,7 +256,7 @@ export function RecoveryKeyDialog() {
           </DialogTitle>
         </DialogHeader>
         <p className="text-xs text-muted-foreground">
-          This is the only time this key will ever be shown. Store it somewhere safe — a password manager
+          This is the only time this key will ever be shown. Store it somewhere safe, in a password manager
           or an offline note. If you forget your passphrase, this key is the only way to recover your
           encrypted files.
         </p>
