@@ -13,6 +13,7 @@ import { FolderPickerDialog } from '@/components/folder-picker-dialog';
 import { Folder, Loader2, X, CloudDownload } from 'lucide-react';
 import { timeAgo, humanSize } from '@/lib/helpers';
 import { toast } from '@/lib/toast';
+import { useRemoteDownloads } from '@/stores/remote-downloads';
 
 const meta = getIntegration('remote-download')!;
 const POLL_MS = 3_000;
@@ -90,6 +91,7 @@ export default function RemoteDownloadPage() {
       });
       setJobs((prev) => [data.job, ...(prev ?? [])]);
       setUrl('');
+      useRemoteDownloads.getState().refresh();
       toast.success('Download started', 'dosya is fetching the file for you — you can close this page.');
     } catch (err) {
       toast.error('Could not start download', apiErrorMessage(err));
@@ -103,6 +105,7 @@ export default function RemoteDownloadPage() {
     try {
       await api(`/api/remote-downloads/${job.id}?workspace_id=${workspaceId}`, { method: 'DELETE' });
       await load();
+      useRemoteDownloads.getState().refresh();
     } catch (err) {
       toast.error('Could not remove download', apiErrorMessage(err));
     }
