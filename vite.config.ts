@@ -22,14 +22,17 @@ export default defineConfig({
       // monorepo (hoisted) and points outside the standalone deploy repo, breaking the CF
       // build. Standard resolution finds pintura in both layouts.
       //
-      // packages/e2ee-core and packages/e2ee-client build to a fully self-contained,
-      // bundled ESM dist/index.js (all third-party deps — libsodium-wrappers-sumo,
-      // @hpke/core, @hpke/chacha20poly1305, @cloudflare/voprf-ts — inlined by esbuild;
-      // e2ee-client's dist also inlines e2ee-core). Alias both directly to that
-      // committed dist so resolution is deterministic regardless of node_modules
-      // layout — a plain `npm ci && tsc -b && vite build` needs nothing else.
-      '@dosya-dev/e2ee-core': path.resolve(__dirname, '../../packages/e2ee-core/dist/index.js'),
-      '@dosya-dev/e2ee-client': path.resolve(__dirname, '../../packages/e2ee-client/dist/index.js'),
+      // The e2ee packages are VENDORED into apps/web/vendor (see
+      // scripts/vendor-e2ee.mjs) — a self-contained, bundled ESM index.js each
+      // (all third-party deps — libsodium-wrappers-sumo, @hpke/core,
+      // @hpke/chacha20poly1305, @cloudflare/voprf-ts — inlined by esbuild;
+      // e2ee-client also inlines e2ee-core). They MUST live inside apps/web:
+      // CI (sync-public-repos.yml → sync-web) pushes only apps/web/ to the
+      // deploy repo Cloudflare Pages builds, so any ../../packages/* reference
+      // escapes that repo and fails to resolve. Alias to the in-tree vendor copy
+      // so a plain `npm ci && tsc -b && vite build` needs nothing outside apps/web.
+      '@dosya-dev/e2ee-core': path.resolve(__dirname, './vendor/e2ee-core/index.js'),
+      '@dosya-dev/e2ee-client': path.resolve(__dirname, './vendor/e2ee-client/index.js'),
     },
   },
   server: {

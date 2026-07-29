@@ -5,9 +5,9 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
-      // See vite.config.ts for why these are aliased directly to the committed dist.
-      '@dosya-dev/e2ee-core': path.resolve(__dirname, '../../packages/e2ee-core/dist/index.js'),
-      '@dosya-dev/e2ee-client': path.resolve(__dirname, '../../packages/e2ee-client/dist/index.js'),
+      // See vite.config.ts for why these resolve to the in-tree vendored bundle.
+      '@dosya-dev/e2ee-core': path.resolve(__dirname, './vendor/e2ee-core/index.js'),
+      '@dosya-dev/e2ee-client': path.resolve(__dirname, './vendor/e2ee-client/index.js'),
     },
   },
   test: {
