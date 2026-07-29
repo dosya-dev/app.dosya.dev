@@ -55,6 +55,7 @@ export default function ApiAnalyticsPage() {
     setLoading(true);
     setError(null);
     setLoadMoreError(null);
+    setLoadingMore(false);
     Promise.all([getAnalyticsSeries(selectedKey, range), getAnalyticsLogs(selectedKey, range)])
       .then(([s, l]) => {
         if (requestIdRef.current !== requestId) return;
