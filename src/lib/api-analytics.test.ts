@@ -13,4 +13,12 @@ describe('bucketLabel', () => {
   it('30d buckets label as "Mon D"', () => {
     expect(bucketLabel(T, '30d')).toMatch(/^[A-Z][a-z]{2} \d{1,2}$/);
   });
+  it('midnight labels as 00:xx, never 24:xx', () => {
+    // scan a day of hourly buckets; whatever the local timezone, one of them is local midnight
+    for (let i = 0; i < 24; i++) {
+      const label = bucketLabel(T + i * 3600, '24h');
+      expect(label.startsWith('24')).toBe(false);
+    }
+    expect(new Set(Array.from({ length: 24 }, (_, i) => bucketLabel(T + i * 3600, '24h').slice(0, 2))).has('00')).toBe(true);
+  });
 });
