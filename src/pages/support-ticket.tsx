@@ -9,6 +9,9 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+} from '@/components/ui/dialog';
 import { CATEGORY_LABELS, StatusBadge } from '@/components/support/ticket-meta';
 import { AttachImages } from '@/components/support/attach-images';
 import { toast } from '@/lib/toast';
@@ -26,6 +29,7 @@ export default function SupportTicketPage() {
   const [files, setFiles] = useState<File[]>([]);
   const [sending, setSending] = useState(false);
   const [closing, setClosing] = useState(false);
+  const [confirmClose, setConfirmClose] = useState(false);
 
   useDocumentTitle(ticket?.subject ? `${ticket.subject} · Support` : 'Support');
 
@@ -79,6 +83,7 @@ export default function SupportTicketPage() {
     try {
       await closeTicket(id);
       await refresh();
+      setConfirmClose(false);
       toast.success('Ticket closed', 'You can reopen it anytime by replying.');
     } catch (err) {
       toast.error('Close failed', apiErrorMessage(err));
@@ -137,8 +142,8 @@ export default function SupportTicketPage() {
               </p>
             </div>
             {ticket.status !== 'closed' && (
-              <Button variant="outline" size="sm" disabled={closing} onClick={close}>
-                {closing ? 'Closing…' : 'Close ticket'}
+              <Button variant="outline" size="sm" disabled={closing} onClick={() => setConfirmClose(true)}>
+                Close ticket
               </Button>
             )}
           </div>
@@ -193,6 +198,23 @@ export default function SupportTicketPage() {
               </Button>
             </div>
           </div>
+
+          {confirmClose && (
+            <Dialog open onOpenChange={() => !closing && setConfirmClose(false)}>
+              <DialogContent className="max-w-sm">
+                <DialogHeader><DialogTitle>Close this ticket?</DialogTitle></DialogHeader>
+                <p className="text-sm text-muted-foreground">
+                  This marks the conversation as resolved. You can reopen it anytime by sending a new message.
+                </p>
+                <DialogFooter>
+                  <Button variant="outline" disabled={closing} onClick={() => setConfirmClose(false)}>Cancel</Button>
+                  <Button disabled={closing} onClick={close}>
+                    {closing ? 'Closing…' : 'Close ticket'}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          )}
         </>
       )}
     </div>
