@@ -4,7 +4,7 @@ import {
   fetchTicket, replyTicket, closeTicket,
   type TicketDetail, type TicketMessage,
 } from '@/api/support';
-import { apiErrorMessage } from '@/api/client';
+import { api, API_BASE, apiErrorMessage } from '@/api/client';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -15,7 +15,7 @@ import {
 import { CATEGORY_LABELS, StatusBadge } from '@/components/support/ticket-meta';
 import { AttachImages } from '@/components/support/attach-images';
 import { toast } from '@/lib/toast';
-import { timeAgo } from '@/lib/helpers';
+import { timeAgo, initials } from '@/lib/helpers';
 import { useDocumentTitle } from '@/lib/page-title';
 import { ChevronLeft, Copy } from 'lucide-react';
 
@@ -30,6 +30,13 @@ export default function SupportTicketPage() {
   const [sending, setSending] = useState(false);
   const [closing, setClosing] = useState(false);
   const [confirmClose, setConfirmClose] = useState(false);
+  const [me, setMe] = useState<{ id: string; name: string; avatar_url: string | null } | null>(null);
+
+  useEffect(() => {
+    api<{ ok: boolean; user: { id: string; name: string; avatar_url: string | null } }>('/api/me')
+      .then((r) => { if (r.ok) setMe(r.user); })
+      .catch(() => { /* avatar falls back to initials */ });
+  }, []);
 
   useDocumentTitle(ticket?.subject ? `${ticket.subject} · Support` : 'Support');
 
@@ -152,26 +159,42 @@ export default function SupportTicketPage() {
             {messages.map((m) => (
               <div
                 key={m.id}
-                className={`flex flex-col max-w-[85%] ${m.author_type === 'user' ? 'self-end items-end' : 'self-start items-start'}`}
+                className={`flex items-start gap-2.5 max-w-[85%] ${m.author_type === 'user' ? 'self-end flex-row-reverse' : 'self-start'}`}
               >
-                <div className={`rounded-xl px-4 py-3 text-sm whitespace-pre-wrap break-words ${
-                  m.author_type === 'user' ? 'bg-primary text-primary-foreground' : 'bg-muted'
-                }`}>
-                  {m.body}
-                  {m.attachments.length > 0 && (
-                    <div className="flex gap-2 mt-2 flex-wrap">
-                      {m.attachments.map((a) => (
-                        <a key={a.id} href={a.url} target="_blank" rel="noreferrer">
-                          <img src={a.url} alt={a.file_name} className="size-24 rounded-lg object-cover border" />
-                        </a>
-                      ))}
-                    </div>
-                  )}
+                {m.author_type === 'user' ? (
+                  <div className="size-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-[10px] font-semibold overflow-hidden shrink-0 mt-4">
+                    {me?.avatar_url ? (
+                      <img src={`${API_BASE}/api/me/avatar?u=${encodeURIComponent(me.id)}`} alt="" crossOrigin="use-credentials" className="w-full h-full object-cover" />
+                    ) : (
+                      initials(me?.name || '?')
+                    )}
+                  </div>
+                ) : (
+                  // Our side always shows the dosya logo — never a staff member's name/photo.
+                  <div className="size-7 rounded-full bg-background border flex items-center justify-center shrink-0 mt-4">
+                    <img src="/logo.svg" alt="dosya.dev" className="size-4" />
+                  </div>
+                )}
+                <div className={`flex flex-col min-w-0 ${m.author_type === 'user' ? 'items-end' : 'items-start'}`}>
+                  <p className="text-[11px] text-muted-foreground mb-1">
+                    {m.author_type === 'staff' ? 'Support' : (me?.name || 'You')}
+                    {' · '}{timeAgo(m.created_at)}
+                  </p>
+                  <div className={`rounded-xl px-4 py-3 text-sm whitespace-pre-wrap break-words ${
+                    m.author_type === 'user' ? 'bg-primary text-primary-foreground' : 'bg-muted'
+                  }`}>
+                    {m.body}
+                    {m.attachments.length > 0 && (
+                      <div className="flex gap-2 mt-2 flex-wrap">
+                        {m.attachments.map((a) => (
+                          <a key={a.id} href={a.url} target="_blank" rel="noreferrer">
+                            <img src={a.url} alt={a.file_name} className="size-24 rounded-lg object-cover border" />
+                          </a>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
-                <p className="text-[11px] text-muted-foreground mt-1">
-                  {m.author_type === 'staff' ? (m.author_name || 'dosya.dev Support') : 'You'}
-                  {' · '}{timeAgo(m.created_at)}
-                </p>
               </div>
             ))}
           </div>
