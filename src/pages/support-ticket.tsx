@@ -54,8 +54,8 @@ export default function SupportTicketPage() {
       const data = await fetchTicket(id);
       setTicket(data.ticket);
       setMessages(data.messages);
-    } catch {
-      setNotFound(true);
+    } catch (err) {
+      toast.error('Could not refresh the ticket', apiErrorMessage(err));
     }
   }, [id]);
 
