@@ -258,6 +258,8 @@ export default function FilesPage() {
   const [newFolderName, setNewFolderName] = useState('');
   const [creatingFolder, setCreatingFolder] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string; type: 'file' | 'folder' } | null>(null);
+  /** Pending bulk delete awaiting confirmation - `permanent` distinguishes the Deleted view's irreversible purge. */
+  const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState<{ permanent: boolean } | null>(null);
   const [renameTarget, setRenameTarget] = useState<{ id: string; name: string; type: 'file' | 'folder' } | null>(null);
   const [renameName, setRenameName] = useState('');
   const [moveOpen, setMoveOpen] = useState<{ id: string; type: 'file' | 'folder' } | null>(null);
@@ -555,7 +557,14 @@ export default function FilesPage() {
   const clearSelection = () => { setSelected(new Set()); setSelectedFolders(new Set()); };
   const totalSelected = selected.size + selectedFolders.size;
 
-  const bulkDelete = async () => {
+  // Bulk delete is confirmation-gated (see the bulk-delete dialog near the
+  // single-item one below). Deleting a folder takes everything inside it, and
+  // the bulk bar's Delete button sits one click away from Download/Move, so
+  // firing the request straight from the toolbar was too easy to do by
+  // accident. `bulkDeleteConfirm` holds the pending mode; these two runners
+  // are only ever reached from the dialog's confirm button.
+  const runBulkDelete = async () => {
+    setBulkDeleteConfirm(null);
     try {
       await api('/api/files/batch-delete', { method: 'POST', body: JSON.stringify({
         workspace_id: wsId,
@@ -607,7 +616,8 @@ export default function FilesPage() {
     toast.success('Restored', `${selected.size} files restored`); clearSelection(); loadFiles();
   };
 
-  const bulkPermanentDelete = async () => {
+  const runBulkPermanentDelete = async () => {
+    setBulkDeleteConfirm(null);
     for (const id of selected) {
       try { await api(`/api/files/${id}/permanent`, { method: 'DELETE' }); } catch {}
     }
@@ -816,7 +826,7 @@ export default function FilesPage() {
           {isDeletedView ? (
             <>
               <Button variant="outline" size="sm" className="h-7 text-xs" onClick={bulkRestore}><RotateCcw className="size-3 mr-1" /> Restore</Button>
-              <Button variant="outline" size="sm" className="h-7 text-xs text-destructive border-destructive/30" onClick={bulkPermanentDelete}><Trash2 className="size-3 mr-1" /> Delete permanently</Button>
+              <Button variant="outline" size="sm" className="h-7 text-xs text-destructive border-destructive/30" onClick={() => setBulkDeleteConfirm({ permanent: true })}><Trash2 className="size-3 mr-1" /> Delete permanently</Button>
             </>
           ) : (
             <>
@@ -825,7 +835,7 @@ export default function FilesPage() {
                 <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => openShare(Array.from(selected)[0], `${selected.size} files`)}><Share2 className="size-3 mr-1" /> Share</Button>
               )}
               <Button variant="outline" size="sm" className="h-7 text-xs" onClick={bulkMove}><Move className="size-3 mr-1" /> Move</Button>
-              <Button variant="outline" size="sm" className="h-7 text-xs text-destructive border-destructive/30" onClick={bulkDelete}><Trash2 className="size-3 mr-1" /> Delete</Button>
+              <Button variant="outline" size="sm" className="h-7 text-xs text-destructive border-destructive/30" onClick={() => setBulkDeleteConfirm({ permanent: false })}><Trash2 className="size-3 mr-1" /> Delete</Button>
             </>
           )}
           <div className="ml-auto flex gap-1.5">
@@ -1073,6 +1083,59 @@ export default function FilesPage() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteTarget(null)}>Cancel</Button>
             <Button variant="destructive" onClick={handleDelete}>Delete</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk delete dialog - covers both the normal bulk Delete and the
+          Deleted view's irreversible "Delete permanently". Counts are read
+          live from the selection rather than captured into
+          `bulkDeleteConfirm`, so the numbers can never drift from what the
+          confirm button actually deletes. */}
+      <Dialog open={!!bulkDeleteConfirm} onOpenChange={() => setBulkDeleteConfirm(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>
+              {bulkDeleteConfirm?.permanent ? 'Delete permanently?' : 'Delete selected items?'}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 text-sm text-muted-foreground">
+            <p>
+              {bulkDeleteConfirm?.permanent ? (
+                <>
+                  Permanently delete{' '}
+                  <span className="font-semibold text-foreground">
+                    {selected.size} file{selected.size === 1 ? '' : 's'}
+                  </span>?
+                </>
+              ) : (
+                <>
+                  Delete{' '}
+                  <span className="font-semibold text-foreground">
+                    {selected.size > 0 && `${selected.size} file${selected.size === 1 ? '' : 's'}`}
+                    {selected.size > 0 && selectedFolders.size > 0 && ' and '}
+                    {selectedFolders.size > 0 && `${selectedFolders.size} folder${selectedFolders.size === 1 ? '' : 's'}`}
+                  </span>?
+                </>
+              )}
+            </p>
+            {!bulkDeleteConfirm?.permanent && selectedFolders.size > 0 && (
+              <p>Everything inside the selected folder{selectedFolders.size === 1 ? '' : 's'} is deleted too.</p>
+            )}
+            <p className={bulkDeleteConfirm?.permanent ? 'text-destructive' : undefined}>
+              {bulkDeleteConfirm?.permanent
+                ? 'This cannot be undone.'
+                : 'You can restore these from the Deleted view.'}
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBulkDeleteConfirm(null)}>Cancel</Button>
+            <Button
+              variant="destructive"
+              onClick={bulkDeleteConfirm?.permanent ? runBulkPermanentDelete : runBulkDelete}
+            >
+              {bulkDeleteConfirm?.permanent ? 'Delete permanently' : 'Delete'}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
