@@ -40,6 +40,8 @@ const GoogleSetup = lazy(() => import('@/pages/integrations/google'));
 const WebhooksPage = lazy(() => import('@/pages/integrations/webhooks'));
 const RemoteDownloadPage = lazy(() => import('@/pages/integrations/remote-download'));
 const FileRequestDetailPage = lazy(() => import('@/pages/file-request-detail'));
+const SupportPage = lazy(() => import('@/pages/support'));
+const SupportTicketPage = lazy(() => import('@/pages/support-ticket'));
 const LoginPage = lazy(() => import('@/pages/login'));
 const Login2faPage = lazy(() => import('@/pages/login-2fa'));
 const SignUpPage = lazy(() => import('@/pages/sign-up'));
@@ -82,6 +84,8 @@ export const router = createBrowserRouter([
       { path: '/map', element: <MapPage /> },
       { path: '/file-requests', element: <FileRequestsPage /> },
       { path: '/file-requests/:id', element: <FileRequestDetailPage /> },
+      { path: '/support', element: <SupportPage /> },
+      { path: '/support/:id', element: <SupportTicketPage /> },
       { path: '/uploads', element: <UploadsPage /> },
       { path: '/settings', element: <SettingsPage /> },
       { path: '/profile', element: <ProfilePage /> },

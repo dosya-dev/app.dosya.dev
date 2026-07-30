@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { api, apiErrorMessage, ApiError } from './client';
+import { api, apiErrorMessage, responseErrorMessage, ApiError } from './client';
 
 // Verifies the end-to-end error path that the workspace-delete UI relies on:
 // a server jsonError body must survive api() -> ApiError -> apiErrorMessage()
@@ -54,5 +54,28 @@ describe('workspace-delete error surfacing', () => {
     const msg = await deleteAndGetMessage();
     expect(msg).not.toContain('<');
     expect(msg).toMatch(/Request failed \(500\)/);
+  });
+});
+
+describe('responseErrorMessage (raw-fetch download handlers)', () => {
+  const json = (body: unknown, status = 400) =>
+    new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
+
+  it("surfaces the API's error string (empty-folder case)", async () => {
+    const res = json({ ok: false, error: "This folder is empty — there's nothing to download" });
+    expect(await responseErrorMessage(res, 'The folder could not be prepared.'))
+      .toBe("This folder is empty — there's nothing to download");
+  });
+
+  it('falls back on a non-JSON body (HTML gateway page)', async () => {
+    const res = new Response('<html>502</html>', { status: 502 });
+    expect(await responseErrorMessage(res, 'The folder could not be prepared.'))
+      .toBe('The folder could not be prepared.');
+  });
+
+  it('falls back when error is missing, blank, or not a string', async () => {
+    expect(await responseErrorMessage(json({ ok: false }), 'fb')).toBe('fb');
+    expect(await responseErrorMessage(json({ ok: false, error: '  ' }), 'fb')).toBe('fb');
+    expect(await responseErrorMessage(json({ ok: false, error: 42 }), 'fb')).toBe('fb');
   });
 });

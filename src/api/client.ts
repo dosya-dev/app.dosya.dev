@@ -16,6 +16,20 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Response-flavored sibling of apiErrorMessage, for handlers that use raw
+ * fetch() (blob downloads) and hold a failed Response instead of a thrown
+ * ApiError. Surfaces the API's `{ error }` string; falls back for non-JSON
+ * bodies (gateway/HTML error pages).
+ */
+export async function responseErrorMessage(res: Response, fallback: string): Promise<string> {
+  try {
+    const parsed = (await res.json()) as { error?: unknown };
+    if (typeof parsed.error === 'string' && parsed.error.trim().length > 0) return parsed.error;
+  } catch { /* non-JSON body */ }
+  return fallback;
+}
+
 /** Extract the server's error message from a thrown ApiError (falls back for real network failures). */
 export function apiErrorMessage(err: unknown, fallback = 'Network error. Please try again.'): string {
   if (err instanceof ApiError) {
