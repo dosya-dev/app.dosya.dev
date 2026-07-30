@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, type MouseEvent as ReactMouseEvent } from 'react';
 import { useSearchParams, Link, useNavigate } from 'react-router-dom';
-import { api, API_BASE, ApiError, apiErrorMessage } from '@/api/client';
+import { api, API_BASE, ApiError, apiErrorMessage, responseErrorMessage } from '@/api/client';
 import { useDocumentTitle } from '@/lib/page-title';
 import { folderNavParams, filterNavParams, groupNavParams } from '@/lib/files-params';
 import { useWorkspace } from '@/stores/workspace';
@@ -494,7 +494,7 @@ export default function FilesPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ folder_ids: [folderId] }),
       });
-      if (!res.ok) { toast.error('Download failed', 'The folder could not be prepared.'); return; }
+      if (!res.ok) { toast.error('Download failed', await responseErrorMessage(res, 'The folder could not be prepared.')); return; }
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a'); a.href = url; a.download = 'dosya-download.zip'; a.click();
@@ -574,7 +574,7 @@ export default function FilesPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ file_ids: Array.from(selected), folder_ids: Array.from(selectedFolders) }),
       });
-      if (!res.ok) { toast.error('Download failed', 'The download could not be prepared.'); return; }
+      if (!res.ok) { toast.error('Download failed', await responseErrorMessage(res, 'The download could not be prepared.')); return; }
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a'); a.href = url; a.download = 'dosya-download.zip'; a.click();

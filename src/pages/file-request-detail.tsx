@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { api, API_BASE } from '@/api/client';
+import { api, API_BASE, responseErrorMessage } from '@/api/client';
 import { useDocumentTitle } from '@/lib/page-title';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -214,7 +214,7 @@ export default function FileRequestDetailPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ file_ids: Array.from(selected) }),
       });
-      if (!res.ok) { toast.error('Download failed', 'The download could not be prepared.'); setZipping(false); return; }
+      if (!res.ok) { toast.error('Download failed', await responseErrorMessage(res, 'The download could not be prepared.')); setZipping(false); return; }
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a'); a.href = url; a.download = 'dosya-download.zip'; a.click();
