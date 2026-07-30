@@ -95,13 +95,13 @@ const ALL_COLUMNS: ColumnDef[] = [
   { key: 'created', label: 'Created', defaultVisible: true, width: 'w-24', render: (f) => timeAgo(f.created_at), renderFolder: (f) => timeAgo(f.created_at) },
   { key: 'modified', label: 'Modified', defaultVisible: false, width: 'w-24', render: (f) => timeAgo(f.updated_at), renderFolder: (f) => timeAgo(f.content_updated_at) },
   { key: 'type', label: 'Type', defaultVisible: false, width: 'w-28', render: (f) => f.mime_type, renderFolder: () => 'Folder' },
-  { key: 'extension', label: 'Extension', defaultVisible: false, width: 'w-16', render: (f) => (f.extension || extOf(f.name) || '—').toUpperCase() },
-  { key: 'version', label: 'Version', defaultVisible: false, width: 'w-16', render: (f) => f.current_version > 1 ? `v${f.current_version}` : '—' },
-  { key: 'uploader', label: 'Uploader', defaultVisible: false, width: 'w-28', render: (f) => f.uploader_name ?? '—', renderFolder: (f) => f.uploader_name ?? '—' },
-  { key: 'region', label: 'Region', defaultVisible: false, width: 'w-20', render: (f) => f.region || '—', renderFolder: (f) => f.region === 'multi' ? 'Multiple' : (f.region || '—') },
+  { key: 'extension', label: 'Extension', defaultVisible: false, width: 'w-16', render: (f) => (f.extension || extOf(f.name) || '-').toUpperCase() },
+  { key: 'version', label: 'Version', defaultVisible: false, width: 'w-16', render: (f) => f.current_version > 1 ? `v${f.current_version}` : '-' },
+  { key: 'uploader', label: 'Uploader', defaultVisible: false, width: 'w-28', render: (f) => f.uploader_name ?? '-', renderFolder: (f) => f.uploader_name ?? '-' },
+  { key: 'region', label: 'Region', defaultVisible: false, width: 'w-20', render: (f) => f.region || '-', renderFolder: (f) => f.region === 'multi' ? 'Multiple' : (f.region || '-') },
   { key: 'origin', label: 'Origin', defaultVisible: true, width: 'w-20', render: (f) => originLabel(f.origin), renderFolder: (f) => originLabel(f.origin) },
-  { key: 'shares', label: 'Shares', defaultVisible: false, width: 'w-14', render: (f) => f.share_count > 0 ? String(f.share_count) : '—', renderFolder: (f) => f.share_count > 0 ? String(f.share_count) : '—' },
-  { key: 'comments', label: 'Comments', defaultVisible: false, width: 'w-14', render: (f) => f.comment_count > 0 ? String(f.comment_count) : '—', renderFolder: (f) => f.comment_count > 0 ? String(f.comment_count) : '—' },
+  { key: 'shares', label: 'Shares', defaultVisible: false, width: 'w-14', render: (f) => f.share_count > 0 ? String(f.share_count) : '-', renderFolder: (f) => f.share_count > 0 ? String(f.share_count) : '-' },
+  { key: 'comments', label: 'Comments', defaultVisible: false, width: 'w-14', render: (f) => f.comment_count > 0 ? String(f.comment_count) : '-', renderFolder: (f) => f.comment_count > 0 ? String(f.comment_count) : '-' },
 ];
 
 const DEFAULT_VISIBLE: Set<ColumnKey> = new Set(ALL_COLUMNS.filter((c) => c.defaultVisible).map((c) => c.key));
@@ -147,7 +147,7 @@ export default function FilesPage() {
   const sortParam = serializeSort(sort);
   const changeSort = (next: SortSpec) => {
     setSort(next);
-    // A page number only means something within one ordering — restart at 1.
+    // A page number only means something within one ordering - restart at 1.
     if (searchParams.get('page')) {
       const p = new URLSearchParams(searchParams);
       p.delete('page');
@@ -193,7 +193,7 @@ export default function FilesPage() {
   // Get-info dialog
   const [infoTarget, setInfoTarget] = useState<InfoTarget | null>(null);
 
-  // Unlock gate — tracks unlocked file IDs and pending unlock prompts
+  // Unlock gate - tracks unlocked file IDs and pending unlock prompts
   const [unlockedFiles] = useState(() => new Map<string, string>()); // fileId → unlock_token
   const [unlockPrompt, setUnlockPrompt] = useState<{ file: FileItem; action: 'detail' | 'view' } | null>(null);
   const [unlockPassword, setUnlockPassword] = useState('');
@@ -230,7 +230,7 @@ export default function FilesPage() {
         setUnlockPassword('');
       }
     } catch (err) {
-      // api() throws on non-2xx, so a rejected password lands here — surface
+      // api() throws on non-2xx, so a rejected password lands here - surface
       // the server's message and reset the field like the else-branch does.
       setUnlockError(apiErrorMessage(err, "Can't reach the server. Check your connection and try again."));
       if (err instanceof ApiError) setUnlockPassword('');
@@ -285,7 +285,7 @@ export default function FilesPage() {
   // result usually means "nothing of this type here" rather than an empty folder.
   const filterEmptyLabel = isDeletedView ? '' : FILTER_EMPTY_LABELS[currentFilter] ?? '';
 
-  // How many items the last load returned — sizes the skeleton so switching
+  // How many items the last load returned - sizes the skeleton so switching
   // filters doesn't flash 8 placeholder rows when the view only has 1 item.
   const lastItemCount = useRef<number | null>(null);
 
@@ -357,7 +357,7 @@ export default function FilesPage() {
       try {
         const res = await api<{ ok: boolean; file?: FileItem }>(`/api/files/${id}`);
         if (!cancelled && res.ok && res.file) openFileWithLockCheck(res.file, action);
-      } catch { /* stale/deleted file — the mirror effect will drop the param */ }
+      } catch { /* stale/deleted file - the mirror effect will drop the param */ }
       finally { if (!cancelled) openRestored.current = true; }
     })();
     return () => { cancelled = true; };
@@ -389,7 +389,7 @@ export default function FilesPage() {
   useEffect(() => { loadFavourites(); }, [loadFavourites]);
 
   // Refresh star state when the FilesSidebar removes a favourite (and vice
-  // versa — both components keep their own favourites state).
+  // versa - both components keep their own favourites state).
   useEffect(() => {
     const onChanged = () => loadFavourites();
     window.addEventListener('dosya:favourites-changed', onChanged);
@@ -714,7 +714,7 @@ export default function FilesPage() {
   const uploadHref = `/uploads${currentFolderId ? `?folder=${currentFolderId}&folder_name=${encodeURIComponent(breadcrumbs.at(-1)?.name ?? '')}` : ''}`;
 
   // Column-header sorts (e.g. Uploader ↑) aren't among the six dropdown
-  // presets — append a synthetic entry so the trigger still shows a label.
+  // presets - append a synthetic entry so the trigger still shows a label.
   const sortSelectItems = SORT_OPTIONS.some((o) => o.value === sortParam)
     ? SORT_OPTIONS
     : [...SORT_OPTIONS, {
@@ -731,7 +731,7 @@ export default function FilesPage() {
           const f = files.find((x) => x.id === fileId);
           if (f) { openFileWithLockCheck(f, 'view'); return; }
           // File not in the current list (e.g. clicked from a group in another
-          // folder) — fetch it directly, then open.
+          // folder) - fetch it directly, then open.
           try {
             const res = await api<{ ok: boolean; file?: FileItem }>(`/api/files/${fileId}`);
             if (res.ok && res.file) openFileWithLockCheck(res.file, 'view');
@@ -908,7 +908,7 @@ export default function FilesPage() {
               )}
               {view === 'list' && (files.length > 0 || folders.length > 0) && (
                 <div>
-                  {/* Table header — click a column to sort by it, click again to flip */}
+                  {/* Table header - click a column to sort by it, click again to flip */}
                   <div className="flex items-center gap-3 px-3 py-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider border-b mb-0.5">
                     <div className="w-7 shrink-0" />
                     {ALL_COLUMNS.filter((c) => visibleColumns.has(c.key)).map((col) => (
@@ -926,7 +926,7 @@ export default function FilesPage() {
                     ))}
                     <div className="w-8 shrink-0" />
                   </div>
-                  {/* Folder rows — pinned above files, same columns */}
+                  {/* Folder rows - pinned above files, same columns */}
                   {folders.map((f) => {
                     const cols = ALL_COLUMNS.filter((c) => visibleColumns.has(c.key));
                     return (
@@ -955,7 +955,7 @@ export default function FilesPage() {
                               </div>
                             );
                           }
-                          return <div key={col.key} className={`text-xs text-muted-foreground truncate ${col.width}`}>{col.renderFolder ? col.renderFolder(f) : '—'}</div>;
+                          return <div key={col.key} className={`text-xs text-muted-foreground truncate ${col.width}`}>{col.renderFolder ? col.renderFolder(f) : '-'}</div>;
                         })}
                         <div className="w-8 shrink-0">
                           <FileDropdown
@@ -1167,7 +1167,7 @@ export default function FilesPage() {
                   if (!addToGroupTarget) return;
                   setAddingToGroup(g.id);
                   try {
-                    // Adding goes through POST /api/groups/:id with a body —
+                    // Adding goes through POST /api/groups/:id with a body -
                     // the /files/:id and /folders/:id subroutes are DELETE-only.
                     const body = addToGroupTarget.type === 'file'
                       ? { file_id: addToGroupTarget.id }
@@ -1336,7 +1336,7 @@ function FileCard({ file, view, selected, anySelected, active, highlight, domId,
 
       {/* Right vertical action rail: favourite · (comments) · share · settings */}
       <div className="absolute right-2 bottom-2 z-20 flex flex-col gap-2 opacity-90 group-hover:opacity-100 transition-opacity">
-        {/* Favourite (single star — the app's favourite flag) */}
+        {/* Favourite (single star - the app's favourite flag) */}
         <button
           className="flex items-center justify-center size-8 rounded-full bg-black/35 hover:bg-black/55 backdrop-blur-sm transition-colors"
           title={isFavourite ? 'Remove from favourites' : 'Add to favourites'}
@@ -1347,7 +1347,7 @@ function FileCard({ file, view, selected, anySelected, active, highlight, domId,
         {file.comment_count > 0 && (
           <button
             className="relative flex items-center justify-center size-8 rounded-full bg-black/35 hover:bg-black/55 backdrop-blur-sm transition-colors"
-            title={`${file.comment_count} comment${file.comment_count === 1 ? '' : 's'} — open`}
+            title={`${file.comment_count} comment${file.comment_count === 1 ? '' : 's'} - open`}
             onClick={(e) => { e.stopPropagation(); onComments?.(); }}
           >
             <MessageSquare className="size-4 text-white" />
@@ -1357,7 +1357,7 @@ function FileCard({ file, view, selected, anySelected, active, highlight, domId,
         {/* Share */}
         <button
           className="flex items-center justify-center size-8 rounded-full bg-black/35 hover:bg-black/55 backdrop-blur-sm transition-colors"
-          title={file.share_count > 0 ? `Shared (${file.share_count}) — manage` : 'Share'}
+          title={file.share_count > 0 ? `Shared (${file.share_count}) - manage` : 'Share'}
           onClick={(e) => { e.stopPropagation(); onShare(); }}
         >
           <Share2 className={`size-4 ${file.share_count > 0 ? 'text-green-400' : 'text-white'}`} />

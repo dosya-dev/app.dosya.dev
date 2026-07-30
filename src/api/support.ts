@@ -64,7 +64,7 @@ export function fetchTicket(id: string) {
   }));
 }
 
-// Multipart posts bypass api() — its forced Content-Type: application/json would break the boundary.
+// Multipart posts bypass api() - its forced Content-Type: application/json would break the boundary.
 async function postMultipart<T>(path: string, fd: FormData): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, { method: 'POST', credentials: 'include', body: fd });
   if (!res.ok) {

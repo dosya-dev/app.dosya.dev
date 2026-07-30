@@ -170,7 +170,7 @@ export default function SupportTicketPage() {
                     )}
                   </div>
                 ) : (
-                  // Our side always shows the dosya logo — never a staff member's name/photo.
+                  // Our side always shows the dosya logo - never a staff member's name/photo.
                   <div className="size-7 rounded-full bg-background border flex items-center justify-center shrink-0 mt-4">
                     <img src="/logo.svg" alt="dosya.dev" className="size-4" />
                   </div>

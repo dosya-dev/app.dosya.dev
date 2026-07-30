@@ -190,7 +190,7 @@ export default function SupportPage() {
               <Textarea
                 value={body}
                 onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setBody(e.target.value)}
-                placeholder="Describe the problem — what did you expect, what happened instead?"
+                placeholder="Describe the problem - what did you expect, what happened instead?"
                 rows={5}
                 maxLength={10000}
               />

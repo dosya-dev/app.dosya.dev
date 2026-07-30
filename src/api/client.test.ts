@@ -62,9 +62,9 @@ describe('responseErrorMessage (raw-fetch download handlers)', () => {
     new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
 
   it("surfaces the API's error string (empty-folder case)", async () => {
-    const res = json({ ok: false, error: "This folder is empty — there's nothing to download" });
+    const res = json({ ok: false, error: "This folder is empty - there's nothing to download" });
     expect(await responseErrorMessage(res, 'The folder could not be prepared.'))
-      .toBe("This folder is empty — there's nothing to download");
+      .toBe("This folder is empty - there's nothing to download");
   });
 
   it('falls back on a non-JSON body (HTML gateway page)', async () => {
