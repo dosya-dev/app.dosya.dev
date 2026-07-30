@@ -53,7 +53,15 @@ export function fetchTickets(status?: 'open' | 'closed') {
 export function fetchTicket(id: string) {
   return api<{ ok: boolean; ticket: TicketDetail; messages: TicketMessage[] }>(
     `/api/support/tickets/${id}`,
-  ).then((r) => ({ ticket: r.ticket, messages: r.messages }));
+  ).then((r) => ({
+    ticket: r.ticket,
+    // Attachment URLs come back as API-relative paths; point them at the API
+    // origin (empty in dev, where the Vite proxy handles /api).
+    messages: r.messages.map((m) => ({
+      ...m,
+      attachments: m.attachments.map((a) => ({ ...a, url: `${API_BASE}${a.url}` })),
+    })),
+  }));
 }
 
 // Multipart posts bypass api() — its forced Content-Type: application/json would break the boundary.

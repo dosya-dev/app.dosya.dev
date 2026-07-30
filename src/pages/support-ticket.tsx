@@ -14,7 +14,7 @@ import { AttachImages } from '@/components/support/attach-images';
 import { toast } from '@/lib/toast';
 import { timeAgo } from '@/lib/helpers';
 import { useDocumentTitle } from '@/lib/page-title';
-import { ChevronLeft } from 'lucide-react';
+import { ChevronLeft, Copy } from 'lucide-react';
 
 export default function SupportTicketPage() {
   const { id } = useParams<{ id: string }>();
@@ -121,8 +121,19 @@ export default function SupportTicketPage() {
                 <h1 className="text-lg font-bold truncate">{ticket.subject}</h1>
                 <StatusBadge status={ticket.status} />
               </div>
-              <p className="text-xs text-muted-foreground mt-1">
-                {CATEGORY_LABELS[ticket.category] ?? ticket.category} · Opened {timeAgo(ticket.created_at)}
+              <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1 flex-wrap">
+                {CATEGORY_LABELS[ticket.category] ?? ticket.category} · Opened {timeAgo(ticket.created_at)} ·
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(ticket.id);
+                    toast.success('Ticket ID copied', 'Quote it anywhere you contact us and we can follow up.');
+                  }}
+                  className="inline-flex items-center gap-1 font-mono hover:text-foreground"
+                  title="Copy ticket ID"
+                >
+                  {ticket.id} <Copy className="size-3" />
+                </button>
               </p>
             </div>
             {ticket.status !== 'closed' && (
