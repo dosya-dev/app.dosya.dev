@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useE2ee, type EncryptedEntry, type KnownWorkspace } from '@/stores/e2ee';
 import { useWorkspace } from '@/stores/workspace';
 import { MembersPanel } from '@/components/e2ee/members-panel';
+import { VaultSidebar } from '@/components/e2ee/vault-sidebar';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
@@ -12,7 +13,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
 import {
-  ShieldCheck, LogOut, Plus, Folder, File, Upload, Download, Info, ChevronRight, Users,
+  ShieldCheck, LogOut, Plus, Folder, File, Upload, Download, ChevronRight, Users,
 } from 'lucide-react';
 
 /**
@@ -22,6 +23,11 @@ import {
  * importing its internals - these cards are deliberately lighter (no
  * thumbnails/share/comments, since encrypted entries carry no such metadata
  * yet).
+ *
+ * Layout mirrors /files: a persistent left Space menu (VaultSidebar) plus the
+ * scrolling browser. This component owns the whole split rather than the page,
+ * because the Space list and the breadcrumb `folderPath` below have to change
+ * together - see VaultSidebar's doc comment.
  */
 export function EncryptedBrowser() {
   const workspaces = useE2ee((s) => s.workspaces);
@@ -142,157 +148,162 @@ export function EncryptedBrowser() {
   };
 
   return (
-    <div className="flex flex-col gap-5">
-      {/* Header */}
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <Badge variant="secondary" className="gap-1">
-            <ShieldCheck className="size-3 text-green-600" /> End-to-end encrypted
-          </Badge>
-          <h1 className="text-lg font-semibold">Vault</h1>
-        </div>
-        <Button variant="outline" size="sm" className="gap-1.5" onClick={() => lock()}>
-          <LogOut className="size-3.5" /> Lock
-        </Button>
-      </div>
+    <div className="flex h-full overflow-hidden">
+      {/* Space menu (md and up). Below md this renders nothing and the chip
+          row further down takes over - see VaultSidebar's doc comment. */}
+      <VaultSidebar
+        mySpaces={mySpaces}
+        sharedSpaces={sharedSpacesList}
+        activeId={activeWorkspaceId}
+        onSelect={handleSelectWorkspace}
+        onNewSpace={() => setNewWsOpen(true)}
+      />
 
-      {/* Disclosure banner - the accurate R2-on-dev limitation */}
-      <div className="flex items-start gap-2 rounded-lg border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-        <Info className="mt-0.5 size-3.5 shrink-0" />
-        <p>
-          Files here are end-to-end encrypted in your browser. Chunk upload/download requires the
-          production storage backend - on local dev the file list works, but chunk transfer may fail
-          against the dev R2 stub.
-        </p>
-      </div>
-
-      {error && (
-        <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
-          {error}
-        </div>
-      )}
-
-      {/* Workspace bar - split into "My Spaces" (scoped to the active global
-          workspace, see mySpaces above) and "Shared with me" (always shown).
-          The "New Space" button lives with the "My Spaces" group and stays
-          visible even when that group is empty, so there's always a way to
-          create the first Space. Each heading hides when its own group is
-          empty; the pre-existing "Select or create a Space" empty state
-          below still covers the case where BOTH groups are empty (it keys
-          off `activeWorkspace`, which is null whenever there are no Spaces
-          at all). */}
-      <div className="flex flex-col gap-3">
-        <div className="flex flex-col gap-1.5">
-          {mySpaces.length > 0 && (
-            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">My Spaces</p>
-          )}
-          <div className="flex flex-wrap items-center gap-2">
-            {mySpaces.map((ws) => (
-              <SpaceChip
-                key={ws.id}
-                workspace={ws}
-                active={ws.id === activeWorkspaceId}
-                onClick={() => handleSelectWorkspace(ws.id)}
-              />
-            ))}
-            <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setNewWsOpen(true)}>
-              <Plus className="size-3.5" /> New Space
+      <div className="min-w-0 flex-1 overflow-y-auto">
+        <div className="mx-auto flex w-full max-w-6xl flex-col gap-5 px-4 py-6">
+          {/* Header */}
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Badge variant="secondary" className="gap-1">
+                <ShieldCheck className="size-3 text-green-600" /> End-to-end encrypted
+              </Badge>
+              <h1 className="text-lg font-semibold">Vault</h1>
+            </div>
+            <Button variant="outline" size="sm" className="gap-1.5" onClick={() => lock()}>
+              <LogOut className="size-3.5" /> Lock
             </Button>
           </div>
-        </div>
 
-        {sharedSpacesList.length > 0 && (
-          <div className="flex flex-col gap-1.5">
-            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Shared with me</p>
-            <div className="flex flex-wrap items-center gap-2">
-              {sharedSpacesList.map((ws) => (
-                <SpaceChip
-                  key={ws.id}
-                  workspace={ws}
-                  active={ws.id === activeWorkspaceId}
-                  onClick={() => handleSelectWorkspace(ws.id)}
-                />
-              ))}
+          {error && (
+            <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+              {error}
             </div>
-          </div>
-        )}
-      </div>
+          )}
 
-      {/* Folder view */}
-      {activeWorkspace ? (
-        <div
-          className="relative min-h-64 rounded-xl border border-dashed p-4"
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
-        >
-          {dragging && (
-            <div className="absolute inset-0 z-10 flex items-center justify-center rounded-xl border-2 border-dashed border-primary bg-primary/5">
-              <div className="flex flex-col items-center gap-2 text-primary">
-                <Upload className="size-10" />
-                <p className="text-sm font-semibold">Drop files to encrypt &amp; upload</p>
+          {/* Mobile-only Space bar (md:hidden - the sidebar covers every wider
+              viewport). Split into "My Spaces" (scoped to the active global
+              workspace, see mySpaces above) and "Shared with me" (always shown).
+              The "New Space" button lives with the "My Spaces" group and stays
+              visible even when that group is empty, so there's always a way to
+              create the first Space. Each heading hides when its own group is
+              empty; the pre-existing "Select or create a Space" empty state
+              below still covers the case where BOTH groups are empty (it keys
+              off `activeWorkspace`, which is null whenever there are no Spaces
+              at all). */}
+          <div className="flex flex-col gap-3 md:hidden">
+            <div className="flex flex-col gap-1.5">
+              {mySpaces.length > 0 && (
+                <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">My Spaces</p>
+              )}
+              <div className="flex flex-wrap items-center gap-2">
+                {mySpaces.map((ws) => (
+                  <SpaceChip
+                    key={ws.id}
+                    workspace={ws}
+                    active={ws.id === activeWorkspaceId}
+                    onClick={() => handleSelectWorkspace(ws.id)}
+                  />
+                ))}
+                <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setNewWsOpen(true)}>
+                  <Plus className="size-3.5" /> New Space
+                </Button>
               </div>
             </div>
-          )}
 
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <div className="flex min-w-0 items-center gap-1 text-xs">
-              <button onClick={() => handleBreadcrumb(-1)} className="font-medium hover:text-foreground text-muted-foreground truncate">
-                {activeWorkspace.name}
-              </button>
-              {folderPath.map((f, i) => (
-                <span key={f.id} className="flex items-center gap-1 shrink-0">
-                  <ChevronRight className="size-3 text-muted-foreground" />
-                  <button onClick={() => handleBreadcrumb(i)} className="text-muted-foreground hover:text-foreground truncate max-w-32">
-                    {f.name}
-                  </button>
-                </span>
-              ))}
-            </div>
-            <div className="flex shrink-0 items-center gap-1.5">
-              <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setMembersOpen(true)}>
-                <Users className="size-3.5" /> Members
-              </Button>
-              <Button size="sm" className="gap-1.5" onClick={() => fileInputRef.current?.click()} disabled={busy}>
-                <Upload className="size-3.5" /> Upload
-              </Button>
-            </div>
-            <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFileInput} />
+            {sharedSpacesList.length > 0 && (
+              <div className="flex flex-col gap-1.5">
+                <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Shared with me</p>
+                <div className="flex flex-wrap items-center gap-2">
+                  {sharedSpacesList.map((ws) => (
+                    <SpaceChip
+                      key={ws.id}
+                      workspace={ws}
+                      active={ws.id === activeWorkspaceId}
+                      onClick={() => handleSelectWorkspace(ws.id)}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
-          {busy ? (
-            <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
-              {Array.from({ length: 8 }).map((_, i) => (
-                <Skeleton key={i} className="aspect-3/2 w-full rounded-xl" />
-              ))}
-            </div>
-          ) : entries.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 text-center">
-              <Folder className="mb-3 size-10 text-muted-foreground/30" />
-              <p className="text-sm text-muted-foreground">No files yet - upload to get started.</p>
+          {/* Folder view */}
+          {activeWorkspace ? (
+            <div
+              className="relative min-h-64 rounded-xl border border-dashed p-4"
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+            >
+              {dragging && (
+                <div className="absolute inset-0 z-10 flex items-center justify-center rounded-xl border-2 border-dashed border-primary bg-primary/5">
+                  <div className="flex flex-col items-center gap-2 text-primary">
+                    <Upload className="size-10" />
+                    <p className="text-sm font-semibold">Drop files to encrypt &amp; upload</p>
+                  </div>
+                </div>
+              )}
+
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <div className="flex min-w-0 items-center gap-1 text-xs">
+                  <button onClick={() => handleBreadcrumb(-1)} className="font-medium hover:text-foreground text-muted-foreground truncate">
+                    {activeWorkspace.name}
+                  </button>
+                  {folderPath.map((f, i) => (
+                    <span key={f.id} className="flex items-center gap-1 shrink-0">
+                      <ChevronRight className="size-3 text-muted-foreground" />
+                      <button onClick={() => handleBreadcrumb(i)} className="text-muted-foreground hover:text-foreground truncate max-w-32">
+                        {f.name}
+                      </button>
+                    </span>
+                  ))}
+                </div>
+                <div className="flex shrink-0 items-center gap-1.5">
+                  <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setMembersOpen(true)}>
+                    <Users className="size-3.5" /> Members
+                  </Button>
+                  <Button size="sm" className="gap-1.5" onClick={() => fileInputRef.current?.click()} disabled={busy}>
+                    <Upload className="size-3.5" /> Upload
+                  </Button>
+                </div>
+                <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFileInput} />
+              </div>
+
+              {busy ? (
+                <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
+                  {Array.from({ length: 8 }).map((_, i) => (
+                    <Skeleton key={i} className="aspect-3/2 w-full rounded-xl" />
+                  ))}
+                </div>
+              ) : entries.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-16 text-center">
+                  <Folder className="mb-3 size-10 text-muted-foreground/30" />
+                  <p className="text-sm text-muted-foreground">No files yet - upload to get started.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
+                  {entries.map((entry) =>
+                    entry.kind === 'folder' ? (
+                      <EncryptedFolderCard key={entry.id} name={entry.name} onClick={() => handleOpenFolder(entry)} />
+                    ) : (
+                      <EncryptedFileCard
+                        key={entry.id}
+                        name={entry.name}
+                        onDownload={() => downloadEntry(entry.id, entry.name, currentFolderId)}
+                      />
+                    ),
+                  )}
+                </div>
+              )}
             </div>
           ) : (
-            <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
-              {entries.map((entry) =>
-                entry.kind === 'folder' ? (
-                  <EncryptedFolderCard key={entry.id} name={entry.name} onClick={() => handleOpenFolder(entry)} />
-                ) : (
-                  <EncryptedFileCard
-                    key={entry.id}
-                    name={entry.name}
-                    onDownload={() => downloadEntry(entry.id, entry.name, currentFolderId)}
-                  />
-                ),
-              )}
+            <div className="flex flex-col items-center justify-center rounded-xl border border-dashed py-16 text-center">
+              <ShieldCheck className="mb-3 size-10 text-muted-foreground/30" />
+              <p className="text-sm text-muted-foreground">Select or create a Space to get started.</p>
             </div>
           )}
         </div>
-      ) : (
-        <div className="flex flex-col items-center justify-center rounded-xl border border-dashed py-16 text-center">
-          <ShieldCheck className="mb-3 size-10 text-muted-foreground/30" />
-          <p className="text-sm text-muted-foreground">Select or create a Space to get started.</p>
-        </div>
-      )}
+      </div>
 
       {/* New workspace dialog */}
       <Dialog open={newWsOpen} onOpenChange={setNewWsOpen}>
