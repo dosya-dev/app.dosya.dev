@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { fetchTickets, createTicket, type TicketSummary, type TicketCategory } from '@/api/support';
 import { apiErrorMessage } from '@/api/client';
@@ -40,17 +40,22 @@ export default function SupportPage() {
   const [files, setFiles] = useState<File[]>([]);
   const [submitting, setSubmitting] = useState(false);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const data = await fetchTickets(tab);
-      setTickets(data.tickets);
-      setCounts(data.counts);
-    } catch { /* empty state covers transient failures */ }
-    setLoading(false);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      setLoading(true);
+      try {
+        const data = await fetchTickets(tab);
+        if (!alive) return;
+        setTickets(data.tickets);
+        setCounts(data.counts);
+      } catch (err) {
+        if (alive) toast.error('Could not load tickets', apiErrorMessage(err));
+      }
+      if (alive) setLoading(false);
+    })();
+    return () => { alive = false; };
   }, [tab]);
-
-  useEffect(() => { load(); }, [load]);
 
   const submit = async () => {
     if (!subject.trim() || !body.trim() || submitting) return;
@@ -88,7 +93,7 @@ export default function SupportPage() {
                 </a>
               </p>
             </div>
-            <Button onClick={() => setDialogOpen(true)}>
+            <Button onClick={() => { setSubject(''); setCategory('technical'); setBody(''); setFiles([]); setDialogOpen(true); }}>
               <Plus className="size-3.5 mr-1.5" /> New ticket
             </Button>
           </div>
