@@ -20,7 +20,7 @@ export function DashboardLayout() {
   // with no workspaces only ever sees the create-workspace screen, and a
   // missing/stale selection (e.g. after switching accounts) heals to the first
   // workspace. API errors pass through rather than locking the user out of the
-  // app. Both requests run in parallel — see bootDashboard.
+  // app. Both requests run in parallel - see bootDashboard.
   useEffect(() => {
     const stopListener = initSystemListener(readCache);
     let cancelled = false;
@@ -80,7 +80,7 @@ export function DashboardLayout() {
         <NotificationPoller />
         <DashboardTopbar />
         {/* key={pathname} remounts the content area on navigation so the
-            fade/rise animation replays — the page's skeleton fades in first,
+            fade/rise animation replays - the page's skeleton fades in first,
             then its data pops in. Remount also resets scroll to the top. */}
         <main
           key={location.pathname}

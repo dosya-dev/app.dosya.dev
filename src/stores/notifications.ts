@@ -45,7 +45,7 @@ export const useNotifications = create<NotifState>((set, get) => ({
       const next = applySummary({ lastLatestId: get().lastLatestId }, summary);
       set({ unread: next.unread, lastLatestId: next.lastLatestId });
       if (next.hasNew && summary.latest) get().onNew?.(summary.latest);
-    } catch { /* offline / transient — keep previous state */ }
+    } catch { /* offline / transient - keep previous state */ }
   },
   loadList: async () => {
     set({ loading: true });

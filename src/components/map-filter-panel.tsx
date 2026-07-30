@@ -18,7 +18,7 @@ function fromDateInput(v: string, endOfDay: boolean): number | null {
 
 /**
  * Compact filter bar for the map: scope pins by folder (recursive) and by
- * date range. Purely controlled — owns only the folder-picker dialog's
+ * date range. Purely controlled - owns only the folder-picker dialog's
  * open state. Selecting the root/Home in the picker clears the folder filter.
  */
 export function MapFilterPanel({ value, onChange, workspaceId }: {

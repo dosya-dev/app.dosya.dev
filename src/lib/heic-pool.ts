@@ -41,7 +41,7 @@ interface PoolEntry {
  * workers so they actually run in parallel.
  *
  * Worker-free and Worker-construction-free by design (the constructor is
- * injected via `spawn`) so this stays importable — and testable — under
+ * injected via `spawn`) so this stays importable - and testable - under
  * jsdom, which cannot construct a real Worker.
  */
 export function createHeicPool(opts: { spawn: () => PoolWorker; size: number }): HeicPool {

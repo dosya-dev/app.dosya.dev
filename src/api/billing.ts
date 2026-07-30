@@ -35,7 +35,7 @@ export type CouponInfo = { code: string; type: "percent" | "amount"; value: numb
 
 export const getCatalog = () => api<{ ok: true } & Catalog>("/api/billing/catalog");
 // no-store: after checkout/plan changes we refetch to pick up webhook-settled
-// state — the browser HTTP cache must never satisfy that from the old response.
+// state - the browser HTTP cache must never satisfy that from the old response.
 export const getBillingStatus = () => api<{ ok: true } & BillingStatus>("/api/billing/status", { cache: "no-store" });
 
 /** Reconcile plan/items from Stripe now (webhook may lag right after checkout). */

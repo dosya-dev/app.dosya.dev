@@ -32,7 +32,7 @@ function saveEnvelope(env: Envelope): void {
       JSON.stringify({ ...env, items: env.items.slice(-MAX_PERSISTED) }),
     );
   } catch {
-    // quota exceeded or storage unavailable — non-fatal
+    // quota exceeded or storage unavailable - non-fatal
   }
 }
 
@@ -69,7 +69,7 @@ export function claimOwner(userId: string): UploadItem[] {
 /**
  * A page reload wipes the JS heap, including the File bytes. Any upload that was
  * mid-flight or queued can no longer proceed on its own, so mark it 'interrupted'
- * — the dock offers Resume (re-pick the file). Terminal states are kept as-is.
+ * - the dock offers Resume (re-pick the file). Terminal states are kept as-is.
  */
 export function hydrateForBoot(items: UploadItem[]): UploadItem[] {
   return items.map((it) =>

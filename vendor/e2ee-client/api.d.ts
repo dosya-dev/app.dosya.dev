@@ -1,23 +1,23 @@
 /**
- * Server API surface the E2EE client engine calls (P1a routes — see
+ * Server API surface the E2EE client engine calls (P1a routes - see
  * apps/api/src/pages/api/e2ee/*.ts). Callers inject an implementation bound
  * to their own auth (session cookie / bearer token); the engine itself never
  * knows or cares how auth works, only that these calls succeed or reject.
  */
 export interface ApiClient {
-    /** GET /api/e2ee/oprf-public-key — no auth required, cacheable. */
+    /** GET /api/e2ee/oprf-public-key - no auth required, cacheable. */
     oprfPublicKey(): Promise<Uint8Array>;
-    /** POST /api/e2ee/oprf-evaluate — session-authed. */
+    /** POST /api/e2ee/oprf-evaluate - session-authed. */
     oprfEvaluate(blinded: Uint8Array): Promise<Uint8Array>;
-    /** GET /api/e2ee/user-keys — resolves null on a 404 (no identity set up yet). */
+    /** GET /api/e2ee/user-keys - resolves null on a 404 (no identity set up yet). */
     getUserKeys(): Promise<UserKeysRecord | null>;
-    /** PUT /api/e2ee/user-keys — upsert. */
+    /** PUT /api/e2ee/user-keys - upsert. */
     putUserKeys(record: UserKeysRecord): Promise<void>;
     /**
-     * GET /api/e2ee/user-pubkey?email= — public identity-key directory lookup
+     * GET /api/e2ee/user-pubkey?email= - public identity-key directory lookup
      * for ANOTHER user by email (used to seal a workspace grant to them, see
      * P2b `grantAccess`); resolves null on a 404 (no such user, or that user
-     * has no E2EE identity set up yet). Returns PUBLIC keys only — never
+     * has no E2EE identity set up yet). Returns PUBLIC keys only - never
      * wrapped/private fields.
      */
     lookupUserPubkey(email: string): Promise<{
@@ -26,39 +26,39 @@ export interface ApiClient {
         ed25519Pub: string;
     } | null>;
     /**
-     * PUT /api/e2ee/workspace-grant — store the caller's own HPKE-sealed WK
+     * PUT /api/e2ee/workspace-grant - store the caller's own HPKE-sealed WK
      * for `workspaceId` (self-scoped upsert; server sees ciphertext only).
      * `granterEd25519Pub` (P2b Task 2, optional, hex) is the sealing member's
-     * OWN ed25519 public key — omit for a plain self-grant (granter == self,
+     * OWN ed25519 public key - omit for a plain self-grant (granter == self,
      * the P1b.2a case); a future cross-user grant path threads the real
      * granter's key through here (or via `grant-member`, P2b Task 3).
      */
     putWorkspaceGrant(workspaceId: string, wkVersion: number, sealed: string, granterEd25519Pub?: string): Promise<void>;
     /**
-     * GET /api/e2ee/workspace-grant/:workspaceId — the caller's own sealed WK;
+     * GET /api/e2ee/workspace-grant/:workspaceId - the caller's own sealed WK;
      * resolves null on a 404 (no grant stored for this workspace).
      * `granterEd25519Pub` is null for a legacy/self-grant row that never
-     * stored one — `openWorkspace` treats null as "granter == self".
+     * stored one - `openWorkspace` treats null as "granter == self".
      */
     getWorkspaceGrant(workspaceId: string): Promise<{
         wkVersion: number;
         sealed: string;
         granterEd25519Pub: string | null;
     } | null>;
-    /** GET /api/e2ee/head/:workspaceId — resolves null on a 404 (no head committed yet). */
+    /** GET /api/e2ee/head/:workspaceId - resolves null on a 404 (no head committed yet). */
     getHead(workspaceId: string): Promise<HeadResponse | null>;
     /**
-     * POST /api/e2ee/grant-member — the CALLER (an existing member, gated
+     * POST /api/e2ee/grant-member - the CALLER (an existing member, gated
      * server-side) has already HPKE-sealed `wkVersion`'s WK to
      * `granteeUserId`'s authenticated key client-side (see `grantAccess`,
      * which resolves `granteeUserId` via `lookupUserPubkey`); this persists
      * that opaque sealed blob under the GRANTEE's own row, adds them to the
      * workspace's membership projection, AND appends `membershipEntry` (P2b-log
      * Task 3: the signed `add` entry `grantAccess` built via e2ee-core's
-     * `appendEntry`) to the signed membership log — all three atomically
+     * `appendEntry`) to the signed membership log - all three atomically
      * (same `DB.batch`). Server sees ciphertext + a signature only, same
      * boundary as `putWorkspaceGrant`; `membershipEntry.entryBlob` is opaque
-     * here too (never parsed server-side — replay + verification is the
+     * here too (never parsed server-side - replay + verification is the
      * client's job).
      */
     grantMember(workspaceId: string, granteeUserId: string, wkVersion: number, sealed: string, granterEd25519Pub: string, membershipEntry: {
@@ -66,12 +66,12 @@ export interface ApiClient {
         entryBlob: string;
     }): Promise<void>;
     /**
-     * POST /api/e2ee/revoke-member — remove `granteeUserId`'s membership +
+     * POST /api/e2ee/revoke-member - remove `granteeUserId`'s membership +
      * sealed grant for `workspaceId`, AND append `membershipEntry` (P2b-log
      * Task 3: the signed `remove` entry `revokeAccess` built) to the signed
-     * membership log — atomically (same `DB.batch`). No WK rotation
+     * membership log - atomically (same `DB.batch`). No WK rotation
      * (documented follow-up): this stops NEW/future access via the membership
-     * gate + log replay, not ciphertext the grantee already fetched — see
+     * gate + log replay, not ciphertext the grantee already fetched - see
      * `revokeAccess`'s doc comment.
      */
     revokeMember(workspaceId: string, granteeUserId: string, membershipEntry: {
@@ -79,10 +79,10 @@ export interface ApiClient {
         entryBlob: string;
     }): Promise<void>;
     /**
-     * GET /api/e2ee/members/:workspaceId — the workspace's current members
+     * GET /api/e2ee/members/:workspaceId - the workspace's current members
      * (account id + email + ed25519 SIGNING pubkey + x25519 ENCRYPTION pubkey
-     * — P2d Task 1's addition, the `granteePubkey` `computeRotation` needs to
-     * re-seal the rotated workspace key to every remaining member — for
+     * - P2d Task 1's addition, the `granteePubkey` `computeRotation` needs to
+     * re-seal the rotated workspace key to every remaining member - for
      * display and as the log-subject id `revokeAccess`'s caller needs), for
      * the P2c members/revoke UI and engine `listMembers`. Caller must already
      * be a member.
@@ -94,12 +94,12 @@ export interface ApiClient {
         x25519Pub: string;
     }[]>;
     /**
-     * GET /api/e2ee/membership-log/:workspaceId — the workspace's full signed
+     * GET /api/e2ee/membership-log/:workspaceId - the workspace's full signed
      * membership log (spec §7), ordered by `seq`, as opaque
      * `{ seq, entryBlob }` rows. Caller must already be a member (same
      * `isMember` gate as `listMembers`/`getHead`). The client
      * `deserializeSignedEntry`s each row and `replayLog`s the sequence
-     * (e2ee-core, unchanged) to derive + verify the current member set — this
+     * (e2ee-core, unchanged) to derive + verify the current member set - this
      * call itself does no crypto.
      */
     getMembershipLog(workspaceId: string): Promise<{
@@ -107,15 +107,15 @@ export interface ApiClient {
         entryBlob: string;
     }[]>;
     /**
-     * GET /api/e2ee/my-workspaces — self-scoped discovery (P2c), extended by
+     * GET /api/e2ee/my-workspaces - self-scoped discovery (P2c), extended by
      * P2e with the per-workspace scope association: every workspace id the
      * CALLER is currently a member of, plus `globalWorkspaceId` (the storage
-     * workspace it's scoped to, or `null` if unscoped — see
+     * workspace it's scoped to, or `null` if unscoped - see
      * `putWorkspaceScope`) and `createdByMe` (whether THIS caller was the
      * scope's first writer). This is how an invitee (who never ran
      * `createWorkspace` for a shared workspace) learns a workspaceId at all.
      * SECURITY: the engine/store MUST NOT derive `selfFounded` from this
-     * response (`globalWorkspaceId`/`createdByMe` are DISPLAY-ONLY) — see
+     * response (`globalWorkspaceId`/`createdByMe` are DISPLAY-ONLY) - see
      * `Workspace.selfFounded`'s doc comment in `workspace.ts` and
      * `stores/e2ee.ts` in apps/web.
      */
@@ -125,39 +125,39 @@ export interface ApiClient {
         createdByMe: boolean;
     }[]>;
     /**
-     * PUT /api/e2ee/workspace-scope — records that `workspaceId` (an E2EE
+     * PUT /api/e2ee/workspace-scope - records that `workspaceId` (an E2EE
      * Space) belongs to `globalWorkspaceId` (the active global storage
      * workspace at creation time), purely for per-workspace Vault UI grouping
      * (P2e). Plaintext metadata, not crypto. Member-gated server-side; SET-ONCE
-     * (`ON CONFLICT(workspace_id) DO NOTHING`) — the first caller to record a
+     * (`ON CONFLICT(workspace_id) DO NOTHING`) - the first caller to record a
      * scope for a given `workspaceId` wins, later callers cannot rewrite it.
      * Called right after `createWorkspace`'s genesis commit.
      */
     putWorkspaceScope(workspaceId: string, globalWorkspaceId: string): Promise<void>;
     /**
-     * POST /api/e2ee/commit — §9 CAS commit. Resolves the 200 body on success,
-     * or `{ conflict }` on a 409 — a conflict is an EXPECTED, recoverable
+     * POST /api/e2ee/commit - §9 CAS commit. Resolves the 200 body on success,
+     * or `{ conflict }` on a 409 - a conflict is an EXPECTED, recoverable
      * outcome (the caller rebases and retries), never thrown as an error. Any
      * other non-2xx status throws.
      */
     commit(body: CommitBody): Promise<CommitResult>;
     /**
-     * POST /api/e2ee/rotate — P2d Task 2: apply a client-computed
+     * POST /api/e2ee/rotate - P2d Task 2: apply a client-computed
      * `RotationPayload` (`computeRotation`, workspace.ts) atomically, in ONE
      * CAS-guarded `DB.batch`: the head advance to `newWkVersion`'s root, every
      * re-encrypted folder-index/file-manifest, every re-sealed grant to a
      * REMAINING member (including self), the removed member's grant+membership
-     * deletes, and the membership-log `remove` entry — all-or-nothing (see
+     * deletes, and the membership-log `remove` entry - all-or-nothing (see
      * apps/api/src/pages/api/e2ee/rotate.ts). Resolves the 200 body on success,
-     * or `{ conflict }` on a 409 — a conflict is an EXPECTED, recoverable
+     * or `{ conflict }` on a 409 - a conflict is an EXPECTED, recoverable
      * outcome (the caller re-fetches the head/members and recomputes the
-     * rotation from scratch), never thrown as an error — same posture as
+     * rotation from scratch), never thrown as an error - same posture as
      * `commit`. Any other non-2xx status throws.
      */
     rotate(body: RotateBody): Promise<RotateResult>;
-    /** POST /api/e2ee/chunk-upload-url — a presigned R2 PUT for `chunkId` (hex(sha256(ciphertext))). */
+    /** POST /api/e2ee/chunk-upload-url - a presigned R2 PUT for `chunkId` (hex(sha256(ciphertext))). */
     chunkUploadUrl(workspaceId: string, chunkId: string): Promise<string>;
-    /** GET /api/e2ee/chunk-download-url — a presigned R2 GET for the SAME key a prior `chunkUploadUrl` wrote. */
+    /** GET /api/e2ee/chunk-download-url - a presigned R2 GET for the SAME key a prior `chunkUploadUrl` wrote. */
     chunkDownloadUrl(workspaceId: string, chunkId: string): Promise<string>;
 }
 /** A single folder's current encrypted-index pointer, as returned by GET /head and sent back in a commit's `changedFolderIndexes`. */
@@ -166,7 +166,7 @@ export type FolderIndexRef = {
     indexVersion: number;
     ciphertext: string;
 };
-/** GET /api/e2ee/head/:workspaceId 200 body — the current CAS head plus every folder index blob. */
+/** GET /api/e2ee/head/:workspaceId 200 body - the current CAS head plus every folder index blob. */
 export type HeadResponse = {
     version: number;
     signedRoot: string;
@@ -211,7 +211,7 @@ export type CommitResult = {
  * POST /api/e2ee/rotate request body (see
  * apps/api/src/pages/api/e2ee/rotate.ts): the client-computed
  * `RotationPayload` (workspace.ts's `computeRotation`) plus the
- * `workspaceId` it targets — mirrors `CommitBody`'s convention of
+ * `workspaceId` it targets - mirrors `CommitBody`'s convention of
  * independently defining the wire shape here rather than importing
  * workspace.ts's engine-level type (which would create a cycle: workspace.ts
  * already imports `ApiClient`/`CommitBody` from this module).
@@ -227,7 +227,7 @@ export type RotateBody = {
         version: number;
         ciphertext: string;
     }[];
-    /** One v2 grant per REMAINING member — including the caller (self). */
+    /** One v2 grant per REMAINING member - including the caller (self). */
     grants: {
         memberUserId: string;
         wkVersion: number;
@@ -253,7 +253,7 @@ export type RotateResult = {
 /**
  * The server-stored, per-user E2EE identity record. Every field here is
  * either public (the two pubkeys), an AEAD-wrapped ciphertext blob, or a KDF
- * parameter — the server never sees the KEK, the recovery key, or any
+ * parameter - the server never sees the KEK, the recovery key, or any
  * private key material.
  */
 export type UserKeysRecord = {
@@ -265,7 +265,7 @@ export type UserKeysRecord = {
     argonParams: string;
 };
 export type FetchApiClientOptions = {
-    /** e.g. "http://127.0.0.1:PORT" — no trailing slash required. */
+    /** e.g. "http://127.0.0.1:PORT" - no trailing slash required. */
     baseUrl: string;
     /**
      * Called before every request to obtain auth headers, e.g.

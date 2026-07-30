@@ -14,7 +14,7 @@ export default function WebdavSetup() {
         <p>Connect any WebDAV client to this URL:</p>
         <CodeBlock code={webdavUrl(ctx)} lang="text" />
         <p>
-          Sign in with <strong>HTTP Basic auth</strong> — username is your account email
+          Sign in with <strong>HTTP Basic auth</strong> - username is your account email
           (<code>{ctx.email}</code>) and the password is your <code>dos_…</code> API key.
         </p>
       </Step>

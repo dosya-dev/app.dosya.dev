@@ -149,7 +149,7 @@ export function FileDetailPanel({ file, onClose, onDownload, onCopy, onDelete, o
         setLockPassword('');
       }
     } catch (err) {
-      // api() throws on non-2xx, so a rejected password lands here — surface
+      // api() throws on non-2xx, so a rejected password lands here - surface
       // the server's message and reset the field like the else-branch does.
       setLockError(apiErrorMessage(err, "Can't reach the server. Check your connection and try again."));
       if (err instanceof ApiError) setLockPassword('');
@@ -277,7 +277,7 @@ export function FileDetailPanel({ file, onClose, onDownload, onCopy, onDelete, o
                   <PropRow label="Uploaded by" value={file.uploader_name ?? 'Unknown'} />
                   <PropRow label="Region" value={regionLabel(file.region)} />
                   <PropRow label="Created" value={timeAgo(file.created_at)} />
-                  <PropRow label="Extension" value={file.extension || extOf(file.name).toUpperCase() || '—'} />
+                  <PropRow label="Extension" value={file.extension || extOf(file.name).toUpperCase() || '-'} />
                   {file.is_synced === 1 && <PropRow label="Synced" value="Yes" />}
                   {file.import_source && (
                     <>

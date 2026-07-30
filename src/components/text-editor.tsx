@@ -36,11 +36,11 @@ export function TextEditorOverlay({ file, rawUrl, workspaceId, onClose, onSaved 
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<import('@codemirror/view').EditorView | null>(null);
   const [saving, setSaving] = useState(false);
-  const [initialRawUrl] = useState(rawUrl); // freeze at mount — later editorRawUrl churn must not rebuild the editor and drop edits
+  const [initialRawUrl] = useState(rawUrl); // freeze at mount - later editorRawUrl churn must not rebuild the editor and drop edits
 
   // Keep keystrokes typed in the editor from bubbling to the document-level
   // shortcut handler in files.tsx (which otherwise treats them as list
-  // actions — e.g. Ctrl/Cmd+A select-all — while the user is typing here).
+  // actions - e.g. Ctrl/Cmd+A select-all - while the user is typing here).
   useEffect(() => {
     const el = rootRef.current;
     if (!el) return;

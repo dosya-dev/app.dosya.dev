@@ -26,7 +26,7 @@ export function UnlockGate() {
 
   useEffect(() => {
     checkIdentity();
-    // Run once on mount — checkIdentity is a stable store action.
+    // Run once on mount - checkIdentity is a stable store action.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -52,7 +52,7 @@ export function UnlockGate() {
       </div>
 
       {/* hasIdentity is null while we're checking, OR when checkIdentity
-          couldn't tell (transient error). Only the latter gets an `error` —
+          couldn't tell (transient error). Only the latter gets an `error` -
           never fall through to Setup here, or a network blip would let
           `setup()` silently overwrite a returning user's real identity keys. */}
       {hasIdentity === null && error && <RetryCard error={error} onRetry={checkIdentity} />}
@@ -78,7 +78,7 @@ export function UnlockGate() {
 
 /** hasIdentity===null with an error: checkIdentity couldn't determine
  * whether an identity exists (e.g. transient network failure). Deliberately
- * distinct from SetupCard/UnlockCard — offers a retry, not a form that could
+ * distinct from SetupCard/UnlockCard - offers a retry, not a form that could
  * end up overwriting real keys. */
 function RetryCard({ error, onRetry }: { error: string; onRetry: () => void }) {
   return (
@@ -128,7 +128,7 @@ function SetupCard({ error }: { error: string | null }) {
       <form onSubmit={handleSubmit}>
         <CardContent className="space-y-3">
           {/* Only ever a real `setup()` submission failure here (e.g. the
-              server call failed) — checkIdentity's own "couldn't tell"
+              server call failed) - checkIdentity's own "couldn't tell"
               errors never reach this card, since hasIdentity stays `null`
               (not `false`) in that case; see the top-level RetryCard. */}
           {error && <p className="text-xs text-destructive">{error}</p>}

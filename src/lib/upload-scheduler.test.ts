@@ -41,7 +41,7 @@ describe('createScheduler', () => {
     // Drain: resolve everything currently started-and-pending, flush so the
     // scheduler can promote the rest, and repeat until the queue is exhausted.
     // (Resolving an already-settled deferred is a no-op. This avoids resolving
-    // ids by name before they've been promoted — which would strand their
+    // ids by name before they've been promoted - which would strand their
     // not-yet-created deferreds and leave them in-flight forever.)
     while (sched.inFlightCount() > 0) {
       for (const id of [...started]) defs.get(id)!.resolve();
@@ -84,7 +84,7 @@ describe('createScheduler', () => {
     expect(sched.inFlightCount()).toBe(1);
     // `d` is intentionally left unresolved. Resolving it would let the
     // scheduler correctly re-promote the still-queued 'a' (since this fixture
-    // never removes it) — a different behavior that isn't this test's subject,
+    // never removes it) - a different behavior that isn't this test's subject,
     // and one that, combined with a reused settled promise, would loop forever.
   });
 });

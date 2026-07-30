@@ -50,7 +50,7 @@ export function isImage(name: string): boolean {
 }
 
 const HEIC_EXTS = new Set(['heic', 'heif']);
-/** True only for HEIC/HEIF — the one image format browsers can't render natively. */
+/** True only for HEIC/HEIF - the one image format browsers can't render natively. */
 export function isHeic(name: string): boolean {
   return HEIC_EXTS.has(extOf(name));
 }
@@ -105,7 +105,7 @@ const ORIGIN_LABELS: Record<string, string> = {
 };
 
 export function originLabel(origin: string | null | undefined): string {
-  return (origin && ORIGIN_LABELS[origin]) || '—';
+  return (origin && ORIGIN_LABELS[origin]) || '-';
 }
 
 const AVATAR_COLORS = ['#7C3AED', '#059669', '#2563EB', '#EA580C', '#DB2777', '#0891B2', '#D97706'];
@@ -184,7 +184,7 @@ export function actionLabel(action: string): string {
   return ACTION_LABELS[action] ?? action;
 }
 
-// Actions whose target no longer exists — linking to it would be a dead click.
+// Actions whose target no longer exists - linking to it would be a dead click.
 const GONE_ACTIONS = new Set(['file_deleted', 'file_permanently_deleted', 'files_batch_deleted', 'folder_deleted']);
 
 /**

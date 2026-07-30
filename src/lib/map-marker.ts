@@ -19,7 +19,7 @@ export interface MarkerPin {
  * Pure marker-selection logic for a map pin: what to render (thumbnail / a
  * generic file-type icon / a folder icon) and whether it should get the
  * "approximate" (IP-derived) treatment. `isImage` reuses the same extension
- * check the rest of the app uses to decide when a thumbnail can be rendered —
+ * check the rest of the app uses to decide when a thumbnail can be rendered -
  * it accepts any string with a trailing extension, so passing the raw
  * `.ext`-style value the API stores works without reformatting it.
  */

@@ -2,7 +2,7 @@ import type { ThemePref } from '@/lib/theme';
 import { isThemeId, isMode, DEFAULT_THEME, DEFAULT_MODE } from '@/lib/themes';
 
 // Dashboard boot sequence. Fires /api/me and /api/workspaces together instead
-// of serially — on cold loads far from the D1 primary each round trip is
+// of serially - on cold loads far from the D1 primary each round trip is
 // expensive, and the workspaces answer is only *used* once /api/me confirms
 // the session, so there is no reason to wait for one before starting the other.
 

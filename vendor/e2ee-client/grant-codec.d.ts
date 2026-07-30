@@ -8,7 +8,7 @@
  * apps/api/src/pages/api/e2ee/workspace-grant.ts).
  */
 import { type Grant } from "@dosya-dev/e2ee-core";
-/** b64-JSON of the three Grant byte fields — a stable, server-opaque blob. */
+/** b64-JSON of the three Grant byte fields - a stable, server-opaque blob. */
 export declare function serializeGrant(g: Grant): string;
-/** Reverse of `serializeGrant`. Throws (JSON/b64 errors) on malformed input — callers see that as a failed open, same posture as `openGrant`'s own failure modes. */
+/** Reverse of `serializeGrant`. Throws (JSON/b64 errors) on malformed input - callers see that as a failed open, same posture as `openGrant`'s own failure modes. */
 export declare function deserializeGrant(s: string): Grant;

@@ -264,7 +264,7 @@ export default function ApiAnalyticsPage() {
                         <TableRow key={`${row.t}-${i}`}>
                           <TableCell className="text-xs whitespace-nowrap">{shortDateTime(row.t)}</TableCell>
                           {showKeyColumn && (
-                            <TableCell className="text-xs truncate max-w-[120px]">{row.api_key_name ?? '—'}</TableCell>
+                            <TableCell className="text-xs truncate max-w-[120px]">{row.api_key_name ?? '-'}</TableCell>
                           )}
                           <TableCell className="text-xs font-mono truncate max-w-[220px]" title={row.action}>
                             {row.action}
@@ -280,12 +280,12 @@ export default function ApiAnalyticsPage() {
                             {row.status}
                           </TableCell>
                           <TableCell className="text-xs font-mono">{row.ip}</TableCell>
-                          <TableCell className="text-xs hidden lg:table-cell">{row.country || '—'}</TableCell>
+                          <TableCell className="text-xs hidden lg:table-cell">{row.country || '-'}</TableCell>
                           <TableCell
                             className="text-xs text-muted-foreground hidden xl:table-cell truncate max-w-[200px]"
                             title={row.user_agent}
                           >
-                            {row.user_agent || '—'}
+                            {row.user_agent || '-'}
                           </TableCell>
                         </TableRow>
                       ))}

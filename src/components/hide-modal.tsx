@@ -92,7 +92,7 @@ export function HideModal({ open, target, onClose, onDone }: HideModalProps) {
     setLoading(false);
   };
 
-  // You can't hide your own files from yourself or your own role — still shown, but disabled.
+  // You can't hide your own files from yourself or your own role - still shown, but disabled.
   const myRoleId = members.find((m) => m.is_you)?.role_id;
 
   const MODES: { value: HiddenMode; label: string; desc: string; icon: React.ReactNode }[] = [

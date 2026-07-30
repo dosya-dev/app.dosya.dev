@@ -77,7 +77,7 @@ export default function UploadDock() {
   // Right-click actions per row. A completed file gets quick actions (full file
   // management still lives on the Files page); a failed one gets retry options.
   const menuItems = (item: UploadItem) => {
-    // A separator is its OWN item (label '', separator: true) — never a flag on a
+    // A separator is its OWN item (label '', separator: true) - never a flag on a
     // labeled item, which the ContextMenu would render as a divider instead of a button.
     const sep = { label: '', icon: null, separator: true, onClick: () => {} };
     if (item.status === 'complete') {
@@ -167,7 +167,7 @@ export default function UploadDock() {
           </button>
         </div>
 
-        {/* Single combined progress bar across all active uploads — with the
+        {/* Single combined progress bar across all active uploads - with the
             amount uploaded, amount left, and current combined speed. */}
         {summary.anyActive && (
           <div className="px-3.5 pb-2.5">

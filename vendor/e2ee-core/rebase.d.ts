@@ -4,7 +4,7 @@
  *
  * `rebase` starts from a copy of `remote` and folds in each local op,
  * comparing against `base` (the state the local ops were made against) to
- * tell "remote didn't touch this" apart from "remote also changed this" —
+ * tell "remote didn't touch this" apart from "remote also changed this" -
  * disjoint changes auto-merge, and any overlap is resolved without ever
  * dropping a user edit:
  *   - content edit-vs-edit -> keep both, as a conflicted-copy entry

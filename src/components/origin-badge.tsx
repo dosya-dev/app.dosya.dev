@@ -1,7 +1,7 @@
 import { Monitor, Smartphone, Terminal, Plug, type LucideIcon } from 'lucide-react';
 import { originLabel } from '@/lib/helpers';
 
-// webdav/s3/ftp/import share one generic "integration" badge — the Origin
+// webdav/s3/ftp/import share one generic "integration" badge - the Origin
 // list column shows the precise name. web and legacy (null) rows get none.
 const BADGE_STYLE: Record<string, { icon: LucideIcon; bg: string }> = {
   desktop: { icon: Monitor, bg: 'bg-green-600' },

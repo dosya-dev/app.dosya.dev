@@ -7,7 +7,7 @@
  * `wrapDek`/`unwrapDek`, and the folder index / file manifest / root
  * manifest (Task 4) are encrypted or bound to it too. Access to a workspace
  * is extended to a member by HPKE-sealing the WK to their X25519 public key
- * — see `sealGrant`/`openGrant` below — never by re-deriving or re-sending
+ * - see `sealGrant`/`openGrant` below - never by re-deriving or re-sending
  * the WK in the clear.
  *
  * Every wrap here reuses `wrapKey`/`unwrapKey` from `./keys.js` (never a raw
@@ -45,7 +45,7 @@ export type Grant = {
  * public key with `info = adGrant(...)`, and separately Ed25519-sign that
  * SAME AD bytes with the granter's signing key. The signature lets a
  * recipient (or an auditor) verify *who* authorized the grant and *for
- * whom*, independent of — and checked before — attempting to open the
+ * whom*, independent of - and checked before - attempting to open the
  * HPKE seal itself.
  */
 export declare function sealGrant(args: {
@@ -59,11 +59,11 @@ export declare function sealGrant(args: {
     granterSignKey: Uint8Array;
 }): Promise<Grant>;
 /**
- * Reverse of `sealGrant`. Verifies `granterSig` over `adGrant(...)` FIRST —
- * throwing `Error("grant: signature invalid")` if it doesn't check out —
+ * Reverse of `sealGrant`. Verifies `granterSig` over `adGrant(...)` FIRST -
+ * throwing `Error("grant: signature invalid")` if it doesn't check out -
  * and only then HPKE-opens `sealed` with the recipient's X25519 private
  * key, throwing `Error("grant: open failed")` on any HPKE failure (wrong
- * recipient key, tampered ciphertext, or any AD field mismatch — e.g. a
+ * recipient key, tampered ciphertext, or any AD field mismatch - e.g. a
  * spoofed `granteeId`/`granterId`/`wkVersion` relative to what was sealed).
  *
  * Note that because `granterSig` covers the exact same AD bytes used as the

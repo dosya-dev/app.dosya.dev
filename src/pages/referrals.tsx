@@ -51,7 +51,7 @@ export default function ReferralsPage() {
           <Gift className="size-5" /> Refer friends
         </h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Invite a friend and earn 5&nbsp;GB when they join — up to {data.max_rewards} friends ({data.max_rewards * 5}&nbsp;GB total).
+          Invite a friend and earn 5&nbsp;GB when they join - up to {data.max_rewards} friends ({data.max_rewards * 5}&nbsp;GB total).
         </p>
       </div>
 
@@ -75,7 +75,7 @@ export default function ReferralsPage() {
           <Progress value={pct} />
           {atCap && (
             <p className="text-xs text-muted-foreground">
-              You've earned the maximum bonus — thanks for spreading the word!
+              You've earned the maximum bonus - thanks for spreading the word!
             </p>
           )}
         </div>
@@ -87,7 +87,7 @@ export default function ReferralsPage() {
         </div>
         {data.friends.length === 0 ? (
           <p className="py-8 text-center text-xs text-muted-foreground">
-            No invites yet — share your link to get started.
+            No invites yet - share your link to get started.
           </p>
         ) : (
           data.friends.map((f, i) => (

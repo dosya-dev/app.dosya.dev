@@ -66,7 +66,7 @@ export function DashboardTopbar() {
     })();
   }, []);
 
-  // Theme toggle — flips light/dark for the current theme and saves to the account.
+  // Theme toggle - flips light/dark for the current theme and saves to the account.
   const toggleTheme = () => {
     const cur = readCache();
     const nextMode = dark ? 'light' : 'dark';

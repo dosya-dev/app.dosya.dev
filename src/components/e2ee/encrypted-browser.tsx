@@ -19,7 +19,7 @@ import {
  * The unlocked encrypted-workspace surface: pick/create a workspace, browse
  * its (client-decrypted) contents, upload/download. Visually echoes the
  * Files page's card/grid language (see src/pages/files.tsx) without
- * importing its internals — these cards are deliberately lighter (no
+ * importing its internals - these cards are deliberately lighter (no
  * thumbnails/share/comments, since encrypted entries carry no such metadata
  * yet).
  */
@@ -27,7 +27,7 @@ export function EncryptedBrowser() {
   const workspaces = useE2ee((s) => s.workspaces);
   const activeWorkspaceId = useE2ee((s) => s.activeWorkspaceId);
   // P2e: the active GLOBAL storage workspace (separate from the E2EE Space
-  // above) — drives which Spaces show under "My Spaces" and is re-read on
+  // above) - drives which Spaces show under "My Spaces" and is re-read on
   // every render this component does, so switching global workspaces
   // re-filters the list (see mySpaces/sharedSpacesList below).
   const activeGlobalId = useWorkspace((s) => s.activeId);
@@ -51,7 +51,7 @@ export function EncryptedBrowser() {
   // all accept an optional folderId, and listFolder can return kind:'folder'
   // entries, so a flat root-only view would leave any nested folder
   // permanently unreachable. This local breadcrumb stack drives that folderId
-  // — no store changes needed, it's just component-local UI state.
+  // - no store changes needed, it's just component-local UI state.
   const [folderPath, setFolderPath] = useState<{ id: string; name: string }[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -59,9 +59,9 @@ export function EncryptedBrowser() {
   const currentFolderId = folderPath.length > 0 ? folderPath[folderPath.length - 1].id : '';
 
   // P2e: split the flat Space list into this account's OWN Spaces scoped to
-  // the active global workspace ("My Spaces" — plus a null-scope legacy
+  // the active global workspace ("My Spaces" - plus a null-scope legacy
   // fallback so pre-P2e Spaces don't vanish) and every Space shared WITH this
-  // account ("Shared with me" — shown regardless of the active workspace).
+  // account ("Shared with me" - shown regardless of the active workspace).
   // Recomputed on every render, which is correct here: the component already
   // re-renders whenever `workspaces` or `activeGlobalId` changes (both are
   // subscribed above), so these always reflect the live values.
@@ -70,7 +70,7 @@ export function EncryptedBrowser() {
   );
   const sharedSpacesList = workspaces.filter((w) => w.shared);
 
-  // On mount (i.e. right after unlock — this component only renders once
+  // On mount (i.e. right after unlock - this component only renders once
   // status === 'unlocked') AND whenever the active global workspace changes,
   // pull in this account's Spaces (own + shared) so both switching workspaces
   // and a fresh invite show up in the bar below without a manual refresh.
@@ -82,7 +82,7 @@ export function EncryptedBrowser() {
   const handleSelectWorkspace = async (id: string) => {
     setFolderPath([]);
     await openWorkspace(id);
-    // Only follow up with a listing if the open actually succeeded — the
+    // Only follow up with a listing if the open actually succeeded - the
     // engine rejects unknown/un-openable workspaces, and firing
     // refreshFolder anyway would overwrite that error with a generic
     // "Could not load folder." message.
@@ -156,12 +156,12 @@ export function EncryptedBrowser() {
         </Button>
       </div>
 
-      {/* Disclosure banner — the accurate R2-on-dev limitation */}
+      {/* Disclosure banner - the accurate R2-on-dev limitation */}
       <div className="flex items-start gap-2 rounded-lg border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
         <Info className="mt-0.5 size-3.5 shrink-0" />
         <p>
           Files here are end-to-end encrypted in your browser. Chunk upload/download requires the
-          production storage backend — on local dev the file list works, but chunk transfer may fail
+          production storage backend - on local dev the file list works, but chunk transfer may fail
           against the dev R2 stub.
         </p>
       </div>
@@ -172,7 +172,7 @@ export function EncryptedBrowser() {
         </div>
       )}
 
-      {/* Workspace bar — split into "My Spaces" (scoped to the active global
+      {/* Workspace bar - split into "My Spaces" (scoped to the active global
           workspace, see mySpaces above) and "Shared with me" (always shown).
           The "New Space" button lives with the "My Spaces" group and stays
           visible even when that group is empty, so there's always a way to
@@ -269,7 +269,7 @@ export function EncryptedBrowser() {
           ) : entries.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-center">
               <Folder className="mb-3 size-10 text-muted-foreground/30" />
-              <p className="text-sm text-muted-foreground">No files yet — upload to get started.</p>
+              <p className="text-sm text-muted-foreground">No files yet - upload to get started.</p>
             </div>
           ) : (
             <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
@@ -318,7 +318,7 @@ export function EncryptedBrowser() {
         </DialogContent>
       </Dialog>
 
-      {/* Members panel — invite/revoke + the §11/§8 disclosures */}
+      {/* Members panel - invite/revoke + the §11/§8 disclosures */}
       {activeWorkspace && (
         <MembersPanel
           open={membersOpen}

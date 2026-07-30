@@ -31,7 +31,7 @@ const pool = createHeicPool({
 // admitted more, the extra decodes would just queue inside the pool anyway.
 //
 // `persistGet`/`persistPut` back the in-memory LRU with the Cache API, so a
-// decoded thumbnail survives a page reload — a refresh serves it without
+// decoded thumbnail survives a page reload - a refresh serves it without
 // re-downloading the original or re-running the WASM decode.
 const cache = createHeicCache({
   decoder: (url, maxDim) => pool.decode(url, maxDim),

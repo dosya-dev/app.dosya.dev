@@ -6,7 +6,7 @@
  * this workspace currently look like": it binds a `folderMerkleRoot` (the
  * root of the folder tree) and a `membershipHeadHash` (the tip of the P0.4
  * Task 3 membership log) under one Ed25519 signature, and chains to its own
- * predecessor via `prevRootHash` — so a client that has seen manifest N can
+ * predecessor via `prevRootHash` - so a client that has seen manifest N can
  * detect a server trying to serve a stale or forked manifest N (or an
  * out-of-order one) by comparing hashes (`checkFreshness`), never by trusting
  * a bare version counter alone.
@@ -34,7 +34,7 @@ export declare function signRootManifest(fields: RootManifestFields, signKey: Ui
 /** Verify `sig` is a valid Ed25519 signature by `signerPubkey` over `adRootManifest(fields)`. */
 export declare function verifyRootManifest(fields: RootManifestFields, sig: Uint8Array, signerPubkey: Uint8Array): Promise<boolean>;
 /**
- * `sha256(adRootManifest(fields))` — the manifest's content-addressed
+ * `sha256(adRootManifest(fields))` - the manifest's content-addressed
  * identity, used both as the next manifest's `prevRootHash` (chaining) and
  * as the `hash` a caller persists as "last seen" for `checkFreshness`.
  */
@@ -53,11 +53,11 @@ export declare function decryptFolderIndex(ciphertext: Uint8Array, wk: Uint8Arra
  * `u32be` count.
  *
  * Note: `totalSize` is `u64be`-encoded (up to `Number.MAX_SAFE_INTEGER`,
- * 2^53-1 bytes) so whole-file sizes are not capped at ~4 GiB — this product
+ * 2^53-1 bytes) so whole-file sizes are not capped at ~4 GiB - this product
  * targets large media. Per-chunk `plainLen` stays `u32be`: it is bounded by
  * the chunker's max chunk size (≤4 MiB, see `chunker.ts`'s `DEFAULTS.max`),
  * so 32 bits is safe there regardless of how large the whole file is. The
- * chunk-count and string-length prefixes also stay `u32be` — plenty of
+ * chunk-count and string-length prefixes also stay `u32be` - plenty of
  * headroom for counts/lengths that are never anywhere near 4 billion.
  */
 export declare function serializeFileManifest(m: FileManifest): Uint8Array;
@@ -72,14 +72,14 @@ export declare function decryptFileManifest(ciphertext: Uint8Array, wk: Uint8Arr
  * "last seen" `{version, hash}` (both are `rootManifestHash` outputs):
  *
  *  - `null` `lastSeen` (nothing persisted yet): always `"ok"`.
- *  - `incoming.version < lastSeen.version`: `"rollback"` — the server is
+ *  - `incoming.version < lastSeen.version`: `"rollback"` - the server is
  *    serving an older manifest than one this client already observed.
  *  - `incoming.version === lastSeen.version` but `incoming.hash` differs
- *    from `lastSeen.hash`: `"fork"` — two different manifests claim the
+ *    from `lastSeen.hash`: `"fork"` - two different manifests claim the
  *    same version number (an equivocating/forking server or a signature
  *    replayed with tampered fields at the same version).
  *  - Otherwise advancing (`incoming.version > lastSeen.version`) but
- *    `incoming.prevHash` does not equal `lastSeen.hash`: `"fork"` — the
+ *    `incoming.prevHash` does not equal `lastSeen.hash`: `"fork"` - the
  *    chain link back to the last manifest this client saw is broken, so the
  *    incoming manifest cannot be this client's true next version.
  *  - Anything else: `"ok"`.

@@ -1,7 +1,7 @@
 /**
  * Trigger a browser "Save As" for decrypted plaintext bytes: Blob → object
  * URL → anchor click → revoke. Kept in its own module (rather than inlined
- * in the store) so it can be swapped for a spy in tests — jsdom has no real
+ * in the store) so it can be swapped for a spy in tests - jsdom has no real
  * object-URL/anchor-download behavior, and the store must stay unit-testable
  * without a DOM.
  */

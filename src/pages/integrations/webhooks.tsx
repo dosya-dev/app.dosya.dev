@@ -62,7 +62,7 @@ interface Delivery {
 interface Pagination { page: number; per_page: number; total: number; total_pages: number }
 
 // Unlike created_at/last_attempt_at (past timestamps), next_attempt_at points
-// into the future — timeAgo() would misreport it, so format it separately.
+// into the future - timeAgo() would misreport it, so format it separately.
 function retryEta(ts: number): string {
   const diff = ts - Math.floor(Date.now() / 1000);
   if (diff <= 0) return 'due now';
@@ -314,7 +314,7 @@ function EndpointCard({ endpoint, onChange }: { endpoint: WebhookEndpoint; onCha
       <ConfirmDialog
         open={rollOpen}
         title="Roll signing secret"
-        description="Generate a new signing secret for this endpoint. The old secret stops working immediately — update your receiver before rolling."
+        description="Generate a new signing secret for this endpoint. The old secret stops working immediately - update your receiver before rolling."
         confirmLabel="Roll secret"
         busy={rolling}
         onConfirm={rollSecret}
@@ -404,11 +404,11 @@ function DeliveriesSection({ endpointId }: { endpointId: string }) {
                   className="text-xs text-muted-foreground"
                   title={d.error ?? d.response_snippet ?? undefined}
                 >
-                  {d.response_status != null ? d.response_status : d.error ? 'Error' : '—'}
+                  {d.response_status != null ? d.response_status : d.error ? 'Error' : '-'}
                 </TableCell>
                 <TableCell className="text-xs text-muted-foreground">{d.attempts}</TableCell>
                 <TableCell className="text-xs text-muted-foreground">
-                  {d.status === 'pending' && d.next_attempt_at ? retryEta(d.next_attempt_at) : '—'}
+                  {d.status === 'pending' && d.next_attempt_at ? retryEta(d.next_attempt_at) : '-'}
                 </TableCell>
                 <TableCell>
                   <Button
@@ -583,7 +583,7 @@ function SecretRevealDialog({ secret, url, onClose }: { secret: string; url: str
     try {
       await navigator.clipboard.writeText(secret);
       setCopied(true);
-      toast.success('Secret copied', "Store it securely — you won't see it again.");
+      toast.success('Secret copied', "Store it securely - you won't see it again.");
       setTimeout(() => setCopied(false), 2000);
     } catch { /* clipboard unavailable */ }
   };
@@ -593,7 +593,7 @@ function SecretRevealDialog({ secret, url, onClose }: { secret: string; url: str
       <DialogContent className="max-w-md">
         <DialogHeader><DialogTitle>Signing secret</DialogTitle></DialogHeader>
         <p className="text-xs text-muted-foreground">
-          Copy this now for <span className="font-mono text-foreground break-all">{url}</span> — we won&rsquo;t show it again.
+          Copy this now for <span className="font-mono text-foreground break-all">{url}</span> - we won&rsquo;t show it again.
         </p>
         <div className="flex gap-2">
           <Input value={secret} readOnly className="h-8 text-xs font-mono flex-1" />
@@ -605,7 +605,7 @@ function SecretRevealDialog({ secret, url, onClose }: { secret: string; url: str
           Use it to verify the <code className="text-[11px] text-foreground">X-Dosya-Signature</code> header on incoming requests.
         </p>
         <DialogFooter>
-          <Button onClick={onClose}>Done — I&rsquo;ve copied it</Button>
+          <Button onClick={onClose}>Done - I&rsquo;ve copied it</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

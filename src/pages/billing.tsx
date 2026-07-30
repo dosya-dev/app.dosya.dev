@@ -36,7 +36,7 @@ export default function BillingPage() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('success')) {
-      // Stripe redirect back — the webhook may lag, so ask the API to reconcile
+      // Stripe redirect back - the webhook may lag, so ask the API to reconcile
       // from Stripe directly, then refetch (again after a delay as a fallback).
       syncBilling().catch(() => {}).then(reload);
       const t = setTimeout(reload, 2500);
@@ -53,7 +53,7 @@ export default function BillingPage() {
       .catch((e) => { setPortalError(apiErrorMessage(e)); setPortalOpening(false); });
   };
 
-  // POST /billing/subscription only calls Stripe — the D1 mirror is updated
+  // POST /billing/subscription only calls Stripe - the D1 mirror is updated
   // asynchronously by the webhook, so refetch immediately AND after a short delay
   // to pick up the settled state (mirrors the ?success handling above).
   const onChooserUpdated = () => { reload(); setTimeout(reload, 2500); };
@@ -157,7 +157,7 @@ export default function BillingPage() {
         {/* Storage breakdown (the stack) */}
         <div className="mt-3 space-y-1 border-t pt-3">
           <p className="text-xs font-medium text-muted-foreground">Storage breakdown</p>
-          {/* Plan row — always, from data.plan (the source of truth for the base contribution).
+          {/* Plan row - always, from data.plan (the source of truth for the base contribution).
               The backend mirrors a kind:"plan" row into subscription_items too, so we must NOT
               also render that item here or the plan would show twice for subscribers. */}
           <div className="flex justify-between text-xs text-muted-foreground">
@@ -197,7 +197,7 @@ export default function BillingPage() {
         {portalError && <p className="mt-2 text-xs text-red-600">{portalError}</p>}
       </Card>
 
-      {/* Inline plan chooser — opens in-page (not a modal) on Upgrade / Change plan / Add storage */}
+      {/* Inline plan chooser - opens in-page (not a modal) on Upgrade / Change plan / Add storage */}
       {showChooser && (
         <PlanChooser
           hasSubscription={data.subscription.has_subscription}
@@ -228,7 +228,7 @@ export default function BillingPage() {
                   ${(inv.amount / 100).toFixed(2)}
                 </p>
                 <p className="text-[11px] text-muted-foreground">
-                  {new Date(inv.period_start * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} — {new Date(inv.period_end * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                  {new Date(inv.period_start * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - {new Date(inv.period_end * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                 </p>
               </div>
               <Badge variant={inv.status === 'paid' ? 'secondary' : 'outline'} className="text-[10px]">

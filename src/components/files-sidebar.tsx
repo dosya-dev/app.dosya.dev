@@ -390,7 +390,7 @@ export function FilesSidebar({ onFilterChange, onFavouriteClick, onGroupClick }:
           </DialogHeader>
           <p className="text-xs text-muted-foreground">
             Delete <span className="font-semibold text-foreground">{deleteGroupTarget?.name}</span>?
-            {' '}Files and folders in it are not deleted — only the group itself.
+            {' '}Files and folders in it are not deleted - only the group itself.
           </p>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteGroupTarget(null)}>Cancel</Button>

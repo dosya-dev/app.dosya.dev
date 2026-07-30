@@ -41,7 +41,7 @@ interface ApiKey {
   created_at: number; s3_access_key_id: string | null;
 }
 // Mirrors what GET /api/me/sessions actually returns. It previously declared
-// ip/user_agent/login_method/last_active_at — none of which the API sends — so every
+// ip/user_agent/login_method/last_active_at - none of which the API sends - so every
 // row rendered "undefined · undefined · undefined NaN". `device`/`browser`/`meta` come
 // pre-formatted from the server, which also classifies mobile app devices.
 interface Session {
@@ -229,7 +229,7 @@ function ProfileHero({ user, onAvatarChanged }: { user: UserProfile | null; onAv
   const memberSince = user
     ? `Member since ${new Date(user.created_at * 1000).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })} · ${user.workspace_count} workspace${user.workspace_count === 1 ? '' : 's'}`
     : '';
-  // avatar_url is an R2 object key, not a URL — the image is served by GET /api/me/avatar.
+  // avatar_url is an R2 object key, not a URL - the image is served by GET /api/me/avatar.
   const avatarSrc = user?.avatar_url ? `${API_BASE}/api/me/avatar?t=${bust}` : null;
 
   return (
@@ -534,7 +534,7 @@ function PasswordSection({ tfa, onTfaChanged, hasPassword }: { tfa: TfaStatus | 
           ) : (
             <SettingRow
               label="Password"
-              desc="You signed up with Google or GitHub, so this account has no password yet. Use “Forgot password” to set one — you'll need it to turn two-factor authentication off later."
+              desc="You signed up with Google or GitHub, so this account has no password yet. Use “Forgot password” to set one - you'll need it to turn two-factor authentication off later."
             >
               <Badge variant="secondary" className="text-[10px]">Not set</Badge>
             </SettingRow>
@@ -557,7 +557,7 @@ function PasswordSection({ tfa, onTfaChanged, hasPassword }: { tfa: TfaStatus | 
               // Enrolling needs no password but disabling verifies one, so without a
               // password this is a one-way door. Block the door, don't just warn later.
               <p className="text-[11px] text-muted-foreground max-w-[16rem] text-right">
-                Set a password first — turning 2FA off later requires one.
+                Set a password first - turning 2FA off later requires one.
               </p>
             ) : (
               <div className="flex items-center gap-2">
@@ -666,7 +666,7 @@ function TotpSetupModal({ open, onOpenChange, onEnabled }: { open: boolean; onOp
   }, [open]);
 
   // The otpauth:// URI embeds the raw TOTP shared secret, so the QR must be
-  // rendered on-device — never sent to a third-party image service. Error
+  // rendered on-device - never sent to a third-party image service. Error
   // correction H (30% recovery) leaves room for the centered logo overlay
   // (~4% of the area), which authenticator scanners handle fine.
   useEffect(() => {
@@ -693,7 +693,7 @@ function TotpSetupModal({ open, onOpenChange, onEnabled }: { open: boolean; onOp
             const icon = 56;
             ctx.drawImage(logo, (size - icon) / 2, (size - icon) / 2, icon, icon);
           }
-        } catch { /* logo unavailable — ship the plain QR */ }
+        } catch { /* logo unavailable - ship the plain QR */ }
         if (!cancelled) setQrDataUrl(canvas.toDataURL('image/png'));
       } catch {
         if (!cancelled) toast.error('Setup failed', 'Could not render the QR code.');
@@ -876,7 +876,7 @@ function ApiKeysSection({ keys, onChanged }: { keys: ApiKey[]; onChanged: () => 
     if (!k.s3_access_key_id) return;
     setS3Creds({
       access_key_id: k.s3_access_key_id,
-      secret_access_key: '(secret key is not retrievable — delete and recreate the key to rotate)',
+      secret_access_key: '(secret key is not retrievable - delete and recreate the key to rotate)',
       endpoint: `${window.location.origin}/s3`,
       region: 'auto',
     });

@@ -3,7 +3,7 @@ import { useE2ee, type E2eeEngine, type EncryptedEntry, type KnownWorkspace } fr
 import { useWorkspace } from '@/stores/workspace';
 
 // jsdom (this vitest env, v25.0.1) implements Blob/File storage but not the
-// async read methods (`arrayBuffer`/`text`) real browsers have long shipped —
+// async read methods (`arrayBuffer`/`text`) real browsers have long shipped -
 // only `FileReader` can pull bytes out. Polyfill just enough for the
 // `uploadFiles` test below to exercise the SAME `file.arrayBuffer()` call the
 // production store code makes; this is a test-environment shim only, never
@@ -53,7 +53,7 @@ beforeEach(() => {
     recoveryKeyOnce: null,
     members: [],
   });
-  // The active GLOBAL workspace (a separate store, `stores/workspace.ts`) —
+  // The active GLOBAL workspace (a separate store, `stores/workspace.ts`) -
   // reset to its own default between cases; individual tests below set
   // `activeId` explicitly where the active workspace matters.
   useWorkspace.setState({ activeId: '' });
@@ -113,12 +113,12 @@ describe('useE2ee: createWorkspace', () => {
     expect(workspaces).toHaveLength(1);
     expect(workspaces[0].name).toBe('Docs');
     expect(workspaces[0].id).toBeTruthy();
-    // Security-critical: a workspace THIS account created is hard-anchored —
+    // Security-critical: a workspace THIS account created is hard-anchored -
     // selfFounded must be true, and (per the store's own persisted-state
     // source of truth) it is set here, never derived from anything the
     // server returns.
     expect(workspaces[0].selfFounded).toBe(true);
-    // P2e: scoped to the ACTIVE global workspace at creation time — read
+    // P2e: scoped to the ACTIVE global workspace at creation time - read
     // from `useWorkspace`, display-only, never affects selfFounded above.
     expect(workspaces[0].globalWorkspaceId).toBe('gw-1');
     expect(workspaces[0].shared).toBe(false);
@@ -435,7 +435,7 @@ describe('useE2ee: checkIdentity', () => {
     expect(useE2ee.getState().error).toBeNull();
   });
 
-  it('a transient error leaves hasIdentity=null (never false) and sets error — regression guard: showing Setup on a network blip lets setupIdentity silently overwrite real keys', async () => {
+  it('a transient error leaves hasIdentity=null (never false) and sets error - regression guard: showing Setup on a network blip lets setupIdentity silently overwrite real keys', async () => {
     useE2ee.getState().__setEngine(
       makeFakeEngine({
         hasIdentity: async () => {
@@ -505,7 +505,7 @@ describe('useE2ee: downloadEntry', () => {
 });
 
 describe('useE2ee: persistence', () => {
-  it('partialize excludes session/engine/members (secrets/in-memory-only) and persists only workspaces (with selfFounded/globalWorkspaceId/shared — all non-secret)', () => {
+  it('partialize excludes session/engine/members (secrets/in-memory-only) and persists only workspaces (with selfFounded/globalWorkspaceId/shared - all non-secret)', () => {
     const partialize = useE2ee.persist.getOptions().partialize;
     expect(partialize).toBeTypeOf('function');
 
@@ -515,7 +515,7 @@ describe('useE2ee: persistence', () => {
     ];
     // Simulate a state object carrying secret-shaped fields (as if someone
     // accidentally added them to the store) to prove partialize is an
-    // ALLOWLIST that drops them regardless — not a denylist that could miss one.
+    // ALLOWLIST that drops them regardless - not a denylist that could miss one.
     const stateWithSecrets = {
       ...useE2ee.getState(),
       workspaces: knownWorkspaces,

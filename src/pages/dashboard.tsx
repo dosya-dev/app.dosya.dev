@@ -24,7 +24,7 @@ interface DashboardActivity {
   user_id: string | null;
   user_name: string | null;
   user_avatar: string | null;
-  // Forensic fields — nulled server-side (shapeActivityRow) for
+  // Forensic fields - nulled server-side (shapeActivityRow) for
   // non-privileged viewers looking at another member's row.
   source_ip?: string | null;
   user_agent?: string | null;
@@ -97,7 +97,7 @@ export default function DashboardPage() {
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
         <StatCard label="Total files" value={s.total_files.toLocaleString()} sub={<><span className="text-green-600 font-semibold">+{s.files_this_week}</span> this week</>} />
         <StatCard label="Shared externally" value={s.shared_externally.toLocaleString()} sub="Active share links" />
-        <StatCard label="File requests" value="—" sub="Active requests" />
+        <StatCard label="File requests" value="-" sub="Active requests" />
         <StatCard label="Storage used" value={humanSizeShort(s.total_bytes)} sub={s.storage_cap_bytes ? `of ${humanSizeShort(s.storage_cap_bytes)}` : 'unlimited plan'} />
         <StatCard label="Current plan" value={PLAN_LABELS[s.plan] ?? s.plan}>
           {s.plan === 'free' ? (
@@ -305,7 +305,7 @@ function ActivityItem({ a, workspaceName }: { a: DashboardActivity; workspaceNam
           elements can't nest. Clicking the row toggles the detail. */}
       <div role="button" tabIndex={0} onClick={() => setOpen((v) => !v)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpen((v) => !v); } }} className="w-full text-left flex items-start gap-2.5 py-2.5 cursor-pointer">
         <div className="w-7 h-7 rounded-full shrink-0 flex items-center justify-center text-[10px] font-semibold text-white mt-0.5" style={{ background: avatarColor(a.user_id ?? '') }}>
-          {/* avatar_url is an R2 object key, not a URL — treat it as a "has photo"
+          {/* avatar_url is an R2 object key, not a URL - treat it as a "has photo"
               flag and load the image through the API (cookie-authenticated),
               falling back to initials if it's missing or fails to load. */}
           {a.user_avatar && a.user_id && !avatarFailed ? (

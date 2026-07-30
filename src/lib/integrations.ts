@@ -50,7 +50,7 @@ export const INTEGRATIONS: IntegrationMeta[] = [
   {
     slug: 'sftp',
     title: 'SFTP',
-    description: 'Upload and manage files with any SFTP client — FileZilla, WinSCP, Cyberduck or the terminal.',
+    description: 'Upload and manage files with any SFTP client - FileZilla, WinSCP, Cyberduck or the terminal.',
     tag: 'Secure transfer',
     icon: Server,
     docsUrl: 'https://dosya.dev/developer/sftp',
@@ -106,7 +106,7 @@ export const INTEGRATIONS: IntegrationMeta[] = [
   {
     slug: 'remote-download',
     title: 'Remote download',
-    description: 'Paste a direct file link and dosya downloads it into your workspace server-side — ideal on slow connections.',
+    description: 'Paste a direct file link and dosya downloads it into your workspace server-side - ideal on slow connections.',
     tag: 'Import',
     icon: CloudDownload,
   },

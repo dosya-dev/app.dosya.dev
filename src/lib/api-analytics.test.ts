@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { bucketLabel } from './api-analytics';
 
-const T = 1753747200; // an arbitrary fixed timestamp — labels are shape-tested, not value-tested
+const T = 1753747200; // an arbitrary fixed timestamp - labels are shape-tested, not value-tested
 
 describe('bucketLabel', () => {
   it('24h buckets label as HH:MM', () => {

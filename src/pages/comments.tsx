@@ -344,11 +344,11 @@ export default function CommentsPage() {
               <div className="space-y-1.5">
                 <PropRow label="Uploaded by" value={info.uploader_name ?? 'Unknown'} />
                 <PropRow label="Size" value={humanSize(info.size_bytes)} />
-                <PropRow label="Type" value={info.mime_type || '—'} />
-                <PropRow label="Region" value={info.region || '—'} />
+                <PropRow label="Type" value={info.mime_type || '-'} />
+                <PropRow label="Region" value={info.region || '-'} />
                 <PropRow label="Created" value={timeAgo(info.created_at)} />
                 <PropRow label="Modified" value={timeAgo(info.updated_at)} />
-                <PropRow label="Extension" value={info.extension ?? '—'} />
+                <PropRow label="Extension" value={info.extension ?? '-'} />
               </div>
             </div>
           )}

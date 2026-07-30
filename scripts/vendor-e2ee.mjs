@@ -5,7 +5,7 @@
 // WHY: CI (.github/workflows/sync-public-repos.yml → the `sync-web` job) pushes
 // ONLY `apps/web/` to the deploy repo dosya-dev/app.dosya.dev, which Cloudflare
 // Pages builds with apps/web as the repo ROOT. In that repo there is no
-// `../../packages/` sibling — so anything referencing `../../packages/*`
+// `../../packages/` sibling - so anything referencing `../../packages/*`
 // (the `file:` deps in package.json, or tsconfig `paths` → ../../packages/*/dist)
 // escapes the repo. npm ci silently creates a dangling symlink for the file:
 // dep, then `tsc -b` / `vite build` can't find the module → TS2307 and the CF
@@ -34,7 +34,7 @@ const packages = ['e2ee-core', 'e2ee-client'];
 for (const name of packages) {
   const src = resolve(webRoot, '../../packages', name, 'dist');
   if (!existsSync(src)) {
-    console.error(`✖ missing ${src} — build the package first: (cd packages/${name} && npm run build)`);
+    console.error(`✖ missing ${src} - build the package first: (cd packages/${name} && npm run build)`);
     process.exit(1);
   }
   const dest = resolve(webRoot, 'vendor', name);

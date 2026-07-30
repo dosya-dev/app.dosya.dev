@@ -11,9 +11,9 @@ import { Users, UserPlus, Trash2, ShieldAlert } from 'lucide-react';
 
 /**
  * Members panel for an open encrypted workspace: list members, invite by
- * email, revoke a member — plus the mandatory spec §11 (TOFU) and §8
+ * email, revoke a member - plus the mandatory spec §11 (TOFU) and §8
  * (honest-removal) disclosures. Per the P2c plan, invite/revoke are shown for
- * every member (founder or invitee) — the engine's grantAccess/revokeAccess
+ * every member (founder or invitee) - the engine's grantAccess/revokeAccess
  * only require workspace membership, and the server is the actual gate; this
  * is deliberately not re-implemented client-side (see plan's "Notes for the
  * executor").
@@ -34,7 +34,7 @@ export function MembersPanel({
 
   const [email, setEmail] = useState('');
   const [revokeTarget, setRevokeTarget] = useState<WorkspaceMember | null>(null);
-  // Best-effort "you" marker — /api/me is the same lightweight endpoint the
+  // Best-effort "you" marker - /api/me is the same lightweight endpoint the
   // Comments/Teams pages already call for current-user identity. Failure is
   // silent: the panel is fully usable without it, it just skips the badge.
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
@@ -65,7 +65,7 @@ export function MembersPanel({
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Users className="size-4" /> Members — {workspaceName}
+              <Users className="size-4" /> Members - {workspaceName}
             </DialogTitle>
           </DialogHeader>
 
@@ -148,8 +148,8 @@ export function MembersPanel({
           <div className="flex items-start gap-2 rounded-lg border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
             <ShieldAlert className="mt-0.5 size-3.5 shrink-0" />
             <p>
-              Revoking removes future access. Content a member already downloaded — or not yet
-              re-keyed — may remain readable to them until key rotation, coming soon.
+              Revoking removes future access. Content a member already downloaded - or not yet
+              re-keyed - may remain readable to them until key rotation, coming soon.
             </p>
           </div>
           <DialogFooter>

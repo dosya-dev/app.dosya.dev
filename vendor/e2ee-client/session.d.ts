@@ -1,7 +1,7 @@
 /**
  * Passphrase unlock / identity setup (spec §5.3 VOPRF->Argon2id->KEK,
  * §5.4/§5.8 identity bundle). Composes e2ee-core's primitives against the
- * injected `ApiClient` — never re-implements any crypto here.
+ * injected `ApiClient` - never re-implements any crypto here.
  */
 import { type IdentityBundle } from "@dosya-dev/e2ee-core";
 import type { ApiClient } from "./api.js";
@@ -15,7 +15,7 @@ export type Session = {
  * (passphrase KEK + recovery key), and stores everything except the
  * KEK/private keys/recovery key via `putUserKeys`.
  *
- * The recovery key is returned ONCE here — the caller must show it to the
+ * The recovery key is returned ONCE here - the caller must show it to the
  * user now (e.g. "save this recovery code"); it is never recoverable from
  * the server afterward.
  */

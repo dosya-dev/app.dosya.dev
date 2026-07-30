@@ -62,7 +62,7 @@ function getThumbWindow(activeIdx: number, total: number) {
 // supplied as "R, G, B" channels (it wraps them as rgba(var(--color-background), α)).
 // Its default is black-on-white, so on a dark app theme the editor renders light and
 // clashes. The app's theme lives in oklch() CSS vars, which pure CSS can't convert into
-// Pintura's RGB channels — so resolve them to concrete sRGB here and set them inline on
+// Pintura's RGB channels - so resolve them to concrete sRGB here and set them inline on
 // the editor root (an inline style beats Pintura's own stylesheet rule), matching any of
 // the app's themes and light/dark modes.
 
@@ -166,7 +166,7 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
   // file/version actually changes, so it doesn't tear down the live EditorView
   // on unrelated FileViewer re-renders (e.g. keystrokes bubbling from CodeMirror).
   // Cache-bust with a deterministic value derived from state (latest version's
-  // created_at, falling back to the file's updated_at) instead of Date.now() —
+  // created_at, falling back to the file's updated_at) instead of Date.now() -
   // calling Date.now() during a useMemo body is flagged as impure by
   // react-hooks/purity (unlike the rawUrl useCallback above, whose body only
   // runs when invoked, not synchronously during render).
@@ -182,7 +182,7 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
 
   const downloadUrl = `${API_BASE}/api/files/${file.id}/download`;
 
-  // The version actually being shown — mirrors the logic inside rawUrl() above.
+  // The version actually being shown - mirrors the logic inside rawUrl() above.
   const previewVersion =
     activeVersion > 0 && versions.length > 0 && activeVersion !== versions[0].version_number
       ? activeVersion
@@ -277,7 +277,7 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
         } else {
           // Pintura fetches `src` itself. A cross-origin URL to api.dosya.dev fails
           // the browser CORS check on Pintura's XHR, so fetch the image here (the
-          // app's own credentialed request works) and hand Pintura a local File —
+          // app's own credentialed request works) and hand Pintura a local File -
           // same approach as the video branch above.
           const res = await fetch(src, { credentials: 'include' });
           if (!res.ok) throw new Error(`Failed to load image (HTTP ${res.status})`);
@@ -328,7 +328,7 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
           }
         });
       } catch (err) {
-        // Surface the real reason instead of swallowing it — e.g. a failed dynamic
+        // Surface the real reason instead of swallowing it - e.g. a failed dynamic
         // import means the Pintura chunk didn't load (commonly the private-registry
         // package installed as the public stub because NPM_TOKEN was missing at build).
         console.error('[pintura] failed to load/init editor', err);

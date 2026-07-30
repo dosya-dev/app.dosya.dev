@@ -22,7 +22,7 @@ function ensurePmtiles() {
   pmtilesRegistered = true;
 }
 
-// Lucide's default SVG frame (see lucide-react's defaultAttributes) — matched by
+// Lucide's default SVG frame (see lucide-react's defaultAttributes) - matched by
 // hand so the marker icons render without mounting a React tree into imperative
 // maplibre marker elements (which are built with document.createElement, same as
 // the cluster-count bubble below).
@@ -72,7 +72,7 @@ export default function MapPage() {
   // missing sprite/tiles. Auto-upgrades to the real basemap once available.
   const [hasBasemap, setHasBasemap] = useState(false);
 
-  // All file pins (for the viewer's prev/next + thumbnail strip) — folders never
+  // All file pins (for the viewer's prev/next + thumbnail strip) - folders never
   // open the viewer, so they're excluded regardless of the approximate filter.
   const filePins = useMemo(() => pins.filter((p): p is FilePin => p.kind === 'file'), [pins]);
 
@@ -138,7 +138,7 @@ export default function MapPage() {
         // Show a shimmer skeleton until the thumbnail actually loads, then swap
         // it in. Preloading via Image() (instead of setting background-image on
         // a fresh marker node) also fixes the "blank until a theme toggle forces
-        // a reflow" paint quirk — the image now appears the moment it loads.
+        // a reflow" paint quirk - the image now appears the moment it loads.
         frame.classList.add('is-loading');
         const url = o.thumbUrl;
         const img = new Image();
@@ -231,7 +231,7 @@ export default function MapPage() {
   }, [renderMarkers]);
 
   // Re-style only when the theme or basemap-availability actually changes vs
-  // what's already applied — avoids a redundant setStyle on mount (which races
+  // what's already applied - avoids a redundant setStyle on mount (which races
   // the initial style load and triggers "style not done loading, rebuilding from
   // scratch"). The map is initialized with buildMapStyle(initialDark, false),
   // which is exactly this ref's initial value, so the mount run is skipped.
@@ -312,7 +312,7 @@ export default function MapPage() {
           </p>
           <p className="text-xs text-muted-foreground">
             {pins.length > 0
-              ? 'All located items are approximate — enable the toggle above to see them.'
+              ? 'All located items are approximate - enable the toggle above to see them.'
               : counts.pending > 0
                 ? 'Scanning your files for location…'
                 : 'Files with location data, or uploaded with location capture on, will appear here.'}

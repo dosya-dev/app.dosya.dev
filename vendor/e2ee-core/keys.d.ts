@@ -6,11 +6,11 @@
  * nonce first) so callers never have to track nonces separately. Every
  * higher-level wrap in this module (and the workspace/DEK/grant wraps in
  * later tasks) is built on these two functions plus the appropriate `ad*`
- * builder for domain separation — never a raw `aeadEncrypt` call.
+ * builder for domain separation - never a raw `aeadEncrypt` call.
  *
  * The per-user identity bundle is the X25519 (HPKE) + Ed25519 (signing)
  * keypair pair that anchors a user's E2EE identity. It is wrapped two ways:
- *   - under a KEK = Argon2id(hardenedSecret, salt) — `hardenedSecret` is the
+ *   - under a KEK = Argon2id(hardenedSecret, salt) - `hardenedSecret` is the
  *     VOPRF-hardened output of the user's passphrase (P1, `oprf-client.ts`),
  *     never the raw passphrase itself;
  *   - under a key derived from a random 32-byte recovery code, for the

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { buildE2eeClient } from './client';
 
-// A valid base64 encoding of 32 zero bytes — just needs to decode cleanly so
+// A valid base64 encoding of 32 zero bytes - just needs to decode cleanly so
 // oprfPublicKey() resolves; the actual key material is irrelevant here.
 const ZERO_KEY_B64 = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=';
 

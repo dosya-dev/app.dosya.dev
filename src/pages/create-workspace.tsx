@@ -41,7 +41,7 @@ export default function CreateWorkspacePage() {
   const [storageLimit, setStorageLimit] = useState('');
   const [allocation, setAllocation] = useState<Allocation | null>(null);
 
-  // Load the user's existing workspaces — if they have any, default to the picker.
+  // Load the user's existing workspaces - if they have any, default to the picker.
   useEffect(() => {
     (async () => {
       try {
@@ -96,7 +96,7 @@ export default function CreateWorkspacePage() {
       }
     } catch (err) {
       // api() throws ApiError on any non-2xx, so the server's own message
-      // (plan limit, duplicate slug, validation) surfaces here — the generic
+      // (plan limit, duplicate slug, validation) surfaces here - the generic
       // copy is reserved for real connectivity failures.
       setError(
         err instanceof ApiError && err.status === 401

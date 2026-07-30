@@ -14,8 +14,8 @@ describe('originLabel', () => {
   });
 
   it('shows an em dash for legacy/unknown values', () => {
-    expect(originLabel(null)).toBe('—');
-    expect(originLabel(undefined)).toBe('—');
-    expect(originLabel('surprise')).toBe('—');
+    expect(originLabel(null)).toBe('-');
+    expect(originLabel(undefined)).toBe('-');
+    expect(originLabel('surprise')).toBe('-');
   });
 });

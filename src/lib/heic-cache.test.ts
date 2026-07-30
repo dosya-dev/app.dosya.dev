@@ -168,7 +168,7 @@ describe("createHeicCache", () => {
   });
 });
 
-describe("createHeicCache — persistent store (survives page reload)", () => {
+describe("createHeicCache - persistent store (survives page reload)", () => {
   it("a persistent HIT skips the download+decode entirely", async () => {
     // This is the whole point: on refresh, a previously-decoded thumb is served
     // from the Cache API without re-fetching the ~5MB original or re-decoding.

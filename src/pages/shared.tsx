@@ -113,7 +113,7 @@ export default function SharedPage() {
                 By me <Badge variant="default" className="ml-1.5 text-[10px]">{links.filter((l) => l.is_mine).length}</Badge>
               </TabsTrigger>
               <TabsTrigger value="with-me" className="flex-none gap-0 rounded-none px-4 py-2.5 text-sm group-data-horizontal/tabs:after:-bottom-px">
-                With me <Badge variant="secondary" className="ml-1.5 text-[10px]">—</Badge>
+                With me <Badge variant="secondary" className="ml-1.5 text-[10px]">-</Badge>
               </TabsTrigger>
             </TabsList>
           </Tabs>
@@ -191,7 +191,7 @@ export default function SharedPage() {
             <div key={l.link_id} className="flex items-center gap-2 mb-2.5">
               <div className="w-7 h-7 rounded-md flex items-center justify-center text-[8px] font-bold text-white shrink-0" style={{ background: colorFor(l.file_name) }}>{labelFor(l.file_name)}</div>
               <span className="text-xs font-medium truncate flex-1">{l.file_name}</span>
-              <span className="text-[11px] font-semibold text-amber-600">{l.expires_at ? daysLeft(l.expires_at) : '—'}</span>
+              <span className="text-[11px] font-semibold text-amber-600">{l.expires_at ? daysLeft(l.expires_at) : '-'}</span>
             </div>
           ))}
         </div>

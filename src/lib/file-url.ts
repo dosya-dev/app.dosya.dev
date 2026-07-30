@@ -10,7 +10,7 @@ export interface FileRef {
 
 /**
  * The single place a /raw URL is built. Every preview surface goes through here
- * so that API_BASE can't be forgotten — a relative URL works in dev (Vite proxies
+ * so that API_BASE can't be forgotten - a relative URL works in dev (Vite proxies
  * /api) but breaks in production, where the SPA and the API are on different hosts.
  */
 export function fileRawUrl({ fileId, version, query }: FileRef): string {

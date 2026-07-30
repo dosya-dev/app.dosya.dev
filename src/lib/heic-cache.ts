@@ -49,7 +49,7 @@ export function createHeicCache(opts: HeicCacheOptions) {
   let active = 0;
   // Queued starters, not queued promises: each entry *starts* the decode (and
   // therefore calls the decoder) the moment a slot frees up. This must happen
-  // synchronously with `release()` — an `await`-based gate here would delay
+  // synchronously with `release()` - an `await`-based gate here would delay
   // the decoder call by a microtask tick, which breaks callers (like the
   // controllable-decoder tests) that inspect "how many decodes started" or
   // resolve pending decodes before yielding back to the event loop.

@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { applySummary } from "./notifications";
 
 describe("applySummary", () => {
-  it("does NOT flag hasNew on first load (no prior latest) — only records the id", () => {
+  it("does NOT flag hasNew on first load (no prior latest) - only records the id", () => {
     const r = applySummary({ lastLatestId: null }, { unread: 1, latest: { id: "ntf_a" } as any });
     expect(r).toEqual({ unread: 1, lastLatestId: "ntf_a", hasNew: false });
   });

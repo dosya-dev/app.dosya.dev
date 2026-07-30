@@ -45,7 +45,7 @@ export function computeCart(state: CartState, catalog: Catalog) {
         for (const addon of catalog.addons) {
             const qty = state.addonQty[addon.id] ?? 0;
             if (qty <= 0) continue;
-            // An add-on not sold at this interval is dropped from the cart entirely —
+            // An add-on not sold at this interval is dropped from the cart entirely -
             // pricing it at $0 (and still counting its storage) would misstate the order.
             if (!addonAvailableAt(addon, state.interval)) continue;
             const unitA = addonPrice(addon, state.interval);

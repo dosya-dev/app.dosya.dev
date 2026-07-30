@@ -61,7 +61,7 @@ interface WsData {
   permissions: Record<string, { [perm: string]: boolean }>;
   /** Shape mirrors /api/team: the row id is `membership_id`; there is no `id`. */
   members?: { membership_id: string; user_id: string; name: string; email: string; role_id: string }[];
-  /** Current user's permission map — used to disable controls up front */
+  /** Current user's permission map - used to disable controls up front */
   my_permissions?: Record<string, boolean>;
 }
 
@@ -382,7 +382,7 @@ function HardLimitsSection({ data, wsId, onSaved }: { data: WsData; wsId: string
       {overAllocated && alloc && (
         <div className="mb-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-2.5 text-xs text-amber-700 dark:text-amber-400">
           Your workspace storage limits add up to {alloc.allocated_gb} GB, but your plan includes {alloc.plan_gb} GB.
-          Lower this workspace's limit (or another's) to fit your plan — until then, the next limit change must satisfy the plan total.
+          Lower this workspace's limit (or another's) to fit your plan - until then, the next limit change must satisfy the plan total.
         </div>
       )}
       {overCap && (
@@ -638,7 +638,7 @@ function RolesSection({ data }: { data: WsData; wsId: string; onSaved: () => voi
                       {perms[r.id]?.[perm] ? (
                         <div className="w-5 h-5 rounded bg-green-100 dark:bg-green-950 flex items-center justify-center mx-auto"><Check className="size-3 text-green-600" /></div>
                       ) : (
-                        <div className="w-5 h-5 rounded bg-muted flex items-center justify-center mx-auto"><span className="text-muted-foreground text-[10px]">—</span></div>
+                        <div className="w-5 h-5 rounded bg-muted flex items-center justify-center mx-auto"><span className="text-muted-foreground text-[10px]">-</span></div>
                       )}
                     </TableCell>
                   ))}

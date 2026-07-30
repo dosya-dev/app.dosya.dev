@@ -42,7 +42,7 @@ export default function IntegrationsPage() {
                 </a>
               )}
             </div>
-            {/* Stretched primary link — opens the in-app setup page. It's the last
+            {/* Stretched primary link - opens the in-app setup page. It's the last
                 child so it overlays the static content, but the "Read docs" anchor
                 (z-10) stays above it and remains clickable. */}
             <Link

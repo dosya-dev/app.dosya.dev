@@ -55,7 +55,7 @@ const ROLE_LABELS: Record<string, string> = {
 
 // Match the profile-page nav treatment: xs muted text, active = accent pill
 // (accent-foreground text over a green pill). The pill background itself is a
-// single absolutely-positioned div that slides between items on navigation —
+// single absolutely-positioned div that slides between items on navigation -
 // so the active button's own background stays transparent while the sidebar is
 // expanded. In icon-collapsed mode the pill is hidden and the button paints
 // its own bg-accent instead. Pressed (active:) overrides keep the shadcn base
@@ -67,7 +67,7 @@ const NAV_BTN_CLASS =
   'data-active:hover:bg-transparent data-active:hover:text-accent-foreground ' +
   'data-active:active:bg-transparent data-active:active:text-accent-foreground ' +
   // Icon-collapsed mode has no pill, so the active button must paint its own
-  // accent — important so the hover/pressed transparent overrides above can't
+  // accent - important so the hover/pressed transparent overrides above can't
   // wipe it (they'd otherwise win on specificity).
   'group-data-[collapsible=icon]:data-active:bg-accent! ' +
   'group-data-[collapsible=icon]:data-active:text-accent-foreground!';
@@ -153,7 +153,7 @@ export function DashboardSidebar() {
     const target = workspaces.find((w) => w.id === id) ?? null;
     setSwitchingWs(target);
     setActiveId(id);
-    // Land on the dashboard so it refetches for the new workspace — no hard reload.
+    // Land on the dashboard so it refetches for the new workspace - no hard reload.
     navigate('/');
     window.setTimeout(() => setSwitchingWs(null), 2000);
   };

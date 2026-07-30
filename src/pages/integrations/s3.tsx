@@ -17,7 +17,7 @@ export default function S3Setup() {
           <Link to="/profile#section-api" className="underline underline-offset-2 hover:text-foreground">
             Profile → API keys
           </Link>{' '}
-          (the secret is shown once — copy it then).
+          (the secret is shown once - copy it then).
         </p>
       </Step>
       <Step n={2} title="Connection settings">

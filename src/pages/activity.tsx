@@ -27,7 +27,7 @@ interface Activity {
   user_id: string;
   user_email: string;
   user_avatar: string | null;
-  // Forensic / enrichment fields (Task 3 endpoint) — nulled server-side by
+  // Forensic / enrichment fields (Task 3 endpoint) - nulled server-side by
   // gateActivityRow for non-privileged viewers looking at another member's row.
   source_ip?: string | null;
   user_agent?: string | null;
@@ -337,7 +337,7 @@ function ActivityRow({ activity: a }: { activity: Activity }) {
           className="size-8 rounded-full shrink-0 flex items-center justify-center text-[10px] font-bold text-white mt-0.5"
           style={{ background: bgColor }}
         >
-          {/* avatar_url is an R2 object key, not a URL — treat it as a "has photo"
+          {/* avatar_url is an R2 object key, not a URL - treat it as a "has photo"
               flag and load the image through the API (cookie-authenticated),
               falling back to initials if it's missing or fails to load. */}
           {a.user_avatar && a.user_id && !avatarFailed ? (

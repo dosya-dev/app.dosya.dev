@@ -13,7 +13,7 @@ import { PlanSelector } from "./plan-selector";
 import { AddonRow } from "./addon-row";
 
 /**
- * Inline (in-page) plan/add-on chooser — the same cart flow the SubscriptionModal
+ * Inline (in-page) plan/add-on chooser - the same cart flow the SubscriptionModal
  * used, but rendered as a Card directly on the billing page instead of a dialog.
  * Mounted only while open, so it initializes fresh from `initial` each time.
  */
@@ -42,7 +42,7 @@ export function PlanChooser({ hasSubscription, initial, usedBytes, onUpdated, on
         || (state.interval === "year" ? selectedPlan.has_yearly : selectedPlan.has_monthly);
     const cart = catalog ? computeCart(state, catalog) : null;
     const downgradeWarning = cart ? cart.effectiveBytes < usedBytes : false;
-    // Selected add-ons the chosen interval doesn't sell — dropped from the cart, warn about them.
+    // Selected add-ons the chosen interval doesn't sell - dropped from the cart, warn about them.
     const droppedAddons = catalog
         ? catalog.addons.filter((a) => (state.addonQty[a.id] ?? 0) > 0 && !addonAvailableAt(a, state.interval))
         : [];
@@ -112,7 +112,7 @@ export function PlanChooser({ hasSubscription, initial, usedBytes, onUpdated, on
                 <p className="py-10 text-center text-sm text-muted-foreground">Loading plans…</p>
             ) : (
                 <div className="space-y-4">
-                    {/* Interval toggle — governs the whole cart (plan + add-ons) */}
+                    {/* Interval toggle - governs the whole cart (plan + add-ons) */}
                     <div className="flex items-center justify-center gap-1 rounded-lg bg-muted p-1 text-sm">
                         {(["month", "year"] as const).map((iv) => (
                             <button key={iv} type="button" onClick={() => setInterval(iv)}
@@ -148,9 +148,9 @@ export function PlanChooser({ hasSubscription, initial, usedBytes, onUpdated, on
                     {state.coupon && (
                         <p className="text-xs text-green-600">
                             Code {state.coupon.code} applied
-                            {state.coupon.duration === "once" ? " — discounts your first payment only" : ""}
+                            {state.coupon.duration === "once" ? " - discounts your first payment only" : ""}
                             {state.coupon.duration === "repeating" && state.coupon.duration_in_months
-                                ? ` — applies for ${state.coupon.duration_in_months} months` : ""}.
+                                ? ` - applies for ${state.coupon.duration_in_months} months` : ""}.
                         </p>
                     )}
 

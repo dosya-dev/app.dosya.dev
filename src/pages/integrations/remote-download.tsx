@@ -92,7 +92,7 @@ export default function RemoteDownloadPage() {
       setJobs((prev) => [data.job, ...(prev ?? [])]);
       setUrl('');
       useRemoteDownloads.getState().refresh();
-      toast.success('Download started', 'dosya is fetching the file for you — you can close this page.');
+      toast.success('Download started', 'dosya is fetching the file for you - you can close this page.');
     } catch (err) {
       toast.error('Could not start download', apiErrorMessage(err));
     } finally {
@@ -116,7 +116,7 @@ export default function RemoteDownloadPage() {
       <Card className="p-4 space-y-3">
         <p className="text-sm text-muted-foreground">
           Paste a direct https link to a file. dosya downloads it on our servers straight into your
-          workspace — nothing goes through your connection. Direct file links only (a Google&nbsp;Drive
+          workspace - nothing goes through your connection. Direct file links only (a Google&nbsp;Drive
           or Dropbox share page won't work).
         </p>
         <div className="flex flex-col gap-2 sm:flex-row">
@@ -146,7 +146,7 @@ export default function RemoteDownloadPage() {
           <p className="mt-3 text-sm font-medium">No remote downloads yet</p>
           <p className="mx-auto mt-1 max-w-sm text-sm text-muted-foreground">
             Paste a direct file link above and dosya will download it into your
-            workspace for you — no matter how slow your own connection is.
+            workspace for you - no matter how slow your own connection is.
           </p>
         </Card>
       ) : (
@@ -174,7 +174,7 @@ export default function RemoteDownloadPage() {
                           <div className="h-1.5 rounded-full bg-primary transition-all" style={{ width: `${pct}%` }} />
                         </div>
                         <span className="text-xs text-muted-foreground">
-                          {humanSize(job.bytes_done)} / {job.bytes_total ? humanSize(job.bytes_total) : '—'}
+                          {humanSize(job.bytes_done)} / {job.bytes_total ? humanSize(job.bytes_total) : '-'}
                         </span>
                       </div>
                     ) : job.status === 'done' ? (

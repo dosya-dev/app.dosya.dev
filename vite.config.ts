@@ -8,7 +8,7 @@ export default defineConfig({
   worker: {
     // The client-side HEIC decoder is a Web Worker that dynamically imports a
     // ~1.5MB libheif WASM chunk. Default worker format is 'iife', which forces
-    // Rollup to disable code splitting for worker chunks — that would inline the
+    // Rollup to disable code splitting for worker chunks - that would inline the
     // decoder into heic.worker's own chunk, so every browser that spawns the
     // worker (including Safari, which decodes HEIC natively) would download it
     // upfront. 'es' keeps code splitting intact so the decoder is only fetched
@@ -18,14 +18,14 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
-      // NOTE: don't alias @pqina/* to ../../node_modules — that path only exists in the
+      // NOTE: don't alias @pqina/* to ../../node_modules - that path only exists in the
       // monorepo (hoisted) and points outside the standalone deploy repo, breaking the CF
       // build. Standard resolution finds pintura in both layouts.
       //
       // The e2ee packages are VENDORED into apps/web/vendor (see
-      // scripts/vendor-e2ee.mjs) — a self-contained, bundled ESM index.js each
-      // (all third-party deps — libsodium-wrappers-sumo, @hpke/core,
-      // @hpke/chacha20poly1305, @cloudflare/voprf-ts — inlined by esbuild;
+      // scripts/vendor-e2ee.mjs) - a self-contained, bundled ESM index.js each
+      // (all third-party deps - libsodium-wrappers-sumo, @hpke/core,
+      // @hpke/chacha20poly1305, @cloudflare/voprf-ts - inlined by esbuild;
       // e2ee-client also inlines e2ee-core). They MUST live inside apps/web:
       // CI (sync-public-repos.yml → sync-web) pushes only apps/web/ to the
       // deploy repo Cloudflare Pages builds, so any ../../packages/* reference

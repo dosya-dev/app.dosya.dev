@@ -6,7 +6,7 @@ import ErrorPage from '@/pages/error-page';
 
 // Every page is a lazy chunk: the entry bundle carries only the shell
 // (layout, sidebar, boot gate), so first paint doesn't wait for feature code
-// like the map engine or the vault's crypto bundle. ErrorPage stays eager —
+// like the map engine or the vault's crypto bundle. ErrorPage stays eager -
 // it must render even when a chunk fails to download.
 const DashboardPage = lazy(() => import('@/pages/dashboard'));
 const FileRequestsPage = lazy(() => import('@/pages/file-requests'));

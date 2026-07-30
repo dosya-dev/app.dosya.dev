@@ -94,7 +94,7 @@ describe("createHeicPool", () => {
     expect(f.workers).toHaveLength(2);
 
     const p3 = pool.decode("u3", 256);
-    // Still only 2 workers — the pool is at capacity, so the 3rd request queues
+    // Still only 2 workers - the pool is at capacity, so the 3rd request queues
     // instead of spawning a 3rd worker.
     expect(f.workers).toHaveLength(2);
     expect(f.workers[0].posted).toHaveLength(1);
@@ -124,7 +124,7 @@ describe("createHeicPool", () => {
     const blobA = new Blob(["A"]);
     const blobB = new Blob(["B"]);
 
-    // Resolve B's worker first, then A's — out of order.
+    // Resolve B's worker first, then A's - out of order.
     reply(f.workers[1], idB, blobB);
     reply(f.workers[0], idA, blobA);
 

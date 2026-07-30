@@ -24,7 +24,7 @@ interface FilePreviewImageProps {
  * one format browsers can't display, and it's handled with a hybrid strategy:
  *
  *  1. Ask the server for a small WebP thumbnail (`/thumb`). The server decodes
- *     HEIC in a Cloudflare Worker, which is capped at 128MB of memory — enough
+ *     HEIC in a Cloudflare Worker, which is capped at 128MB of memory - enough
  *     for photos up to ~12MP.
  *  2. Modern iPhones shoot 24MP/48MP HEIC, which is too large to decode in that
  *     memory budget, so the server returns 415. For those, fall back to decoding
@@ -36,7 +36,7 @@ interface FilePreviewImageProps {
  * This wrapper picks a `key` from the file identity so React fully remounts the
  * inner component whenever it's pointed at a different file/version/query/size
  * (e.g. next/prev navigation in a lightbox that reuses the same JSX slot),
- * resetting the failure state for free — no effect required (a bare
+ * resetting the failure state for free - no effect required (a bare
  * `setState` inside a `useEffect` trips `react-hooks/set-state-in-effect`).
  */
 export function FilePreviewImage(props: FilePreviewImageProps) {
@@ -87,7 +87,7 @@ function FilePreviewImageForFile({
     );
   }
 
-  // Every other image format renders natively — point straight at the original.
+  // Every other image format renders natively - point straight at the original.
   return (
     <img
       src={fileRawUrl({ fileId, version, query })}
@@ -167,7 +167,7 @@ function HeicPreview({
     };
   }, [visible, fileId, version, query, maxDim]);
 
-  // NB: the object URL is owned and revoked by the LRU cache in heic-cache.ts —
+  // NB: the object URL is owned and revoked by the LRU cache in heic-cache.ts -
   // do NOT revoke it here. Other mounted components may still be showing it.
   if (!url) {
     return <div ref={hostRef} className={`${className ?? ''} animate-pulse bg-muted`} />;

@@ -30,7 +30,7 @@ function UserAvatar({ url, userId, name, className = 'w-8 h-8 text-xs' }: {
   url: string | null; userId: string; name: string; className?: string;
 }) {
   const [failed, setFailed] = useState(false);
-  // avatar_url in the DB is an R2 key, not a URL — treat it as a "has photo"
+  // avatar_url in the DB is an R2 key, not a URL - treat it as a "has photo"
   // flag and load the image through the API (auth via cookie).
   if (url && !failed) {
     return (
@@ -465,7 +465,7 @@ function InviteModal({ open, tab, onTabChange, onClose, wsId, roles, onInvited }
     if (list.length === 0) { setError('Add at least one email address.'); return; }
 
     setError(''); setSending(true);
-    // One invite per address — each gets its own unique, email-bound link
+    // One invite per address - each gets its own unique, email-bound link
     const failures: string[] = [];
     for (const addr of list) {
       try {

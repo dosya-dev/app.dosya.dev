@@ -54,7 +54,7 @@ describe("isHeic", () => {
     expect(isHeic("IMG_0001.HEIC")).toBe(true);
   });
 
-  it("is false for every other image format — those render natively in the browser", () => {
+  it("is false for every other image format - those render natively in the browser", () => {
     expect(isHeic("a.jpg")).toBe(false);
     expect(isHeic("a.png")).toBe(false);
     expect(isHeic("a.webp")).toBe(false);

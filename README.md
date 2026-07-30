@@ -1,33 +1,33 @@
 # dosya web
 
-The official web application for [dosya.dev](https://dosya.dev) — files, sharing, and
+The official web application for [dosya.dev](https://dosya.dev) - files, sharing, and
 workspaces in the browser. This is the code running at
 [app.dosya.dev](https://app.dosya.dev).
 
 ## Features
 
-- **File manager** — Upload, preview, organize; file detail panel, version history,
+- **File manager** - Upload, preview, organize; file detail panel, version history,
   favourites, locked/hidden files
-- **Previews & editing** — Image editing (Pintura), HEIC support, video, and a
+- **Previews & editing** - Image editing (Pintura), HEIC support, video, and a
   syntax-highlighted code viewer/editor (CodeMirror + Shiki)
-- **Sharing** — Share links with passwords and expiry, plus a "shared with me" view
-- **Workspaces & teams** — Members, custom roles, and per-workspace settings
-- **Uploads** — Resumable multipart uploads with progress and parallelism
-- **Photo map** — Geotagged photos on an interactive map (MapLibre + clustering)
-- **Search** — Full-text search across files and folders
-- **Activity feed** — Who did what, when, from where
-- **Comments & file requests** — Collaborate on files, receive files from external users
-- **Notifications** — In-app inbox and web push
-- **Account** — Profile, settings, billing, and two-factor login
+- **Sharing** - Share links with passwords and expiry, plus a "shared with me" view
+- **Workspaces & teams** - Members, custom roles, and per-workspace settings
+- **Uploads** - Resumable multipart uploads with progress and parallelism
+- **Photo map** - Geotagged photos on an interactive map (MapLibre + clustering)
+- **Search** - Full-text search across files and folders
+- **Activity feed** - Who did what, when, from where
+- **Comments & file requests** - Collaborate on files, receive files from external users
+- **Notifications** - In-app inbox and web push
+- **Account** - Profile, settings, billing, and two-factor login
 
 ## Tech Stack
 
-- **React 19** + **TypeScript** — UI
-- **Vite 8** — Build tooling
-- **Tailwind CSS 4** — Styling
-- **Zustand** — State management
-- **React Router 7** — Routing
-- **Cloudflare Pages** — Hosting
+- **React 19** + **TypeScript** - UI
+- **Vite 8** - Build tooling
+- **Tailwind CSS 4** - Styling
+- **Zustand** - State management
+- **React Router 7** - Routing
+- **Cloudflare Pages** - Hosting
 
 ## Development
 
@@ -50,7 +50,7 @@ The app talks to the dosya.dev API (`api.dosya.dev`).
 
 ## Transparency
 
-Every dosya.dev client is source-available. Your files are yours — this repository lets
+Every dosya.dev client is source-available. Your files are yours - this repository lets
 you verify exactly what the app sends to and receives from our servers: what gets
 uploaded, what metadata travels with it, and what comes back. If a claim we make about
 privacy or sync behavior can't be verified in this code, open an issue and call it out.
@@ -81,7 +81,7 @@ public issue.
 
 | Repository | What it is | License |
 |---|---|---|
-| [desktop](https://github.com/dosya-dev/desktop) | Desktop client — sync, upload, manage | Source-available |
+| [desktop](https://github.com/dosya-dev/desktop) | Desktop client - sync, upload, manage | Source-available |
 | [cli](https://github.com/dosya-dev/cli) | Command-line interface | Source-available |
 | [app.dosya.dev](https://github.com/dosya-dev/app.dosya.dev) | Web application | Source-available |
 | [shared](https://github.com/dosya-dev/shared) | Shared TypeScript types & utilities | Source-available |

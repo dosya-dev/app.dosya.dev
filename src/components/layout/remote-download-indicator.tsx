@@ -60,7 +60,7 @@ export function RemoteDownloadIndicator() {
       <TooltipContent side="right" className="p-2">
         <p className="mb-1 text-[11px] font-medium">
           {active.length === 1 ? 'Downloading 1 file' : `Downloading ${active.length} files`}
-          {pct !== null ? ` — ${pct}%` : ''}
+          {pct !== null ? ` - ${pct}%` : ''}
         </p>
         <div className="space-y-0.5">
           {active.slice(0, 4).map((job) => {

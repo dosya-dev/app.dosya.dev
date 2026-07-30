@@ -4,13 +4,13 @@ import { createScheduler } from '@/lib/upload-scheduler';
 import { getUserConcurrency, effectiveConcurrency } from '@/lib/upload-concurrency';
 import type { UploadInput, UploadItem } from '@/lib/upload-types';
 
-// File bytes live only here — never in the store or localStorage.
+// File bytes live only here - never in the store or localStorage.
 const fileMap = new Map<string, File>();
 // In-flight XHRs, so cancel() can abort them.
 const activeXhr = new Map<string, XMLHttpRequest>();
 // Bounded auto-retry counter for server concurrency-limit rejections.
 const concurrencyRetries = new Map<string, number>();
-// Ids the user canceled — checked after every await so an in-flight async step
+// Ids the user canceled - checked after every await so an in-flight async step
 // (init/status/complete fetch, or the gap between parts) can't resurrect a
 // canceled upload by overwriting its status.
 const canceledIds = new Set<string>();
@@ -38,7 +38,7 @@ function newId(i: number): string {
   return `up_${Date.now()}_${i}_${Math.random().toString(36).slice(2, 6)}`;
 }
 
-// Smoothed upload speed (bytes/sec) per item — transient, never persisted.
+// Smoothed upload speed (bytes/sec) per item - transient, never persisted.
 const speedSamples = new Map<string, { bytes: number; time: number; ema: number }>();
 
 function reportBytes(id: string, bytes: number, total: number): void {
@@ -207,7 +207,7 @@ async function runOne(id: string): Promise<void> {
     }
   } catch (err) {
     if (canceledIds.has(id)) {
-      // Canceled mid-transfer (e.g. XHR abort) — finalize as canceled, not error.
+      // Canceled mid-transfer (e.g. XHR abort) - finalize as canceled, not error.
       canceledIds.delete(id);
       store().patchItem(id, { status: 'canceled' });
     } else if (isConcurrencyLimit(err) && (concurrencyRetries.get(id) ?? 0) < 5) {
@@ -265,7 +265,7 @@ export function cancel(id: string): void {
   updateUnloadGuard();
 }
 
-/** Abort every in-flight upload — used by logout so no XHR outlives the session. */
+/** Abort every in-flight upload - used by logout so no XHR outlives the session. */
 export function cancelAll(): void {
   for (const id of Array.from(activeXhr.keys())) cancel(id);
 }
@@ -281,7 +281,7 @@ export function retry(id: string): void {
   scheduler.wake();
 }
 
-/** Retry a failed upload in a different region — starts a fresh session. */
+/** Retry a failed upload in a different region - starts a fresh session. */
 export function retryInRegion(id: string, region: string): void {
   const item = getItem(id);
   if (!item || !fileMap.has(id)) return;

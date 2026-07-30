@@ -25,7 +25,7 @@ export function CodeBlock({ code, lang = 'bash', caption }: { code: string; lang
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1500);
     } catch {
-      /* clipboard unavailable — leave the button unchanged */
+      /* clipboard unavailable - leave the button unchanged */
     }
   };
 

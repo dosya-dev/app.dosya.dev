@@ -1,19 +1,19 @@
 import { API_BASE } from '@/api/client';
 import type { StyleSpecification } from 'maplibre-gl';
 
-// The vector basemap streams from R2 via our own API (range requests) — see
+// The vector basemap streams from R2 via our own API (range requests) - see
 // apps/api/.../map/basemap.ts. It's a Protomaps-schema .pmtiles (whole world,
 // z0-7). We render it with a small hand-written geometry style (no fonts/sprite,
-// no external theme dependency) — validated to render cleanly with zero errors.
+// no external theme dependency) - validated to render cleanly with zero errors.
 // Text labels are a future add-on (would need self-hosted glyph fonts).
 export const BASEMAP_URL = `pmtiles://${API_BASE}/api/map/basemap`;
 // Self-hosted Protomaps glyph fonts (Noto Sans Regular/Medium) in the web app's
-// /public — same-origin, absolute URL (MapLibre needs glyphs absolute).
+// /public - same-origin, absolute URL (MapLibre needs glyphs absolute).
 const ASSET_ORIGIN = typeof window !== 'undefined' ? window.location.origin : '';
 const GLYPHS_URL = `${ASSET_ORIGIN}/map-assets/fonts/{fontstack}/{range}.pbf`;
 
 /**
- * A self-contained style with NO external references — just a solid background.
+ * A self-contained style with NO external references - just a solid background.
  * Used before the basemap is confirmed available, so the map renders a clean
  * empty canvas with pins instead of throwing on missing tiles.
  */

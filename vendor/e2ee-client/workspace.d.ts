@@ -2,14 +2,14 @@
  * Personal encrypted workspace: the root manifest (sign/verify/chain), the
  * folder index (encrypt/decrypt/serialize), and the §9 optimistic-commit/
  * rebase loop. Composes e2ee-core's primitives against the injected
- * `ApiClient` — never re-implements any crypto here.
+ * `ApiClient` - never re-implements any crypto here.
  *
  * Personal scope (P1b, single member): the root manifest is signed by the
  * user's OWN Ed25519 identity key and there is no membership log yet (that
- * lands in P2) — `membershipHeadHash` is a fixed personal anchor derived
+ * lands in P2) - `membershipHeadHash` is a fixed personal anchor derived
  * from the owner's own pubkey (see `personalMembershipHeadHash`) rather than
  * a log tip. The workspace key (WK) is generated client-side and kept ONLY
- * in the in-memory `Workspace` returned here — it never reaches the server,
+ * in the in-memory `Workspace` returned here - it never reaches the server,
  * and new-device WK sync is a documented follow-up (no P1a endpoint for it
  * yet, same caveat as the plan's Global Constraints).
  */
@@ -45,7 +45,7 @@ export type Workspace = {
         hash: Uint8Array;
     };
     /**
-     * Whether THIS session's own identity is the workspace's founder — an
+     * Whether THIS session's own identity is the workspace's founder - an
      * ordinary `createWorkspace` call (always `true`, hard-set in-process,
      * since the creator just created it), or an `openWorkspace` re-open where
      * the CALLER explicitly asserts founder status via `opts.selfFounded`.
@@ -53,7 +53,7 @@ export type Workspace = {
      * This is the P2b-log security crux (spec §7;
      * docs/superpowers/plans/2026-07-27-e2ee-p2b-membership-log.md's Global
      * Constraints): when `true`, `getVerifiedHead` HARD-anchors the signed
-     * membership log's replay to THIS session's own key as founder —
+     * membership log's replay to THIS session's own key as founder -
      * `replayLog` throws `"membership: founder anchor mismatch"` if the server
      * ever serves a log founded by a DIFFERENT identity, so a malicious server
      * cannot forge a self-founded workspace's history from scratch and have it
@@ -61,22 +61,22 @@ export type Workspace = {
      *
      * CRITICAL: this value MUST NOT be derived from anything the server
      * returns (a grant row, a `granterEd25519Pub` column, a head, a log entry
-     * — none of it). A previous version of this engine derived it from the
+     * - none of it). A previous version of this engine derived it from the
      * stored self-grant's server-controlled `granterEd25519Pub` field, which
      * let a malicious server simply stamp a DIFFERENT (attacker) key onto that
      * column to make a self-founded workspace look like an ordinary cross-user
-     * grant — downgrading `selfFounded` to `false`, dropping the hard anchor,
+     * grant - downgrading `selfFounded` to `false`, dropping the hard anchor,
      * and getting a wholly forged workspace (attacker-founded log + attacker-
      * signed root) accepted. That heuristic has been REMOVED. The only
      * trustworthy source for "did I create this workspace myself" is the
      * CALLER's OWN out-of-band, locally-persisted record of workspaces it
      * created (e.g. the web store's `workspaces` list, populated only by
-     * `createWorkspace`) — never anything fetched from the network in the
+     * `createWorkspace`) - never anything fetched from the network in the
      * course of opening the workspace.
      *
-     * When `false` (the default for `openWorkspace` — either a genuine
+     * When `false` (the default for `openWorkspace` - either a genuine
      * cross-user grant, or simply a caller that hasn't asserted founder
-     * status), replay is NOT hard-anchored — the log's founder is trusted on
+     * status), replay is NOT hard-anchored - the log's founder is trusted on
      * first use (TOFU, spec §11). This is a SAFE baseline (it never trusts a
      * server-controlled value to decide whether to drop its own guard), but it
      * is NOT a strengthening of security over the hard anchor: TOFU still does
@@ -85,11 +85,11 @@ export type Workspace = {
      * Transparency, deferred to a later phase). A caller that KNOWS (from its
      * own persisted state, not from the server) that it founded this
      * workspace MUST pass `{ selfFounded: true }` to actually get the
-     * unforgeable hard anchor — see `openWorkspace`'s doc comment.
+     * unforgeable hard anchor - see `openWorkspace`'s doc comment.
      */
     selfFounded: boolean;
 };
-/** Reverse of `encodeSignedRoot` — exported so callers/tests can independently `verifyRootManifest` a fetched head. */
+/** Reverse of `encodeSignedRoot` - exported so callers/tests can independently `verifyRootManifest` a fetched head. */
 export declare function decodeSignedRoot(signedRoot: string): {
     fields: RootManifestFields;
     sig: Uint8Array;
@@ -167,37 +167,37 @@ export declare function openWorkspace(api: ApiClient, session: Session, workspac
     selfFounded?: boolean;
 }): Promise<Workspace>;
 /**
- * Grant another user access to this workspace (P2b Task 3 — the payoff of
+ * Grant another user access to this workspace (P2b Task 3 - the payoff of
  * cross-user sharing): look `granteeEmail` up in the public-key directory
  * (Task 1), HPKE-seal `ws.wk` to their authenticated X25519 key + sign with
- * this session's OWN Ed25519 key (`sealGrant` — e2ee-core, unchanged), then
+ * this session's OWN Ed25519 key (`sealGrant` - e2ee-core, unchanged), then
  * (P2b-log Task 3) append a signed `add` entry to the workspace's SIGNED
  * MEMBERSHIP LOG (spec §7, e2ee-core's `appendEntry`) naming the grantee as
- * a new member, and persist all of it — the sealed grant under their
- * account id, the membership projection row, AND the log entry — atomically
+ * a new member, and persist all of it - the sealed grant under their
+ * account id, the membership projection row, AND the log entry - atomically
  * server-side (`grant-member`).
  *
- * `granteeId` fed to `sealGrant` is `dir.ed25519Pub` — already hex (the
+ * `granteeId` fed to `sealGrant` is `dir.ed25519Pub` - already hex (the
  * directory returns keys in the SAME encoding `setupIdentity` stored them
- * in, via `toHex`) — matching exactly what the grantee's own `openWorkspace`
+ * in, via `toHex`) - matching exactly what the grantee's own `openWorkspace`
  * computes as ITS `granteeId` (`toHex(session.identity.ed25519.publicKey)`
  * of their own session). `granteePubkey` is decoded via `fromHex` for the
  * same reason. The stored `granterEd25519Pub` is this session's own
- * ed25519 pubkey (hex) — what the grantee's `openWorkspace` uses to derive
+ * ed25519 pubkey (hex) - what the grantee's `openWorkspace` uses to derive
  * `granterId`/verify the grant's signature, per P2b Task 2.
  *
  * The APPENDED LOG ENTRY's `subjectId`/`subjectPubkey` are ALSO `dir.ed25519Pub`
- * (decoded) — the grantee's ed25519 SIGNING key, the SAME key `sealGrant`
+ * (decoded) - the grantee's ed25519 SIGNING key, the SAME key `sealGrant`
  * used as `granteeId` above. This is the multi-writer crux: `getVerifiedHead`
  * accepts a root iff it verifies against SOME member's key in `replayLog`'s
  * returned set, so the log's subject key for this new member MUST be the
- * key they actually sign root manifests with — using their x25519
+ * key they actually sign root manifests with - using their x25519
  * (encryption) key here instead would make every root THEY sign
  * unverifiable to every other member. `prev` is the log's current tip (its
  * LAST entry by `seq`, since `getMembershipLog` returns entries ordered
  * ascending) fetched fresh right before appending; this engine has no CAS
  * loop over the log's `seq` (unlike the root-manifest commit's 409/rebase
- * loop) — a concurrent grant/revoke racing the same append would both
+ * loop) - a concurrent grant/revoke racing the same append would both
  * compute the same `prev` and submit the same `seq`, and the server's
  * `(workspace_id, seq)` PRIMARY KEY makes the loser's whole `grant-member`
  * batch fail atomically rather than silently corrupt the log; a documented,
@@ -205,28 +205,28 @@ export declare function openWorkspace(api: ApiClient, session: Session, workspac
  *
  * Throws `Error("e2ee: grantAccess: that user has no E2EE identity")` if
  * `granteeEmail` has no directory entry (no such user, or they never ran
- * `setupIdentity`) — nothing is written server-side in that case, since the
+ * `setupIdentity`) - nothing is written server-side in that case, since the
  * directory lookup fails before any `grantMember` call is made.
  */
 export declare function grantAccess(api: ApiClient, session: Session, ws: Workspace, granteeEmail: string): Promise<void>;
 /**
- * Revoke a member's access (P2d Task 3 — the guarantee becomes REAL): rotates
+ * Revoke a member's access (P2d Task 3 - the guarantee becomes REAL): rotates
  * the workspace key WK_v1→v2, eagerly re-keying EVERY file + folder in the
  * workspace, re-sealing WK_v2 to every REMAINING member (including the
  * caller), removing `removed`'s membership + grant, and appending a signed
- * `remove` entry to the membership log — all atomically
+ * `remove` entry to the membership log - all atomically
  * (`computeRotation` + `POST /api/e2ee/rotate`, P2d Tasks 1–2).
  *
  * This SUPERSEDES the old P2b-log behavior (append-remove-entry-only, no
  * re-key): a removed member's stale WK_v1 grant can no longer decrypt
- * anything written or re-keyed AFTER this call — proven by the
+ * anything written or re-keyed AFTER this call - proven by the
  * wk1-cannot-read-v2 assertion in `e2ee-cross-user-share.int.test.ts`. The
  * remaining honest-disclosure caveat is narrower now: only ciphertext the
  * removed member ALREADY fetched before revocation (and kept a local copy
- * of) remains readable to them — nothing new or re-keyed.
+ * of) remains readable to them - nothing new or re-keyed.
  *
  * `removed.ed25519Pub` MUST be the removed member's ed25519 SIGNING pubkey
- * (hex) — the SAME id `grantAccess` used as their log `subjectId` — so the
+ * (hex) - the SAME id `grantAccess` used as their log `subjectId` - so the
  * appended `remove` entry actually targets their existing membership.
  * Callers get it from `listMembers` (which returns `{userId, email,
  * ed25519Pub, x25519Pub}` per member).
@@ -236,35 +236,35 @@ export declare function grantAccess(api: ApiClient, session: Session, ws: Worksp
  * passed a stale id): the goal ("this user has no access") is already
  * satisfied, so this returns without computing or posting a rotation, rather
  * than throwing or spending an unnecessary re-key. (Documented choice, per
- * the plan's Task 3 — the alternative of throwing was considered but rejected
+ * the plan's Task 3 - the alternative of throwing was considered but rejected
  * because a race between two admins revoking the same member should not
  * surface as a hard error to the second caller.)
  *
  * Retries (bounded, `MAX_ROTATION_ATTEMPTS`, mirroring `commitFolderOps`'s
- * rebase loop) on a `{conflict}` from `api.rotate` — a racing commit/rotation
+ * rebase loop) on a `{conflict}` from `api.rotate` - a racing commit/rotation
  * took the head version this rotation was computed against. Each retry
  * re-fetches the CURRENT member roster (`listMembers`) and recomputes the
  * ENTIRE rotation from scratch via `computeRotation` (which itself re-fetches
- * the current head via `getVerifiedHead` and the current membership log) —
+ * the current head via `getVerifiedHead` and the current membership log) -
  * never reapplies stale ciphertext computed against an outdated head. This
  * degrades safely: a rotation that can't converge within the bound throws a
- * clear, retriable error (never a partial/corrupt apply — the server's
+ * clear, retriable error (never a partial/corrupt apply - the server's
  * `DB.batch` in `rotate.ts` is itself all-or-nothing per attempt).
  *
  * On success, updates the caller's live `ws` object IN PLACE to WK_v2
- * (`ws.wk`, `ws.wkVersion`, `ws.lastSeen`) — the SAME `Workspace` reference
+ * (`ws.wk`, `ws.wkVersion`, `ws.lastSeen`) - the SAME `Workspace` reference
  * the caller already holds is immediately usable for further reads/writes at
  * v2, with no re-open required. `wk2` itself is recovered by opening THIS
  * session's own v2 self-grant out of the just-applied `RotationPayload`
  * (`computeRotation` always re-seals to every `remaining` member, and the
- * caller is necessarily one of them — see `computeRotation`'s doc comment) —
+ * caller is necessarily one of them - see `computeRotation`'s doc comment) -
  * mirroring exactly what a fresh `openWorkspace` would derive, without
  * requiring an actual round-trip re-open.
  *
  * OUT OF SCOPE (per the plan's Global Constraints, documented rather than
  * guarded): removing the LAST remaining member (i.e. `removed` is the
  * caller's own only membership, or otherwise empties `remaining`) would
- * compute a rotation with ZERO grants — WK_v2 sealed to nobody — locking
+ * compute a rotation with ZERO grants - WK_v2 sealed to nobody - locking
  * EVERYONE (including the caller) out of the workspace forever. This
  * function does not special-case or reject that call; a caller-side UI
  * (P2c) MUST NOT offer "revoke" for a workspace's last/only member.
@@ -272,32 +272,32 @@ export declare function grantAccess(api: ApiClient, session: Session, ws: Worksp
  * SELF-REVOKE GUARD (hardening pass): rejects upfront, before computing or
  * posting ANY rotation, if `removed.userId` turns out to be the CALLER's own
  * account id. `api.rotate` would otherwise succeed server-side fine (no data
- * loss for anyone else — the server doesn't care who the caller is relative
+ * loss for anyone else - the server doesn't care who the caller is relative
  * to `removed`), but the caller would have sealed no v2 self-grant for
  * itself (it's not in `remaining`), so the success path below would fail
- * with a misleadingly-labeled "should be unreachable" error — AFTER the
+ * with a misleadingly-labeled "should be unreachable" error - AFTER the
  * rotation had already landed, which is confusing and too late. The
  * caller's own account id isn't known to this function directly (`removed`
  * is keyed by account userId; this session only knows its own ed25519
  * SIGNING pubkey), so it's resolved by matching that pubkey in the current
- * `listMembers` roster — the same lookup the retry loop below performs on
+ * `listMembers` roster - the same lookup the retry loop below performs on
  * every attempt anyway. A caller that wants to drop its OWN access needs a
  * (future) leave-workspace flow, not `revokeAccess`.
  *
  * CONCURRENT-ROTATION STALENESS (hardening pass): on a `{conflict}` (409)
- * from `api.rotate`, the loop below does not just blindly retry — it first
+ * from `api.rotate`, the loop below does not just blindly retry - it first
  * RE-DERIVES `ws.wk`/`ws.wkVersion` from the caller's own CURRENT stored
  * grant (via the same `deriveWkFromStoredGrant` helper `openWorkspace` uses),
  * exactly as if the caller had freshly re-opened the workspace. This matters
  * because the conflict may have been caused by a DIFFERENT rotation landing
- * first (not just an ordinary folder/file commit) — in that case every
+ * first (not just an ordinary folder/file commit) - in that case every
  * folder index and file manifest is now encrypted under a NEW wk/wkVersion,
  * and retrying `computeRotation` with the OLD, stale `ws.wk`/`ws.wkVersion`
  * would throw an opaque AEAD-decrypt error deep inside it instead of simply
  * converging. `ws.selfFounded` is left untouched by this re-derivation (see
  * `Workspace.selfFounded`'s doc comment for why it must never be re-derived
  * from anything the server returns). `commitFolderOps` had this SAME latent
- * staleness on its own 409/rebase path — now fixed there too (hardening
+ * staleness on its own 409/rebase path - now fixed there too (hardening
  * pass), via the identical `deriveWkFromStoredGrant` re-derivation at its own
  * retry site.
  */
@@ -321,12 +321,12 @@ export declare function listMembers(api: ApiClient, ws: Workspace): Promise<{
  * The client-computed result of a full workspace-key rotation (P2d, spec
  * §8's "revoke becomes real" guarantee): a fresh WK (`newWkVersion =
  * ws.wkVersion + 1`), with EVERY file's DEK re-wrapped, EVERY file's
- * manifest re-encrypted, and EVERY folder's index re-encrypted under it —
+ * manifest re-encrypted, and EVERY folder's index re-encrypted under it -
  * chunks are NEVER touched (only their DEK's wrap and the manifest
- * ciphertext change) — a new signed root binding the re-encrypted folder
+ * ciphertext change) - a new signed root binding the re-encrypted folder
  * merkle tree, a v2 grant re-sealing the new WK to every REMAINING member
  * (including the caller), and a signed `remove` membership-log entry for the
- * removed member. Pure client crypto — `computeRotation` never talks to the
+ * removed member. Pure client crypto - `computeRotation` never talks to the
  * server except to READ the current head/folder-indexes/membership-log; the
  * caller (Task 2's `revokeAccess`) POSTs this payload to `/api/e2ee/rotate`,
  * which applies all of it atomically (one CAS-guarded `DB.batch`).
@@ -346,7 +346,7 @@ export type RotationPayload = {
         version: number;
         ciphertext: string;
     }[];
-    /** One v2 grant per REMAINING member — including the caller (self). */
+    /** One v2 grant per REMAINING member - including the caller (self). */
     grants: {
         memberUserId: string;
         wkVersion: number;
@@ -365,7 +365,7 @@ export type RotationPayload = {
 /**
  * Re-key the ENTIRE workspace to a fresh WK (`ws.wkVersion + 1`), re-sealing
  * it to every `remaining` member (including the caller) and appending a
- * signed `remove` entry for `removed` — the eager, full re-key that makes
+ * signed `remove` entry for `removed` - the eager, full re-key that makes
  * revocation a real guarantee (spec §8; P2d plan's Global Constraints).
  *
  * **THE OVERRIDING INVARIANT this composes toward: no file may become
@@ -374,30 +374,30 @@ export type RotationPayload = {
  * in this file / `file.ts`) bind against are reproduced exactly, just under
  * `(wk2, newWkVersion)` instead of `(ws.wk, ws.wkVersion)`:
  *  - folder index: `encryptFolderIndex(plaintext, wk2, fmt, workspaceId,
- *    folderId, newIndexVersion, newWkVersion)` — same `folderId`, indexVersion
+ *    folderId, newIndexVersion, newWkVersion)` - same `folderId`, indexVersion
  *    bumped by 1 (a fresh ciphertext needs its own AD-bound version).
  *  - file manifest: `encryptFileManifest(manifest, wk2, fmt, workspaceId,
- *    record.fileId, record.version, folderId, newWkVersion)` — `fileId`
+ *    record.fileId, record.version, folderId, newWkVersion)` - `fileId`
  *    (the record's crypto-identity fileId, NOT necessarily the entry's
- *    current folder-index id — see `FileRecordWire`'s doc comment in
+ *    current folder-index id - see `FileRecordWire`'s doc comment in
  *    `file.ts`), `version`, and `folderId` (the entry's CONTAINING folder)
  *    are all carried over byte-for-byte from the pre-rotation record; only
  *    `wk`/`wkVersion` change.
- *  - DEK wrap: `wrapDek(dek, wk2, fmt, workspaceId, newWkVersion)` — the raw
+ *  - DEK wrap: `wrapDek(dek, wk2, fmt, workspaceId, newWkVersion)` - the raw
  *    DEK bytes are untouched (recovered via `unwrapDek` under the OLD
  *    `ws.wk`/`ws.wkVersion` first); only its wrap changes. Chunks are never
- *    re-encrypted or re-uploaded — this is the ONLY thing that changes about
+ *    re-encrypted or re-uploaded - this is the ONLY thing that changes about
  *    a file's ciphertext-at-rest.
  * Any mismatch in any of those AD fields would make `decryptFileManifest`/
  * `unwrapDek`/`decryptFolderIndex` throw for a remaining member post-rotation
- * — exactly the "file becomes unreadable" failure this function must never
+ * - exactly the "file becomes unreadable" failure this function must never
  * produce (see the plan's Global Constraints + the no-data-loss test in
  * `e2ee-rotation.int.test.ts`).
  *
  * Composes ONLY e2ee-core's existing primitives (`generateWorkspaceKey`/
  * `wrapDek`/`unwrapDek`/`encryptFileManifest`/`decryptFileManifest`/
  * `encryptFolderIndex`/`decryptFolderIndex`/`sealGrant`/`appendEntry`/
- * `replayLog`) — `e2ee-core` itself is NOT modified.
+ * `replayLog`) - `e2ee-core` itself is NOT modified.
  *
  * Does NOT write anything to the server: this is pure client computation
  * over the CURRENT verified head (via the same `getVerifiedHead` every read
@@ -408,7 +408,7 @@ export type RotationPayload = {
  * which applies it atomically, CAS-guarded on `expectedPrev`.
  *
  * `args.remaining` MUST include the caller's own membership row (so the
- * caller gets a v2 self-grant too — without it, the caller who just rotated
+ * caller gets a v2 self-grant too - without it, the caller who just rotated
  * would be locked out of its own workspace); `args.removed` is the member
  * being revoked, NOT present in `remaining`.
  */
@@ -432,8 +432,8 @@ export declare function listFolder(api: ApiClient, session: Session, ws: Workspa
  * chunks it just uploaded/orphaned. Optional and empty by default so Task 2's
  * folder-only callers are unaffected.
  *
- * `chunkRefDeltas` is keyed by `entryId` — the SAME id as the corresponding
- * `put` in this call's `localOps` — rather than being a flat pair of arrays,
+ * `chunkRefDeltas` is keyed by `entryId` - the SAME id as the corresponding
+ * `put` in this call's `localOps` - rather than being a flat pair of arrays,
  * so `commitFolderOps` can tell, on EACH commit attempt (including rebase
  * retries), whether THAT entry's write actually survived the real merged
  * outcome before deciding whether its delta applies. See `commitFolderOps`'s
@@ -450,7 +450,7 @@ export type CommitFileExtras = {
 };
 /**
  * Signal thrown by `commitFolderOps` when a concurrent workspace-key
- * ROTATION landed mid-commit (detected on its 409-retry path — see that
+ * ROTATION landed mid-commit (detected on its 409-retry path - see that
  * function's doc comment) AND this commit carries file-layer ciphertext
  * (some pending `put` op's `entry.meta.record`, or `fileExtras.fileManifests`)
  * that was sealed by the caller under the OLD `wk`/`wkVersion` before this
@@ -470,13 +470,13 @@ export type CommitFileExtras = {
  * the epoch the caller must re-seal its file record under before retrying.
  * `commitFolderOps` has ALREADY updated `ws.wk`/`ws.wkVersion` in place
  * (mirroring its own ordinary 409-retry re-derivation) before throwing this,
- * so a catching caller (`uploadFile`/`updateFile` in `file.ts` — the only
+ * so a catching caller (`uploadFile`/`updateFile` in `file.ts` - the only
  * callers that carry file-layer ciphertext, and therefore the only ones
  * that need to catch this) can immediately re-seal under the fresh key and
  * retry, with no extra round trip to re-derive the key itself.
  *
  * Folder-only commits (no file records, no fileManifests) never throw this
- * — there is nothing key-sealed at the file layer to go stale for them, so
+ * - there is nothing key-sealed at the file layer to go stale for them, so
  * `commitFolderOps` just re-derives and converges, exactly as before this
  * fix (the prior hardening pass's Item 1 behavior, preserved).
  */
@@ -489,18 +489,18 @@ export declare class WorkspaceRekeyedError extends Error {
  * commit a new root version. On a 409 (someone else committed first),
  * re-fetch the new head and 3-way rebase the SAME squashed ops (via
  * e2ee-core's `rebase`) onto it, against the ORIGINAL base observed before
- * this call's first attempt — never an intermediate attempt's remote, which
- * would compound drift across retries — then retry, bounded by
+ * this call's first attempt - never an intermediate attempt's remote, which
+ * would compound drift across retries - then retry, bounded by
  * `MAX_REBASE_ATTEMPTS`.
  *
  * `fileExtras` (Task 3's file layer) does NOT ride along unchanged on every
  * attempt. `fileManifests` still does (each is an independent, self-
- * contained ciphertext keyed by its own fileId/version — resending is
+ * contained ciphertext keyed by its own fileId/version - resending is
  * harmless). But `chunkRefDeltas` is RECOMPUTED every attempt via
  * `resolveChunkRefDeltas`, against that attempt's ACTUAL merged outcome
- * (`merged`/`conflicts`) — never blindly resent. A losing attempt's whole
+ * (`merged`/`conflicts`) - never blindly resent. A losing attempt's whole
  * commit batch rolls back server-side (see commit.ts's CAS design note), so
- * the batch itself is never partially applied — but a LATER retry attempt is
+ * the batch itself is never partially applied - but a LATER retry attempt is
  * a genuinely NEW commit, and what it should credit/debit depends on what
  * THAT attempt is actually about to write: if this call's own edit survives
  * only as a rebase-generated conflicted copy (a different writer won the

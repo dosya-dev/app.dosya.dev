@@ -2,7 +2,7 @@
  * Semantic op model for folder-state merge/rebase.
  *
  * `FolderState` is the current view of a folder: entry id -> Entry. `Op`s are
- * the pending mutations against that state — `put` upserts an entry by id,
+ * the pending mutations against that state - `put` upserts an entry by id,
  * `del` removes one. This module is pure logic (no crypto, no I/O): it
  * describes how ops compose, not how they're transported or authenticated.
  */
@@ -29,6 +29,6 @@ export declare function applyOps(state: FolderState, ops: Op[]): FolderState;
  * Coalesce a pending-op log to the NET op per entry id, preserving first-touch order.
  * Multiple puts -> the last put. put...del -> del. del...put -> the last put.
  * (Whether a net "del" of a never-committed entry is a no-op is decided at apply/rebase
- * time against base — squash keeps the net del; applying a del for an absent id is harmless.)
+ * time against base - squash keeps the net del; applying a del for an absent id is harmless.)
  */
 export declare function squashOps(ops: Op[]): Op[];
