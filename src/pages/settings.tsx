@@ -387,7 +387,7 @@ function HardLimitsSection({ data, wsId, onSaved }: { data: WsData; wsId: string
       )}
       {overCap && (
         <div className="mb-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-2.5 text-xs text-amber-700 dark:text-amber-400">
-          This workspace uses {humanSize(usedBytes)}, above its {savedCap} GB limit. New uploads are blocked until usage drops below the limit.
+          This workspace uses {humanSize(usedBytes)}, above its {savedCap} GB limit. New uploads are blocked until usage drops below the limit - emptying the trash frees space toward that.
         </div>
       )}
       <Card>

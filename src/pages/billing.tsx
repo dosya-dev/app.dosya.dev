@@ -131,7 +131,7 @@ export default function BillingPage() {
                 <AlertTriangle className="size-3 shrink-0 mt-0.5" />
                 <span>
                   <strong className="font-medium">You're over your storage limit.</strong>{' '}
-                  Uploads are paused across all your workspaces until you free up space or upgrade.
+                  Uploads are paused across all your workspaces until you empty the trash or upgrade.
                   Nothing has been deleted.
                 </span>
               </button>

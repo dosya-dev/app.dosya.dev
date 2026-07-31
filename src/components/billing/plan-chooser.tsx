@@ -183,7 +183,7 @@ export function PlanChooser({ hasSubscription, initial, usedBytes, onUpdated, on
                     {downgradeWarning && (
                         <div className="flex items-start gap-1.5 text-xs text-amber-600">
                             <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
-                            This is below your current usage ({formatBytes(usedBytes)}). New uploads will be blocked until you free up space; nothing is deleted.
+                            This is below your current usage ({formatBytes(usedBytes)}). New uploads will be blocked until you empty the trash to free up space; nothing is deleted.
                         </div>
                     )}
                     {!planAvailableAtInterval && (

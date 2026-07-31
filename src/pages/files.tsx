@@ -988,6 +988,15 @@ export default function FilesPage() {
         )}
       </div>
 
+      {/* Trash notice - items here still count against storage; only a
+          permanent delete reclaims it. Static text, not a dismissible
+          banner. */}
+      {isDeletedView && (
+        <div className="px-5 py-2 border-b shrink-0 text-xs text-muted-foreground bg-muted/30">
+          Items in the trash still count against your storage. Delete them permanently to free up space.
+        </div>
+      )}
+
       {/* Bulk bar */}
       {totalSelected > 0 && (
         <div className="flex items-center gap-2 px-5 py-2 bg-primary/10 border-b shrink-0 flex-wrap">
@@ -1288,6 +1297,9 @@ export default function FilesPage() {
               <>Are you sure you want to delete <span className="font-semibold text-foreground break-all">{deleteTarget?.name}</span>?</>
             )}
           </p>
+          {!deleteTarget?.permanent && (
+            <p className="text-xs text-muted-foreground">It moves to the trash and keeps using storage until it's permanently deleted.</p>
+          )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteTarget(null)} disabled={deleting}>Cancel</Button>
             <Button variant="destructive" onClick={handleDelete} disabled={deleting}>
@@ -1342,7 +1354,7 @@ export default function FilesPage() {
             <p className={bulkDeleteConfirm?.permanent ? 'text-destructive' : undefined}>
               {bulkDeleteConfirm?.permanent
                 ? 'This cannot be undone.'
-                : 'You can restore these from the Deleted view.'}
+                : 'You can restore these from the Deleted view. They keep using storage until permanently deleted.'}
             </p>
           </div>
           <DialogFooter>
