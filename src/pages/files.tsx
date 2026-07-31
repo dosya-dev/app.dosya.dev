@@ -503,11 +503,15 @@ export default function FilesPage() {
   // covers multi-select; this is the context-menu/dropdown "Restore" action.
   const handleRestoreFolder = async (f: FolderItem) => {
     try {
-      const res = await api<{ ok: boolean; restored_to_root?: boolean }>(`/api/folders/${f.id}`, { method: 'PUT' });
+      const res = await api<{ ok: boolean; name?: string; restored_to_root?: boolean }>(`/api/folders/${f.id}`, { method: 'PUT' });
+      // `res.name` is the conflict-resolved name the server actually used
+      // (e.g. "Photos (1)" if "Photos" already exists at the destination) -
+      // prefer it over the row's cached name.
+      const restoredName = res.name ?? f.name;
       if (res.restored_to_root) {
-        toast.info('Restored', `"${f.name}" restored to the workspace root - its original folder is also in the trash.`);
+        toast.info('Restored', `"${restoredName}" restored to the workspace root - its original folder is also in the trash.`);
       } else {
-        toast.success('Restored', `"${f.name}" restored.`);
+        toast.success('Restored', `"${restoredName}" restored.`);
       }
       loadFiles();
     } catch (err) {
@@ -685,9 +689,13 @@ export default function FilesPage() {
 
   // ── Drag and drop ─────────────────────────────────────────
 
-  const handleDragOver = (e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); setDragging(true); };
-  const handleDragLeave = (e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); if (e.currentTarget === e.target) setDragging(false); };
+  // The trash is read-only - a drop there would try to upload into a
+  // trashed folder (or the root while merely browsing trash), so it's
+  // disabled outright rather than left to fail server-side.
+  const handleDragOver = (e: React.DragEvent) => { if (isDeletedView) return; e.preventDefault(); e.stopPropagation(); setDragging(true); };
+  const handleDragLeave = (e: React.DragEvent) => { if (isDeletedView) return; e.preventDefault(); e.stopPropagation(); if (e.currentTarget === e.target) setDragging(false); };
   const handleDrop = async (e: React.DragEvent) => {
+    if (isDeletedView) return;
     e.preventDefault(); e.stopPropagation(); setDragging(false);
     const droppedFiles = e.dataTransfer.files;
     if (!droppedFiles.length || !wsId) return;
@@ -757,27 +765,49 @@ export default function FilesPage() {
     { label: 'Delete', icon: <Trash2 />, onClick: () => setDeleteTarget({ id: f.id, name: f.name, type: 'file' }), danger: true },
   ];
 
-  const folderCtxItems = (f: FolderItem) => [
-    { label: 'Open', icon: <FolderOpen />, onClick: () => navigateToFolder(f.id) },
-    { label: 'Download', icon: <Download />, onClick: () => handleDownloadFolder(f.id) },
-    { label: 'Get info', icon: <Info />, onClick: () => setInfoTarget({ type: 'folder', item: f }) },
-    { label: '', separator: true, onClick: () => {}, icon: null },
-    { label: 'Rename', icon: <Pencil />, onClick: () => { setRenameTarget({ id: f.id, name: f.name, type: 'folder' }); setRenameName(f.name); } },
-    { label: 'Move to...', icon: <Move />, onClick: () => openMoveModal(f.id, 'folder') },
-    { label: 'Add to group', icon: <FolderPlus />, onClick: () => openAddToGroup(f.id, f.name, 'folder') },
-    { label: '', separator: true, onClick: () => {}, icon: null },
-    { label: f.lock_mode !== 'none' ? 'Unlock' : 'Lock', icon: <Lock />, onClick: () => setLockTarget({ id: f.id, name: f.name, type: 'folder' }) },
-    { label: f.is_hidden ? 'Unhide' : 'Hide', icon: f.is_hidden ? <Eye /> : <EyeOff />, onClick: () => setHideTarget({ id: f.id, name: f.name, type: 'folder' }) },
-    { label: '', separator: true, onClick: () => {}, icon: null },
-    { label: 'Delete', icon: <Trash2 />, onClick: () => setDeleteTarget({ id: f.id, name: f.name, type: 'folder' }), danger: true },
-  ];
+  const folderCtxItems = (f: FolderItem) => {
+    if (isDeletedView) {
+      // Read-only in the trash: browsing (Open) and inspecting (Get info)
+      // stay, but nothing that mutates a live folder makes sense here.
+      // Restore/Delete permanently only apply to a trash root - a
+      // descendant surfaced by browsing into one 400s on both endpoints.
+      const items: { label: string; icon: React.ReactNode; onClick: () => void; separator?: boolean; danger?: boolean }[] = [
+        { label: 'Open', icon: <FolderOpen />, onClick: () => navigateToFolder(f.id) },
+        { label: 'Get info', icon: <Info />, onClick: () => setInfoTarget({ type: 'folder', item: f }) },
+      ];
+      if (f.is_trash_root) {
+        items.push(
+          { label: '', separator: true, onClick: () => {}, icon: null },
+          { label: 'Restore', icon: <RotateCcw />, onClick: () => handleRestoreFolder(f) },
+          { label: 'Delete permanently', icon: <Trash2 />, onClick: () => setDeleteTarget({ id: f.id, name: f.name, type: 'folder', permanent: true, fileCount: f.file_count }), danger: true },
+        );
+      }
+      return items;
+    }
+    return [
+      { label: 'Open', icon: <FolderOpen />, onClick: () => navigateToFolder(f.id) },
+      { label: 'Download', icon: <Download />, onClick: () => handleDownloadFolder(f.id) },
+      { label: 'Get info', icon: <Info />, onClick: () => setInfoTarget({ type: 'folder', item: f }) },
+      { label: '', separator: true, onClick: () => {}, icon: null },
+      { label: 'Rename', icon: <Pencil />, onClick: () => { setRenameTarget({ id: f.id, name: f.name, type: 'folder' }); setRenameName(f.name); } },
+      { label: 'Move to...', icon: <Move />, onClick: () => openMoveModal(f.id, 'folder') },
+      { label: 'Add to group', icon: <FolderPlus />, onClick: () => openAddToGroup(f.id, f.name, 'folder') },
+      { label: '', separator: true, onClick: () => {}, icon: null },
+      { label: f.lock_mode !== 'none' ? 'Unlock' : 'Lock', icon: <Lock />, onClick: () => setLockTarget({ id: f.id, name: f.name, type: 'folder' }) },
+      { label: f.is_hidden ? 'Unhide' : 'Hide', icon: f.is_hidden ? <Eye /> : <EyeOff />, onClick: () => setHideTarget({ id: f.id, name: f.name, type: 'folder' }) },
+      { label: '', separator: true, onClick: () => {}, icon: null },
+      { label: 'Delete', icon: <Trash2 />, onClick: () => setDeleteTarget({ id: f.id, name: f.name, type: 'folder' }), danger: true },
+    ];
+  };
 
-  const blankCtxItems = [
-    { label: 'Refresh', icon: <RefreshCw />, onClick: () => loadFiles() },
-    { label: '', separator: true, onClick: () => {}, icon: null },
-    { label: 'New folder', icon: <FolderPlus />, onClick: () => setCreateFolderOpen(true) },
-    { label: 'Upload files', icon: <Upload />, onClick: () => navigate(uploadHref) },
-  ];
+  const blankCtxItems = isDeletedView
+    ? [{ label: 'Refresh', icon: <RefreshCw />, onClick: () => loadFiles() }]
+    : [
+        { label: 'Refresh', icon: <RefreshCw />, onClick: () => loadFiles() },
+        { label: '', separator: true, onClick: () => {}, icon: null },
+        { label: 'New folder', icon: <FolderPlus />, onClick: () => setCreateFolderOpen(true) },
+        { label: 'Upload files', icon: <Upload />, onClick: () => navigate(uploadHref) },
+      ];
 
   const uploadHref = `/uploads${currentFolderId ? `?folder=${currentFolderId}&folder_name=${encodeURIComponent(breadcrumbs.at(-1)?.name ?? '')}` : ''}`;
 
@@ -789,6 +819,22 @@ export default function FilesPage() {
         value: sortParam,
         label: `${ALL_COLUMNS.find((c) => c.key === sort.key)?.label ?? sort.key} ${sort.dir === 'asc' ? '↑' : '↓'}`,
       }];
+
+  // In the trash, "Modified" doubles as "Deleted" (its only meaningful
+  // reading there) and is forced visible - like the always-on Name column -
+  // so a first-time visitor sees when something was removed without having
+  // to dig into the column picker.
+  const displayColumns: ColumnDef[] = isDeletedView
+    ? ALL_COLUMNS.map((c) => c.key === 'modified'
+        ? {
+            ...c,
+            label: 'Deleted',
+            render: (f: FileItem) => f.deleted_at ? timeAgo(f.deleted_at) : '-',
+            renderFolder: (f: FolderItem) => f.deleted_at ? timeAgo(f.deleted_at) : '-',
+          }
+        : c)
+    : ALL_COLUMNS;
+  const effectiveVisibleColumns = isDeletedView ? new Set(visibleColumns).add('modified') : visibleColumns;
 
   return (
     <div className="flex h-full overflow-hidden">
@@ -854,13 +900,13 @@ export default function FilesPage() {
               <SlidersHorizontal className="size-3.5" /> Columns
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="min-w-44">
-              {ALL_COLUMNS.map((col) => (
+              {displayColumns.map((col) => (
                 <DropdownMenuCheckboxItem
                   key={col.key}
-                  checked={visibleColumns.has(col.key)}
+                  checked={effectiveVisibleColumns.has(col.key)}
                   onCheckedChange={() => toggleColumn(col.key)}
                   closeOnClick={false}
-                  disabled={col.key === 'name'}
+                  disabled={col.key === 'name' || (isDeletedView && col.key === 'modified')}
                   className="text-xs"
                 >
                   {col.label}
@@ -979,7 +1025,7 @@ export default function FilesPage() {
                   {/* Table header - click a column to sort by it, click again to flip */}
                   <div className="flex items-center gap-3 px-3 py-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider border-b mb-0.5">
                     <div className="w-7 shrink-0" />
-                    {ALL_COLUMNS.filter((c) => visibleColumns.has(c.key)).map((col) => (
+                    {displayColumns.filter((c) => effectiveVisibleColumns.has(c.key)).map((col) => (
                       <button
                         key={col.key}
                         onClick={() => changeSort(toggleSort(sort, col.key))}
@@ -996,7 +1042,7 @@ export default function FilesPage() {
                   </div>
                   {/* Folder rows - pinned above files, same columns */}
                   {folders.map((f) => {
-                    const cols = ALL_COLUMNS.filter((c) => visibleColumns.has(c.key));
+                    const cols = displayColumns.filter((c) => effectiveVisibleColumns.has(c.key));
                     return (
                       <div
                         key={f.id}
@@ -1026,13 +1072,23 @@ export default function FilesPage() {
                           return <div key={col.key} className={`text-xs text-muted-foreground truncate ${col.width}`}>{col.renderFolder ? col.renderFolder(f) : '-'}</div>;
                         })}
                         <div className="w-8 shrink-0">
-                          <FileDropdown
-                            onDownload={() => handleDownloadFolder(f.id)}
-                            onRename={() => { setRenameTarget({ id: f.id, name: f.name, type: 'folder' }); setRenameName(f.name); }}
-                            onMove={() => openMoveModal(f.id, 'folder')}
-                            onDelete={() => setDeleteTarget({ id: f.id, name: f.name, type: 'folder' })}
-                            onAddToGroup={() => openAddToGroup(f.id, f.name, 'folder')}
-                          />
+                          {isDeletedView ? (
+                            f.is_trash_root && (
+                              <FileDropdown
+                                onRestore={() => handleRestoreFolder(f)}
+                                onDelete={() => setDeleteTarget({ id: f.id, name: f.name, type: 'folder', permanent: true, fileCount: f.file_count })}
+                                deleteLabel="Delete permanently"
+                              />
+                            )
+                          ) : (
+                            <FileDropdown
+                              onDownload={() => handleDownloadFolder(f.id)}
+                              onRename={() => { setRenameTarget({ id: f.id, name: f.name, type: 'folder' }); setRenameName(f.name); }}
+                              onMove={() => openMoveModal(f.id, 'folder')}
+                              onDelete={() => setDeleteTarget({ id: f.id, name: f.name, type: 'folder' })}
+                              onAddToGroup={() => openAddToGroup(f.id, f.name, 'folder')}
+                            />
+                          )}
                         </div>
                       </div>
                     );
@@ -1041,7 +1097,7 @@ export default function FilesPage() {
                   {files.map((f) => {
                     const isActive = selectedFile?.id === f.id || highlightId === f.id;
                     const isSel = selected.has(f.id);
-                    const cols = ALL_COLUMNS.filter((c) => visibleColumns.has(c.key));
+                    const cols = displayColumns.filter((c) => effectiveVisibleColumns.has(c.key));
                     return (
                       <div
                         key={f.id}
@@ -1133,14 +1189,27 @@ export default function FilesPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Delete dialog */}
+      {/* Delete dialog - also drives the Deleted view's row-level "Delete
+          permanently" for folders (deleteTarget.permanent), since it's the
+          same single-item confirm flow with different copy and a
+          destructive footer. */}
       <Dialog open={!!deleteTarget} onOpenChange={() => setDeleteTarget(null)}>
         <DialogContent className="max-w-sm">
-          <DialogHeader><DialogTitle>Delete {deleteTarget?.type}?</DialogTitle></DialogHeader>
-          <p className="text-sm text-muted-foreground">Are you sure you want to delete <span className="font-semibold text-foreground break-all">{deleteTarget?.name}</span>?</p>
+          <DialogHeader><DialogTitle>{deleteTarget?.permanent ? 'Delete permanently?' : `Delete ${deleteTarget?.type}?`}</DialogTitle></DialogHeader>
+          <p className={`text-sm ${deleteTarget?.permanent ? 'text-destructive' : 'text-muted-foreground'}`}>
+            {deleteTarget?.permanent ? (
+              <>
+                Permanently delete <span className="font-semibold text-foreground break-all">{deleteTarget?.name}</span>
+                {deleteTarget?.type === 'folder' && !!deleteTarget?.fileCount && ` and its ${deleteTarget.fileCount} file${deleteTarget.fileCount === 1 ? '' : 's'}`}
+                ? This cannot be undone.
+              </>
+            ) : (
+              <>Are you sure you want to delete <span className="font-semibold text-foreground break-all">{deleteTarget?.name}</span>?</>
+            )}
+          </p>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteTarget(null)}>Cancel</Button>
-            <Button variant="destructive" onClick={handleDelete}>Delete</Button>
+            <Button variant="destructive" onClick={handleDelete}>{deleteTarget?.permanent ? 'Delete permanently' : 'Delete'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1163,7 +1232,9 @@ export default function FilesPage() {
                 <>
                   Permanently delete{' '}
                   <span className="font-semibold text-foreground">
-                    {selected.size} file{selected.size === 1 ? '' : 's'}
+                    {selected.size > 0 && `${selected.size} file${selected.size === 1 ? '' : 's'}`}
+                    {selected.size > 0 && selectedFolders.size > 0 && ' and '}
+                    {selectedFolders.size > 0 && `${selectedFolders.size} folder${selectedFolders.size === 1 ? '' : 's'}`}
                   </span>?
                 </>
               ) : (
@@ -1177,8 +1248,12 @@ export default function FilesPage() {
                 </>
               )}
             </p>
-            {!bulkDeleteConfirm?.permanent && selectedFolders.size > 0 && (
-              <p>Everything inside the selected folder{selectedFolders.size === 1 ? '' : 's'} is deleted too.</p>
+            {selectedFolders.size > 0 && (
+              <p>
+                {bulkDeleteConfirm?.permanent
+                  ? `Everything inside the selected folder${selectedFolders.size === 1 ? '' : 's'} is permanently deleted too.`
+                  : `Everything inside the selected folder${selectedFolders.size === 1 ? '' : 's'} is deleted too.`}
+              </p>
             )}
             <p className={bulkDeleteConfirm?.permanent ? 'text-destructive' : undefined}>
               {bulkDeleteConfirm?.permanent
@@ -1554,8 +1629,10 @@ function FileThumbnail({ fileId, fileName, ext }: { fileId: string; fileName: st
 
 // ── Dropdown menu (three dots) ─────────────────────────────
 
-function FileDropdown({ onDownload, onShare, onRename, onDelete, onCopy, onMove, onAddToGroup, overlay }: {
-  onDownload?: () => void; onShare?: () => void; onRename: () => void; onDelete: () => void; onCopy?: () => void; onMove?: () => void; onAddToGroup?: () => void; overlay?: boolean;
+function FileDropdown({ onDownload, onShare, onRename, onDelete, onCopy, onMove, onAddToGroup, onRestore, deleteLabel = 'Delete', overlay }: {
+  onDownload?: () => void; onShare?: () => void; onRename?: () => void; onDelete: () => void; onCopy?: () => void; onMove?: () => void; onAddToGroup?: () => void;
+  /** Trashed-folder rows pass this instead of onRename/onMove/etc - see deleteLabel for the matching "Delete permanently" copy. */
+  onRestore?: () => void; deleteLabel?: string; overlay?: boolean;
 }) {
   return (
     <DropdownMenu>
@@ -1565,14 +1642,15 @@ function FileDropdown({ onDownload, onShare, onRename, onDelete, onCopy, onMove,
           : <button className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-muted" onClick={(e) => e.stopPropagation()}><MoreHorizontal className="size-3.5" /></button>}
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
+        {onRestore && <DropdownMenuItem onClick={onRestore}><RotateCcw className="size-3 mr-2" /> Restore</DropdownMenuItem>}
         {onDownload && <DropdownMenuItem onClick={onDownload}><Download className="size-3 mr-2" /> Download</DropdownMenuItem>}
         {onShare && <DropdownMenuItem onClick={onShare}><Share2 className="size-3 mr-2" /> Share</DropdownMenuItem>}
         {onCopy && <DropdownMenuItem onClick={onCopy}><Copy className="size-3 mr-2" /> Copy</DropdownMenuItem>}
         {onMove && <DropdownMenuItem onClick={onMove}><Move className="size-3 mr-2" /> Move to...</DropdownMenuItem>}
         {onAddToGroup && <DropdownMenuItem onClick={onAddToGroup}><FolderPlus className="size-3 mr-2" /> Add to group</DropdownMenuItem>}
-        <DropdownMenuItem onClick={onRename}><Pencil className="size-3 mr-2" /> Rename</DropdownMenuItem>
+        {onRename && <DropdownMenuItem onClick={onRename}><Pencil className="size-3 mr-2" /> Rename</DropdownMenuItem>}
         <DropdownMenuSeparator />
-        <DropdownMenuItem className="text-destructive" onClick={onDelete}><Trash2 className="size-3 mr-2" /> Delete</DropdownMenuItem>
+        <DropdownMenuItem className="text-destructive" onClick={onDelete}><Trash2 className="size-3 mr-2" /> {deleteLabel}</DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );
