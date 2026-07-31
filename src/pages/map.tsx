@@ -8,7 +8,7 @@ import { subscribeThemeChange } from '@/lib/theme';
 import { fetchMapPins, type MapPin, type FilePin, type MapFilters } from '@/lib/map-pins';
 import { MapFilterPanel } from '@/components/map-filter-panel';
 import { markerFor } from '@/lib/map-marker';
-import { pinsToFeatures, buildClusterIndex, clustersInView } from '@/lib/map-cluster';
+import { pinsToFeatures, buildClusterIndex, clustersInView, viewportBboxes } from '@/lib/map-cluster';
 import { buildMapStyle, checkBasemapAvailable } from '@/lib/map-style';
 import { fileThumbUrl, fileRawUrl } from '@/lib/file-url';
 import { FileViewer } from '@/components/file-viewer';
@@ -58,7 +58,9 @@ export default function MapPage() {
   const wsId = useWorkspace((s) => s.activeId);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
-  const markersRef = useRef<maplibregl.Marker[]>([]);
+  // Keyed by cluster/pin id so a pan can keep the markers that are still in view
+  // rather than rebuilding (and re-fetching) all of them. See renderMarkers.
+  const markersRef = useRef<Map<string, maplibregl.Marker>>(new Map());
 
   const [pins, setPins] = useState<MapPin[]>([]);
   const [counts, setCounts] = useState({ gps: 0, approximate: 0, pending: 0 });
@@ -120,13 +122,16 @@ export default function MapPage() {
   const renderMarkers = useCallback(() => {
     const map = mapRef.current;
     if (!map) return;
-    markersRef.current.forEach((m) => m.remove());
-    markersRef.current = [];
-    // Whole world, NOT map.getBounds(): once you pan horizontally the bounds run
-    // outside ±180° (world copies) and supercluster returns nothing, wiping every
-    // pin. Pin counts are small and MapLibre culls off-screen markers + wraps them
-    // to the visible world copy, so it's safe (and correct) to render them all.
-    const bbox: [number, number, number, number] = [-180, -85, 180, 85];
+    // Every marker is a DOM node plus (for photos) an image request, so ask only
+    // for what is actually on screen. This used to request the whole world
+    // because MapLibre's bounds drift outside ±180° once you pan across a world
+    // copy, and a raw query with those numbers matches nothing; viewportBboxes
+    // wraps them back into range, which is what made the world query necessary.
+    // With 2000 photos the difference is ~1000 markers versus a few dozen.
+    const b = map.getBounds();
+    const bboxes = viewportBboxes({
+      west: b.getWest(), south: b.getSouth(), east: b.getEast(), north: b.getNorth(),
+    });
     // Build one Apple-style teardrop: rounded photo frame (or file/folder icon),
     // optional count badge, and a downward tail (via CSS ::after).
     const buildPin = (o: { thumbUrl?: string; iconSvg?: string; count?: number; approx?: boolean; onClick: () => void }) => {
@@ -135,16 +140,20 @@ export default function MapPage() {
       const frame = document.createElement('span');
       frame.className = 'dosya-pin__frame';
       if (o.thumbUrl) {
-        // Show a shimmer skeleton until the thumbnail actually loads, then swap
-        // it in. Preloading via Image() (instead of setting background-image on
-        // a fresh marker node) also fixes the "blank until a theme toggle forces
-        // a reflow" paint quirk - the image now appears the moment it loads.
+        // A real <img> child, not an Image() preload writing background-image:
+        // this lets the browser defer the fetch, decode it off the main thread,
+        // and abandon it outright if the marker is removed (panned away) before
+        // it finishes. A shimmer skeleton shows until the photo fades in, which
+        // also keeps the old "blank until a reflow" paint quirk fixed.
         frame.classList.add('is-loading');
-        const url = o.thumbUrl;
-        const img = new Image();
-        img.onload = () => { frame.style.backgroundImage = `url("${url}")`; frame.classList.remove('is-loading'); };
-        img.onerror = () => { frame.classList.remove('is-loading'); };
-        img.src = url;
+        const img = document.createElement('img');
+        img.loading = 'lazy';
+        img.decoding = 'async';
+        img.alt = '';
+        img.onload = () => { img.classList.add('is-ready'); frame.classList.remove('is-loading'); };
+        img.onerror = () => { img.remove(); frame.classList.remove('is-loading'); };
+        img.src = o.thumbUrl;
+        frame.appendChild(img);
       } else if (o.iconSvg) {
         frame.classList.add('dosya-pin__frame--icon');
         frame.innerHTML = o.iconSvg;
@@ -160,7 +169,17 @@ export default function MapPage() {
       return el;
     };
 
-    for (const item of clustersInView(index, bbox, map.getZoom())) {
+    // Reuse markers that survive a pan/zoom instead of tearing every one down
+    // and rebuilding it: recreating a node restarts its image request and its
+    // fade-in, which is what made dragging the map flicker and refetch.
+    const live = markersRef.current;
+    const keep = new Set<string>();
+
+    for (const item of clustersInView(index, bboxes, map.getZoom())) {
+      const key = item.kind === 'cluster' ? `c${item.id}` : `p${item.pinId}`;
+      keep.add(key);
+      if (live.has(key)) continue; // already on the map, at the same coordinate
+
       let el: HTMLButtonElement;
       if (item.kind === 'cluster') {
         const samples = item.sampleIds.map((id) => byId.get(id)).filter(Boolean) as MapPin[];
@@ -173,7 +192,17 @@ export default function MapPage() {
           iconSvg: photo ? undefined : rep && markerFor(rep).type === 'folder-icon' ? FOLDER_ICON_SVG : FILE_ICON_SVG,
           count: item.count,
           approx: samples.length > 0 && samples.every((p) => p.source === 'ip'),
-          onClick: () => map.easeTo({ center: [item.lon, item.lat], zoom: item.expansionZoom }),
+          // Members sharing one exact coordinate - which every IP-derived pin in
+          // a workspace does - can never be separated by zooming, so open the
+          // first of them instead of easing into a view that looks identical.
+          onClick: () => {
+            if (item.expandable) {
+              map.easeTo({ center: [item.lon, item.lat], zoom: item.expansionZoom });
+            } else {
+              const first = samples.find((p): p is FilePin => p.kind === 'file');
+              if (first) setViewerFile(first);
+            }
+          },
         });
       } else {
         const p = byId.get(item.pinId);
@@ -189,9 +218,22 @@ export default function MapPage() {
           });
         }
       }
-      markersRef.current.push(new maplibregl.Marker({ element: el, anchor: 'bottom' }).setLngLat([item.lon, item.lat]).addTo(map));
+      live.set(key, new maplibregl.Marker({ element: el, anchor: 'bottom' }).setLngLat([item.lon, item.lat]).addTo(map));
+    }
+
+    for (const [key, marker] of live) {
+      if (!keep.has(key)) { marker.remove(); live.delete(key); }
     }
   }, [index, byId, navigate]);
+
+  // Markers are cached by cluster/pin id across pans, and those ids only mean
+  // anything relative to the index that produced them. A new index (filters
+  // changed, pins reloaded) must therefore drop the whole cache, or a reused
+  // marker would keep a click handler bound to a stale pin object.
+  useEffect(() => {
+    const live = markersRef.current;
+    return () => { live.forEach((m) => m.remove()); live.clear(); };
+  }, [index]);
 
   // Keep the latest renderMarkers available to effects that must not re-run on
   // every data change (the re-style effect) without listing it as a dependency.
