@@ -6,7 +6,9 @@ import type { CloudJob } from '@/api/cloud-import';
 
 /**
  * Two label maps with DIFFERENT key spaces. Keep them separate: conflating
- * them is how 'google' silently renders as a blank label.
+ * them does not blank the label out - consumers guard lookups with a
+ * `?? provider` fallback - it silently renders the raw provider id instead,
+ * e.g. a lowercase "google" heading instead of "Google Drive".
  *
  * IMPORT_SOURCE_LABELS is keyed by `files.import_source` values, where
  * Google is the historical string 'google-drive' (that's what's already
