@@ -39,9 +39,11 @@ describe('IntegrationsSection', () => {
   // label maps with different key spaces that agree everywhere except
   // Google. PROVIDER_LABELS is keyed by provider id ('google'); the wrong
   // map, IMPORT_SOURCE_LABELS, is keyed by files.import_source
-  // ('google-drive') and returns undefined for 'google' - which would
-  // render this heading blank rather than throwing, so nothing else in the
-  // test suite would catch the mistake.
+  // ('google-drive') and returns undefined for 'google'. The lookup site in
+  // profile.tsx has a `?? provider` fallback, so the wrong map doesn't blank
+  // the heading - it renders the raw provider id ("google") instead of
+  // "Google Drive", which is quieter than a blank and just as easy to miss
+  // without a test pinned to the exact string.
   it('groups a connected google account under a "Google Drive" heading sourced from PROVIDER_LABELS', async () => {
     await render();
 

@@ -1268,8 +1268,12 @@ export function IntegrationsSection({ accounts, onChanged }: { accounts: DriveAc
                 {/*
                   PROVIDER_LABELS is keyed by provider id ('google'), NOT by
                   files.import_source ('google-drive') - IMPORT_SOURCE_LABELS
-                  looks identical but is the wrong map here and would render
-                  this heading blank for every Google account.
+                  looks identical but is the wrong map here. Because of the
+                  `?? provider` fallback below, using it wouldn't blank this
+                  heading out; it would silently render the raw provider id
+                  ("google") instead of "Google Drive" - just as wrong, only
+                  quieter, since it still looks like a rendered label rather
+                  than an obviously broken one.
                 */}
                 <p
                   data-testid="provider-group-heading"

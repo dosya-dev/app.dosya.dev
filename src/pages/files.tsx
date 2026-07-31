@@ -45,6 +45,7 @@ import { toast } from '@/lib/toast';
 import { FolderPickerDialog } from '@/components/folder-picker-dialog';
 import { ProviderPickerDialog } from '@/components/cloud-import/provider-picker-dialog';
 import { ImportProgressCard } from '@/components/cloud-import/import-progress-card';
+import { useCloudImportCompletionRefresh } from './use-cloud-import-refresh';
 
 // ── Types ──────────────────────────────────────────────────
 
@@ -322,6 +323,11 @@ export default function FilesPage() {
   }, [wsId, sortParam, currentPage, search, currentFolderId, isDeletedView, currentFilter, currentGroup]);
 
   useEffect(() => { loadFiles(); }, [loadFiles]);
+
+  // Refresh the list when a cloud import in this workspace finishes - see
+  // use-cloud-import-refresh.ts for why this reacts rather than polls, and
+  // why it's workspace-scoped but not folder-scoped.
+  useCloudImportCompletionRefresh(wsId, loadFiles);
 
   // Deep-link from the upload dock (?file=<id>): once that file is in the loaded
   // list, scroll it into view and flash the highlight. Keyed on the param VALUE
