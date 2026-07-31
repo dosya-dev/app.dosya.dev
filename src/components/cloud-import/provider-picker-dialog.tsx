@@ -3,10 +3,11 @@ import { Folder, File as FileIcon, Loader2 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Button } from '@/components/ui/button';
-import { API_BASE } from '@/api/client';
+import { API_BASE, apiErrorMessage } from '@/api/client';
 import { listAccounts, type CloudAccount, type CloudEntryDto } from '@/api/cloud-import';
 import { useCloudImports } from '@/stores/cloud-imports';
 import { useWorkspace } from '@/stores/workspace';
+import { toast } from '@/lib/toast';
 import { useCloudBrowser } from './use-cloud-browser';
 
 interface Props {
@@ -91,6 +92,14 @@ export function ProviderPickerDialog({
       });
       browser.clearSelection();
       onOpenChange(false);
+    } catch (err) {
+      // MINOR 12 (2026-07-30 review): createImport can reject with a real
+      // 4xx (e.g. a stale/disconnected account, a since-deleted destination
+      // folder) - without this, `void onImport()` at the call site left that
+      // rejection unhandled: the dialog just sat there, `starting` reverted
+      // via `finally` below, but the user saw no explanation at all. Keep
+      // the dialog open (so the selection isn't lost) and surface the error.
+      toast.error('Import failed to start', apiErrorMessage(err, 'The import could not be started.'));
     } finally {
       setStarting(false);
     }

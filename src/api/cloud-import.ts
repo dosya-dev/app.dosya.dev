@@ -96,7 +96,7 @@ export const getJob = (id: string) =>
 // stores/cloud-imports.ts). Do not add a retry_after_seconds-style field
 // here without a real backend field to back it.
 export const processJob = (id: string) =>
-  api<{ status: string; item_error?: string }>(
+  api<{ status: string }>(
     `/api/cloud/imports/${id}/process`,
     { method: 'POST' },
   );

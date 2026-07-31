@@ -11,6 +11,11 @@ vi.mock('@/api/cloud-import', () => ({
   browse: (...args: unknown[]) => browseMock(...args),
 }));
 
+const toastErrorMock = vi.fn();
+vi.mock('@/lib/toast', () => ({
+  toast: { error: (...args: unknown[]) => toastErrorMock(...args), success: vi.fn(), info: vi.fn() },
+}));
+
 const { ProviderPickerDialog } = await import('./provider-picker-dialog');
 const { useCloudImports } = await import('@/stores/cloud-imports');
 const { useWorkspace } = await import('@/stores/workspace');
@@ -39,6 +44,7 @@ async function flush(ticks = 20) {
 beforeEach(() => {
   listAccountsMock.mockReset();
   browseMock.mockReset();
+  toastErrorMock.mockReset();
   useWorkspace.setState({ activeId: 'ws1' });
 });
 
@@ -158,6 +164,42 @@ describe('ProviderPickerDialog - selection and import', () => {
         ],
       });
       expect(onOpenChange).toHaveBeenCalledWith(false);
+    } finally {
+      useCloudImports.setState({ start: previousStart });
+    }
+  });
+
+  it('(MINOR 12) a rejected start() surfaces a toast, keeps the dialog open, and re-enables Import', async () => {
+    // Before this fix, `void onImport()` at the click handler had no catch:
+    // a real 4xx from createImport (stale account, deleted destination
+    // folder, ...) rejected unhandled - the dialog just sat there with
+    // "Starting..." forever and no explanation.
+    listAccountsMock.mockResolvedValue([account({ id: 'acc7' })]);
+    browseMock.mockResolvedValue({
+      entries: [cloudEntry({ id: 'f1', name: 'a.pdf', kind: 'file', size: 42 })],
+      cursor: null,
+    });
+    const startMock = vi.fn().mockRejectedValue(
+      new ApiError(400, JSON.stringify({ ok: false, error: 'Destination folder not found' })),
+    );
+    const previousStart = useCloudImports.getState().start;
+    useCloudImports.setState({ start: startMock });
+
+    try {
+      const { onOpenChange } = await renderDialog({ destFolderId: 'dest1' });
+
+      await click(document.querySelector<HTMLElement>('[role="checkbox"]')!);
+      await click(findButton('Import'));
+
+      expect(startMock).toHaveBeenCalledTimes(1);
+      // Dialog stays open: onOpenChange is never called with false.
+      expect(onOpenChange).not.toHaveBeenCalledWith(false);
+      // The real server message surfaced, not a generic fallback.
+      expect(toastErrorMock).toHaveBeenCalledTimes(1);
+      expect(toastErrorMock.mock.calls[0].join(' ')).toContain('Destination folder not found');
+      // starting reverted, so the button is clickable again (not stuck on
+      // "Starting...").
+      expect(findButton('Import').disabled).toBe(false);
     } finally {
       useCloudImports.setState({ start: previousStart });
     }

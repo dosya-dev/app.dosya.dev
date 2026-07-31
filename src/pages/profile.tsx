@@ -1226,6 +1226,15 @@ function Toggle({ checked, disabled, onChange }: { checked: boolean; disabled?: 
 
 // ── Integrations ───────────────────────────────────────────
 
+// MINOR 16 (2026-07-30 review): a per-account row icon, keyed by provider id
+// - NOT hardcoded to google-color.svg. Only google has a real icon asset
+// today, so an unmapped provider falls back to a generic icon rather than
+// silently reusing google's, which would render every onedrive/dropbox
+// account with a Google icon the moment a second provider actually connects.
+const PROVIDER_ICONS: Record<string, string> = {
+  google: '/google-color.svg',
+};
+
 export function IntegrationsSection({ accounts, onChanged }: { accounts: DriveAccount[]; onChanged: () => void }) {
   const [disconnecting, setDisconnecting] = useState<string | null>(null);
 
@@ -1285,7 +1294,11 @@ export function IntegrationsSection({ accounts, onChanged }: { accounts: DriveAc
                   <div key={acc.id} className="flex items-center justify-between py-3 border-b last:border-b-0">
                     <div className="flex items-center gap-3 min-w-0">
                       <div className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center shrink-0">
-                        <img src="/google-color.svg" width="16" height="16" alt="" />
+                        {PROVIDER_ICONS[acc.provider] ? (
+                          <img src={PROVIDER_ICONS[acc.provider]} width="16" height="16" alt="" />
+                        ) : (
+                          <Plug className="size-4 text-muted-foreground" />
+                        )}
                       </div>
                       <div className="min-w-0">
                         <p className="text-xs font-medium truncate">{acc.account_email}</p>

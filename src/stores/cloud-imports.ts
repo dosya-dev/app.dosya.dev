@@ -17,6 +17,13 @@ export function jobProgress(
 
 interface CloudImportState {
   jobs: CloudJob[];
+  /**
+   * job ids with an in-flight drive() loop. Lives in store state (not a
+   * module-level variable) so it resets per-store-instance the same way
+   * `jobs` does - a module-level Set would leak between tests that reuse the
+   * same imported module (see cloud-imports.test.ts's own beforeEach reset).
+   */
+  driving: Set<string>;
   refresh: () => Promise<void>;
   start: (args: {
     accountId: string;
@@ -29,10 +36,23 @@ interface CloudImportState {
 
 export const useCloudImports = create<CloudImportState>((set, get) => ({
   jobs: [],
+  driving: new Set(),
 
   async refresh() {
     try {
-      set({ jobs: await listJobs() });
+      const jobs = await listJobs();
+      set({ jobs });
+      // IMPORTANT 3 (2026-07-30 review): drive() previously only ever
+      // started from start(), so a page reload left an already-`running`/
+      // `discovering` job's card rendering a live-looking bar that never
+      // advanced - the job was never wrong on the server, nothing was ever
+      // driving it client-side again. Every refresh() (mount, poll, after
+      // cancel) now resumes driving any active job it learns about;
+      // ensureDriving's guard makes this a no-op for a job that already has
+      // a loop running, so this is safe to call unconditionally here.
+      for (const job of jobs) {
+        if (ACTIVE_CLOUD_STATUSES.has(job.status)) ensureDriving(job.id, get, set);
+      }
     } catch {
       // Network hiccup: keep the last known list rather than blanking the UI.
     }
@@ -41,7 +61,12 @@ export const useCloudImports = create<CloudImportState>((set, get) => ({
   async start(args) {
     const { job_id } = await createImport(args);
     await get().refresh();
-    void drive(job_id, get);
+    // Belt-and-suspenders: refresh() above already starts driving this job
+    // if it came back in the active list, but that read is a separate round
+    // trip that could in principle miss it (a stale read, a 5xx swallowed by
+    // refresh()'s own catch). ensureDriving's guard makes this a no-op in
+    // the ordinary case where refresh() already covered it.
+    ensureDriving(job_id, get, set);
     return job_id;
   },
 
@@ -50,6 +75,23 @@ export const useCloudImports = create<CloudImportState>((set, get) => ({
     await get().refresh();
   },
 }));
+
+type GetState = () => CloudImportState;
+type SetState = (partial: (state: CloudImportState) => Partial<CloudImportState>) => void;
+
+/** Starts drive(jobId) unless a loop for it is already running. */
+function ensureDriving(jobId: string, get: GetState, set: SetState): void {
+  if (get().driving.has(jobId)) return;
+  set((s) => ({ driving: new Set(s.driving).add(jobId) }));
+  void drive(jobId, get).finally(() => {
+    set((s) => {
+      if (!s.driving.has(jobId)) return {};
+      const next = new Set(s.driving);
+      next.delete(jobId);
+      return { driving: next };
+    });
+  });
+}
 
 /**
  * A1 keeps the transfer client-driven, so this loop must run for the import to

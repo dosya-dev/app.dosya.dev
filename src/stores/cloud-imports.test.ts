@@ -47,7 +47,11 @@ beforeEach(() => {
   processJobMock.mockReset();
   createImportMock.mockReset();
   cancelJobMock.mockReset();
-  useCloudImports.setState({ jobs: [] });
+  // `driving` (IMPORTANT 3) lives on this same store instance, which is
+  // created once at module load and reused across every test in this file -
+  // reset it alongside `jobs` so one test's in-flight drive() loop can never
+  // make ensureDriving() a silent no-op in a later, unrelated test.
+  useCloudImports.setState({ jobs: [], driving: new Set() });
 });
 
 describe('ACTIVE_CLOUD_STATUSES', () => {
@@ -244,7 +248,14 @@ describe('useCloudImports.refresh / cancel', () => {
   });
 
   it('refresh keeps the last known jobs on a network failure rather than blanking the UI', async () => {
-    listJobsMock.mockResolvedValueOnce([job({ id: 'j1' })]);
+    // Terminal status, deliberately: this test is about refresh()'s own
+    // network-failure handling, not driving, and an active job would make
+    // refresh() (IMPORTANT 3) start a background drive() loop against an
+    // unconfigured processJobMock - which would itself call back into
+    // refresh() and consume the one-shot mocks this test sets up below out
+    // of order. See the 'cancel calls cancelJob then refreshes' test for the
+    // same convention.
+    listJobsMock.mockResolvedValueOnce([job({ id: 'j1', status: 'complete' })]);
     await useCloudImports.getState().refresh();
     listJobsMock.mockRejectedValueOnce(new Error('offline'));
     await useCloudImports.getState().refresh();
@@ -257,5 +268,55 @@ describe('useCloudImports.refresh / cancel', () => {
     await useCloudImports.getState().cancel('j1');
     expect(cancelJobMock).toHaveBeenCalledWith('j1');
     expect(useCloudImports.getState().jobs.map((j) => j.id)).toEqual(['j1']);
+  });
+});
+
+describe('IMPORTANT 3: refresh() resumes driving an active job (2026-07-30 review)', () => {
+  // Before this fix, drive() was only ever kicked off from start() - a page
+  // reload left an already-running/discovering job's `jobs` array populated
+  // by refresh() (ImportProgressCard's mount effect calls it), but nothing
+  // ever called processJob for it again. The card rendered a live-looking
+  // bar that never advanced, forever, with cancel-and-lose-progress as the
+  // only way out.
+
+  it('drives an active job it learns about from refresh() alone - never went through start()', async () => {
+    // No createImport/start() anywhere in this test: this is the reload
+    // case exactly - the job is already active on the SERVER, and the only
+    // thing that ever happens client-side is a plain refresh().
+    listJobsMock.mockResolvedValue([job({ id: 'j1', status: 'running' })]);
+    processJobMock
+      .mockResolvedValueOnce({ status: 'running' })
+      .mockResolvedValueOnce({ status: 'complete' });
+
+    await useCloudImports.getState().refresh();
+    await flush();
+
+    expect(processJobMock).toHaveBeenCalledWith('j1');
+    expect(processJobMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not start a second drive() loop for a job that already has one running', async () => {
+    listJobsMock.mockResolvedValue([job({ id: 'j1', status: 'running' })]);
+    // Exactly two calls' worth of responses queued. If a second loop were
+    // (wrongly) started by the next refresh() below, it would either
+    // duplicate these calls (more than 2 total) or exhaust the queue and
+    // fall through to an unconfigured response - either way, not exactly 2.
+    processJobMock
+      .mockResolvedValueOnce({ status: 'running' })
+      .mockResolvedValueOnce({ status: 'complete' });
+
+    // First refresh(): discovers 'j1' active, starts driving it. The drive
+    // loop's first processJob call fires synchronously up to its own first
+    // await (see the 429-path test above for the same reasoning), so `j1`
+    // is already in `driving` by the time this refresh() call resolves.
+    await useCloudImports.getState().refresh();
+
+    // A second, independent refresh() - e.g. a second <ImportProgressCard/>
+    // mounting, or use-cloud-import-refresh's poll - sees the SAME active
+    // job and must not start a second loop for it.
+    await useCloudImports.getState().refresh();
+    await flush();
+
+    expect(processJobMock).toHaveBeenCalledTimes(2);
   });
 });

@@ -52,4 +52,34 @@ describe('IntegrationsSection', () => {
     expect(heading!.textContent).toBe('Google Drive');
     expect(container!.textContent).toContain('a@example.com');
   });
+
+  // MINOR 16 (2026-07-30 review): every account row used to render
+  // /google-color.svg unconditionally, regardless of acc.provider - wrong
+  // the moment a second provider's account showed up in the same list.
+  it('(MINOR 16) renders the google icon for a google account and a fallback icon (not google-color.svg) for an unrecognised provider', async () => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    await act(async () => {
+      root!.render(
+        <IntegrationsSection
+          accounts={[
+            { id: 'cca_1', provider: 'google', account_email: 'g@example.com', account_name: 'G', created_at: 0 },
+            { id: 'cca_2', provider: 'onedrive', account_email: 'o@example.com', account_name: 'O', created_at: 0 },
+          ]}
+          onChanged={() => {}}
+        />,
+      );
+      await Promise.resolve();
+    });
+
+    const rows = [...container.querySelectorAll('p.text-xs.font-medium.truncate')];
+    const googleRow = rows.find((r) => r.textContent === 'g@example.com')!.closest('div.flex.items-center.justify-between')!;
+    const oneDriveRow = rows.find((r) => r.textContent === 'o@example.com')!.closest('div.flex.items-center.justify-between')!;
+
+    expect(googleRow.querySelector('img')?.getAttribute('src')).toBe('/google-color.svg');
+    // The unrecognised provider must NOT silently render google's icon.
+    expect(oneDriveRow.querySelector('img')).toBeNull();
+    expect(oneDriveRow.querySelector('svg')).not.toBeNull();
+  });
 });
