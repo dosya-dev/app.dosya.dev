@@ -90,7 +90,7 @@ export const INTEGRATIONS: IntegrationMeta[] = [
   {
     slug: 'google',
     title: 'Google Drive',
-    description: 'Import files directly from your Google Drive into a workspace.',
+    description: 'Import folders and files from Google Drive, with your folder structure preserved.',
     tag: 'Import',
     icon: HardDrive,
     iconSrc: '/google-color.svg',

@@ -10,6 +10,7 @@ import {
 import { humanSize, timeAgo, extOf, isImage, isVideo, isText, isAudio, fileIconSrc, regionLabel, colorFor } from '@/lib/helpers';
 import { FilePreviewImage } from '@/components/file-preview-image';
 import { toast } from '@/lib/toast';
+import { IMPORT_SOURCE_LABELS } from '@/components/cloud-import/import-progress-card';
 
 
 interface FileItem {
@@ -282,7 +283,10 @@ export function FileDetailPanel({ file, onClose, onDownload, onCopy, onDelete, o
                   {file.import_source && (
                     <>
                       <div className="border-t my-2" />
-                      <PropRow label="Source" value={file.import_source === 'google-drive' ? 'Google Drive' : file.import_source} />
+                      <PropRow
+                        label="Source"
+                        value={IMPORT_SOURCE_LABELS[file.import_source ?? ''] ?? file.import_source}
+                      />
                       {file.import_account_email && <PropRow label="Account" value={file.import_account_email} />}
                     </>
                   )}

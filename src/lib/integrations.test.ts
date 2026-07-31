@@ -23,6 +23,11 @@ describe('integrations metadata', () => {
   it('google uses a brand-logo iconSrc', () => {
     expect(getIntegration('google')?.iconSrc).toBe('/google-color.svg');
   });
+  it('describes google drive as structure-preserving import', () => {
+    const google = INTEGRATIONS.find((i) => i.slug === 'google')!;
+    expect(google.tag).toBe('Import');
+    expect(google.description).toContain('structure preserved');
+  });
   it('code integrations link to their marketing docs; google has none', () => {
     expect(getIntegration('cli')?.docsUrl).toBe('https://dosya.dev/developer/cli');
     expect(getIntegration('rest-api')?.docsUrl).toBe('https://dosya.dev/developer/api');
