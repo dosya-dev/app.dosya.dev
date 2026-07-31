@@ -17,7 +17,7 @@ import {
   FolderOpen, Grid3X3, List, Loader2,
   Lock, Pencil, Copy, Move, Eye, EyeOff, History,
   MessageSquare, Star, SlidersHorizontal, RotateCcw, RefreshCw, Info,
-  ArrowUp, ArrowDown,
+  ArrowUp, ArrowDown, Cloud,
 } from 'lucide-react';
 import {
   DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem,
@@ -43,6 +43,8 @@ import { humanSize, timeAgo, extOf, fileIconSrc, folderIconSrc, colorFor, origin
 import { serializeSort, parseSort, toggleSort, DEFAULT_SORT, type SortKey, type SortSpec } from '@/lib/list-sort';
 import { toast } from '@/lib/toast';
 import { FolderPickerDialog } from '@/components/folder-picker-dialog';
+import { ProviderPickerDialog } from '@/components/cloud-import/provider-picker-dialog';
+import { ImportProgressCard } from '@/components/cloud-import/import-progress-card';
 
 // ── Types ──────────────────────────────────────────────────
 
@@ -264,6 +266,7 @@ export default function FilesPage() {
   const [renameName, setRenameName] = useState('');
   const [moveOpen, setMoveOpen] = useState<{ id: string; type: 'file' | 'folder' } | null>(null);
   const [bulkMoveOpen, setBulkMoveOpen] = useState(false);
+  const [cloudImportOpen, setCloudImportOpen] = useState(false);
   const [highlightId, setHighlightId] = useState<string | null>(null);
   const highlightTimer = useRef<number | null>(null);
   // Guards the one-shot restore of an open file/viewer from the URL on first load,
@@ -814,6 +817,7 @@ export default function FilesPage() {
         {!isDeletedView && (
           <>
             <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={() => setCreateFolderOpen(true)}><FolderPlus className="size-3.5" /> New folder</Button>
+            <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={() => setCloudImportOpen(true)}><Cloud className="size-3.5" /> Import from cloud</Button>
             <Link to={uploadHref}><Button size="sm" className="h-8 text-xs gap-1.5"><Upload className="size-3.5" /> Upload</Button></Link>
           </>
         )}
@@ -849,6 +853,8 @@ export default function FilesPage() {
       <div className="flex-1 flex min-h-0">
         {/* File list */}
         <div className="flex-1 overflow-y-auto p-5" onClick={() => setSelectedFile(null)}>
+          {/* Cloud import progress - collapses to nothing (empty:hidden) when no job is active */}
+          <div className="mb-4 empty:hidden"><ImportProgressCard /></div>
           {loading ? <FileSkeleton view={view} count={lastItemCount.current ?? undefined} /> : folders.length === 0 && files.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 text-center">
               <FolderOpen className="size-12 text-muted-foreground/30 mb-4" />
@@ -1209,6 +1215,17 @@ export default function FilesPage() {
         target={infoTarget}
         location={breadcrumbs.length ? breadcrumbs.map((b) => b.name).join(' / ') : 'Home'}
         onClose={() => setInfoTarget(null)}
+      />
+
+      {/* Cloud import - persistent instance with a toggled `open` prop (matches
+          folder-picker-dialog.tsx's usage in map-filter-panel.tsx); the dialog
+          owns an open-keyed reset so this is safe to keep mounted. */}
+      <ProviderPickerDialog
+        open={cloudImportOpen}
+        onOpenChange={setCloudImportOpen}
+        provider="google"
+        destFolderId={currentFolderId}
+        destLabel={currentFolderId ? (breadcrumbs.at(-1)?.name ?? 'this folder') : undefined}
       />
 
       {/* Add to group dialog */}

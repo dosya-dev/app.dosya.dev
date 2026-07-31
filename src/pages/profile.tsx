@@ -22,6 +22,7 @@ import { timeAgo } from '@/lib/helpers';
 import { THEMES, type Mode } from '@/lib/themes';
 import { readCache, writeCache, applyTheme, subscribeThemeChange, type ThemePref } from '@/lib/theme';
 import { enableWebPush } from '../lib/web-push';
+import { PROVIDER_LABELS } from '@/components/cloud-import/import-progress-card';
 
 // ── Types ──────────────────────────────────────────────────
 
@@ -57,8 +58,10 @@ interface Workspace {
   id: string; name: string; icon_initials: string; icon_color: string;
   role_id: string; joined_at: number;
 }
+// Shape of GET /api/cloud/accounts rows (see apps/api/src/pages/api/cloud/accounts/index.ts):
+// id/provider/account_email/account_name/created_at only - tokens never leave that route.
 interface DriveAccount {
-  id: string; google_email: string; google_name: string; created_at: number;
+  id: string; provider: string; account_email: string; account_name: string; created_at: number;
 }
 
 const NAV = [
@@ -132,7 +135,7 @@ export default function ProfilePage() {
   }, []);
 
   const loadDrive = useCallback(async () => {
-    const res = await req<{ ok: boolean; accounts: DriveAccount[] }>('/api/drive/accounts');
+    const res = await req<{ ok: boolean; accounts: DriveAccount[] }>('/api/cloud/accounts');
     if (res.ok) setDriveAccounts(res.accounts);
   }, []);
 
@@ -1223,15 +1226,20 @@ function Toggle({ checked, disabled, onChange }: { checked: boolean; disabled?: 
 
 // ── Integrations ───────────────────────────────────────────
 
-function IntegrationsSection({ accounts, onChanged }: { accounts: DriveAccount[]; onChanged: () => void }) {
+export function IntegrationsSection({ accounts, onChanged }: { accounts: DriveAccount[]; onChanged: () => void }) {
   const [disconnecting, setDisconnecting] = useState<string | null>(null);
 
   const disconnect = async (id: string) => {
     setDisconnecting(id);
-    const res = await req(`/api/drive/accounts/${id}`, { method: 'DELETE' });
-    if (res.ok) { toast.success('Account disconnected', 'The Google account has been removed.'); onChanged(); } else toast.error('Disconnect failed', res.error ?? 'The account could not be disconnected.');
+    const res = await req(`/api/cloud/accounts/${id}`, { method: 'DELETE' });
+    if (res.ok) { toast.success('Account disconnected', 'The account has been removed.'); onChanged(); } else toast.error('Disconnect failed', res.error ?? 'The account could not be disconnected.');
     setDisconnecting(null);
   };
+
+  // /api/cloud/accounts already orders rows by provider ASC, so a stable list
+  // of the distinct providers present is enough to build each group - no
+  // need for a separate Map.
+  const providers = [...new Set(accounts.map((a) => a.provider))];
 
   return (
     <section id="section-integrations">
@@ -1246,29 +1254,45 @@ function IntegrationsSection({ accounts, onChanged }: { accounts: DriveAccount[]
                 <p className="text-xs text-muted-foreground">Import files directly from your Google Drive</p>
               </div>
             </div>
-            <a href={`${API_BASE}/api/drive/connect`}>
+            <a href={`${API_BASE}/api/cloud/connect/google`}>
               <Button variant="outline" size="sm" className="text-xs gap-1">
                 <Plus className="size-3" /> Connect account
               </Button>
             </a>
           </div>
           {accounts.length === 0 ? (
-            <p className="py-4 text-center text-xs text-muted-foreground">No Google accounts connected</p>
+            <p className="py-4 text-center text-xs text-muted-foreground">No accounts connected</p>
           ) : (
-            accounts.map((acc) => (
-              <div key={acc.id} className="flex items-center justify-between py-3 border-b last:border-b-0">
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center shrink-0">
-                    <img src="/google-color.svg" width="16" height="16" alt="" />
+            providers.map((provider) => (
+              <div key={provider}>
+                {/*
+                  PROVIDER_LABELS is keyed by provider id ('google'), NOT by
+                  files.import_source ('google-drive') - IMPORT_SOURCE_LABELS
+                  looks identical but is the wrong map here and would render
+                  this heading blank for every Google account.
+                */}
+                <p
+                  data-testid="provider-group-heading"
+                  className="pt-3 pb-1 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider"
+                >
+                  {PROVIDER_LABELS[provider] ?? provider}
+                </p>
+                {accounts.filter((a) => a.provider === provider).map((acc) => (
+                  <div key={acc.id} className="flex items-center justify-between py-3 border-b last:border-b-0">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center shrink-0">
+                        <img src="/google-color.svg" width="16" height="16" alt="" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-xs font-medium truncate">{acc.account_email}</p>
+                        <p className="text-[11px] text-muted-foreground">Connected {timeAgo(acc.created_at)}</p>
+                      </div>
+                    </div>
+                    <Button variant="outline" size="sm" className="text-xs text-destructive border-destructive/30" onClick={() => disconnect(acc.id)} disabled={disconnecting === acc.id}>
+                      {disconnecting === acc.id ? <Loader2 className="size-3 animate-spin" /> : 'Disconnect'}
+                    </Button>
                   </div>
-                  <div className="min-w-0">
-                    <p className="text-xs font-medium truncate">{acc.google_email}</p>
-                    <p className="text-[11px] text-muted-foreground">Connected {timeAgo(acc.created_at)}</p>
-                  </div>
-                </div>
-                <Button variant="outline" size="sm" className="text-xs text-destructive border-destructive/30" onClick={() => disconnect(acc.id)} disabled={disconnecting === acc.id}>
-                  {disconnecting === acc.id ? <Loader2 className="size-3 animate-spin" /> : 'Disconnect'}
-                </Button>
+                ))}
               </div>
             ))
           )}
