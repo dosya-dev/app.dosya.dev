@@ -59,10 +59,9 @@ export const useCloudImports = create<CloudImportState>((set, get) => ({
 async function drive(jobId: string, get: () => CloudImportState): Promise<void> {
   for (;;) {
     let status: string;
-    let retryAfter: number | undefined;
 
     try {
-      ({ status, retry_after_seconds: retryAfter } = await processJob(jobId));
+      ({ status } = await processJob(jobId));
     } catch (err) {
       // CRITICAL: the process route answers provider throttling with a real
       // HTTP 429, which api() surfaces as a thrown ApiError. Treating every
@@ -81,7 +80,12 @@ async function drive(jobId: string, get: () => CloudImportState): Promise<void> 
 
     await get().refresh();
     if (!ACTIVE_CLOUD_STATUSES.has(status)) return;
-    if (retryAfter) await sleep(retryAfter);
+    // Deliberately unpaced: every successful processJob call already performs
+    // bounded real work server-side (one transfer chunk, or one bounded
+    // discovery slice - see LIST_CALLS_PER_SLICE in process.ts), so an
+    // artificial client-side delay here would only slow the import down for
+    // no benefit. Provider throttling is already handled by the 429 path
+    // above; no 200 response from this route carries a pacing hint to honor.
   }
 }
 

@@ -173,8 +173,9 @@ describe('the drive loop (via useCloudImports.start)', () => {
     expect(processJobMock).toHaveBeenCalledTimes(1);
   });
 
-  it('terminates on each terminal status and does not spin forever', async () => {
-    for (const status of ['complete', 'failed', 'cancelled'] as const) {
+  it('terminates on each terminal status (complete/failed) and does not spin forever', async () => {
+    // process.ts's real contract for these two: 200 { ok: true, status: job.status }.
+    for (const status of ['complete', 'failed'] as const) {
       processJobMock.mockReset();
       listJobsMock.mockReset();
       createImportMock.mockReset();
@@ -192,6 +193,29 @@ describe('the drive loop (via useCloudImports.start)', () => {
       await vi.advanceTimersByTimeAsync(120_000);
       expect(processJobMock).toHaveBeenCalledTimes(1); // loop exited - no further polling
     }
+  });
+
+  it('terminates when the job is already cancelled, matching process.ts\'s real 400 contract', async () => {
+    // process.ts never resolves { status: 'cancelled' } - an already-cancelled
+    // job hits `if (job.status === "cancelled") return jsonError("Job was
+    // cancelled")`, a plain 400 with no code field (not the RATE_LIMITED 429
+    // shape). api() throws that as a non-429 ApiError, which the drive loop's
+    // existing non-429 handling already covers - this pins that the specific
+    // "cancelled" terminal status takes that real path, not a fabricated
+    // 200 resolve.
+    createImportMock.mockResolvedValue({ job_id: 'job1', status: 'discovering' });
+    listJobsMock.mockResolvedValue([job({ status: 'cancelled' })]);
+    processJobMock.mockRejectedValue(new ApiError(400, JSON.stringify({ ok: false, error: 'Job was cancelled' })));
+
+    await useCloudImports.getState().start({
+      accountId: 'a1', workspaceId: 'ws1', destFolderId: null, selection: [],
+    });
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(processJobMock).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(processJobMock).toHaveBeenCalledTimes(1); // fatal, non-429: no retry
   });
 
   it('keeps polling while the job stays active across several process calls', async () => {
