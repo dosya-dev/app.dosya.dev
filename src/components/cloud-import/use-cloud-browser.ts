@@ -61,6 +61,18 @@ export function useCloudBrowser(accountId: string | null) {
   // setTimeout, not React state) can call the latest version without
   // referencing `load` from inside its own definition.
   const loadRef = useRef<((append: boolean, pageCursor?: string) => Promise<void>) | null>(null);
+  // Monotonic id for the in-flight browse() call. Rapid navigation (e.g. a
+  // double-click into one folder followed immediately by a click into a
+  // sibling) can have two browse() calls in flight at once; without this,
+  // whichever resolves LAST wins even if it's the older, now-irrelevant one.
+  // Each load() claims the next id and only commits its result (or clears
+  // `loading`) if it is still the most recent call by the time it settles.
+  const requestId = useRef(0);
+  // Bumped by reset() to force a fresh load even when accountId/folderId
+  // haven't actually changed (e.g. reopening the dialog already at Home) -
+  // load()'s own useCallback deps wouldn't otherwise change identity, so the
+  // mount/reload effect below needs a separate signal to refire.
+  const [reloadNonce, setReloadNonce] = useState(0);
 
   const folderId = crumbs[crumbs.length - 1]!.id;
 
@@ -70,15 +82,19 @@ export function useCloudBrowser(accountId: string | null) {
       clearTimeout(retryTimer.current);
       retryTimer.current = null;
     }
+    const thisRequestId = ++requestId.current;
+    const isCurrent = () => requestId.current === thisRequestId;
     setLoading(true);
     setError(null);
     setReconnectRequired(false);
     setRateLimitedSeconds(null);
     try {
       const page = await browse({ accountId, folderId, cursor: pageCursor });
+      if (!isCurrent()) return; // superseded by a newer navigation/reset - discard
       setEntries((prev) => (append ? [...prev, ...page.entries] : page.entries));
       setCursor(page.cursor);
     } catch (err) {
+      if (!isCurrent()) return; // stale error from a superseded request - discard
       if (isReconnectRequired(err)) {
         setReconnectRequired(true);
         setError(apiErrorMessage(err, 'This account needs to be reconnected.'));
@@ -94,18 +110,42 @@ export function useCloudBrowser(accountId: string | null) {
       }
       setError(apiErrorMessage(err, 'Could not list that folder'));
     } finally {
-      setLoading(false);
+      // Only the current request may clear the spinner - an older, already-
+      // superseded request finishing late must not flip `loading` off while
+      // the newer, still-in-flight request is the one the user is waiting on.
+      if (isCurrent()) setLoading(false);
     }
   }, [accountId, folderId]);
 
   useEffect(() => { loadRef.current = load; }, [load]);
 
-  useEffect(() => { void load(false); }, [load]);
+  useEffect(() => { void load(false); }, [load, reloadNonce]);
 
   // Cancel any pending 429 retry on unmount so it can't fire (and call
   // setState) after the dialog has gone away.
   useEffect(() => () => {
     if (retryTimer.current) clearTimeout(retryTimer.current);
+  }, []);
+
+  // Stable (deps: []) so a caller can safely put it in an effect's dependency
+  // array without that effect refiring on every render. Only ever touches
+  // setState setters and refs, both of which have stable identity, so it
+  // never needs accountId/folderId/load in its closure.
+  const reset = useCallback(() => {
+    if (retryTimer.current) {
+      clearTimeout(retryTimer.current);
+      retryTimer.current = null;
+    }
+    setCrumbs([{ id: '', name: 'Home' }]);
+    setEntries([]);
+    setCursor(null);
+    setSelection([]);
+    setError(null);
+    setReconnectRequired(false);
+    setRateLimitedSeconds(null);
+    // Forces a fresh load even if accountId/folderId end up unchanged (e.g.
+    // reopening while already at Home) - see reloadNonce's comment above.
+    setReloadNonce((n) => n + 1);
   }, []);
 
   return {
@@ -121,6 +161,7 @@ export function useCloudBrowser(accountId: string | null) {
     goTo: (index: number) => setCrumbs((c) => c.slice(0, index + 1)),
     loadMore: () => { if (cursor) void load(true, cursor); },
     reload: () => void load(false),
+    reset,
     toggle: (entry: CloudEntryDto) => {
       const sel = toSelectionEntry(entry);
       if (!sel) return;

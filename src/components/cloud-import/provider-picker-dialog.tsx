@@ -45,18 +45,37 @@ export function ProviderPickerDialog({
 
   useEffect(() => {
     if (!open) return;
+    let cancelled = false;
     setAccountsLoaded(false);
     void listAccounts().then((all) => {
+      // If `open`/`provider` changed again before this resolved, this
+      // response belongs to a request that's no longer current - applying it
+      // would stomp whatever the newer effect run already set.
+      if (cancelled) return;
       const mine = all.filter((a) => a.provider === provider);
       setAccounts(mine);
       setAccountId((current) => current ?? mine[0]?.id ?? null);
       setAccountsLoaded(true);
     });
+    return () => { cancelled = true; };
   }, [open, provider]);
 
   const browser = useCloudBrowser(accountId);
   const connectUrl = `${API_BASE}/api/cloud/connect/${provider}`;
   const providerLabel = PROVIDER_LABELS[provider] ?? provider;
+
+  // Reopening the dialog must not resurrect a stale browse (crumbs/selection/
+  // notices left over from before it was closed) - matches
+  // folder-picker-dialog.tsx's own open-keyed reset convention. browser.reset
+  // is stable (useCallback([]) inside useCloudBrowser), so this only actually
+  // does anything on a real open transition, not on every render. Depending
+  // on the whole `browser` object instead (as exhaustive-deps would prefer)
+  // would be wrong here: it's a new object every render, so the effect would
+  // re-fire - and wipe crumbs/selection - on every render while open stays
+  // true, breaking normal navigation.
+  useEffect(() => {
+    if (open) browser.reset();
+  }, [open, browser.reset]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const isSelected = (id: string) => browser.selection.some((e) => e.id === id);
 
@@ -108,7 +127,13 @@ export function ProviderPickerDialog({
               <select
                 className="w-full rounded-md border bg-background px-2 py-1.5 text-sm"
                 value={accountId ?? ''}
-                onChange={(e) => setAccountId(e.target.value)}
+                onChange={(e) => {
+                  // Switching accounts has the same root cause as reopening:
+                  // a folder id and a selection made in account A mean
+                  // nothing (or worse, the wrong thing) in account B.
+                  setAccountId(e.target.value);
+                  browser.reset();
+                }}
               >
                 {accounts.map((a) => (
                   <option key={a.id} value={a.id}>{a.account_email}</option>
@@ -117,7 +142,10 @@ export function ProviderPickerDialog({
             )}
 
             {/* Breadcrumb trail */}
-            <div className="flex flex-wrap items-center gap-1 text-sm text-muted-foreground">
+            <div
+              data-testid="cloud-import-breadcrumbs"
+              className="flex flex-wrap items-center gap-1 text-sm text-muted-foreground"
+            >
               {browser.crumbs.map((crumb, index) => (
                 <span key={`${crumb.id}-${index}`} className="flex items-center gap-1">
                   {index > 0 && <span aria-hidden>/</span>}

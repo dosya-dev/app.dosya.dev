@@ -229,3 +229,41 @@ describe('useCloudBrowser - RATE_LIMITED (429)', () => {
     expect(h.api.rateLimitedSeconds).toBeNull();
   });
 });
+
+describe('useCloudBrowser - rapid navigation race guard (MINOR 2)', () => {
+  it('an older in-flight request resolving after a newer one must not overwrite it', async () => {
+    // Simulates rapid navigation - e.g. a double-click into folder B followed
+    // immediately by a click into a sibling C - where both browse() calls are
+    // in flight at once and the network can resolve them out of order.
+    let resolveB!: (v: { entries: CloudEntryDto[]; cursor: null }) => void;
+    let resolveC!: (v: { entries: CloudEntryDto[]; cursor: null }) => void;
+
+    browseMock.mockResolvedValueOnce({ entries: [cloudEntry({ id: 'root-file' })], cursor: null });
+    const h = await renderBrowser('acc1');
+
+    browseMock.mockImplementationOnce(() => new Promise((resolve) => { resolveB = resolve; }));
+    await run(() => h.api.enter(cloudEntry({ id: 'folder-b', name: 'B', kind: 'folder' })));
+
+    browseMock.mockImplementationOnce(() => new Promise((resolve) => { resolveC = resolve; }));
+    await run(() => h.api.enter(cloudEntry({ id: 'folder-c', name: 'C', kind: 'folder' })));
+
+    expect(h.api.loading).toBe(true); // the (still-current) C request hasn't settled yet
+
+    // The NEWER request (C) resolves first...
+    await act(async () => {
+      resolveC({ entries: [cloudEntry({ id: 'c-file' })], cursor: null });
+      await flush();
+    });
+    expect(h.api.entries.map((e) => e.id)).toEqual(['c-file']);
+    expect(h.api.loading).toBe(false);
+
+    // ...then the OLDER request (B) resolves late. It must be discarded
+    // entirely: neither the stale entries nor a spurious `loading` flip.
+    await act(async () => {
+      resolveB({ entries: [cloudEntry({ id: 'b-file' })], cursor: null });
+      await flush();
+    });
+    expect(h.api.entries.map((e) => e.id)).toEqual(['c-file']);
+    expect(h.api.loading).toBe(false);
+  });
+});
