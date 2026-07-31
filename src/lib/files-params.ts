@@ -35,10 +35,16 @@ export function folderNavParams(current: URLSearchParams, folderId: string | nul
 /**
  * Pick a sidebar type filter (`''` = All), keeping the current folder so the
  * filter applies where you are standing rather than throwing you back to root.
+ *
+ * The trash is the one exception: a folder id there addresses a TRASHED
+ * folder, which means something else entirely to every other filter (or to
+ * a live `folder_id` lookup). Entering or leaving `deleted` must not carry
+ * that id across, so the trash always opens at its own root.
  */
 export function filterNavParams(current: URLSearchParams, filter: string): URLSearchParams {
   const next = carryOver(current);
   next.delete('group');
+  if (filter === 'deleted' || current.get('filter') === 'deleted') next.delete('folder');
   if (filter) next.set('filter', filter);
   else next.delete('filter');
   return next;

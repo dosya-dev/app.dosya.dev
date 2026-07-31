@@ -52,6 +52,8 @@ interface FileItem {
   lock_mode: string; is_hidden: number; uploaded_by: string; uploader_name: string;
   share_count: number; comment_count: number; is_synced: number;
   origin: string | null;
+  // Only populated by the deleted=1 listing.
+  deleted_at?: number | null;
 }
 interface FolderItem {
   id: string; name: string; created_at: number; updated_at: number; file_count: number;
@@ -59,6 +61,12 @@ interface FolderItem {
   total_size_bytes: number; content_updated_at: number; region: string | null;
   uploader_name: string | null; share_count: number; comment_count: number;
   origin: string | null;
+  // Only populated by the deleted=1 listing. `is_trash_root` is true only for
+  // rows in the top-level trash listing (the folder the user actually
+  // deleted) - false for descendants surfaced while browsing into one. Only
+  // a trash root can be restored or purged.
+  deleted_at?: number | null;
+  is_trash_root?: boolean;
 }
 interface Breadcrumb { id: string; name: string }
 interface Pagination { page: number; per_page: number; total_files: number; total_pages: number }
@@ -257,7 +265,8 @@ export default function FilesPage() {
   const [createFolderOpen, setCreateFolderOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const [creatingFolder, setCreatingFolder] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string; type: 'file' | 'folder' } | null>(null);
+  /** `permanent`/`fileCount` are only set for the Deleted view's row-level purge, which reuses this same dialog. */
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string; type: 'file' | 'folder'; permanent?: boolean; fileCount?: number } | null>(null);
   /** Pending bulk delete awaiting confirmation - `permanent` distinguishes the Deleted view's irreversible purge. */
   const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState<{ permanent: boolean } | null>(null);
   const [renameTarget, setRenameTarget] = useState<{ id: string; name: string; type: 'file' | 'folder' } | null>(null);
@@ -296,8 +305,15 @@ export default function FilesPage() {
     setLoading(true);
     const params = new URLSearchParams({ workspace_id: wsId, sort: sortParam, page: String(currentPage), per_page: '100' });
     if (search) params.set('q', search);
-    if (currentFolderId) params.set('folder_id', currentFolderId);
-    if (isDeletedView) params.set('deleted', '1');
+    if (isDeletedView) {
+      // Inside the trash, `folder` addresses a TRASHED folder (a distinct
+      // param the API keeps separate from the live `folder_id` filter) -
+      // see GET /api/files in apps/api for the split.
+      params.set('deleted', '1');
+      if (currentFolderId) params.set('folder', currentFolderId);
+    } else if (currentFolderId) {
+      params.set('folder_id', currentFolderId);
+    }
     if (currentFilter === 'hidden') params.set('hidden', '1');
     else if (currentFilter && currentFilter !== 'deleted') params.set('filter', currentFilter);
     if (currentGroup) params.set('group_id', currentGroup);
@@ -473,9 +489,32 @@ export default function FilesPage() {
     try {
       const ep = deleteTarget.type === 'file' ? `/api/files/${deleteTarget.id}` : `/api/folders/${deleteTarget.id}`;
       await api(ep, { method: 'DELETE' });
-      toast.success('Deleted', `${deleteTarget.name} was deleted.`);
+      toast.success('Deleted', deleteTarget.permanent ? `${deleteTarget.name} was permanently deleted.` : `${deleteTarget.name} was deleted.`);
       setDeleteTarget(null); loadFiles();
-    } catch { toast.error('Delete failed', 'The item could not be deleted.'); }
+    } catch (err) {
+      // A row-level permanent delete on a folder that isn't a trash root
+      // 404/400s with an explanatory message ("...restore or delete that
+      // one instead") - surface it instead of a generic failure.
+      toast.error('Delete failed', apiErrorMessage(err, 'The item could not be deleted.'));
+    }
+  };
+
+  // Row-level restore for a single trashed folder. Bulk restore (below)
+  // covers multi-select; this is the context-menu/dropdown "Restore" action.
+  const handleRestoreFolder = async (f: FolderItem) => {
+    try {
+      const res = await api<{ ok: boolean; restored_to_root?: boolean }>(`/api/folders/${f.id}`, { method: 'PUT' });
+      if (res.restored_to_root) {
+        toast.info('Restored', `"${f.name}" restored to the workspace root - its original folder is also in the trash.`);
+      } else {
+        toast.success('Restored', `"${f.name}" restored.`);
+      }
+      loadFiles();
+    } catch (err) {
+      // Surfaces the 409 storage-cap message and the 400 "not a trash root"
+      // message from PUT /api/folders/:id rather than a generic failure.
+      toast.error('Restore failed', apiErrorMessage(err, 'The folder could not be restored.'));
+    }
   };
 
   const handleRename = async () => {
@@ -610,18 +649,37 @@ export default function FilesPage() {
   };
 
   const bulkRestore = async () => {
+    let ok = 0, fail = 0, toRoot = 0;
     for (const id of selected) {
-      try { await api(`/api/files/${id}`, { method: 'PUT' }); } catch {}
+      try { await api(`/api/files/${id}`, { method: 'PUT' }); ok++; } catch { fail++; }
     }
-    toast.success('Restored', `${selected.size} files restored`); clearSelection(); loadFiles();
+    for (const id of selectedFolders) {
+      try {
+        const res = await api<{ ok: boolean; restored_to_root?: boolean }>(`/api/folders/${id}`, { method: 'PUT' });
+        ok++; if (res.restored_to_root) toRoot++;
+      } catch { fail++; }
+    }
+    clearSelection(); loadFiles();
+    if (fail > 0) toast.error('Some items could not be restored', `${ok} restored, ${fail} failed.`);
+    else if (toRoot > 0) toast.info('Restored', `${ok} item${ok === 1 ? '' : 's'} restored. ${toRoot} went to the workspace root because the original folder is also in the trash.`);
+    else toast.success('Restored', `${ok} item${ok === 1 ? '' : 's'} restored.`);
   };
 
   const runBulkPermanentDelete = async () => {
     setBulkDeleteConfirm(null);
+    let ok = 0, fail = 0;
+    // Permanent delete is a SECOND DELETE on the item itself - there is no
+    // /permanent sub-route, and the one this used to call 404'd silently
+    // while still reporting success.
     for (const id of selected) {
-      try { await api(`/api/files/${id}/permanent`, { method: 'DELETE' }); } catch {}
+      try { await api(`/api/files/${id}`, { method: 'DELETE' }); ok++; } catch { fail++; }
     }
-    toast.success('Deleted', `${selected.size} files permanently deleted`); clearSelection(); loadFiles();
+    for (const id of selectedFolders) {
+      try { await api(`/api/folders/${id}`, { method: 'DELETE' }); ok++; } catch { fail++; }
+    }
+    clearSelection(); loadFiles();
+    if (fail === 0) toast.success('Deleted', `${ok} item${ok === 1 ? '' : 's'} permanently deleted.`);
+    else toast.error('Some items could not be deleted', `${ok} deleted, ${fail} failed.`);
   };
 
 

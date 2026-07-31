@@ -65,6 +65,24 @@ describe('filterNavParams', () => {
     expect(p.has('page')).toBe(false);
     expect(p.has('group')).toBe(false);
   });
+
+  it('drops the folder when entering the trash', () => {
+    const p = filterNavParams(q('filter=images&folder=fold_1'), 'deleted');
+    expect(p.get('filter')).toBe('deleted');
+    expect(p.has('folder')).toBe(false);
+  });
+
+  it('drops the folder when leaving the trash for another filter', () => {
+    const p = filterNavParams(q('filter=deleted&folder=fold_9'), 'videos');
+    expect(p.get('filter')).toBe('videos');
+    expect(p.has('folder')).toBe(false);
+  });
+
+  it('drops the folder when leaving the trash for All', () => {
+    const p = filterNavParams(q('filter=deleted&folder=fold_9'), '');
+    expect(p.has('filter')).toBe(false);
+    expect(p.has('folder')).toBe(false);
+  });
 });
 
 describe('groupNavParams', () => {
