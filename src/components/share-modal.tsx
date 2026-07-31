@@ -25,19 +25,41 @@ type Tab = 'email' | 'link';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+/**
+ * Values are seconds from now, except 'never' and 'custom'. The API takes an
+ * absolute `expires_at`, so anything expressible as an instant works here -
+ * which is what makes sub-day options and a picked date possible at all.
+ */
 const EXPIRY_OPTIONS = [
-  { value: '0', label: 'Never' },
-  { value: '1', label: '1 day' },
-  { value: '7', label: '7 days' },
-  { value: '30', label: '30 days' },
-  { value: '90', label: '90 days' },
+  { value: '3600', label: '1 hour' },
+  { value: '86400', label: '24 hours' },
+  { value: '604800', label: '7 days' },
+  { value: '2592000', label: '30 days' },
+  { value: '7776000', label: '90 days' },
+  { value: 'custom', label: 'Custom date…' },
+  { value: 'never', label: 'Never' },
 ];
+
+/** `datetime-local` value (local wall time) → unix seconds. */
+function localInputToUnix(value: string): number | null {
+  const ms = new Date(value).getTime();
+  return Number.isFinite(ms) ? Math.floor(ms / 1000) : null;
+}
+
+/** Now + 7 days, formatted for a `datetime-local` input's initial value. */
+function defaultCustomExpiry(): string {
+  const d = new Date(Date.now() + 7 * 86400 * 1000);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
 
 export function ShareModal({ open, fileId, fileName, onClose }: ShareModalProps) {
   const [tab, setTab] = useState<Tab>('email');
   const [emails, setEmails] = useState<string[]>([]);
   const [emailInput, setEmailInput] = useState('');
-  const [expiry, setExpiry] = useState('7');
+  const [expiry, setExpiry] = useState('604800');
+  const [customExpiry, setCustomExpiry] = useState(defaultCustomExpiry);
+  const [restrictToRecipients, setRestrictToRecipients] = useState(true);
   const [password, setPassword] = useState('');
   const [title, setTitle] = useState('');
   const [message, setMessage] = useState('');
@@ -51,7 +73,9 @@ export function ShareModal({ open, fileId, fileName, onClose }: ShareModalProps)
     setTab('email');
     setEmails([]);
     setEmailInput('');
-    setExpiry('7');
+    setExpiry('604800');
+    setCustomExpiry(defaultCustomExpiry());
+    setRestrictToRecipients(true);
     setPassword('');
     setTitle('');
     setMessage('');
@@ -118,33 +142,49 @@ export function ShareModal({ open, fileId, fileName, onClose }: ShareModalProps)
       return;
     }
 
+    let expiresAt: number | null = null;
+    if (expiry === 'custom') {
+      expiresAt = localInputToUnix(customExpiry);
+      if (!expiresAt) {
+        setError('Pick a valid expiry date.');
+        return;
+      }
+      if (expiresAt < Math.floor(Date.now() / 1000) + 60) {
+        setError('Expiry must be in the future.');
+        return;
+      }
+    } else if (expiry !== 'never') {
+      expiresAt = Math.floor(Date.now() / 1000) + Number(expiry);
+    }
+
     setSubmitting(true);
-    const expiryDays = Number(expiry);
 
     try {
       if (tab === 'email') {
+        // One link for everyone, so a private share has a single recipient list
+        // rather than one link per address.
         const body: Record<string, unknown> = {
-          email: emails[0],
+          emails,
           message: message.trim(),
+          restrict_to_recipients: restrictToRecipients,
         };
         if (pw) body.password = pw;
-        if (expiryDays > 0) body.expires_in_days = expiryDays;
+        if (expiresAt) body.expires_at = expiresAt;
 
-        const res = await api<{ ok: boolean; error?: string }>(`/api/files/${fileId}/share-email`, {
+        const res = await api<{ ok: boolean; error?: string; failed?: string[] }>(`/api/files/${fileId}/share-email`, {
           method: 'POST',
           body: JSON.stringify(body),
         });
 
-        // Send to remaining emails
-        for (let i = 1; i < emails.length; i++) {
-          await api(`/api/files/${fileId}/share-email`, {
-            method: 'POST',
-            body: JSON.stringify({ ...body, email: emails[i] }),
-          }).catch(() => {});
-        }
-
         if (res.ok) {
-          toast.success('Share sent', `Shared with ${emails.length} recipient${emails.length === 1 ? '' : 's'}.`);
+          const failedCount = res.failed?.length ?? 0;
+          const sentCount = emails.length - failedCount;
+          toast.success(
+            restrictToRecipients ? 'Private share sent' : 'Share sent',
+            failedCount
+              ? `Sent to ${sentCount} of ${emails.length}. Could not reach: ${res.failed!.join(', ')}.`
+              : `Shared with ${sentCount} recipient${sentCount === 1 ? '' : 's'}.`,
+          );
           reset();
           onClose();
         } else {
@@ -153,7 +193,7 @@ export function ShareModal({ open, fileId, fileName, onClose }: ShareModalProps)
         }
       } else {
         const linkBody: Record<string, unknown> = {};
-        if (expiryDays > 0) linkBody.expires_in_days = expiryDays;
+        if (expiresAt) linkBody.expires_at = expiresAt;
         if (pw) linkBody.password = pw;
 
         const data = await api<{ ok: boolean; link?: { url: string }; error?: string }>(`/api/files/${fileId}/share`, {
@@ -247,6 +287,20 @@ export function ShareModal({ open, fileId, fileName, onClose }: ShareModalProps)
                 autoComplete="off"
               />
             </div>
+
+            <label className="mt-2 flex items-start gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={restrictToRecipients}
+                onChange={(e) => setRestrictToRecipients(e.target.checked)}
+                className="mt-0.5 size-3.5 accent-green-600"
+              />
+              <span className="text-[11px] leading-relaxed text-muted-foreground">
+                <span className="font-medium text-foreground">Only these people can open it.</span>{' '}
+                Recipients confirm their email with a one-time code, so forwarding the link
+                gives no one else access.
+              </span>
+            </label>
           </div>
         )}
 
@@ -259,7 +313,7 @@ export function ShareModal({ open, fileId, fileName, onClose }: ShareModalProps)
         {!resultUrl && (
           <div>
             <Label className="text-xs font-medium text-muted-foreground mb-1.5 block">Expires in</Label>
-            <Select value={expiry} onValueChange={(value) => setExpiry(value ?? '0')} items={EXPIRY_OPTIONS}>
+            <Select value={expiry} onValueChange={(value) => setExpiry(value ?? 'never')} items={EXPIRY_OPTIONS}>
               <SelectTrigger className="w-full h-9 border rounded-md px-2.5 text-xs bg-background">
                 <SelectValue />
               </SelectTrigger>
@@ -271,6 +325,14 @@ export function ShareModal({ open, fileId, fileName, onClose }: ShareModalProps)
                 ))}
               </SelectContent>
             </Select>
+            {expiry === 'custom' && (
+              <Input
+                type="datetime-local"
+                value={customExpiry}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setCustomExpiry(e.target.value)}
+                className="mt-2 h-9 text-xs"
+              />
+            )}
           </div>
         )}
 
