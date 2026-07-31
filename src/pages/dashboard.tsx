@@ -42,6 +42,7 @@ interface DashboardData {
     files_this_week: number;
     shared_externally: number;
     total_bytes: number;
+    trash_bytes: number;
     storage_cap_bytes: number | null;
     plan: string;
   };
@@ -123,7 +124,10 @@ export default function DashboardPage() {
                 <StorageRing pct={pct} />
                 <div>
                   <p className="text-2xl font-semibold tracking-tight">{humanSizeShort(s.total_bytes)} <span className="text-sm font-normal text-muted-foreground">used</span></p>
-                  <p className="text-xs text-muted-foreground mt-1">{s.storage_cap_bytes ? `of ${humanSizeShort(s.storage_cap_bytes)} total` : 'unlimited storage'}</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {s.storage_cap_bytes ? `of ${humanSizeShort(s.storage_cap_bytes)} total` : 'unlimited storage'}
+                    {s.trash_bytes > 0 ? `, ${humanSizeShort(s.trash_bytes)} in trash` : ''}
+                  </p>
                 </div>
               </div>
               <div className="space-y-2">
