@@ -209,6 +209,18 @@ export default function FilesPage() {
   const [unlocking, setUnlocking] = useState(false);
 
   const openFileWithLockCheck = (file: FileItem, action: 'detail' | 'view') => {
+    if (isDeletedView && action === 'detail') {
+      // Trash view is read-only for row activation: no detail panel means no
+      // reachable "Delete file" button and no live Delete/Backspace shortcut
+      // (both gated on `selectedFile`, which now never gets set here). A
+      // plain click just selects the row; Restore/Delete permanently only
+      // happen through the trash dropdown/context menu built for this view.
+      // This is the single funnel every "open the detail panel" call site
+      // goes through (grid card click, list row click, and the ?panel=
+      // deep-link restore), so gating here covers all of them at once.
+      toggleSelect(file.id);
+      return;
+    }
     if (file.lock_mode === 'full_lock' && !unlockedFiles.has(file.id)) {
       setUnlockPrompt({ file, action });
       setUnlockPassword('');
@@ -267,8 +279,17 @@ export default function FilesPage() {
   const [creatingFolder, setCreatingFolder] = useState(false);
   /** `permanent`/`fileCount` are only set for the Deleted view's row-level purge, which reuses this same dialog. */
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string; type: 'file' | 'folder'; permanent?: boolean; fileCount?: number } | null>(null);
+  /** True while the single-item delete confirm's request is in flight. Keeps
+   * the confirm button (and the rest of the dialog) locked so a second click
+   * can't send a follow-up DELETE that lands on the now-trashed item and
+   * silently purges it - see `handleDelete`. */
+  const [deleting, setDeleting] = useState(false);
   /** Pending bulk delete awaiting confirmation - `permanent` distinguishes the Deleted view's irreversible purge. */
   const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState<{ permanent: boolean } | null>(null);
+  /** File/folder ids with a restore request in flight - guards row-level
+   * Restore (context menu / dropdown) against the same double-click race,
+   * which has previously double-credited storage at the API layer. */
+  const [restoringIds, setRestoringIds] = useState<Set<string>>(new Set());
   const [renameTarget, setRenameTarget] = useState<{ id: string; name: string; type: 'file' | 'folder' } | null>(null);
   const [renameName, setRenameName] = useState('');
   const [moveOpen, setMoveOpen] = useState<{ id: string; type: 'file' | 'folder' } | null>(null);
@@ -485,7 +506,8 @@ export default function FilesPage() {
   };
 
   const handleDelete = async () => {
-    if (!deleteTarget) return;
+    if (!deleteTarget || deleting) return;
+    setDeleting(true);
     try {
       const ep = deleteTarget.type === 'file' ? `/api/files/${deleteTarget.id}` : `/api/folders/${deleteTarget.id}`;
       await api(ep, { method: 'DELETE' });
@@ -497,11 +519,17 @@ export default function FilesPage() {
       // one instead") - surface it instead of a generic failure.
       toast.error('Delete failed', apiErrorMessage(err, 'The item could not be deleted.'));
     }
+    setDeleting(false);
   };
 
   // Row-level restore for a single trashed folder. Bulk restore (below)
   // covers multi-select; this is the context-menu/dropdown "Restore" action.
+  // Guarded by `restoringIds` so a rapid double-click (or reopening the menu
+  // before the first request lands) can't fire two overlapping restores of
+  // the same folder.
   const handleRestoreFolder = async (f: FolderItem) => {
+    if (restoringIds.has(f.id)) return;
+    setRestoringIds((prev) => new Set(prev).add(f.id));
     try {
       const res = await api<{ ok: boolean; name?: string; restored_to_root?: boolean }>(`/api/folders/${f.id}`, { method: 'PUT' });
       // `res.name` is the conflict-resolved name the server actually used
@@ -519,6 +547,22 @@ export default function FilesPage() {
       // message from PUT /api/folders/:id rather than a generic failure.
       toast.error('Restore failed', apiErrorMessage(err, 'The folder could not be restored.'));
     }
+    setRestoringIds((prev) => { const next = new Set(prev); next.delete(f.id); return next; });
+  };
+
+  // Row-level restore for a single trashed file - the file-side equivalent of
+  // handleRestoreFolder above (same double-click guard).
+  const handleRestoreFile = async (f: FileItem) => {
+    if (restoringIds.has(f.id)) return;
+    setRestoringIds((prev) => new Set(prev).add(f.id));
+    try {
+      await api(`/api/files/${f.id}`, { method: 'PUT' });
+      toast.success('Restored', `"${f.name}" restored.`);
+      loadFiles();
+    } catch (err) {
+      toast.error('Restore failed', apiErrorMessage(err, 'The file could not be restored.'));
+    }
+    setRestoringIds((prev) => { const next = new Set(prev); next.delete(f.id); return next; });
   };
 
   const handleRename = async () => {
@@ -690,13 +734,16 @@ export default function FilesPage() {
   // ── Drag and drop ─────────────────────────────────────────
 
   // The trash is read-only - a drop there would try to upload into a
-  // trashed folder (or the root while merely browsing trash), so it's
-  // disabled outright rather than left to fail server-side.
-  const handleDragOver = (e: React.DragEvent) => { if (isDeletedView) return; e.preventDefault(); e.stopPropagation(); setDragging(true); };
-  const handleDragLeave = (e: React.DragEvent) => { if (isDeletedView) return; e.preventDefault(); e.stopPropagation(); if (e.currentTarget === e.target) setDragging(false); };
+  // trashed folder (or the root while merely browsing trash), so uploading
+  // is disabled outright rather than left to fail server-side. preventDefault
+  // /stopPropagation must still run unconditionally though - skipping them
+  // (as this used to) leaves the browser's native drop behaviour unguarded,
+  // so a stray file drop navigates the whole tab away from the app.
+  const handleDragOver = (e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); if (!isDeletedView) setDragging(true); };
+  const handleDragLeave = (e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); if (e.currentTarget === e.target) setDragging(false); };
   const handleDrop = async (e: React.DragEvent) => {
-    if (isDeletedView) return;
     e.preventDefault(); e.stopPropagation(); setDragging(false);
+    if (isDeletedView) return;
     const droppedFiles = e.dataTransfer.files;
     if (!droppedFiles.length || !wsId) return;
     let uploaded = 0;
@@ -721,6 +768,9 @@ export default function FilesPage() {
     const handler = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
       if (e.key === 'Delete' || e.key === 'Backspace') {
+        // `selectedFile` can no longer be set while isDeletedView is true -
+        // openFileWithLockCheck gates every "open the detail panel" call
+        // site - so this shortcut is already inert in the trash view.
         if (selectedFile) { setDeleteTarget({ id: selectedFile.id, name: selectedFile.name, type: 'file' }); }
       }
       if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
@@ -744,26 +794,41 @@ export default function FilesPage() {
     setCtxTarget({ type, item });
   };
 
-  const fileCtxItems = (f: FileItem) => [
-    { label: 'View', icon: <Eye />, onClick: () => openFileWithLockCheck(f, 'view') },
-    { label: 'Download', icon: <Download />, onClick: () => handleDownload(f.id) },
-    { label: 'Share', icon: <Share2 />, onClick: () => openShare(f.id, f.name) },
-    { label: 'Comments', icon: <MessageSquare />, onClick: () => navigate(`/comments?file_id=${f.id}&workspace_id=${wsId}&name=${encodeURIComponent(f.name)}`) },
-    { label: favourites.has(f.id) ? 'Remove favourite' : 'Add to favourites', icon: <Star />, onClick: () => toggleFavourite(f.id) },
-    { label: 'Get info', icon: <Info />, onClick: () => setInfoTarget({ type: 'file', item: f }) },
-    { label: '', separator: true, onClick: () => {}, icon: null },
-    { label: 'Rename', icon: <Pencil />, onClick: () => { setRenameTarget({ id: f.id, name: f.name, type: 'file' }); setRenameName(f.name); } },
-    { label: 'Copy', icon: <Copy />, onClick: () => handleCopy(f.id) },
-    { label: 'Move to...', icon: <Move />, onClick: () => openMoveModal(f.id, 'file') },
-    { label: '', separator: true, onClick: () => {}, icon: null },
-    { label: 'Add to group', icon: <FolderPlus />, onClick: () => openAddToGroup(f.id, f.name, 'file') },
-    { label: 'Upload new version', icon: <Upload />, onClick: () => setVersionUploadTarget(f.id) },
-    { label: 'Version history', icon: <History />, onClick: () => openFileWithLockCheck(f, 'view') },
-    { label: f.lock_mode !== 'none' ? 'Unlock' : 'Lock', icon: <Lock />, onClick: () => setLockTarget({ id: f.id, name: f.name, type: 'file' }) },
-    { label: f.is_hidden ? 'Unhide' : 'Hide', icon: f.is_hidden ? <Eye /> : <EyeOff />, onClick: () => setHideTarget({ id: f.id, name: f.name, type: 'file' }) },
-    { label: '', separator: true, onClick: () => {}, icon: null },
-    { label: 'Delete', icon: <Trash2 />, onClick: () => setDeleteTarget({ id: f.id, name: f.name, type: 'file' }), danger: true },
-  ];
+  const fileCtxItems = (f: FileItem) => {
+    if (isDeletedView) {
+      // Read-only in the trash, mirroring folderCtxItems below: a second
+      // DELETE on an already-trashed file is a permanent purge (rows + R2
+      // object), so this view offers only Restore and an unmistakably
+      // irreversible Delete permanently - not the routine "Delete" above,
+      // and none of Rename/Copy/Move/Share/Download/Lock/Hide, which 404
+      // against the is_deleted=0 predicate those routes filter on anyway.
+      return [
+        { label: 'Restore', icon: <RotateCcw />, onClick: () => handleRestoreFile(f), disabled: restoringIds.has(f.id) },
+        { label: '', separator: true, onClick: () => {}, icon: null },
+        { label: 'Delete permanently', icon: <Trash2 />, onClick: () => setDeleteTarget({ id: f.id, name: f.name, type: 'file', permanent: true }), danger: true },
+      ];
+    }
+    return [
+      { label: 'View', icon: <Eye />, onClick: () => openFileWithLockCheck(f, 'view') },
+      { label: 'Download', icon: <Download />, onClick: () => handleDownload(f.id) },
+      { label: 'Share', icon: <Share2 />, onClick: () => openShare(f.id, f.name) },
+      { label: 'Comments', icon: <MessageSquare />, onClick: () => navigate(`/comments?file_id=${f.id}&workspace_id=${wsId}&name=${encodeURIComponent(f.name)}`) },
+      { label: favourites.has(f.id) ? 'Remove favourite' : 'Add to favourites', icon: <Star />, onClick: () => toggleFavourite(f.id) },
+      { label: 'Get info', icon: <Info />, onClick: () => setInfoTarget({ type: 'file', item: f }) },
+      { label: '', separator: true, onClick: () => {}, icon: null },
+      { label: 'Rename', icon: <Pencil />, onClick: () => { setRenameTarget({ id: f.id, name: f.name, type: 'file' }); setRenameName(f.name); } },
+      { label: 'Copy', icon: <Copy />, onClick: () => handleCopy(f.id) },
+      { label: 'Move to...', icon: <Move />, onClick: () => openMoveModal(f.id, 'file') },
+      { label: '', separator: true, onClick: () => {}, icon: null },
+      { label: 'Add to group', icon: <FolderPlus />, onClick: () => openAddToGroup(f.id, f.name, 'file') },
+      { label: 'Upload new version', icon: <Upload />, onClick: () => setVersionUploadTarget(f.id) },
+      { label: 'Version history', icon: <History />, onClick: () => openFileWithLockCheck(f, 'view') },
+      { label: f.lock_mode !== 'none' ? 'Unlock' : 'Lock', icon: <Lock />, onClick: () => setLockTarget({ id: f.id, name: f.name, type: 'file' }) },
+      { label: f.is_hidden ? 'Unhide' : 'Hide', icon: f.is_hidden ? <Eye /> : <EyeOff />, onClick: () => setHideTarget({ id: f.id, name: f.name, type: 'file' }) },
+      { label: '', separator: true, onClick: () => {}, icon: null },
+      { label: 'Delete', icon: <Trash2 />, onClick: () => setDeleteTarget({ id: f.id, name: f.name, type: 'file' }), danger: true },
+    ];
+  };
 
   const folderCtxItems = (f: FolderItem) => {
     if (isDeletedView) {
@@ -771,14 +836,14 @@ export default function FilesPage() {
       // stay, but nothing that mutates a live folder makes sense here.
       // Restore/Delete permanently only apply to a trash root - a
       // descendant surfaced by browsing into one 400s on both endpoints.
-      const items: { label: string; icon: React.ReactNode; onClick: () => void; separator?: boolean; danger?: boolean }[] = [
+      const items: { label: string; icon: React.ReactNode; onClick: () => void; separator?: boolean; danger?: boolean; disabled?: boolean }[] = [
         { label: 'Open', icon: <FolderOpen />, onClick: () => navigateToFolder(f.id) },
         { label: 'Get info', icon: <Info />, onClick: () => setInfoTarget({ type: 'folder', item: f }) },
       ];
       if (f.is_trash_root) {
         items.push(
           { label: '', separator: true, onClick: () => {}, icon: null },
-          { label: 'Restore', icon: <RotateCcw />, onClick: () => handleRestoreFolder(f) },
+          { label: 'Restore', icon: <RotateCcw />, onClick: () => handleRestoreFolder(f), disabled: restoringIds.has(f.id) },
           { label: 'Delete permanently', icon: <Trash2 />, onClick: () => setDeleteTarget({ id: f.id, name: f.name, type: 'folder', permanent: true, fileCount: f.file_count }), danger: true },
         );
       }
@@ -1004,6 +1069,7 @@ export default function FilesPage() {
                         active={selectedFile?.id === f.id || highlightId === f.id}
                         highlight={highlightId === f.id}
                         isFavourite={favourites.has(f.id)}
+                        trashed={isDeletedView}
                         onClick={(e) => { e.stopPropagation(); if (e.ctrlKey || e.metaKey) toggleSelect(f.id); else openFileWithLockCheck(f, 'detail'); }}
                         onSelect={() => toggleSelect(f.id)}
                         onNameClick={() => openFileWithLockCheck(f, 'view')}
@@ -1011,11 +1077,13 @@ export default function FilesPage() {
                         onDownload={() => handleDownload(f.id)}
                         onShare={() => openShare(f.id, f.name)}
                         onRename={() => { setRenameTarget({ id: f.id, name: f.name, type: 'file' }); setRenameName(f.name); }}
-                        onDelete={() => setDeleteTarget({ id: f.id, name: f.name, type: 'file' })}
+                        onDelete={() => setDeleteTarget({ id: f.id, name: f.name, type: 'file', permanent: isDeletedView })}
                         onCopy={() => handleCopy(f.id)}
                         onMove={() => openMoveModal(f.id, 'file')}
                         onFavourite={() => toggleFavourite(f.id)}
-                        onComments={() => navigate(`/comments?file_id=${f.id}&workspace_id=${wsId}&name=${encodeURIComponent(f.name)}`)} />
+                        onComments={() => navigate(`/comments?file_id=${f.id}&workspace_id=${wsId}&name=${encodeURIComponent(f.name)}`)}
+                        onRestore={() => handleRestoreFile(f)}
+                        restoreDisabled={restoringIds.has(f.id)} />
                     ))}
                   </div>
                 </div>
@@ -1076,6 +1144,7 @@ export default function FilesPage() {
                             f.is_trash_root && (
                               <FileDropdown
                                 onRestore={() => handleRestoreFolder(f)}
+                                restoreDisabled={restoringIds.has(f.id)}
                                 onDelete={() => setDeleteTarget({ id: f.id, name: f.name, type: 'folder', permanent: true, fileCount: f.file_count })}
                                 deleteLabel="Delete permanently"
                               />
@@ -1124,15 +1193,24 @@ export default function FilesPage() {
                           return <div key={col.key} className={`text-xs text-muted-foreground truncate ${col.width}`}>{col.render(f)}</div>;
                         })}
                         <div className="w-8 shrink-0">
-                          <FileDropdown
-                            onDownload={() => handleDownload(f.id)}
-                            onShare={() => openShare(f.id, f.name)}
-                            onRename={() => { setRenameTarget({ id: f.id, name: f.name, type: 'file' }); setRenameName(f.name); }}
-                            onDelete={() => setDeleteTarget({ id: f.id, name: f.name, type: 'file' })}
-                            onCopy={() => handleCopy(f.id)}
-                            onMove={() => openMoveModal(f.id, 'file')}
-                            onAddToGroup={() => openAddToGroup(f.id, f.name, 'file')}
-                          />
+                          {isDeletedView ? (
+                            <FileDropdown
+                              onRestore={() => handleRestoreFile(f)}
+                              restoreDisabled={restoringIds.has(f.id)}
+                              onDelete={() => setDeleteTarget({ id: f.id, name: f.name, type: 'file', permanent: true })}
+                              deleteLabel="Delete permanently"
+                            />
+                          ) : (
+                            <FileDropdown
+                              onDownload={() => handleDownload(f.id)}
+                              onShare={() => openShare(f.id, f.name)}
+                              onRename={() => { setRenameTarget({ id: f.id, name: f.name, type: 'file' }); setRenameName(f.name); }}
+                              onDelete={() => setDeleteTarget({ id: f.id, name: f.name, type: 'file' })}
+                              onCopy={() => handleCopy(f.id)}
+                              onMove={() => openMoveModal(f.id, 'file')}
+                              onAddToGroup={() => openAddToGroup(f.id, f.name, 'file')}
+                            />
+                          )}
                         </div>
                       </div>
                     );
@@ -1190,11 +1268,14 @@ export default function FilesPage() {
       </Dialog>
 
       {/* Delete dialog - also drives the Deleted view's row-level "Delete
-          permanently" for folders (deleteTarget.permanent), since it's the
-          same single-item confirm flow with different copy and a
-          destructive footer. */}
-      <Dialog open={!!deleteTarget} onOpenChange={() => setDeleteTarget(null)}>
-        <DialogContent className="max-w-sm">
+          permanently" for files and folders (deleteTarget.permanent), since
+          it's the same single-item confirm flow with different copy and a
+          destructive footer. Locked (Cancel/confirm disabled, close button
+          hidden, backdrop/Escape no-op) while `deleting` is true, so a
+          second click during the request can't send a follow-up DELETE that
+          lands on the now-trashed item and silently purges it. */}
+      <Dialog open={!!deleteTarget} onOpenChange={(open) => { if (!open && !deleting) setDeleteTarget(null); }}>
+        <DialogContent className="max-w-sm" showCloseButton={!deleting}>
           <DialogHeader><DialogTitle>{deleteTarget?.permanent ? 'Delete permanently?' : `Delete ${deleteTarget?.type}?`}</DialogTitle></DialogHeader>
           <p className={`text-sm ${deleteTarget?.permanent ? 'text-destructive' : 'text-muted-foreground'}`}>
             {deleteTarget?.permanent ? (
@@ -1208,8 +1289,11 @@ export default function FilesPage() {
             )}
           </p>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteTarget(null)}>Cancel</Button>
-            <Button variant="destructive" onClick={handleDelete}>{deleteTarget?.permanent ? 'Delete permanently' : 'Delete'}</Button>
+            <Button variant="outline" onClick={() => setDeleteTarget(null)} disabled={deleting}>Cancel</Button>
+            <Button variant="destructive" onClick={handleDelete} disabled={deleting}>
+              {deleting && <Loader2 className="size-4 animate-spin mr-1.5" />}
+              {deleteTarget?.permanent ? 'Delete permanently' : 'Delete'}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1474,10 +1558,14 @@ function FolderCard({ folder, selected, anySelected, onClick, onSelect, onContex
 
 // ── File Card ──────────────────────────────────────────────
 
-function FileCard({ file, view, selected, anySelected, active, highlight, domId, isFavourite, onClick, onSelect, onNameClick, onContextMenu, onDownload, onShare, onRename, onDelete, onCopy, onMove, onFavourite, onComments }: {
+function FileCard({ file, view, selected, anySelected, active, highlight, domId, isFavourite, trashed, onClick, onSelect, onNameClick, onContextMenu, onDownload, onShare, onRename, onDelete, onCopy, onMove, onFavourite, onComments, onRestore, restoreDisabled }: {
   file: FileItem; view: ViewMode; selected: boolean; anySelected?: boolean; active?: boolean; highlight?: boolean; domId?: string; isFavourite?: boolean;
+  /** Trash view - the card offers only Restore/Delete permanently (see the
+   * dropdown below); Download/Share/Rename/Copy/Move/favourite are hidden. */
+  trashed?: boolean;
   onClick: (e: ReactMouseEvent) => void; onSelect: () => void; onNameClick: () => void; onContextMenu: (e: ReactMouseEvent) => void;
-  onDownload: () => void; onShare: () => void; onRename: () => void; onDelete: () => void; onCopy: () => void; onMove: () => void; onFavourite?: () => void; onComments?: () => void;
+  onDownload?: () => void; onShare?: () => void; onRename?: () => void; onDelete: () => void; onCopy?: () => void; onMove?: () => void; onFavourite?: () => void; onComments?: () => void;
+  onRestore?: () => void; restoreDisabled?: boolean;
 }) {
   const ext = extOf(file.name).toUpperCase() || 'FILE';
 
@@ -1497,7 +1585,11 @@ function FileCard({ file, view, selected, anySelected, active, highlight, domId,
         <span className="text-xs text-muted-foreground">{timeAgo(file.updated_at)}</span>
         {file.share_count > 0 && <Badge variant="secondary" className="text-[9px]"><Share2 className="size-2.5 mr-1" />{file.share_count}</Badge>}
         {isFavourite && <Star className="size-3 text-orange-400 fill-orange-400 shrink-0" />}
-        <FileDropdown onDownload={onDownload} onShare={onShare} onRename={onRename} onDelete={onDelete} onCopy={onCopy} onMove={onMove} />
+        {trashed ? (
+          <FileDropdown onRestore={onRestore} restoreDisabled={restoreDisabled} onDelete={onDelete} deleteLabel="Delete permanently" />
+        ) : (
+          <FileDropdown onDownload={onDownload} onShare={onShare} onRename={onRename} onDelete={onDelete} onCopy={onCopy} onMove={onMove} />
+        )}
       </div>
     );
   }
@@ -1530,37 +1622,46 @@ function FileCard({ file, view, selected, anySelected, active, highlight, domId,
         <span className="px-2 py-0.5 rounded-full bg-black/45 backdrop-blur-sm text-[10px] font-mono font-semibold uppercase tracking-wider text-white">{ext}</span>
       </div>
 
-      {/* Right vertical action rail: favourite · (comments) · share · settings */}
+      {/* Right vertical action rail: trashed → just the Restore/Delete
+          permanently dropdown; live → favourite · (comments) · share · settings */}
       <div className="absolute right-2 bottom-2 z-20 flex flex-col gap-2 opacity-90 group-hover:opacity-100 transition-opacity">
-        {/* Favourite (single star - the app's favourite flag) */}
-        <button
-          className="flex items-center justify-center size-8 rounded-full bg-black/35 hover:bg-black/55 backdrop-blur-sm transition-colors"
-          title={isFavourite ? 'Remove from favourites' : 'Add to favourites'}
-          onClick={(e) => { e.stopPropagation(); onFavourite?.(); }}
-        >
-          <Star className={`size-4 ${isFavourite ? 'text-orange-400 fill-orange-400' : 'text-white'}`} />
-        </button>
-        {file.comment_count > 0 && (
-          <button
-            className="relative flex items-center justify-center size-8 rounded-full bg-black/35 hover:bg-black/55 backdrop-blur-sm transition-colors"
-            title={`${file.comment_count} comment${file.comment_count === 1 ? '' : 's'} - open`}
-            onClick={(e) => { e.stopPropagation(); onComments?.(); }}
-          >
-            <MessageSquare className="size-4 text-white" />
-            <span className="absolute -top-1 -right-1 min-w-4 h-4 px-1 rounded-full bg-blue-500 text-[9px] font-mono text-white flex items-center justify-center">{file.comment_count}</span>
-          </button>
+        {!trashed && (
+          <>
+            {/* Favourite (single star - the app's favourite flag) */}
+            <button
+              className="flex items-center justify-center size-8 rounded-full bg-black/35 hover:bg-black/55 backdrop-blur-sm transition-colors"
+              title={isFavourite ? 'Remove from favourites' : 'Add to favourites'}
+              onClick={(e) => { e.stopPropagation(); onFavourite?.(); }}
+            >
+              <Star className={`size-4 ${isFavourite ? 'text-orange-400 fill-orange-400' : 'text-white'}`} />
+            </button>
+            {file.comment_count > 0 && (
+              <button
+                className="relative flex items-center justify-center size-8 rounded-full bg-black/35 hover:bg-black/55 backdrop-blur-sm transition-colors"
+                title={`${file.comment_count} comment${file.comment_count === 1 ? '' : 's'} - open`}
+                onClick={(e) => { e.stopPropagation(); onComments?.(); }}
+              >
+                <MessageSquare className="size-4 text-white" />
+                <span className="absolute -top-1 -right-1 min-w-4 h-4 px-1 rounded-full bg-blue-500 text-[9px] font-mono text-white flex items-center justify-center">{file.comment_count}</span>
+              </button>
+            )}
+            {/* Share */}
+            <button
+              className="flex items-center justify-center size-8 rounded-full bg-black/35 hover:bg-black/55 backdrop-blur-sm transition-colors"
+              title={file.share_count > 0 ? `Shared (${file.share_count}) - manage` : 'Share'}
+              onClick={(e) => { e.stopPropagation(); onShare?.(); }}
+            >
+              <Share2 className={`size-4 ${file.share_count > 0 ? 'text-green-400' : 'text-white'}`} />
+            </button>
+          </>
         )}
-        {/* Share */}
-        <button
-          className="flex items-center justify-center size-8 rounded-full bg-black/35 hover:bg-black/55 backdrop-blur-sm transition-colors"
-          title={file.share_count > 0 ? `Shared (${file.share_count}) - manage` : 'Share'}
-          onClick={(e) => { e.stopPropagation(); onShare(); }}
-        >
-          <Share2 className={`size-4 ${file.share_count > 0 ? 'text-green-400' : 'text-white'}`} />
-        </button>
         {/* Settings / more */}
         <div onClick={(e) => e.stopPropagation()}>
-          <FileDropdown overlay onDownload={onDownload} onShare={onShare} onRename={onRename} onDelete={onDelete} onCopy={onCopy} onMove={onMove} />
+          {trashed ? (
+            <FileDropdown overlay onRestore={onRestore} restoreDisabled={restoreDisabled} onDelete={onDelete} deleteLabel="Delete permanently" />
+          ) : (
+            <FileDropdown overlay onDownload={onDownload} onShare={onShare} onRename={onRename} onDelete={onDelete} onCopy={onCopy} onMove={onMove} />
+          )}
         </div>
       </div>
 
@@ -1629,10 +1730,10 @@ function FileThumbnail({ fileId, fileName, ext }: { fileId: string; fileName: st
 
 // ── Dropdown menu (three dots) ─────────────────────────────
 
-function FileDropdown({ onDownload, onShare, onRename, onDelete, onCopy, onMove, onAddToGroup, onRestore, deleteLabel = 'Delete', overlay }: {
+function FileDropdown({ onDownload, onShare, onRename, onDelete, onCopy, onMove, onAddToGroup, onRestore, restoreDisabled, deleteLabel = 'Delete', overlay }: {
   onDownload?: () => void; onShare?: () => void; onRename?: () => void; onDelete: () => void; onCopy?: () => void; onMove?: () => void; onAddToGroup?: () => void;
-  /** Trashed-folder rows pass this instead of onRename/onMove/etc - see deleteLabel for the matching "Delete permanently" copy. */
-  onRestore?: () => void; deleteLabel?: string; overlay?: boolean;
+  /** Trashed rows (file or folder) pass this instead of onRename/onMove/etc - see deleteLabel for the matching "Delete permanently" copy. */
+  onRestore?: () => void; restoreDisabled?: boolean; deleteLabel?: string; overlay?: boolean;
 }) {
   return (
     <DropdownMenu>
@@ -1642,7 +1743,7 @@ function FileDropdown({ onDownload, onShare, onRename, onDelete, onCopy, onMove,
           : <button className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-muted" onClick={(e) => e.stopPropagation()}><MoreHorizontal className="size-3.5" /></button>}
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        {onRestore && <DropdownMenuItem onClick={onRestore}><RotateCcw className="size-3 mr-2" /> Restore</DropdownMenuItem>}
+        {onRestore && <DropdownMenuItem disabled={restoreDisabled} onClick={onRestore}><RotateCcw className="size-3 mr-2" /> Restore</DropdownMenuItem>}
         {onDownload && <DropdownMenuItem onClick={onDownload}><Download className="size-3 mr-2" /> Download</DropdownMenuItem>}
         {onShare && <DropdownMenuItem onClick={onShare}><Share2 className="size-3 mr-2" /> Share</DropdownMenuItem>}
         {onCopy && <DropdownMenuItem onClick={onCopy}><Copy className="size-3 mr-2" /> Copy</DropdownMenuItem>}
