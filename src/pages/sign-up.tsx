@@ -64,7 +64,11 @@ export default function SignUpPage() {
     const ref = searchParams.get('ref') ?? sessionStorage.getItem('dosya_ref') ?? undefined;
     window.location.href = `${API_BASE}/api/auth/github${ref ? `?ref=${encodeURIComponent(ref)}` : ''}`;
   };
-  const handleApple = () => { try { localStorage.setItem('dosya_last_login_method', 'apple'); } catch { /* */ } window.location.href = `${API_BASE}/api/auth/apple`; };
+  const handleApple = () => {
+    try { localStorage.setItem('dosya_last_login_method', 'apple'); } catch { /* */ }
+    const ref = searchParams.get('ref') ?? sessionStorage.getItem('dosya_ref') ?? undefined;
+    window.location.href = `${API_BASE}/api/auth/apple${ref ? `?ref=${encodeURIComponent(ref)}` : ''}`;
+  };
 
   const lastUsedBadge = (
     <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 rounded-full bg-primary text-primary-foreground text-[10px] font-semibold px-2 py-0.5 leading-none whitespace-nowrap z-10">
