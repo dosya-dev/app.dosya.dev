@@ -91,15 +91,5 @@ export const getJob = (id: string) =>
     problems: Array<{ remote_name: string; status: string; error_message: string | null }>;
   }>(`/api/cloud/imports/${id}`);
 
-// No 200 response from this route ever carries a pacing hint - throttling is
-// signalled exclusively via a thrown 429 (see retryAfterFromError in
-// stores/cloud-imports.ts). Do not add a retry_after_seconds-style field
-// here without a real backend field to back it.
-export const processJob = (id: string) =>
-  api<{ status: string }>(
-    `/api/cloud/imports/${id}/process`,
-    { method: 'POST' },
-  );
-
 export const cancelJob = (id: string) =>
   api<{ ok: boolean }>(`/api/cloud/imports/${id}/cancel`, { method: 'POST' });
