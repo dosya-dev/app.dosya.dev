@@ -48,13 +48,17 @@ export async function api<T>(
   path: string,
   options: RequestInit = {},
 ): Promise<T> {
+  // `headers` must be merged AFTER spreading `options`, not before: spreading
+  // options last overwrote the merged object with the caller's raw `headers`,
+  // dropping the JSON Content-Type default for any caller that set a header of
+  // its own. Everything else on `options` still wins over the defaults.
   const res = await fetch(`${API_BASE}${path}`, {
     credentials: 'include',
+    ...options,
     headers: {
       'Content-Type': 'application/json',
       ...options.headers,
     },
-    ...options,
   });
 
   if (!res.ok) {

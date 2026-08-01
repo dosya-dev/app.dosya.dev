@@ -57,6 +57,48 @@ describe('workspace-delete error surfacing', () => {
   });
 });
 
+describe('api() request options', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  /** Capture the RequestInit api() actually hands to fetch. */
+  async function captureInit(options: RequestInit): Promise<RequestInit> {
+    let init: RequestInit | undefined;
+    vi.stubGlobal('fetch', async (_url: string, got: RequestInit) => {
+      init = got;
+      return new Response('{"ok":true}', { status: 200, headers: { 'Content-Type': 'application/json' } });
+    });
+    await api('/api/thing', options);
+    if (!init) throw new Error('api() did not call fetch');
+    return init;
+  }
+
+  it('keeps the JSON Content-Type default when the caller adds a header', async () => {
+    // `...options` is spread last, so a caller-supplied `headers` object used
+    // to replace the merged one wholesale and silently drop Content-Type -
+    // the request then went out as text/plain and the API rejected the body.
+    const init = await captureInit({ method: 'POST', headers: { 'X-Trace': 'abc' } });
+    const headers = init.headers as Record<string, string>;
+    expect(headers['Content-Type']).toBe('application/json');
+    expect(headers['X-Trace']).toBe('abc');
+  });
+
+  it('lets the caller override Content-Type deliberately', async () => {
+    const init = await captureInit({ method: 'PUT', headers: { 'Content-Type': 'text/vcard' } });
+    expect((init.headers as Record<string, string>)['Content-Type']).toBe('text/vcard');
+  });
+
+  it('always sends cookies unless the caller opts out', async () => {
+    expect((await captureInit({ method: 'GET' })).credentials).toBe('include');
+    expect((await captureInit({ credentials: 'omit' })).credentials).toBe('omit');
+  });
+
+  it('passes the method and body through untouched', async () => {
+    const init = await captureInit({ method: 'DELETE', body: '{"a":1}' });
+    expect(init.method).toBe('DELETE');
+    expect(init.body).toBe('{"a":1}');
+  });
+});
+
 describe('responseErrorMessage (raw-fetch download handlers)', () => {
   const json = (body: unknown, status = 400) =>
     new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });

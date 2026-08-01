@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -6,11 +6,36 @@ import { Input } from '@/components/ui/input';
 import { Loader2, Eye, EyeOff } from 'lucide-react';
 import { API_BASE } from '@/api/client';
 import { PublicNav } from '@/components/public-nav';
+import { PasswordStrengthMeter } from '@/components/password-strength-meter';
+import { MIN_PASSWORD_LENGTH } from '@/lib/password-strength';
+
+/**
+ * Reset tokens arrive in the URL fragment (`#token=…`) so they stay out of
+ * browser history entries that sync across devices, server access logs, and
+ * Referer headers. Links mailed before the switch still use `?token=`, so both
+ * are read until those expire.
+ */
+function readResetToken(hash: string, searchParams: URLSearchParams): string {
+  const fragment = new URLSearchParams(hash.replace(/^#/, ''));
+  return fragment.get('token') ?? searchParams.get('token') ?? '';
+}
 
 export default function ResetPasswordPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const token = searchParams.get('token') ?? '';
+  const [token] = useState(() => readResetToken(window.location.hash, searchParams));
+
+  // Drop the token from the address bar once it is in memory, so it is not
+  // left sitting in the URL for a shoulder-surfer or a screenshot.
+  useEffect(() => {
+    if (!token) return;
+    if (window.location.hash || searchParams.has('token')) {
+      window.history.replaceState(null, '', window.location.pathname);
+    }
+    // Runs once - `token` is captured at mount and never changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const [newPw, setNewPw] = useState('');
   const [confirm, setConfirm] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -21,7 +46,7 @@ export default function ResetPasswordPage() {
     e.preventDefault();
     setError('');
     if (newPw !== confirm) { setError('Passwords do not match.'); return; }
-    if (newPw.length < 8) { setError('Password must be at least 8 characters.'); return; }
+    if (newPw.length < MIN_PASSWORD_LENGTH) { setError(`Password must be at least ${MIN_PASSWORD_LENGTH} characters.`); return; }
     setLoading(true);
     try {
       const res = await fetch(`${API_BASE}/api/auth/reset-password`, {
@@ -70,6 +95,7 @@ export default function ResetPasswordPage() {
                           {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
                         </button>
                       </div>
+                      <PasswordStrengthMeter password={newPw} />
                     </div>
                     <div className="space-y-2">
                       <label htmlFor="confirm-password" className="text-sm font-medium">Confirm password</label>

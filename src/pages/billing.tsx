@@ -38,7 +38,9 @@ export default function BillingPage() {
     if (params.get('success')) {
       // Stripe redirect back - the webhook may lag, so ask the API to reconcile
       // from Stripe directly, then refetch (again after a delay as a fallback).
-      syncBilling().catch(() => {}).then(reload);
+      // .finally, not .catch().then(): reload has to run either way, and the
+      // old chain only said so by accident.
+      syncBilling().finally(reload);
       const t = setTimeout(reload, 2500);
       window.history.replaceState({}, '', '/billing');
       return () => clearTimeout(t);

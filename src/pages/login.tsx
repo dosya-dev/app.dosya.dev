@@ -35,22 +35,33 @@ export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string>(() => oauthErrorMessage(searchParams.get('error')));
+  // reset-password sends people here with ?reset=1 after a successful change.
+  // Nothing read it, so the confirmation the flow promised never appeared and
+  // users could not tell whether the reset had actually gone through.
+  const [notice] = useState<string>(() =>
+    searchParams.get('reset') === '1'
+      ? 'Your password has been changed. Sign in with your new password.'
+      : '',
+  );
 
-  // Strip ?error= from the URL after capturing it, so a manual refresh doesn't resurface the banner.
+  // Strip the one-shot params from the URL after capturing them, so a manual
+  // refresh doesn't resurface the banner.
   useEffect(() => {
-    if (searchParams.has('error')) {
+    if (searchParams.has('error') || searchParams.has('reset')) {
       searchParams.delete('error');
+      searchParams.delete('reset');
       setSearchParams(searchParams, { replace: true });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  // Which OAuth method was used last (for the "Last used" badge). Defaults to Google, matching the old page.
-  const [lastMethod] = useState<string | null>(() => {
+  // Which OAuth method was used last (for the "Last used" badge). Null when
+  // this browser has never signed in - showing "Last used" over Google in that
+  // case is a claim about the user's history that we simply do not have.
+  const [lastUsed] = useState<string | null>(() => {
     try { return localStorage.getItem('dosya_last_login_method'); } catch { return null; }
   });
-  const lastUsed = lastMethod ?? 'google';
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -103,6 +114,12 @@ export default function LoginPage() {
               <h1 className="text-2xl font-bold mt-2">Welcome back</h1>
               <p className="text-sm text-muted-foreground mt-1">Enter your credentials to access your account</p>
             </div>
+
+            {notice && !error && (
+              <div className="bg-green-500/10 border border-green-500/30 text-green-700 dark:text-green-400 text-sm rounded-lg px-4 py-2.5 mb-4">
+                {notice}
+              </div>
+            )}
 
             {error && (
               <div className="bg-destructive/10 border border-destructive/30 text-destructive text-sm rounded-lg px-4 py-2.5 mb-4">

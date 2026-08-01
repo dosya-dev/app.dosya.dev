@@ -34,6 +34,17 @@ export function missingPartNumbers(totalParts: number, uploaded: number[]): numb
 const store = () => useUploads.getState();
 const getItem = (id: string): UploadItem | undefined => store().items.find((x) => x.id === id);
 
+/**
+ * Mark an item done and tell the rest of the app a file landed. Pages that
+ * show file listings (Files, Dashboard) listen for this instead of polling -
+ * uploads run in the background, so the page that started one is often no
+ * longer the page that needs refreshing.
+ */
+function markComplete(id: string, patch: Partial<UploadItem>): void {
+  store().patchItem(id, { status: 'complete', progress: 100, ...patch });
+  window.dispatchEvent(new Event('dosya:upload-complete'));
+}
+
 function newId(i: number): string {
   return `up_${Date.now()}_${i}_${Math.random().toString(36).slice(2, 6)}`;
 }
@@ -101,7 +112,13 @@ async function initSession(item: UploadItem): Promise<any> {
     body: JSON.stringify({
       workspace_id: item.workspace_id, folder_id: item.folder_id,
       file_name: item.fileName, file_size: item.fileSize,
-      mime_type: item.mimeType, region: item.region,
+      mime_type: item.mimeType,
+      // Sending '' would be validated against the workspace's available_regions
+      // and rejected - omit it entirely so the server picks the default.
+      ...(item.region ? { region: item.region } : {}),
+      // Only present for version uploads; the server treats a null file_id as
+      // "create a new file", which is the normal path.
+      file_id: item.file_id ?? null,
     }),
   });
   const data = await res.json().catch(() => ({}));
@@ -134,7 +151,7 @@ async function uploadParts(
   const data = await res.json().catch(() => ({}));
   if (!res.ok || !data.ok) throw new Error(data.error ?? `Complete failed (HTTP ${res.status})`);
   if (bailIfCanceled(id)) return;
-  store().patchItem(id, { status: 'complete', progress: 100, bytesUploaded: file.size, fileId: data?.file?.id });
+  markComplete(id, { bytesUploaded: file.size, fileId: data?.file?.id });
 }
 
 async function resumeParts(id: string, file: File, sessionId: string): Promise<void> {
@@ -143,7 +160,7 @@ async function resumeParts(id: string, file: File, sessionId: string): Promise<v
   if (!res.ok || !s.ok) throw new Error(s.error ?? 'Could not read upload status');
   if (bailIfCanceled(id)) return;
   if (s.status === 'complete') {
-    store().patchItem(id, { status: 'complete', progress: 100, bytesUploaded: file.size });
+    markComplete(id, { bytesUploaded: file.size });
     return;
   }
   store().patchItem(id, {
@@ -202,7 +219,7 @@ async function runOne(id: string): Promise<void> {
         const putRes = await xhrPut(id, `${API_BASE}${init.upload_url}`, file,
           file.type || 'application/octet-stream', 0, file.size);
         if (bailIfCanceled(id)) return;
-        store().patchItem(id, { status: 'complete', progress: 100, bytesUploaded: file.size, fileId: putRes?.file?.id });
+        markComplete(id, { bytesUploaded: file.size, fileId: putRes?.file?.id });
       }
     }
   } catch (err) {
@@ -244,7 +261,12 @@ export function enqueue(files: File[] | FileList, input: UploadInput): void {
     return {
       id, session_id: null, fileName: file.name, fileSize: file.size,
       mimeType: file.type || 'application/octet-stream',
-      workspace_id: input.workspace_id, folder_id: input.folder_id, region: input.region,
+      workspace_id: input.workspace_id, folder_id: input.folder_id,
+      // '' means "no explicit choice" - initSession omits it so the server
+      // falls back to the workspace default. Call sites without a region
+      // picker (Files drag-and-drop, version upload) rely on this.
+      region: input.region ?? '',
+      file_id: input.file_id ?? null,
       status: 'queued', progress: 0, bytesUploaded: 0,
       part_size: null, total_parts: null, uploaded_parts: [],
     };

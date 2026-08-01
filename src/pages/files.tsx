@@ -1,8 +1,12 @@
-import { useState, useEffect, useCallback, useRef, type MouseEvent as ReactMouseEvent } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef, memo, type MouseEvent as ReactMouseEvent } from 'react';
 import { useSearchParams, Link, useNavigate } from 'react-router-dom';
 import { api, API_BASE, ApiError, apiErrorMessage, responseErrorMessage } from '@/api/client';
 import { useDocumentTitle } from '@/lib/page-title';
 import { folderNavParams, filterNavParams, groupNavParams } from '@/lib/files-params';
+import { enqueue } from '@/lib/upload-runner';
+import { useDebouncedValue } from '@/hooks/use-debounced-value';
+import { runBulk } from '@/lib/bulk-run';
+import type { FileItem, FolderItem, Breadcrumb, Pagination } from '@/lib/file-types';
 import { useWorkspace } from '@/stores/workspace';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -17,7 +21,7 @@ import {
   FolderOpen, Grid3X3, List, Loader2,
   Lock, Pencil, Copy, Move, Eye, EyeOff, History,
   MessageSquare, Star, SlidersHorizontal, RotateCcw, RefreshCw, Info,
-  ArrowUp, ArrowDown, Cloud,
+  ArrowUp, ArrowDown, Cloud, AlertCircle,
 } from 'lucide-react';
 import {
   DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem,
@@ -48,31 +52,8 @@ import { ImportProgressCard } from '@/components/cloud-import/import-progress-ca
 import { useCloudImportCompletionRefresh } from './use-cloud-import-refresh';
 
 // ── Types ──────────────────────────────────────────────────
-
-interface FileItem {
-  id: string; name: string; size_bytes: number; mime_type: string; extension: string;
-  region: string; created_at: number; updated_at: number; current_version: number;
-  lock_mode: string; is_hidden: number; uploaded_by: string; uploader_name: string;
-  share_count: number; comment_count: number; is_synced: number;
-  origin: string | null;
-  // Only populated by the deleted=1 listing.
-  deleted_at?: number | null;
-}
-interface FolderItem {
-  id: string; name: string; created_at: number; updated_at: number; file_count: number;
-  lock_mode: string; is_hidden: number; is_synced: number;
-  total_size_bytes: number; content_updated_at: number; region: string | null;
-  uploader_name: string | null; share_count: number; comment_count: number;
-  origin: string | null;
-  // Only populated by the deleted=1 listing. `is_trash_root` is true only for
-  // rows in the top-level trash listing (the folder the user actually
-  // deleted) - false for descendants surfaced while browsing into one. Only
-  // a trash root can be restored or purged.
-  deleted_at?: number | null;
-  is_trash_root?: boolean;
-}
-interface Breadcrumb { id: string; name: string }
-interface Pagination { page: number; per_page: number; total_files: number; total_pages: number }
+// Listing row shapes live in lib/file-types so this page and the file viewer
+// cannot drift apart - see the note there.
 
 type ViewMode = 'grid' | 'list';
 
@@ -129,7 +110,16 @@ const FILTER_EMPTY_LABELS: Record<string, string> = {
 function loadSavedColumns(): Set<ColumnKey> {
   try {
     const saved = localStorage.getItem('dosya_table_columns');
-    if (saved) return new Set(JSON.parse(saved) as ColumnKey[]);
+    if (!saved) return new Set(DEFAULT_VISIBLE);
+    const parsed: unknown = JSON.parse(saved);
+    if (!Array.isArray(parsed)) return new Set(DEFAULT_VISIBLE);
+    // The cast this used to do was a lie: localStorage is user-writable and
+    // outlives any column rename, so an unknown key silently produced a table
+    // whose headers and cells disagreed. Keep only keys that still exist, and
+    // fall back rather than render an empty table.
+    const known = new Set<string>(ALL_COLUMNS.map((c) => c.key));
+    const valid = parsed.filter((k): k is ColumnKey => typeof k === 'string' && known.has(k));
+    return valid.length > 0 ? new Set(valid) : new Set(DEFAULT_VISIBLE);
   } catch {}
   return new Set(DEFAULT_VISIBLE);
 }
@@ -153,7 +143,34 @@ export default function FilesPage() {
   const [breadcrumbs, setBreadcrumbs] = useState<Breadcrumb[]>([]);
   const [pagination, setPagination] = useState<Pagination | null>(null);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
+  /** Non-null when the last listing request failed - renders a retry state
+   *  instead of the "this folder is empty" message. */
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  // Search lives in the URL (?q=) so it survives a refresh and can be linked
+  // to. `searchInput` is the raw typed value that keeps the field responsive;
+  // it is committed to the URL - and therefore to the API - only after a pause,
+  // instead of firing a request per keystroke.
+  const search = searchParams.get('q') ?? '';
+  const [searchInput, setSearchInput] = useState(search);
+  const debouncedSearch = useDebouncedValue(searchInput, 300);
+
+  // Back/forward and the sidebar can change ?q= without going through the
+  // input, so mirror external changes back into the field.
+  useEffect(() => {
+    setSearchInput((cur) => (cur === search ? cur : search));
+  }, [search]);
+
+  useEffect(() => {
+    if (debouncedSearch === search) return;
+    const p = new URLSearchParams(searchParams);
+    if (debouncedSearch) p.set('q', debouncedSearch);
+    else p.delete('q');
+    // A page number only means something within one result set.
+    p.delete('page');
+    setSearchParams(p, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedSearch]);
   const [sort, setSort] = useState<SortSpec>(DEFAULT_SORT);
   const sortParam = serializeSort(sort);
   const changeSort = (next: SortSpec) => {
@@ -190,7 +207,7 @@ export default function FilesPage() {
   const [selectedFile, setSelectedFile] = useState<FileItem | null>(null);
 
   // Share modal
-  const [shareTarget, setShareTarget] = useState<{ id: string; name: string } | null>(null);
+  const [shareTarget, setShareTarget] = useState<{ ids: string[]; name: string } | null>(null);
 
   // File viewer
   const [viewerFile, setViewerFile] = useState<FileItem | null>(null);
@@ -234,6 +251,17 @@ export default function FilesPage() {
     else setViewerFile(file);
   };
 
+  /**
+   * Dismiss the unlock prompt and clear what was typed. Closing used to leave
+   * `unlockPassword` set, so reopening the dialog - for the same file or a
+   * different one - showed the previous attempt still in the field.
+   */
+  const closeUnlockPrompt = () => {
+    setUnlockPrompt(null);
+    setUnlockPassword('');
+    setUnlockError('');
+  };
+
   const handleUnlockSubmit = async () => {
     if (!unlockPrompt || !unlockPassword.trim()) return;
     setUnlocking(true);
@@ -245,7 +273,7 @@ export default function FilesPage() {
       if (res.ok && res.unlock_token) {
         unlockedFiles.set(unlockPrompt.file.id, res.unlock_token);
         const { file, action } = unlockPrompt;
-        setUnlockPrompt(null);
+        closeUnlockPrompt();
         if (action === 'detail') setSelectedFile(file);
         else setViewerFile(file);
       } else {
@@ -289,6 +317,9 @@ export default function FilesPage() {
   const [deleting, setDeleting] = useState(false);
   /** Pending bulk delete awaiting confirmation - `permanent` distinguishes the Deleted view's irreversible purge. */
   const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState<{ permanent: boolean } | null>(null);
+  /** A bulk action is in flight - disables the bulk bar so a second click
+   *  can't fire the same requests against a selection already being mutated. */
+  const [bulkBusy, setBulkBusy] = useState(false);
   /** File/folder ids with a restore request in flight - guards row-level
    * Restore (context menu / dropdown) against the same double-click race,
    * which has previously double-credited storage at the API layer. */
@@ -328,6 +359,7 @@ export default function FilesPage() {
   const loadFiles = useCallback(async () => {
     if (!wsId) return;
     setLoading(true);
+    setLoadError(null);
     const params = new URLSearchParams({ workspace_id: wsId, sort: sortParam, page: String(currentPage), per_page: '100' });
     if (search) params.set('q', search);
     if (isDeletedView) {
@@ -354,8 +386,15 @@ export default function FilesPage() {
         setBreadcrumbs(data.breadcrumbs);
         if (data.pagination) setPagination(data.pagination);
         clearSelection();
+      } else {
+        setLoadError('This folder could not be loaded.');
       }
-    } catch { /* */ }
+    } catch (err) {
+      // Swallowing this used to render the ordinary "no files here" empty
+      // state, so an auth/network failure was indistinguishable from an empty
+      // folder - people assumed their files were gone.
+      setLoadError(apiErrorMessage(err, 'This folder could not be loaded.'));
+    }
     setLoading(false);
   }, [wsId, sortParam, currentPage, search, currentFolderId, isDeletedView, currentFilter, currentGroup]);
 
@@ -444,6 +483,14 @@ export default function FilesPage() {
     return () => window.removeEventListener('dosya:favourites-changed', onChanged);
   }, [loadFavourites]);
 
+  // Uploads finish in the background (dock/other tab), so the listing has to
+  // react to the runner rather than to the handler that started the upload.
+  useEffect(() => {
+    const onUploaded = () => loadFiles();
+    window.addEventListener('dosya:upload-complete', onUploaded);
+    return () => window.removeEventListener('dosya:upload-complete', onUploaded);
+  }, [loadFiles]);
+
   const toggleFavourite = async (fileId: string) => {
     const isFav = favourites.has(fileId);
     try {
@@ -459,32 +506,15 @@ export default function FilesPage() {
     } catch { toast.error('Something went wrong', 'Could not update favourites.'); }
   };
 
-  const handleVersionUpload = async (fileId: string, file: File) => {
-    try {
-      const initRes = await api<{ ok: boolean; session_id?: string; error?: string }>('/api/upload/init', {
-        method: 'POST',
-        body: JSON.stringify({
-          workspace_id: wsId,
-          file_id: fileId,
-          file_name: file.name,
-          file_size: file.size,
-          mime_type: file.type || 'application/octet-stream',
-        }),
-      });
-      if (!initRes.ok || !initRes.session_id) {
-        toast.error('Upload failed', initRes.error ?? 'The new version could not be uploaded.');
-        return;
-      }
-      await fetch(`${API_BASE}/api/upload/${initRes.session_id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': file.type || 'application/octet-stream' },
-        body: file,
-      });
-      toast.success('Version uploaded', 'The file now points to your new version.');
-      loadFiles();
-    } catch {
-      toast.error('Upload failed', 'The new version could not be uploaded.');
-    }
+  // Version uploads go through the shared upload runner rather than a bare
+  // fetch: it sends session cookies, splits files over the multipart
+  // threshold, reports progress in the upload dock, and can be canceled or
+  // resumed. A single unauthenticated PUT did none of that and a large
+  // version silently stalled until the browser timed it out.
+  const handleVersionUpload = (fileId: string, file: File) => {
+    if (!wsId) return;
+    enqueue([file], { workspace_id: wsId, folder_id: null, file_id: fileId });
+    toast.info('Uploading version', `${file.name} is uploading - track it in the upload dock.`);
   };
 
   // Trigger hidden file input when version upload target is set
@@ -618,7 +648,17 @@ export default function FilesPage() {
   };
 
   const openShare = (fileId: string, fileName: string) => {
-    setShareTarget({ id: fileId, name: fileName });
+    setShareTarget({ ids: [fileId], name: fileName });
+  };
+
+  /** Share every selected file behind one bundle link. */
+  const openBulkShare = () => {
+    const ids = Array.from(selected);
+    if (ids.length === 0) return;
+    const name = ids.length === 1
+      ? files.find((f) => f.id === ids[0])?.name ?? '1 file'
+      : `${ids.length} files`;
+    setShareTarget({ ids, name });
   };
 
   const openMoveModal = (id: string, type: 'file' | 'folder') => {
@@ -690,32 +730,34 @@ export default function FilesPage() {
 
   const bulkMove = () => { if (totalSelected > 0) setBulkMoveOpen(true); };
 
+  // The bulk runners below use runBulk rather than an awaited for-loop: a
+  // 50-item selection used to cost 50 sequential round trips, which is what
+  // made these actions feel hung.
   const applyBulkMove = async (destFolderId: string | null) => {
-    let ok = 0, fail = 0;
-    for (const id of selected) {
-      try { await api(`/api/files/${id}/move`, { method: 'PUT', body: JSON.stringify({ folder_id: destFolderId }) }); ok++; }
-      catch { fail++; }
-    }
-    for (const id of selectedFolders) {
-      try { await api(`/api/folders/${id}/move`, { method: 'PUT', body: JSON.stringify({ parent_id: destFolderId }) }); ok++; }
-      catch { fail++; } // circular-move / already-here errors land here
-    }
+    setBulkBusy(true);
+    const fileRes = await runBulk(Array.from(selected), (id) =>
+      api(`/api/files/${id}/move`, { method: 'PUT', body: JSON.stringify({ folder_id: destFolderId }) }));
+    // circular-move / already-here errors land in `fail`
+    const folderRes = await runBulk(Array.from(selectedFolders), (id) =>
+      api(`/api/folders/${id}/move`, { method: 'PUT', body: JSON.stringify({ parent_id: destFolderId }) }));
+    const ok = fileRes.ok + folderRes.ok;
+    const fail = fileRes.fail + folderRes.fail;
+    setBulkBusy(false);
     setBulkMoveOpen(false); clearSelection(); loadFiles();
     if (fail === 0) toast.success('Moved', `${ok} item${ok === 1 ? '' : 's'} moved.`);
     else toast.info('Move finished', `${ok} moved, ${fail} skipped (e.g. can't move a folder into itself).`);
   };
 
   const bulkRestore = async () => {
-    let ok = 0, fail = 0, toRoot = 0;
-    for (const id of selected) {
-      try { await api(`/api/files/${id}`, { method: 'PUT' }); ok++; } catch { fail++; }
-    }
-    for (const id of selectedFolders) {
-      try {
-        const res = await api<{ ok: boolean; restored_to_root?: boolean }>(`/api/folders/${id}`, { method: 'PUT' });
-        ok++; if (res.restored_to_root) toRoot++;
-      } catch { fail++; }
-    }
+    setBulkBusy(true);
+    const fileRes = await runBulk(Array.from(selected), (id) =>
+      api(`/api/files/${id}`, { method: 'PUT' }));
+    const folderRes = await runBulk(Array.from(selectedFolders), (id) =>
+      api<{ ok: boolean; restored_to_root?: boolean }>(`/api/folders/${id}`, { method: 'PUT' }));
+    const ok = fileRes.ok + folderRes.ok;
+    const fail = fileRes.fail + folderRes.fail;
+    const toRoot = folderRes.results.filter((r) => r?.restored_to_root).length;
+    setBulkBusy(false);
     clearSelection(); loadFiles();
     if (fail > 0) toast.error('Some items could not be restored', `${ok} restored, ${fail} failed.`);
     else if (toRoot > 0) toast.info('Restored', `${ok} item${ok === 1 ? '' : 's'} restored. ${toRoot} went to the workspace root because the original folder is also in the trash.`);
@@ -724,16 +766,17 @@ export default function FilesPage() {
 
   const runBulkPermanentDelete = async () => {
     setBulkDeleteConfirm(null);
-    let ok = 0, fail = 0;
+    setBulkBusy(true);
     // Permanent delete is a SECOND DELETE on the item itself - there is no
     // /permanent sub-route, and the one this used to call 404'd silently
     // while still reporting success.
-    for (const id of selected) {
-      try { await api(`/api/files/${id}`, { method: 'DELETE' }); ok++; } catch { fail++; }
-    }
-    for (const id of selectedFolders) {
-      try { await api(`/api/folders/${id}`, { method: 'DELETE' }); ok++; } catch { fail++; }
-    }
+    const fileRes = await runBulk(Array.from(selected), (id) =>
+      api(`/api/files/${id}`, { method: 'DELETE' }));
+    const folderRes = await runBulk(Array.from(selectedFolders), (id) =>
+      api(`/api/folders/${id}`, { method: 'DELETE' }));
+    const ok = fileRes.ok + folderRes.ok;
+    const fail = fileRes.fail + folderRes.fail;
+    setBulkBusy(false);
     clearSelection(); loadFiles();
     if (fail === 0) toast.success('Deleted', `${ok} item${ok === 1 ? '' : 's'} permanently deleted.`);
     else toast.error('Some items could not be deleted', `${ok} deleted, ${fail} failed.`);
@@ -750,25 +793,21 @@ export default function FilesPage() {
   // so a stray file drop navigates the whole tab away from the app.
   const handleDragOver = (e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); if (!isDeletedView) setDragging(true); };
   const handleDragLeave = (e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); if (e.currentTarget === e.target) setDragging(false); };
-  const handleDrop = async (e: React.DragEvent) => {
+  // Dropped files are handed to the shared upload runner, same as the Uploads
+  // page. It sends credentials, uses multipart above the size threshold, and
+  // surfaces per-file progress/retry in the dock. The previous inline loop
+  // uploaded sequentially with a single credential-less PUT and swallowed
+  // every failure, so a rejected upload looked identical to a successful one.
+  const handleDrop = (e: React.DragEvent) => {
     e.preventDefault(); e.stopPropagation(); setDragging(false);
     if (isDeletedView) return;
     const droppedFiles = e.dataTransfer.files;
     if (!droppedFiles.length || !wsId) return;
-    let uploaded = 0;
-    for (let i = 0; i < droppedFiles.length; i++) {
-      const file = droppedFiles[i];
-      try {
-        const initRes = await api<{ ok: boolean; session_id?: string; error?: string }>('/api/upload/init', {
-          method: 'POST',
-          body: JSON.stringify({ workspace_id: wsId, file_name: file.name, file_size: file.size, mime_type: file.type || 'application/octet-stream', folder_id: currentFolderId }),
-        });
-        if (!initRes.ok || !initRes.session_id) continue;
-        await fetch(`${API_BASE}/api/upload/${initRes.session_id}`, { method: 'PUT', headers: { 'Content-Type': file.type || 'application/octet-stream' }, body: file });
-        uploaded++;
-      } catch {}
-    }
-    if (uploaded > 0) { toast.success('Uploaded', `${uploaded} file${uploaded > 1 ? 's' : ''} uploaded`); loadFiles(); }
+    enqueue(droppedFiles, { workspace_id: wsId, folder_id: currentFolderId });
+    toast.info(
+      `Uploading ${droppedFiles.length} file${droppedFiles.length > 1 ? 's' : ''}`,
+      'Progress is shown in the upload dock.',
+    );
   };
 
   // ── Keyboard shortcuts ────────────────────────────────────
@@ -777,10 +816,18 @@ export default function FilesPage() {
     const handler = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
       if (e.key === 'Delete' || e.key === 'Backspace') {
-        // `selectedFile` can no longer be set while isDeletedView is true -
-        // openFileWithLockCheck gates every "open the detail panel" call
-        // site - so this shortcut is already inert in the trash view.
-        if (selectedFile) { setDeleteTarget({ id: selectedFile.id, name: selectedFile.name, type: 'file' }); }
+        // Multi-select wins over the detail panel. This used to look at
+        // `selectedFile` only, so Ctrl+A followed by Delete silently deleted
+        // one file and left the other 99 selected rows untouched.
+        if (selected.size > 0 || selectedFolders.size > 0) {
+          e.preventDefault();
+          setBulkDeleteConfirm({ permanent: isDeletedView });
+        } else if (selectedFile) {
+          // `selectedFile` can no longer be set while isDeletedView is true -
+          // openFileWithLockCheck gates every "open the detail panel" call
+          // site - so this branch is already inert in the trash view.
+          setDeleteTarget({ id: selectedFile.id, name: selectedFile.name, type: 'file' });
+        }
       }
       if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
         e.preventDefault(); selectAll();
@@ -793,7 +840,7 @@ export default function FilesPage() {
     };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
-  }, [selectedFile, files]);
+  }, [selectedFile, files, selected, selectedFolders, isDeletedView]);
 
   // ── Context menu ───────────────────────────────────────────
 
@@ -898,7 +945,7 @@ export default function FilesPage() {
   // reading there) and is forced visible - like the always-on Name column -
   // so a first-time visitor sees when something was removed without having
   // to dig into the column picker.
-  const displayColumns: ColumnDef[] = isDeletedView
+  const displayColumns: ColumnDef[] = useMemo(() => (isDeletedView
     ? ALL_COLUMNS.map((c) => c.key === 'modified'
         ? {
             ...c,
@@ -907,8 +954,17 @@ export default function FilesPage() {
             renderFolder: (f: FolderItem) => f.deleted_at ? timeAgo(f.deleted_at) : '-',
           }
         : c)
-    : ALL_COLUMNS;
-  const effectiveVisibleColumns = isDeletedView ? new Set(visibleColumns).add('modified') : visibleColumns;
+    : ALL_COLUMNS), [isDeletedView]);
+  const effectiveVisibleColumns = useMemo(
+    () => (isDeletedView ? new Set(visibleColumns).add('modified') : visibleColumns),
+    [isDeletedView, visibleColumns],
+  );
+  // Hoisted out of the row loops: this used to be recomputed per row, so a
+  // 100-file listing allocated 100 identical filtered arrays on every render.
+  const activeColumns = useMemo(
+    () => displayColumns.filter((c) => effectiveVisibleColumns.has(c.key)),
+    [displayColumns, effectiveVisibleColumns],
+  );
 
   return (
     <div className="flex h-full overflow-hidden">
@@ -953,7 +1009,7 @@ export default function FilesPage() {
         </div>
         <div className="relative w-48">
           <Search className="size-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
-          <Input value={search} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearch(e.target.value)} placeholder="Search files..." className="h-8 text-xs pl-8" />
+          <Input value={searchInput} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchInput(e.target.value)} placeholder="Search files..." className="h-8 text-xs pl-8" />
         </div>
         <Select value={sortParam} onValueChange={(v) => changeSort(parseSort(v ?? ''))} items={sortSelectItems}>
           <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
@@ -1011,19 +1067,20 @@ export default function FilesPage() {
       {totalSelected > 0 && (
         <div className="flex items-center gap-2 px-5 py-2 bg-primary/10 border-b shrink-0 flex-wrap">
           <Badge variant="secondary">{totalSelected} selected</Badge>
+          {bulkBusy && <Loader2 className="size-3.5 animate-spin text-muted-foreground" />}
           {isDeletedView ? (
             <>
-              <Button variant="outline" size="sm" className="h-7 text-xs" onClick={bulkRestore}><RotateCcw className="size-3 mr-1" /> Restore</Button>
-              <Button variant="outline" size="sm" className="h-7 text-xs text-destructive border-destructive/30" onClick={() => setBulkDeleteConfirm({ permanent: true })}><Trash2 className="size-3 mr-1" /> Delete permanently</Button>
+              <Button variant="outline" size="sm" className="h-7 text-xs" disabled={bulkBusy} onClick={bulkRestore}><RotateCcw className="size-3 mr-1" /> Restore</Button>
+              <Button variant="outline" size="sm" className="h-7 text-xs text-destructive border-destructive/30" disabled={bulkBusy} onClick={() => setBulkDeleteConfirm({ permanent: true })}><Trash2 className="size-3 mr-1" /> Delete permanently</Button>
             </>
           ) : (
             <>
-              <Button variant="outline" size="sm" className="h-7 text-xs" onClick={bulkDownloadZip}><Download className="size-3 mr-1" /> Download ZIP</Button>
+              <Button variant="outline" size="sm" className="h-7 text-xs" disabled={bulkBusy} onClick={bulkDownloadZip}><Download className="size-3 mr-1" /> Download ZIP</Button>
               {selected.size > 0 && (
-                <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => openShare(Array.from(selected)[0], `${selected.size} files`)}><Share2 className="size-3 mr-1" /> Share</Button>
+                <Button variant="outline" size="sm" className="h-7 text-xs" disabled={bulkBusy} onClick={openBulkShare}><Share2 className="size-3 mr-1" /> Share</Button>
               )}
-              <Button variant="outline" size="sm" className="h-7 text-xs" onClick={bulkMove}><Move className="size-3 mr-1" /> Move</Button>
-              <Button variant="outline" size="sm" className="h-7 text-xs text-destructive border-destructive/30" onClick={() => setBulkDeleteConfirm({ permanent: false })}><Trash2 className="size-3 mr-1" /> Delete</Button>
+              <Button variant="outline" size="sm" className="h-7 text-xs" disabled={bulkBusy} onClick={bulkMove}><Move className="size-3 mr-1" /> Move</Button>
+              <Button variant="outline" size="sm" className="h-7 text-xs text-destructive border-destructive/30" disabled={bulkBusy} onClick={() => setBulkDeleteConfirm({ permanent: false })}><Trash2 className="size-3 mr-1" /> Delete</Button>
             </>
           )}
           <div className="ml-auto flex gap-1.5">
@@ -1039,7 +1096,19 @@ export default function FilesPage() {
         <div className="flex-1 overflow-y-auto p-5" onClick={() => setSelectedFile(null)}>
           {/* Cloud import progress - collapses to nothing (empty:hidden) when no job is active */}
           <div className="mb-4 empty:hidden"><ImportProgressCard /></div>
-          {loading ? <FileSkeleton view={view} count={lastItemCount.current ?? undefined} /> : folders.length === 0 && files.length === 0 ? (
+          {loading ? <FileSkeleton view={view} count={lastItemCount.current ?? undefined} /> : loadError ? (
+            /* Distinct from the empty state on purpose - "this folder is
+               empty" is a lie when the request failed, and without a retry
+               the only way out was a full page reload. */
+            <div className="flex flex-col items-center justify-center py-20 text-center">
+              <AlertCircle className="size-12 text-destructive/40 mb-4" />
+              <p className="text-sm font-medium text-foreground mb-1">Could not load this folder</p>
+              <p className="text-xs text-muted-foreground max-w-80 mb-3">{loadError}</p>
+              <Button variant="outline" size="sm" className="h-7 text-xs" onClick={loadFiles}>
+                <RefreshCw className="size-3 mr-1" /> Try again
+              </Button>
+            </div>
+          ) : folders.length === 0 && files.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 text-center">
               <FolderOpen className="size-12 text-muted-foreground/30 mb-4" />
               <p className="text-sm font-medium text-muted-foreground mb-1">
@@ -1114,7 +1183,7 @@ export default function FilesPage() {
                   {/* Table header - click a column to sort by it, click again to flip */}
                   <div className="flex items-center gap-3 px-3 py-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider border-b mb-0.5">
                     <div className="w-7 shrink-0" />
-                    {displayColumns.filter((c) => effectiveVisibleColumns.has(c.key)).map((col) => (
+                    {activeColumns.map((col) => (
                       <button
                         key={col.key}
                         onClick={() => changeSort(toggleSort(sort, col.key))}
@@ -1130,9 +1199,7 @@ export default function FilesPage() {
                     <div className="w-8 shrink-0" />
                   </div>
                   {/* Folder rows - pinned above files, same columns */}
-                  {folders.map((f) => {
-                    const cols = displayColumns.filter((c) => effectiveVisibleColumns.has(c.key));
-                    return (
+                  {folders.map((f) => (
                       <div
                         key={f.id}
                         className={`flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-muted/50 cursor-pointer group ${selectedFolders.has(f.id) ? 'bg-primary/10' : ''}`}
@@ -1148,7 +1215,7 @@ export default function FilesPage() {
                           <img src={folderIconSrc(f.file_count, !!f.is_synced)} alt="" className="w-7 h-7 object-contain" />
                           <OriginBadge origin={f.origin} />
                         </span>
-                        {cols.map((col) => {
+                        {activeColumns.map((col) => {
                           if (col.key === 'name') {
                             return (
                               <div key="name" className="flex-1 min-w-40 flex items-center gap-2">
@@ -1181,13 +1248,11 @@ export default function FilesPage() {
                           )}
                         </div>
                       </div>
-                    );
-                  })}
+                  ))}
                   {/* Table rows */}
                   {files.map((f) => {
                     const isActive = selectedFile?.id === f.id || highlightId === f.id;
                     const isSel = selected.has(f.id);
-                    const cols = displayColumns.filter((c) => effectiveVisibleColumns.has(c.key));
                     return (
                       <div
                         key={f.id}
@@ -1202,7 +1267,7 @@ export default function FilesPage() {
                           className={`size-4 shrink-0 transition-all ${isSel ? '' : 'opacity-0 group-hover:opacity-100'} ${selected.size > 0 ? 'opacity-100!' : ''}`}
                         />
                         <RowThumbnail fileId={f.id} fileName={f.name} />
-                        {cols.map((col) => {
+                        {activeColumns.map((col) => {
                           if (col.key === 'name') {
                             return (
                               <div key="name" className="flex-1 min-w-40 flex items-center gap-2">
@@ -1385,7 +1450,22 @@ export default function FilesPage() {
       <Dialog open={!!renameTarget} onOpenChange={() => setRenameTarget(null)}>
         <DialogContent className="max-w-sm">
           <DialogHeader><DialogTitle>Rename</DialogTitle></DialogHeader>
-          <Input value={renameName} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setRenameName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleRename()} />
+          {/* autoFocus alone put the caret at the end of the existing name, so
+              renaming meant selecting or deleting the old one by hand first.
+              Selecting the basename (not the extension) means typing replaces
+              the name and keeps ".pdf" - the usual file-manager behaviour. */}
+          <Input
+            value={renameName}
+            autoFocus
+            ref={(el: HTMLInputElement | null) => {
+              if (!el || el.dataset.selected === renameName) return;
+              el.dataset.selected = renameName;
+              const dot = renameName.lastIndexOf('.');
+              el.setSelectionRange(0, dot > 0 ? dot : renameName.length);
+            }}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setRenameName(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleRename()}
+          />
           <DialogFooter>
             <Button variant="outline" onClick={() => setRenameTarget(null)}>Cancel</Button>
             <Button onClick={handleRename}>Rename</Button>
@@ -1424,7 +1504,7 @@ export default function FilesPage() {
       {/* Share modal */}
       <ShareModal
         open={!!shareTarget}
-        fileId={shareTarget?.id ?? null}
+        fileIds={shareTarget?.ids ?? []}
         fileName={shareTarget?.name ?? ''}
         onClose={() => { setShareTarget(null); loadFiles(); }}
       />
@@ -1509,7 +1589,7 @@ export default function FilesPage() {
       </Dialog>
 
       {/* Unlock password dialog */}
-      <Dialog open={!!unlockPrompt} onOpenChange={() => setUnlockPrompt(null)}>
+      <Dialog open={!!unlockPrompt} onOpenChange={() => closeUnlockPrompt()}>
         <DialogContent className="max-w-xs">
           <DialogHeader><DialogTitle className="flex items-center gap-2"><Lock className="size-4" /> File is locked</DialogTitle></DialogHeader>
           <p className="text-xs text-muted-foreground">Enter the password to access <span className="font-semibold text-foreground break-all">{unlockPrompt?.file.name}</span></p>
@@ -1524,7 +1604,7 @@ export default function FilesPage() {
             autoFocus
           />
           <DialogFooter>
-            <Button variant="outline" onClick={() => setUnlockPrompt(null)}>Cancel</Button>
+            <Button variant="outline" onClick={closeUnlockPrompt}>Cancel</Button>
             <Button onClick={handleUnlockSubmit} disabled={unlocking}>
               {unlocking && <Loader2 className="size-4 animate-spin mr-1.5" />} Unlock
             </Button>
@@ -1554,7 +1634,21 @@ export default function FilesPage() {
           files={files}
           workspaceId={wsId}
           onClose={() => setViewerFile(null)}
-          onNavigate={(f) => setViewerFile(f as FileItem)}
+          onNavigate={(f) => {
+            // Arrow-key / prev-next navigation has to clear the same lock gate
+            // as opening a file directly. This used to assign the file
+            // straight into the viewer, so stepping onto a full-locked file
+            // displayed it without ever asking for the password.
+            const next = f as FileItem;
+            if (next.lock_mode === 'full_lock' && !unlockedFiles.has(next.id)) {
+              setViewerFile(null);
+              setUnlockPrompt({ file: next, action: 'view' });
+              setUnlockPassword('');
+              setUnlockError('');
+              return;
+            }
+            setViewerFile(next);
+          }}
           onRefresh={loadFiles}
         />
       )}
@@ -1721,7 +1815,10 @@ function FileCard({ file, view, selected, anySelected, active, highlight, domId,
 
 // ── Small row thumbnail (table view): preview if image, else icon ──
 
-function RowThumbnail({ fileId, fileName }: { fileId: string; fileName: string }) {
+// memo'd on purpose: this is the per-row image, and the page re-renders on
+// every one of its many state changes (typing, opening a dialog, selecting).
+// Its props are primitives, so the comparison is free and always correct.
+const RowThumbnail = memo(function RowThumbnail({ fileId, fileName }: { fileId: string; fileName: string }) {
   return (
     <FilePreviewImage
       fileId={fileId}
@@ -1731,11 +1828,11 @@ function RowThumbnail({ fileId, fileName }: { fileId: string; fileName: string }
       fallback={<img src={fileIconSrc(fileName)} alt="" className="w-7 h-7 shrink-0" />}
     />
   );
-}
+});
 
 // ── File thumbnail with error fallback ─────────────────────
 
-function FileThumbnail({ fileId, fileName, ext }: { fileId: string; fileName: string; ext: string }) {
+const FileThumbnail = memo(function FileThumbnail({ fileId, fileName, ext }: { fileId: string; fileName: string; ext: string }) {
   const badge = (
     <div
       className="w-full h-full flex items-center justify-center"
@@ -1761,7 +1858,7 @@ function FileThumbnail({ fileId, fileName, ext }: { fileId: string; fileName: st
       />
     </div>
   );
-}
+});
 
 // ── Dropdown menu (three dots) ─────────────────────────────
 

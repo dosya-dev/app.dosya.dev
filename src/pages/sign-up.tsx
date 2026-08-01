@@ -7,6 +7,8 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Loader2, Eye, EyeOff } from 'lucide-react';
 import { API_BASE } from '@/api/client';
 import { PublicNav } from '@/components/public-nav';
+import { PasswordStrengthMeter } from '@/components/password-strength-meter';
+import { MIN_PASSWORD_LENGTH } from '@/lib/password-strength';
 
 export default function SignUpPage() {
   const navigate = useNavigate();
@@ -18,10 +20,11 @@ export default function SignUpPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const [lastMethod] = useState<string | null>(() => {
+  // Null when this browser has never signed in - badging Google as "Last used"
+  // in that case asserts a history we do not have.
+  const [lastUsed] = useState<string | null>(() => {
     try { return localStorage.getItem('dosya_last_login_method'); } catch { return null; }
   });
-  const lastUsed = lastMethod ?? 'google';
 
   useEffect(() => {
     const r = searchParams.get('ref');
@@ -32,6 +35,12 @@ export default function SignUpPage() {
     e.preventDefault();
     setError('');
     if (!terms) { setError('Please accept the Terms of Service to continue.'); return; }
+    // The reset-password page has always enforced this; sign-up sent anything
+    // to the server, so "12345678" only failed once it round-tripped.
+    if (password.length < MIN_PASSWORD_LENGTH) {
+      setError(`Password must be at least ${MIN_PASSWORD_LENGTH} characters.`);
+      return;
+    }
     setLoading(true);
     try {
       const ref = searchParams.get('ref') ?? sessionStorage.getItem('dosya_ref') ?? undefined;
@@ -146,6 +155,7 @@ export default function SignUpPage() {
                       {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
                     </button>
                   </div>
+                  <PasswordStrengthMeter password={password} />
                 </div>
                 <label className="flex items-start gap-2 text-sm text-muted-foreground">
                   <Checkbox checked={terms} onCheckedChange={(checked) => setTerms(checked)} className="mt-0.5 size-4" />

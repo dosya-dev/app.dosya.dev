@@ -15,6 +15,8 @@ export interface UploadItem {
   workspace_id: string;
   folder_id: string | null;
   region: string;
+  /** Set when this upload replaces an existing file's contents (new version). */
+  file_id?: string | null;
   status: UploadStatus;
   progress: number;        // 0..100
   bytesUploaded: number;
@@ -29,5 +31,8 @@ export interface UploadItem {
 export interface UploadInput {
   workspace_id: string;
   folder_id: string | null;
-  region: string;
+  /** Omit to let the server apply the workspace's default region. */
+  region?: string;
+  /** Set to upload a new version of an existing file instead of creating one. */
+  file_id?: string | null;
 }

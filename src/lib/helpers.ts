@@ -1,12 +1,17 @@
-export function timeAgo(ts: number): string {
-  const diff = Math.floor(Date.now() / 1000) - ts;
+/** `now` (unix seconds) is injectable so the formatting is testable. */
+export function timeAgo(ts: number, now: number = Math.floor(Date.now() / 1000)): string {
+  const diff = now - ts;
   if (diff < 60) return 'just now';
   if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
   if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
   if (diff < 604800) return Math.floor(diff / 86400) + 'd ago';
   const d = new Date(ts * 1000);
   const m = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  return `${m[d.getMonth()]} ${d.getDate()}`;
+  // A bare "Jul 23" can't tell a 2024 upload from a 2026 one. The year is only
+  // added when it differs from the current one, so the common case stays short.
+  const year = d.getFullYear();
+  const suffix = year === new Date(now * 1000).getFullYear() ? '' : `, ${year}`;
+  return `${m[d.getMonth()]} ${d.getDate()}${suffix}`;
 }
 
 export function humanSize(b: number): string {
@@ -16,7 +21,14 @@ export function humanSize(b: number): string {
   return (b / 1073741824).toFixed(2) + ' GB';
 }
 
+/**
+ * Compact size for dashboard stat tiles. Unlike humanSize this drops the
+ * decimal in the MB range, but it still has to degrade below a megabyte -
+ * reporting a 500 KB account as "0 MB used" reads as "nothing is stored".
+ */
 export function humanSizeShort(b: number): string {
+  if (b < 1024) return b + ' B';
+  if (b < 1048576) return (b / 1024).toFixed(0) + ' KB';
   if (b < 1073741824) return (b / 1048576).toFixed(0) + ' MB';
   return (b / 1073741824).toFixed(1) + ' GB';
 }

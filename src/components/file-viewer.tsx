@@ -14,16 +14,13 @@ import { useInFileFind } from '@/lib/use-in-file-find';
 import { TextFindBar } from '@/components/text-find-bar';
 import { TextEditorOverlay } from '@/components/text-editor';
 import { VCardView } from '@/components/vcard-viewer';
+import type { FileItem } from '@/lib/file-types';
 
 
 // ── Types ─────────────────────────────────────────────────
 
-interface FileItem {
-  id: string; name: string; size_bytes: number; mime_type: string; extension: string;
-  region: string; created_at: number; updated_at: number; current_version: number;
-  lock_mode: string; is_hidden: number; uploaded_by: string; uploader_name: string;
-  share_count: number; comment_count: number; is_synced: number;
-}
+// FileItem is imported at the top - it was declared here locally without
+// `origin`, describing the same API row differently from the files page.
 
 interface Version {
   version_number: number;

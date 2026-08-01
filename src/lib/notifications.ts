@@ -49,7 +49,13 @@ export function isUnread(item: NotificationItem): boolean {
 }
 
 export function groupByDay(items: NotificationItem[], now: number): { label: string; items: NotificationItem[] }[] {
-  const startOfToday = Math.floor(now / 86400) * 86400; // UTC day boundary; fine for grouping
+  // Local midnight, not UTC midnight. "Today" is a claim about the viewer's
+  // calendar: east of UTC, a UTC boundary pushed the user's own early-morning
+  // notifications into "Earlier", and west of it, yesterday evening's showed
+  // up under "Today".
+  const midnight = new Date(now * 1000);
+  midnight.setHours(0, 0, 0, 0);
+  const startOfToday = Math.floor(midnight.getTime() / 1000);
   const today: NotificationItem[] = [];
   const earlier: NotificationItem[] = [];
   for (const it of items) (it.created_at >= startOfToday ? today : earlier).push(it);

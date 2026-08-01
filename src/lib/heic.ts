@@ -10,7 +10,14 @@ import { persistGet, persistPut } from '@/lib/heic-persist';
 // a dual-core machine) and capped at 4: each worker can hold a full-size
 // decoded RGBA bitmap (tens of MB for a 12MP photo) while it works, so more
 // workers also means more peak memory, not just more CPU.
-const poolSize = Math.max(2, Math.min(4, (navigator.hardwareConcurrency ?? 4) - 1));
+//
+// Read defensively rather than off a bare `navigator`: this runs at module
+// scope, so any environment without a DOM (SSR, a Worker, a test importing
+// this module for one export) threw on import instead of merely getting a
+// different pool size.
+const hardwareThreads =
+  typeof navigator !== 'undefined' ? navigator.hardwareConcurrency : undefined;
+const poolSize = Math.max(2, Math.min(4, (hardwareThreads ?? 4) - 1));
 
 // Workers are spawned lazily by the pool itself, so a session that never
 // opens a HEIC never spawns one.

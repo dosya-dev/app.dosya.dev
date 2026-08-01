@@ -11,12 +11,17 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Mail, Link2, X, Loader2, Copy, ChevronDown } from 'lucide-react';
+import { Mail, Link2, X, Loader2, Copy, ChevronDown, Files } from 'lucide-react';
 import { toast } from '@/lib/toast';
 
 interface ShareModalProps {
   open: boolean;
-  fileId: string | null;
+  /**
+   * Every file being shared. More than one creates a single bundle link
+   * covering all of them - the multi-select Share used to pass just the first
+   * id while the UI said "N files", so N-1 files were silently not shared.
+   */
+  fileIds: string[];
   fileName: string;
   onClose: () => void;
 }
@@ -53,7 +58,8 @@ function defaultCustomExpiry(): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-export function ShareModal({ open, fileId, fileName, onClose }: ShareModalProps) {
+export function ShareModal({ open, fileIds, fileName, onClose }: ShareModalProps) {
+  const isBundle = fileIds.length > 1;
   const [tab, setTab] = useState<Tab>('email');
   const [emails, setEmails] = useState<string[]>([]);
   const [emailInput, setEmailInput] = useState('');
@@ -127,7 +133,7 @@ export function ShareModal({ open, fileId, fileName, onClose }: ShareModalProps)
   };
 
   const handleSubmit = async () => {
-    if (!fileId) return;
+    if (fileIds.length === 0) return;
     setError('');
 
     if (tab === 'email' && emails.length === 0) {
@@ -162,16 +168,27 @@ export function ShareModal({ open, fileId, fileName, onClose }: ShareModalProps)
     try {
       if (tab === 'email') {
         // One link for everyone, so a private share has a single recipient list
-        // rather than one link per address.
-        const body: Record<string, unknown> = {
-          emails,
-          message: message.trim(),
-          restrict_to_recipients: restrictToRecipients,
-        };
+        // rather than one link per address. A multi-file share goes to the
+        // bundle route, which is the only one that can put N files behind one
+        // link; both return the same {ok, failed} shape.
+        const body: Record<string, unknown> = isBundle
+          ? {
+              file_ids: fileIds,
+              notify: true,
+              recipient_emails: emails,
+              message: message.trim(),
+              access_mode: restrictToRecipients ? 'restricted' : 'public',
+            }
+          : {
+              emails,
+              message: message.trim(),
+              restrict_to_recipients: restrictToRecipients,
+            };
         if (pw) body.password = pw;
         if (expiresAt) body.expires_at = expiresAt;
 
-        const res = await api<{ ok: boolean; error?: string; failed?: string[] }>(`/api/files/${fileId}/share-email`, {
+        const endpoint = isBundle ? '/api/files/share-bundle' : `/api/files/${fileIds[0]}/share-email`;
+        const res = await api<{ ok: boolean; error?: string; failed?: string[] }>(endpoint, {
           method: 'POST',
           body: JSON.stringify(body),
         });
@@ -192,11 +209,12 @@ export function ShareModal({ open, fileId, fileName, onClose }: ShareModalProps)
           setSubmitting(false);
         }
       } else {
-        const linkBody: Record<string, unknown> = {};
+        const linkBody: Record<string, unknown> = isBundle ? { file_ids: fileIds } : {};
         if (expiresAt) linkBody.expires_at = expiresAt;
         if (pw) linkBody.password = pw;
 
-        const data = await api<{ ok: boolean; link?: { url: string }; error?: string }>(`/api/files/${fileId}/share`, {
+        const endpoint = isBundle ? '/api/files/share-bundle' : `/api/files/${fileIds[0]}/share`;
+        const data = await api<{ ok: boolean; link?: { url: string }; error?: string }>(endpoint, {
           method: 'POST',
           body: JSON.stringify(linkBody),
         });
@@ -251,11 +269,16 @@ export function ShareModal({ open, fileId, fileName, onClose }: ShareModalProps)
 
         {/* File info */}
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <svg viewBox="0 0 14 14" fill="none" width="15" height="15" className="shrink-0">
-            <path d="M3.5 1h5l3.5 3.5V12a1 1 0 01-1 1H3.5a1 1 0 01-1-1V2a1 1 0 011-1z" stroke="currentColor" strokeWidth="1.1" />
-            <path d="M8.5 1v3.5h3.5" stroke="currentColor" strokeWidth="1.1" />
-          </svg>
+          {isBundle ? (
+            <Files className="size-3.75 shrink-0" />
+          ) : (
+            <svg viewBox="0 0 14 14" fill="none" width="15" height="15" className="shrink-0">
+              <path d="M3.5 1h5l3.5 3.5V12a1 1 0 01-1 1H3.5a1 1 0 01-1-1V2a1 1 0 011-1z" stroke="currentColor" strokeWidth="1.1" />
+              <path d="M8.5 1v3.5h3.5" stroke="currentColor" strokeWidth="1.1" />
+            </svg>
+          )}
           <span className="truncate font-medium text-foreground">{fileName}</span>
+          {isBundle && <span className="shrink-0">· one link for all of them</span>}
         </div>
 
         {/* Email tab */}

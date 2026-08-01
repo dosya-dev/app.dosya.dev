@@ -1,12 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { api, API_BASE } from '@/api/client';
+import { api, API_BASE, apiErrorMessage } from '@/api/client';
 import { useWorkspace } from '@/stores/workspace';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Upload, ChevronDown } from 'lucide-react';
+import { Upload, ChevronDown, AlertCircle, RefreshCw } from 'lucide-react';
 import { FilePreviewImage } from '@/components/file-preview-image';
 import {
   greeting, todayStr, humanSize, humanSizeShort, timeAgo, shortDateTime,
@@ -60,20 +60,54 @@ export default function DashboardPage() {
   const wsId = useWorkspace((s: { activeId: string }) => s.activeId);
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
+  /** Reason the last load failed - shown with a retry instead of a dead end. */
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!wsId) return;
+    setLoading(true);
+    setLoadError(null);
     try {
       const d = await api<{ ok: boolean } & DashboardData>(`/api/dashboard?workspace_id=${wsId}`);
       if (d.ok) setData(d);
-    } catch { /* ignore */ }
+      else setLoadError('The dashboard could not be loaded.');
+    } catch (err) {
+      // The old dead-end read "Failed to load dashboard" with no reason and no
+      // way forward but a manual reload.
+      setLoadError(apiErrorMessage(err, 'The dashboard could not be loaded.'));
+    }
     setLoading(false);
   }, [wsId]);
 
   useEffect(() => { load(); }, [load]);
 
+  // Uploads finishing elsewhere change the numbers on this page.
+  useEffect(() => {
+    const onUploaded = () => load();
+    window.addEventListener('dosya:upload-complete', onUploaded);
+    return () => window.removeEventListener('dosya:upload-complete', onUploaded);
+  }, [load]);
+
   if (loading) return <DashboardSkeleton />;
-  if (!data) return <div className="p-6 text-center text-muted-foreground">Failed to load dashboard</div>;
+  if (!data) {
+    return (
+      <div className="flex flex-col items-center justify-center py-24 px-6 text-center">
+        <AlertCircle className="size-10 text-destructive/40 mb-3" />
+        <p className="text-sm font-medium text-foreground mb-1">Could not load your dashboard</p>
+        <p className="text-xs text-muted-foreground max-w-80 mb-4">
+          {loadError ?? 'The dashboard could not be loaded.'}
+        </p>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" className="h-8 text-xs" onClick={load}>
+            <RefreshCw className="size-3 mr-1" /> Try again
+          </Button>
+          <Link to="/support">
+            <Button variant="ghost" size="sm" className="h-8 text-xs">Contact support</Button>
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   const s = data.stats;
   const pct = s.storage_cap_bytes ? Math.min(100, Math.round((s.total_bytes / s.storage_cap_bytes) * 100)) : 0;

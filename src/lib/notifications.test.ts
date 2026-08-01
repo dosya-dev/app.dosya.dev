@@ -45,6 +45,33 @@ describe("groupByDay", () => {
     const groups = groupByDay([{ ...base, created_at: now - 60 }], now);
     expect(groups.map((g) => g.label)).toEqual(["Today"]);
   });
+
+  it("uses the viewer's local midnight, not UTC midnight", () => {
+    // In UTC+3, local midnight is 21:00 UTC the previous day. Anything the
+    // user sees as "this morning" between 00:00 and 02:59 local is still
+    // yesterday in UTC, and a UTC boundary files it under "Earlier".
+    const original = process.env.TZ;
+    process.env.TZ = "Europe/Istanbul"; // UTC+3, no DST
+    try {
+      const localMidnight = new Date("2026-07-30T00:00:00+03:00").getTime() / 1000;
+      const thisMorning = localMidnight + 3600; // 01:00 local, 22:00 UTC yesterday
+      const lastNight = localMidnight - 3600;   // 23:00 local the previous day
+      const now = localMidnight + 12 * 3600;    // midday local
+
+      const groups = groupByDay(
+        [
+          { ...base, id: "morning", created_at: thisMorning },
+          { ...base, id: "lastnight", created_at: lastNight },
+        ],
+        now,
+      );
+      expect(groups[0].label).toBe("Today");
+      expect(groups[0].items.map((i) => i.id)).toEqual(["morning"]);
+      expect(groups[1].items.map((i) => i.id)).toEqual(["lastnight"]);
+    } finally {
+      process.env.TZ = original;
+    }
+  });
 });
 
 describe("isUnread", () => {
