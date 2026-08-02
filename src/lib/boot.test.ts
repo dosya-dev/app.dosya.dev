@@ -127,3 +127,67 @@ describe('bootDashboard', () => {
     expect(result.activeWorkspaceId).toBeNull();
   });
 });
+
+describe('bootDashboard - welcome tour', () => {
+  test('sends a user who has not seen the tour to /welcome', async () => {
+    const boot = await bootDashboard({
+      fetchMe: async () => okRes({ ok: true, user: { tour_completed: false } }),
+      fetchWorkspaces: workspaces(['ws1']),
+      currentActiveId: 'ws1',
+    });
+    expect(boot.redirect).toBe('/welcome');
+  });
+
+  test('does not redirect a user who has finished the tour', async () => {
+    const boot = await bootDashboard({
+      fetchMe: async () => okRes({ ok: true, user: { tour_completed: true } }),
+      fetchWorkspaces: workspaces(['ws1']),
+      currentActiveId: 'ws1',
+    });
+    expect(boot.redirect).toBeNull();
+  });
+
+  // apps/web and apps/api deploy separately and web often goes live first. If
+  // a missing flag meant "not seen", every user would be redirected to a tour
+  // the API cannot yet mark finished - an infinite loop. Absent means done.
+  test('treats a missing tour_completed as already completed', async () => {
+    const boot = await bootDashboard({
+      fetchMe: async () => okRes({ ok: true, user: {} }),
+      fetchWorkspaces: workspaces(['ws1']),
+      currentActiveId: 'ws1',
+    });
+    expect(boot.redirect).toBeNull();
+  });
+
+  // A user with no workspace has a problem to fix before a tour.
+  test('prefers the create-workspace redirect over the tour', async () => {
+    const boot = await bootDashboard({
+      fetchMe: async () => okRes({ ok: true, user: { tour_completed: false } }),
+      fetchWorkspaces: workspaces([]),
+      currentActiveId: '',
+    });
+    expect(boot.redirect).toBe('/create-workspace');
+  });
+
+  // Healing a stale selection and showing the tour are independent. Taking the
+  // tour branch must not drop the healed id, or the user comes back to a
+  // selection that still points at a workspace they cannot see.
+  test('still heals a stale workspace selection while redirecting to the tour', async () => {
+    const boot = await bootDashboard({
+      fetchMe: async () => okRes({ ok: true, user: { tour_completed: false } }),
+      fetchWorkspaces: workspaces(['ws9']),
+      currentActiveId: 'ws_gone',
+    });
+    expect(boot.redirect).toBe('/welcome');
+    expect(boot.activeWorkspaceId).toBe('ws9');
+  });
+
+  test('still shows the tour when the workspaces request failed', async () => {
+    const boot = await bootDashboard({
+      fetchMe: async () => okRes({ ok: true, user: { tour_completed: false } }),
+      fetchWorkspaces: () => Promise.reject(new Error('offline')),
+      currentActiveId: 'ws1',
+    });
+    expect(boot.redirect).toBe('/welcome');
+  });
+});
