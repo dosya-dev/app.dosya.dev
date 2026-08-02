@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { api, API_BASE, apiErrorMessage } from '@/api/client';
 import { useWorkspace } from '@/stores/workspace';
+import { useOnboarding } from '@/stores/onboarding';
+import { FirstRunHome } from '@/components/onboarding/first-run-home';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
@@ -58,6 +60,8 @@ const MEMBER_COLORS = ['#22c55e', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#
 
 export default function DashboardPage() {
   const wsId = useWorkspace((s: { activeId: string }) => s.activeId);
+  const onbDismissed = useOnboarding((s) => s.dismissed);
+  const refreshOnboarding = useOnboarding((s) => s.refresh);
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   /** Reason the last load failed - shown with a retry instead of a dead end. */
@@ -79,14 +83,16 @@ export default function DashboardPage() {
     setLoading(false);
   }, [wsId]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(); void refreshOnboarding(wsId); }, [load, refreshOnboarding, wsId]);
 
-  // Uploads finishing elsewhere change the numbers on this page.
+  // Uploads finishing elsewhere change the numbers on this page. The first
+  // upload is also what flips this page from first-run to dashboard, so both
+  // fetches have to refresh on it.
   useEffect(() => {
-    const onUploaded = () => load();
+    const onUploaded = () => { load(); void refreshOnboarding(wsId); };
     window.addEventListener('dosya:upload-complete', onUploaded);
     return () => window.removeEventListener('dosya:upload-complete', onUploaded);
-  }, [load]);
+  }, [load, refreshOnboarding, wsId]);
 
   if (loading) return <DashboardSkeleton />;
   if (!data) {
@@ -107,6 +113,13 @@ export default function DashboardPage() {
         </div>
       </div>
     );
+  }
+
+  // An empty workspace gets the first-run screen instead of a dashboard full
+  // of zeroes. Keyed on the workspace being empty rather than the account
+  // being new, so accounts that never uploaded get it too.
+  if (data.stats.total_files === 0 && !onbDismissed) {
+    return <FirstRunHome userName={data.user_name} />;
   }
 
   const s = data.stats;
