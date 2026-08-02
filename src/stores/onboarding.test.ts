@@ -71,6 +71,23 @@ describe('useOnboarding', () => {
     expect(useOnboarding.getState().loaded).toBe(true);
   });
 
+  // Regression: the in-flight guard must be keyed by workspace id. The
+  // dashboard's refresh effect is keyed on [wsId] and fires again on every
+  // workspace switch - a bare single in-flight promise would let a request
+  // for ws_A swallow a concurrent call for ws_B, landing ws_A's state in the
+  // store while the user is looking at ws_B (and, if ws_A was dismissed,
+  // wrongly suppressing ws_B's onboarding for the rest of the session).
+  it('issues a separate fetch for each of two different workspace ids called concurrently', async () => {
+    const f = mockFetch(() => OK_PAYLOAD);
+    vi.stubGlobal('fetch', f);
+    const pA = useOnboarding.getState().refresh('ws_A');
+    const pB = useOnboarding.getState().refresh('ws_B');
+    await Promise.all([pA, pB]);
+    expect(f).toHaveBeenCalledTimes(2);
+    expect(f).toHaveBeenCalledWith(expect.stringContaining('workspace_id=ws_A'), expect.anything());
+    expect(f).toHaveBeenCalledWith(expect.stringContaining('workspace_id=ws_B'), expect.anything());
+  });
+
   it('applies a purpose optimistically before the request resolves', async () => {
     let resolve: (v: unknown) => void = () => {};
     vi.stubGlobal('fetch', vi.fn(() => new Promise((r) => {
