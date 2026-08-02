@@ -78,7 +78,18 @@ describe('useOnboarding', () => {
   });
 
   it('dismisses optimistically', async () => {
-    vi.stubGlobal('fetch', mockFetch(() => ({ ok: true })));
+    let resolve: (v: unknown) => void = () => {};
+    vi.stubGlobal('fetch', vi.fn(() => new Promise((r) => {
+      resolve = () => r({ ok: true, status: 200, json: async () => ({ ok: true }) } as Response);
+    })));
+    const pending = useOnboarding.getState().dismiss();
+    expect(useOnboarding.getState().dismissed).toBe(true);
+    resolve(null);
+    await pending;
+  });
+
+  it('keeps the dismissal when the write fails', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('offline'); }));
     await useOnboarding.getState().dismiss();
     expect(useOnboarding.getState().dismissed).toBe(true);
   });
