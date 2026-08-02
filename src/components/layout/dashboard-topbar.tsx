@@ -17,6 +17,7 @@ import { logoutAndRedirect } from '@/lib/logout';
 import { humanSize, colorFor, labelFor, initials } from '@/lib/helpers';
 import { titleForPath, iconForPath } from '@/lib/page-title';
 import { NotificationBell } from '../notifications/notification-bell';
+import { SetupPill } from '@/components/onboarding/setup-pill';
 
 interface UserInfo {
   id: string;
@@ -210,6 +211,9 @@ export function DashboardTopbar() {
         <Button variant="outline" size="sm" className="size-9 p-0" onClick={toggleTheme}>
           {dark ? <Sun className="size-4" /> : <Moon className="size-4" />}
         </Button>
+
+        {/* Setup progress */}
+        <SetupPill />
 
         {/* Notifications */}
         <NotificationBell />
