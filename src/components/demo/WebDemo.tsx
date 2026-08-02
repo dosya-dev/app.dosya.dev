@@ -112,7 +112,12 @@ function Placeholder({ icon: Icon, title, blurb }: { icon: LucideIcon; title: st
 
 function Root() {
   const { state, dispatch } = useDemo();
-  const [view, setView] = useState<WebView>('dashboard');
+  // initialView seeds which page the demo opens to (e.g. the tour showing
+  // "sharing" as the Shared view). It is typed loosely as `string` on
+  // DemoState since the engine has no knowledge of WebView; this cast just
+  // spells out that shared contract for the compiler, the same way
+  // welcome.tsx casts its own theme id.
+  const [view, setView] = useState<WebView>(() => (state.initialView as WebView | undefined) ?? 'dashboard');
 
   function onSelect(id: string) {
     switch (id) {
@@ -154,11 +159,17 @@ function Root() {
 interface WebDemoProps {
   /** Restyles this demo instance to match a theme picked elsewhere on the page. */
   theme?: DemoThemeId;
+  /** Overrides the toast's "Sign up free" link; null hides the link. */
+  ctaHref?: string | null;
+  /** Shows or hides the in-demo theme pickers. Defaults to true. */
+  showThemeControls?: boolean;
+  /** Seeds which page the demo opens to. Defaults to 'dashboard'. */
+  initialView?: WebView;
 }
 
-export default function WebDemo({ theme }: WebDemoProps = {}): ReactNode {
+export default function WebDemo({ theme, ctaHref, showThemeControls, initialView }: WebDemoProps = {}): ReactNode {
   return (
-    <DemoProvider theme={theme}>
+    <DemoProvider theme={theme} ctaHref={ctaHref} showThemeControls={showThemeControls} initialView={initialView}>
       <Root />
     </DemoProvider>
   );

@@ -12,21 +12,31 @@ vi.mock('react-router-dom', async (importOriginal) => {
 // The demos are heavy and already covered by their own vendored test; the
 // route's job is orchestration, so stub them to keep this test about that.
 // All three are DEFAULT exports, so the factories must return `default`.
-// Each stub echoes the `theme` prop it was given onto a data-theme attribute,
-// so a test can prove the chosen theme actually reaches the preview - not
-// just that the demo rendered.
-vi.mock('@/components/demo/WebDemo', () => ({
-  default: (props: { theme?: string }) => <div data-testid="web-demo" data-theme={props.theme} />,
-}));
-vi.mock('@/components/demo/DesktopDemo', () => ({
-  default: (props: { theme?: string }) => <div data-testid="desktop-demo" data-theme={props.theme} />,
-}));
-vi.mock('@/components/demo/MobileDemo', () => ({
-  default: (props: { theme?: string }) => <div data-testid="mobile-demo" data-theme={props.theme} />,
-}));
+// Each stub echoes its props onto data attributes, so a test can prove what
+// actually reaches the preview - not just that the demo rendered:
+//  - data-theme: the chosen theme id
+//  - data-show-theme-controls: whether the demo's own theme picker shows
+//  - data-cta-href: the toast CTA link ("null" string when disabled)
+//  - data-view (WebDemo only): which page the demo seeds to
+interface DemoStubProps { theme?: string; showThemeControls?: boolean; ctaHref?: string | null; initialView?: string }
+function demoStub(testid: string) {
+  return (props: DemoStubProps) => (
+    <div
+      data-testid={testid}
+      data-theme={props.theme}
+      data-show-theme-controls={String(props.showThemeControls)}
+      data-cta-href={props.ctaHref === null ? 'null' : props.ctaHref}
+      data-view={props.initialView}
+    />
+  );
+}
+vi.mock('@/components/demo/WebDemo', () => ({ default: demoStub('web-demo') }));
+vi.mock('@/components/demo/DesktopDemo', () => ({ default: demoStub('desktop-demo') }));
+vi.mock('@/components/demo/MobileDemo', () => ({ default: demoStub('mobile-demo') }));
 
 import WelcomePage from './welcome';
 import { TOUR_STEPS } from '@/components/tour/tour-steps';
+import { TOUR_DONE_KEY } from '@/lib/boot';
 
 beforeAll(() => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -42,6 +52,7 @@ describe('WelcomePage', () => {
     root = null; container = null;
     navigate.mockClear();
     vi.unstubAllGlobals();
+    sessionStorage.removeItem(TOUR_DONE_KEY);
   });
 
   async function render() {
@@ -135,5 +146,68 @@ describe('WelcomePage', () => {
       container!.querySelector<HTMLButtonElement>('[data-testid="tour-skip"]')!.click();
     });
     expect(navigate).toHaveBeenCalledWith('/', { replace: true });
+  });
+
+  // A PATCH that fails once is fine - the boot gate offers the tour again.
+  // A PATCH that keeps failing must not ping-pong the user between / and
+  // /welcome forever. finish() sets the local escape-hatch flag before
+  // navigating regardless of whether the write landed, so this must hold
+  // even on the failure path.
+  it('sets the local tour-done flag even when the PATCH rejects', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('offline'); }));
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    await act(async () => {
+      root!.render(<MemoryRouter><WelcomePage /></MemoryRouter>);
+      await Promise.resolve();
+    });
+    expect(sessionStorage.getItem(TOUR_DONE_KEY)).toBeNull();
+    await act(async () => {
+      container!.querySelector<HTMLButtonElement>('[data-testid="tour-skip"]')!.click();
+    });
+    expect(sessionStorage.getItem(TOUR_DONE_KEY)).toBe('1');
+  });
+
+  // Inside the tour the viewer already has an account: the demos' own theme
+  // pickers would be a redundant, non-functional second control, and the
+  // toast's "Sign up free" link would navigate a signed-up user out of the
+  // tour to wherever they came from. Both must be disabled on every preview.
+  it('disables the demos own theme controls and sign-up CTA link on every page', async () => {
+    await render();
+    for (let i = 0; i < TOUR_STEPS.length; i++) {
+      const web = container!.querySelector<HTMLElement>('[data-testid="web-demo"]')!;
+      expect(web.dataset.showThemeControls).toBe('false');
+      expect(web.dataset.ctaHref).toBe('null');
+      if (i === 0) {
+        const desktop = container!.querySelector<HTMLElement>('[data-testid="desktop-demo"]')!;
+        const mobile = container!.querySelector<HTMLElement>('[data-testid="mobile-demo"]')!;
+        expect(desktop.dataset.showThemeControls).toBe('false');
+        expect(desktop.dataset.ctaHref).toBe('null');
+        expect(mobile.dataset.showThemeControls).toBe('false');
+        expect(mobile.dataset.ctaHref).toBe('null');
+      }
+      if (i < TOUR_STEPS.length - 1) click('tour-next');
+    }
+  });
+
+  // The spec promises a different preview per page: sharing shows the
+  // Shared view, security shows the Vault, integrations shows Integrations.
+  // Welcome and Ready keep the demo's own default (dashboard, i.e. no seed).
+  it('passes the expected view to the demo on each step', async () => {
+    await render();
+    const expected: Record<string, string | undefined> = {
+      welcome: undefined,
+      sharing: 'shared',
+      security: 'vault',
+      integrations: 'integrations',
+      ready: undefined,
+    };
+    for (let i = 0; i < TOUR_STEPS.length; i++) {
+      const step = TOUR_STEPS[i];
+      const web = container!.querySelector<HTMLElement>('[data-testid="web-demo"]')!;
+      expect(web.dataset.view).toBe(expected[step.id]);
+      if (i < TOUR_STEPS.length - 1) click('tour-next');
+    }
   });
 });

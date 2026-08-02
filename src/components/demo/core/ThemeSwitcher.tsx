@@ -6,6 +6,9 @@ import { IconPalette } from './icons';
 export function ThemeSwitcher({ align = 'right', label = false }: { align?: 'left' | 'right'; label?: boolean } = {}) {
   const { state, dispatch } = useDemo();
   const [open, setOpen] = useState(false);
+  // Hidden when a host page (the tour) supplies its own theme picker that
+  // actually changes the real app.
+  if (!state.showThemeControls) return null;
   return (
     <div className="relative">
       <button aria-label="Demo theme" onClick={() => setOpen((o) => !o)}

@@ -151,11 +151,15 @@ function Root() {
 interface DesktopDemoProps {
   /** Restyles this demo instance to match a theme picked elsewhere on the page. */
   theme?: DemoThemeId;
+  /** Overrides the toast's "Sign up free" link; null hides the link. */
+  ctaHref?: string | null;
+  /** Shows or hides the in-demo theme pickers. Defaults to true. */
+  showThemeControls?: boolean;
 }
 
-export default function DesktopDemo({ theme }: DesktopDemoProps = {}): ReactNode {
+export default function DesktopDemo({ theme, ctaHref, showThemeControls }: DesktopDemoProps = {}): ReactNode {
   return (
-    <DemoProvider theme={theme}>
+    <DemoProvider theme={theme} ctaHref={ctaHref} showThemeControls={showThemeControls}>
       <Root />
     </DemoProvider>
   );

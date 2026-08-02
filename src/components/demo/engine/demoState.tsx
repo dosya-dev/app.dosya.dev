@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useReducer, type Dispatch, type ReactNode } from 'react';
 import {
-  CANNED_UPLOADS, SEED_ACTIVITY, SEED_FILES, SEED_FOLDERS, kindOf, shareSlug,
+  CANNED_UPLOADS, SEED_ACTIVITY, SEED_FILES, SEED_FOLDERS, SIGNUP_URL, kindOf, shareSlug,
   type DemoActivityRow, type DemoFile, type DemoFolder, type DemoThemeId, type DemoUpload,
 } from './demoData';
 
@@ -23,6 +23,17 @@ export interface DemoState {
   theme: DemoThemeId;
   toast: DemoToastState | null;
   uploadSeq: number;
+  /** Resolved href for the toast's "Sign up free" link; null renders the CTA
+   * text with no link, e.g. inside the tour where the viewer already has an
+   * account and the link would only navigate them away from it. */
+  ctaHref: string | null;
+  /** Whether the in-demo theme pickers (ThemeBar, ThemeSwitcher) render at
+   * all. False when a host page supplies its own theme picker instead. */
+  showThemeControls: boolean;
+  /** One-time seed for the demo's initial page. Only WebDemo understands the
+   * values (its WebView union); typed loosely here since this engine has no
+   * knowledge of that type. */
+  initialView?: string;
 }
 
 export type DemoAction =
@@ -48,6 +59,7 @@ export const initialDemoState: DemoState = {
   files: SEED_FILES, folders: SEED_FOLDERS, uploads: [], activity: SEED_ACTIVITY,
   previewFileId: null, shareFileId: null, shareLink: null,
   theme: 'claude', toast: null, uploadSeq: 0,
+  ctaHref: SIGNUP_URL, showThemeControls: true,
 };
 
 export function demoReducer(s: DemoState, a: DemoAction): DemoState {
@@ -148,14 +160,40 @@ export function breadcrumbs(s: DemoState): DemoFolder[] {
 interface DemoCtx { state: DemoState; dispatch: Dispatch<DemoAction> }
 const DemoContext = createContext<DemoCtx | null>(null);
 
-export function DemoProvider({ children, theme }: { children: ReactNode; theme?: DemoThemeId }) {
-  // Lazy initializer: seeds the very first render from `theme` when the
-  // caller supplies one, so there is no flash of the default theme before
-  // the effect below can run.
+export interface DemoProviderProps {
+  children: ReactNode;
+  theme?: DemoThemeId;
+  /** Overrides the toast's "Sign up free" link. Pass null to render the CTA
+   * text with no link. Undefined (the default) keeps the marketing site's
+   * link to the real sign-up page - see SIGNUP_URL in demoData. */
+  ctaHref?: string | null;
+  /** Shows or hides ThemeBar / ThemeSwitcher. Defaults to true so the
+   * marketing site is unchanged; a host page with its own theme picker
+   * (the tour) passes false to avoid a second, non-functional one. */
+  showThemeControls?: boolean;
+  /** Seeds the demo's initial page. Only WebDemo reads this; defaults to
+   * the demo's own default view so the marketing site is unchanged. */
+  initialView?: string;
+}
+
+export function DemoProvider({
+  children, theme, ctaHref, showThemeControls, initialView,
+}: DemoProviderProps) {
+  // Lazy initializer: seeds the very first render from the props above when
+  // the caller supplies them, so there is no flash of the un-configured demo
+  // before the effect below can run. ctaHref and showThemeControls do not
+  // change after mount in any current caller, so unlike `theme` they get no
+  // resync effect - only the one-time seed here.
   const [state, dispatch] = useReducer(
     demoReducer,
     initialDemoState,
-    (init) => (theme ? { ...init, theme } : init),
+    (init) => ({
+      ...init,
+      ...(theme ? { theme } : {}),
+      ctaHref: ctaHref === undefined ? init.ctaHref : ctaHref,
+      showThemeControls: showThemeControls ?? init.showThemeControls,
+      initialView,
+    }),
   );
 
   // Re-sync only when the `theme` PROP changes, not on every render. The

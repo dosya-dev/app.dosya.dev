@@ -6,6 +6,10 @@ import { useDemo } from '../engine/demoState';
 // drive the demo's theme, but sits above the browser chrome.
 export function ThemeBar() {
   const { state, dispatch } = useDemo();
+  // Hidden when a host page (the tour) supplies its own theme picker that
+  // actually changes the real app - showing this one alongside it would be a
+  // second, non-functional picker.
+  if (!state.showThemeControls) return null;
   return (
     <div className="mx-auto mb-3 flex max-w-5xl flex-wrap items-center justify-center gap-2 px-1">
       <span className="text-xs font-medium text-muted-foreground">Preview a theme:</span>

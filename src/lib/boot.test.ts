@@ -1,5 +1,5 @@
-import { describe, expect, test } from 'vitest';
-import { bootDashboard } from './boot';
+import { afterEach, describe, expect, test } from 'vitest';
+import { bootDashboard, TOUR_DONE_KEY } from './boot';
 
 type MeBody = Record<string, unknown>;
 
@@ -189,5 +189,44 @@ describe('bootDashboard - welcome tour', () => {
       currentActiveId: 'ws1',
     });
     expect(boot.redirect).toBe('/welcome');
+  });
+});
+
+describe('bootDashboard - local tour-done escape hatch', () => {
+  afterEach(() => {
+    sessionStorage.removeItem(TOUR_DONE_KEY);
+  });
+
+  // A persistently failing PATCH would otherwise mean /api/me keeps saying
+  // tour_completed:false forever, ping-ponging the user between / and
+  // /welcome with no way into the app. welcome.tsx's finish() sets this flag
+  // before navigating regardless of PATCH outcome; boot.ts must honor it.
+  test('does not redirect to /welcome when the local flag is set, even though the API says incomplete', async () => {
+    sessionStorage.setItem(TOUR_DONE_KEY, '1');
+    const boot = await bootDashboard({
+      fetchMe: async () => okRes({ ok: true, user: { tour_completed: false } }),
+      fetchWorkspaces: workspaces(['ws1']),
+      currentActiveId: 'ws1',
+    });
+    expect(boot.redirect).toBeNull();
+  });
+
+  test('still redirects to /welcome when the local flag is absent', async () => {
+    const boot = await bootDashboard({
+      fetchMe: async () => okRes({ ok: true, user: { tour_completed: false } }),
+      fetchWorkspaces: workspaces(['ws1']),
+      currentActiveId: 'ws1',
+    });
+    expect(boot.redirect).toBe('/welcome');
+  });
+
+  test('the local flag does not override create-workspace', async () => {
+    sessionStorage.setItem(TOUR_DONE_KEY, '1');
+    const boot = await bootDashboard({
+      fetchMe: async () => okRes({ ok: true, user: { tour_completed: false } }),
+      fetchWorkspaces: workspaces([]),
+      currentActiveId: '',
+    });
+    expect(boot.redirect).toBe('/create-workspace');
   });
 });

@@ -1,6 +1,13 @@
 import type { ThemePref } from '@/lib/theme';
 import { isThemeId, isMode, DEFAULT_THEME, DEFAULT_MODE } from '@/lib/themes';
 
+// Set by welcome.tsx's finish() right before it navigates away, regardless of
+// whether the PATCH that marks the tour complete actually succeeded. Read
+// here so a sustained PATCH failure cannot trap a user ping-ponging between
+// / and /welcome for the rest of the session - /api/me will keep reporting
+// tour_completed:false, but this flag is the local escape hatch.
+export const TOUR_DONE_KEY = 'dosya_tour_done';
+
 // Dashboard boot sequence. Fires /api/me and /api/workspaces together instead
 // of serially - on cold loads far from the D1 primary each round trip is
 // expensive, and the workspaces answer is only *used* once /api/me confirms
@@ -31,6 +38,18 @@ export interface BootResult {
 }
 
 const LOGGED_OUT: BootResult = { authed: false, redirect: '/login', themePref: null, activeWorkspaceId: null };
+
+// sessionStorage throws in some privacy modes (Safari private browsing with
+// certain settings, third-party-storage lockdowns). A throw here must not
+// break boot - falling back to "not done locally" just means the normal
+// /api/me-driven redirect decides instead.
+function tourDoneLocally(): boolean {
+  try {
+    return sessionStorage.getItem(TOUR_DONE_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
 
 export async function bootDashboard(deps: BootDeps): Promise<BootResult> {
   const mePromise = deps.fetchMe();
@@ -83,7 +102,7 @@ export async function bootDashboard(deps: BootDeps): Promise<BootResult> {
 
   // /welcome is registered OUTSIDE DashboardLayout, so it never re-enters this
   // gate. That is what makes redirecting from here safe.
-  if (!tourCompleted) {
+  if (!tourCompleted && !tourDoneLocally()) {
     return { authed: true, redirect: '/welcome', themePref, activeWorkspaceId: healedWorkspaceId };
   }
 
