@@ -1,0 +1,193 @@
+/* Theme variables for the marketing demos, scoped to .demo-root so the
+   in-demo theme switcher never affects the site theme. Dark values key off
+   the site's html.dark class. Task 7 appends the remaining 7 themes. */
+.demo-root {
+  --demo-bg: #fafaf9;
+  --demo-fg: #18181b;
+  --demo-card: #ffffff;
+  --demo-border: #e4e4e7;
+  --demo-muted: #f4f4f5;
+  --demo-muted-fg: #71717a;
+  --demo-primary: #2fa563;
+  --demo-primary-fg: #ffffff;
+  --demo-sidebar: #f3f2ee;
+}
+.dark .demo-root {
+  --demo-bg: #111113;
+  --demo-fg: #fafafa;
+  --demo-card: #18181b;
+  --demo-border: #27272a;
+  --demo-muted: #27272a;
+  --demo-muted-fg: #a1a1aa;
+  --demo-primary: #2fa563;
+  --demo-primary-fg: #052e16;
+  --demo-sidebar: #141416;
+}
+
+/* ── Mono ─────────────────────────────────────────────── */
+.demo-root[data-demo-theme="mono"] {
+  --demo-bg: oklch(1 0 0);
+  --demo-fg: oklch(0.21 0 0);
+  --demo-card: oklch(1 0 0);
+  --demo-border: oklch(0.90 0 0);
+  --demo-muted: oklch(0.96 0 0);
+  --demo-muted-fg: oklch(0.52 0 0);
+  --demo-primary: oklch(0.24 0 0);
+  --demo-primary-fg: oklch(0.99 0 0);
+  --demo-sidebar: oklch(1 0 0);
+}
+.dark .demo-root[data-demo-theme="mono"] {
+  --demo-bg: oklch(0.14 0 0);
+  --demo-fg: oklch(0.96 0 0);
+  --demo-card: oklch(0.19 0 0);
+  --demo-border: oklch(0.28 0 0);
+  --demo-muted: oklch(0.26 0 0);
+  --demo-muted-fg: oklch(0.71 0 0);
+  --demo-primary: oklch(0.92 0 0);
+  --demo-primary-fg: oklch(0.20 0 0);
+  --demo-sidebar: oklch(0.19 0 0);
+}
+
+/* ── Claude ───────────────────────────────────────────── */
+.demo-root[data-demo-theme="claude"] {
+  --demo-bg: oklch(0.98 0.01 84);
+  --demo-fg: oklch(0.34 0.02 62);
+  --demo-card: oklch(0.99 0.01 84);
+  --demo-border: oklch(0.88 0.02 78);
+  --demo-muted: oklch(0.94 0.02 83);
+  --demo-muted-fg: oklch(0.55 0.02 62);
+  --demo-primary: oklch(0.56 0.13 43);
+  --demo-primary-fg: oklch(0.98 0.01 84);
+  --demo-sidebar: oklch(0.99 0.01 84);
+}
+.dark .demo-root[data-demo-theme="claude"] {
+  --demo-bg: oklch(0.22 0.01 61);
+  --demo-fg: oklch(0.94 0.01 84);
+  --demo-card: oklch(0.26 0.01 61);
+  --demo-border: oklch(0.34 0.01 61);
+  --demo-muted: oklch(0.31 0.01 61);
+  --demo-muted-fg: oklch(0.74 0.01 78);
+  --demo-primary: oklch(0.64 0.13 44);
+  --demo-primary-fg: oklch(0.20 0.01 61);
+  --demo-sidebar: oklch(0.26 0.01 61);
+}
+
+/* ── Amber ────────────────────────────────────────────── */
+.demo-root[data-demo-theme="amber"] {
+  --demo-bg: oklch(0.99 0.01 90);
+  --demo-fg: oklch(0.28 0.02 82);
+  --demo-card: oklch(1 0 0);
+  --demo-border: oklch(0.90 0.02 88);
+  --demo-muted: oklch(0.96 0.01 90);
+  --demo-muted-fg: oklch(0.55 0.02 82);
+  --demo-primary: oklch(0.77 0.16 78);
+  --demo-primary-fg: oklch(0.28 0.05 78);
+  --demo-sidebar: oklch(1 0 0);
+}
+.dark .demo-root[data-demo-theme="amber"] {
+  --demo-bg: oklch(0.16 0.01 84);
+  --demo-fg: oklch(0.95 0.01 90);
+  --demo-card: oklch(0.20 0.01 84);
+  --demo-border: oklch(0.29 0.01 84);
+  --demo-muted: oklch(0.27 0.01 84);
+  --demo-muted-fg: oklch(0.71 0.02 88);
+  --demo-primary: oklch(0.79 0.16 78);
+  --demo-primary-fg: oklch(0.22 0.04 78);
+  --demo-sidebar: oklch(0.20 0.01 84);
+}
+
+/* ── Ocean ────────────────────────────────────────────── */
+.demo-root[data-demo-theme="ocean"] {
+  --demo-bg: oklch(0.98 0.01 240);
+  --demo-fg: oklch(0.28 0.03 255);
+  --demo-card: oklch(1 0 0);
+  --demo-border: oklch(0.89 0.02 244);
+  --demo-muted: oklch(0.95 0.02 240);
+  --demo-muted-fg: oklch(0.52 0.03 255);
+  --demo-primary: oklch(0.55 0.17 255);
+  --demo-primary-fg: oklch(0.98 0.01 240);
+  --demo-sidebar: oklch(1 0 0);
+}
+.dark .demo-root[data-demo-theme="ocean"] {
+  --demo-bg: oklch(0.15 0.02 252);
+  --demo-fg: oklch(0.94 0.01 240);
+  --demo-card: oklch(0.19 0.02 252);
+  --demo-border: oklch(0.29 0.02 252);
+  --demo-muted: oklch(0.26 0.02 252);
+  --demo-muted-fg: oklch(0.70 0.02 244);
+  --demo-primary: oklch(0.65 0.16 253);
+  --demo-primary-fg: oklch(0.14 0.02 252);
+  --demo-sidebar: oklch(0.19 0.02 252);
+}
+
+/* ── Bubblegum ────────────────────────────────────────── */
+.demo-root[data-demo-theme="bubblegum"] {
+  --demo-bg: oklch(0.98 0.01 340);
+  --demo-fg: oklch(0.34 0.03 350);
+  --demo-card: oklch(1 0 0);
+  --demo-border: oklch(0.90 0.03 344);
+  --demo-muted: oklch(0.95 0.02 340);
+  --demo-muted-fg: oklch(0.55 0.03 350);
+  --demo-primary: oklch(0.62 0.18 350);
+  --demo-primary-fg: oklch(0.99 0.01 340);
+  --demo-sidebar: oklch(1 0 0);
+}
+.dark .demo-root[data-demo-theme="bubblegum"] {
+  --demo-bg: oklch(0.19 0.02 348);
+  --demo-fg: oklch(0.95 0.01 340);
+  --demo-card: oklch(0.23 0.02 348);
+  --demo-border: oklch(0.32 0.02 348);
+  --demo-muted: oklch(0.29 0.02 348);
+  --demo-muted-fg: oklch(0.72 0.02 344);
+  --demo-primary: oklch(0.72 0.16 350);
+  --demo-primary-fg: oklch(0.18 0.02 348);
+  --demo-sidebar: oklch(0.23 0.02 348);
+}
+
+/* ── Vercel ───────────────────────────────────────────── */
+.demo-root[data-demo-theme="vercel"] {
+  --demo-bg: oklch(1 0 0);
+  --demo-fg: oklch(0.15 0 0);
+  --demo-card: oklch(1 0 0);
+  --demo-border: oklch(0.92 0 0);
+  --demo-muted: oklch(0.97 0 0);
+  --demo-muted-fg: oklch(0.56 0 0);
+  --demo-primary: oklch(0.15 0 0);
+  --demo-primary-fg: oklch(0.99 0 0);
+  --demo-sidebar: oklch(1 0 0);
+}
+.dark .demo-root[data-demo-theme="vercel"] {
+  --demo-bg: oklch(0.145 0 0);
+  --demo-fg: oklch(0.99 0 0);
+  --demo-card: oklch(0.165 0 0);
+  --demo-border: oklch(0.26 0 0);
+  --demo-muted: oklch(0.24 0 0);
+  --demo-muted-fg: oklch(0.68 0 0);
+  --demo-primary: oklch(0.99 0 0);
+  --demo-primary-fg: oklch(0.15 0 0);
+  --demo-sidebar: oklch(0.165 0 0);
+}
+
+/* ── Neo-Brutalism ────────────────────────────────────── */
+.demo-root[data-demo-theme="neo-brutal"] {
+  --demo-bg: oklch(0.96 0 0);
+  --demo-fg: oklch(0 0 0);
+  --demo-card: oklch(1 0 0);
+  --demo-border: oklch(0 0 0);
+  --demo-muted: oklch(0.94 0 0);
+  --demo-muted-fg: oklch(0.35 0 0);
+  --demo-primary: oklch(0.65 0.24 25);
+  --demo-primary-fg: oklch(1 0 0);
+  --demo-sidebar: oklch(1 0 0);
+}
+.dark .demo-root[data-demo-theme="neo-brutal"] {
+  --demo-bg: oklch(0.16 0 0);
+  --demo-fg: oklch(1 0 0);
+  --demo-card: oklch(0.22 0 0);
+  --demo-border: oklch(1 0 0);
+  --demo-muted: oklch(0.27 0 0);
+  --demo-muted-fg: oklch(0.72 0 0);
+  --demo-primary: oklch(0.70 0.23 25);
+  --demo-primary-fg: oklch(0 0 0);
+  --demo-sidebar: oklch(0.22 0 0);
+}

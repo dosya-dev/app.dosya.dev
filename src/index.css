@@ -6,6 +6,10 @@
 @import "@fontsource/space-mono/400.css";
 @import "@fontsource/space-mono/700.css";
 
+/* Vendored from the marketing demos. Scoped to .demo-root, so it cannot
+   affect the app's own theming. See scripts/vendor-demos.mjs. */
+@import './components/demo/demo-themes.css';
+
 @custom-variant dark (&:is(.dark *));
 
 :root {
