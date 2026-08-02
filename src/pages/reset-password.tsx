@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -8,6 +8,7 @@ import { API_BASE } from '@/api/client';
 import { PublicNav } from '@/components/public-nav';
 import { PasswordStrengthMeter } from '@/components/password-strength-meter';
 import { MIN_PASSWORD_LENGTH } from '@/lib/password-strength';
+import { TurnstileWidget, type TurnstileHandle } from '@/components/turnstile-widget';
 
 /**
  * Reset tokens arrive in the URL fragment (`#token=…`) so they stay out of
@@ -41,6 +42,7 @@ export default function ResetPasswordPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const turnstileRef = useRef<TurnstileHandle>(null);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -52,13 +54,22 @@ export default function ResetPasswordPage() {
       const res = await fetch(`${API_BASE}/api/auth/reset-password`, {
         method: 'POST',
         credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Turnstile-Token': turnstileRef.current?.getToken() ?? '',
+        },
         body: JSON.stringify({ token, new_password: newPw }),
       });
       const data = await res.json();
+      // Single-use token: reset on every outcome, not just failures, or a
+      // retry fails verification instead.
+      turnstileRef.current?.reset();
       if (res.ok && data.ok) navigate('/login?reset=1');
       else setError(data.error ?? 'Could not reset password');
-    } catch { setError('Network error'); }
+    } catch {
+      turnstileRef.current?.reset();
+      setError('Network error');
+    }
     setLoading(false);
   };
 
@@ -101,6 +112,7 @@ export default function ResetPasswordPage() {
                       <label htmlFor="confirm-password" className="text-sm font-medium">Confirm password</label>
                       <Input id="confirm-password" type={showPassword ? 'text' : 'password'} placeholder="••••••••" value={confirm} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setConfirm(e.target.value)} required className="h-10" onKeyDown={(e) => e.key === 'Enter' && submit(e)} />
                     </div>
+                    <TurnstileWidget action="reset-password" ref={turnstileRef} />
                     <Button type="submit" className="w-full h-10" disabled={loading}>
                       {loading ? <Loader2 className="size-4 animate-spin mr-2" /> : null}
                       Reset password

@@ -1,16 +1,18 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Loader2, MailCheck } from 'lucide-react';
 import { API_BASE } from '@/api/client';
 import { PublicNav } from '@/components/public-nav';
+import { TurnstileWidget, type TurnstileHandle } from '@/components/turnstile-widget';
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState('');
   const [error, setError] = useState('');
   const [sent, setSent] = useState(false);
   const [loading, setLoading] = useState(false);
+  const turnstileRef = useRef<TurnstileHandle>(null);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -20,13 +22,22 @@ export default function ForgotPasswordPage() {
       const res = await fetch(`${API_BASE}/api/auth/forgot-password`, {
         method: 'POST',
         credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Turnstile-Token': turnstileRef.current?.getToken() ?? '',
+        },
         body: JSON.stringify({ email }),
       });
       const data = await res.json();
+      // Single-use token: reset on every outcome, not just failures, or a
+      // retry fails verification instead.
+      turnstileRef.current?.reset();
       if (res.ok && data.ok) setSent(true);
       else setError(data.error ?? 'Could not send reset link');
-    } catch { setError('Network error'); }
+    } catch {
+      turnstileRef.current?.reset();
+      setError('Network error');
+    }
     setLoading(false);
   };
 
@@ -65,6 +76,7 @@ export default function ForgotPasswordPage() {
                       <label htmlFor="email" className="text-sm font-medium">Email</label>
                       <Input id="email" type="email" placeholder="name@example.com" value={email} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEmail(e.target.value)} required autoFocus className="h-10" />
                     </div>
+                    <TurnstileWidget action="forgot-password" ref={turnstileRef} />
                     <Button type="submit" className="w-full h-10" disabled={loading}>
                       {loading ? <Loader2 className="size-4 animate-spin mr-2" /> : null}
                       Send reset link
