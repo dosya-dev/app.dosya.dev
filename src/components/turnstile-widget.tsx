@@ -65,6 +65,13 @@ export const TurnstileWidget = forwardRef<TurnstileHandle, { action: string }>(
     }), []);
 
     useEffect(() => {
+      // No sitekey means the build env var was never set. Rendering anyway
+      // makes Turnstile throw "expected string, got object" into every
+      // visitor's console. Skip silently instead: getToken() keeps returning
+      // '', which the server logs as outcome "missing" under monitor mode, so
+      // the form still submits. Fail quiet, not loud, on a config mistake.
+      if (!SITEKEY) return;
+
       let cancelled = false;
 
       loadScript()
@@ -90,8 +97,8 @@ export const TurnstileWidget = forwardRef<TurnstileHandle, { action: string }>(
     }, [action]);
 
     // The server fails open when Turnstile is unreachable, so a load failure
-    // must not present as a blocked form.
-    if (failed) return null;
+    // must not present as a blocked form. Same for a missing sitekey.
+    if (failed || !SITEKEY) return null;
 
     return <div ref={containerRef} className="my-3" />;
   },
