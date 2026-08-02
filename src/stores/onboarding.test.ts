@@ -1,0 +1,85 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { useOnboarding } from './onboarding';
+
+const OK_PAYLOAD = {
+  ok: true,
+  purpose: null,
+  dismissed: false,
+  steps: {
+    upload: true, share: false, import: false, api_key: false, client_used: false,
+    invite: false, file_request: false, geo: false, desktop: false, mobile: false,
+  },
+};
+
+function mockFetch(impl: (url: string, init?: RequestInit) => unknown) {
+  return vi.fn(async (url: string, init?: RequestInit) => {
+    const body = impl(url, init);
+    if (body instanceof Error) throw body;
+    return { ok: true, status: 200, json: async () => body } as Response;
+  });
+}
+
+describe('useOnboarding', () => {
+  beforeEach(() => {
+    useOnboarding.setState({ purpose: null, dismissed: false, steps: null, loaded: false, failed: false });
+  });
+  afterEach(() => { vi.restoreAllMocks(); });
+
+  it('loads derived state from the API', async () => {
+    vi.stubGlobal('fetch', mockFetch(() => OK_PAYLOAD));
+    await useOnboarding.getState().refresh('ws_1');
+    expect(useOnboarding.getState().steps?.upload).toBe(true);
+    expect(useOnboarding.getState().loaded).toBe(true);
+    expect(useOnboarding.getState().failed).toBe(false);
+  });
+
+  // Onboarding is additive. A failed fetch must leave steps null so every
+  // consumer renders nothing, rather than surfacing an error the user can do
+  // nothing about.
+  it('leaves steps null and flags failure when the API errors', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('offline'); }));
+    await useOnboarding.getState().refresh('ws_1');
+    expect(useOnboarding.getState().steps).toBeNull();
+    expect(useOnboarding.getState().failed).toBe(true);
+  });
+
+  it('does not fetch without a workspace id', async () => {
+    const f = mockFetch(() => OK_PAYLOAD);
+    vi.stubGlobal('fetch', f);
+    await useOnboarding.getState().refresh('');
+    expect(f).not.toHaveBeenCalled();
+  });
+
+  it('does not fetch again once dismissed', async () => {
+    const f = mockFetch(() => OK_PAYLOAD);
+    vi.stubGlobal('fetch', f);
+    useOnboarding.setState({ dismissed: true });
+    await useOnboarding.getState().refresh('ws_1');
+    expect(f).not.toHaveBeenCalled();
+  });
+
+  it('applies a purpose optimistically before the request resolves', async () => {
+    let resolve: (v: unknown) => void = () => {};
+    vi.stubGlobal('fetch', vi.fn(() => new Promise((r) => {
+      resolve = () => r({ ok: true, status: 200, json: async () => ({ ok: true }) } as Response);
+    })));
+    const pending = useOnboarding.getState().setPurpose('dev');
+    expect(useOnboarding.getState().purpose).toBe('dev');
+    resolve(null);
+    await pending;
+  });
+
+  // A failed write must not yank the UI back. The user answered; the answer
+  // stands locally even if it did not persist.
+  it('keeps the optimistic purpose when the write fails', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('offline'); }));
+    await useOnboarding.getState().setPurpose('team');
+    expect(useOnboarding.getState().purpose).toBe('team');
+  });
+
+  it('dismisses optimistically', async () => {
+    vi.stubGlobal('fetch', mockFetch(() => ({ ok: true })));
+    await useOnboarding.getState().dismiss();
+    expect(useOnboarding.getState().dismissed).toBe(true);
+  });
+});
