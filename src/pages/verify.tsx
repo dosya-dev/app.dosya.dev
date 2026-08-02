@@ -54,13 +54,24 @@ export default function VerifyPage() {
       const res = await fetch(`${API_BASE}/api/auth/resend-verification`, {
         method: 'POST',
         credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Turnstile-Token': turnstileRef.current?.getToken() ?? '',
+        },
         body: JSON.stringify(email ? { email } : {}),
       });
       const data = await res.json();
+      // Single-use token: reset on every outcome, not just failures, or a
+      // retry after a failed resend fails verification instead. Shares the
+      // page's one widget with submit() - both routes serve the same
+      // verify-your-email flow for the same user.
+      turnstileRef.current?.reset();
       if (res.ok && data.ok) setInfo('A new code has been sent to your email.');
       else setError(data.error ?? 'Could not resend code');
-    } catch { setError("Can't reach the server. Check your connection and try again."); }
+    } catch {
+      turnstileRef.current?.reset();
+      setError("Can't reach the server. Check your connection and try again.");
+    }
     setResending(false);
   };
 
