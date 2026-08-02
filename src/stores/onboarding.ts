@@ -34,6 +34,14 @@ interface OnboardingState {
  * Every failure path here is silent by design. Onboarding is additive: if it
  * cannot load, the app must behave exactly as it would without it.
  */
+// Module-scoped rather than in the store: dashboard.tsx and setup-pill.tsx
+// both call refresh() on mount while `loaded` is still false, which without
+// this would fire two GETs - an 11-statement D1 batch each - against a
+// primary in Sydney for the same workspace on every dashboard load. A second
+// concurrent call piggybacks on the first in-flight request instead of
+// starting its own.
+let inFlight: Promise<void> | null = null;
+
 export const useOnboarding = create<OnboardingState>((set, get) => ({
   purpose: null,
   dismissed: false,
@@ -45,18 +53,24 @@ export const useOnboarding = create<OnboardingState>((set, get) => ({
     if (!wsId) return;
     // Nothing renders once dismissed, so there is nothing to refresh for.
     if (get().dismissed) return;
-    try {
-      const res = await api<OnboardingPayload>(`/api/onboarding?workspace_id=${wsId}`);
-      set({
-        purpose: res.purpose,
-        dismissed: res.dismissed,
-        steps: res.steps,
-        loaded: true,
-        failed: false,
-      });
-    } catch {
-      set({ loaded: true, failed: true });
-    }
+    if (inFlight) return inFlight;
+    inFlight = (async () => {
+      try {
+        const res = await api<OnboardingPayload>(`/api/onboarding?workspace_id=${wsId}`);
+        set({
+          purpose: res.purpose,
+          dismissed: res.dismissed,
+          steps: res.steps,
+          loaded: true,
+          failed: false,
+        });
+      } catch {
+        set({ loaded: true, failed: true });
+      } finally {
+        inFlight = null;
+      }
+    })();
+    return inFlight;
   },
 
   setPurpose: async (purpose: Purpose) => {

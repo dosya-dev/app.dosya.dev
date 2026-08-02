@@ -4,6 +4,7 @@ import { api, API_BASE, apiErrorMessage } from '@/api/client';
 import { useWorkspace } from '@/stores/workspace';
 import { useOnboarding } from '@/stores/onboarding';
 import { FirstRunHome } from '@/components/onboarding/first-run-home';
+import { shouldShowFirstRun } from '@/components/onboarding/steps';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
@@ -117,8 +118,11 @@ export default function DashboardPage() {
 
   // An empty workspace gets the first-run screen instead of a dashboard full
   // of zeroes. Keyed on the workspace being empty rather than the account
-  // being new, so accounts that never uploaded get it too.
-  if (data.stats.total_files === 0 && !onbDismissed) {
+  // being new, so accounts that never uploaded get it too. Also requires an
+  // empty trash: total_files alone would show "put your first file in" to an
+  // established account that selected all and deleted, while its storage and
+  // plan cards vanish underneath it.
+  if (shouldShowFirstRun(data.stats, onbDismissed)) {
     return <FirstRunHome userName={data.user_name} />;
   }
 

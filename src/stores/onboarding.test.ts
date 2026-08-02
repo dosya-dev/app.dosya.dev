@@ -58,6 +58,19 @@ describe('useOnboarding', () => {
     expect(f).not.toHaveBeenCalled();
   });
 
+  // dashboard.tsx and setup-pill.tsx both call refresh() on mount before
+  // `loaded` flips true - without an in-flight guard that is two GETs for the
+  // same workspace on every dashboard load.
+  it('collapses two concurrent refresh calls into a single fetch', async () => {
+    const f = mockFetch(() => OK_PAYLOAD);
+    vi.stubGlobal('fetch', f);
+    const p1 = useOnboarding.getState().refresh('ws_1');
+    const p2 = useOnboarding.getState().refresh('ws_1');
+    await Promise.all([p1, p2]);
+    expect(f).toHaveBeenCalledTimes(1);
+    expect(useOnboarding.getState().loaded).toBe(true);
+  });
+
   it('applies a purpose optimistically before the request resolves', async () => {
     let resolve: (v: unknown) => void = () => {};
     vi.stubGlobal('fetch', vi.fn(() => new Promise((r) => {

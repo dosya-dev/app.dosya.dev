@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { STEP_SETS, stepsFor, ALL_DERIVATION_KEYS } from './steps';
+import { STEP_SETS, stepsFor, shouldShowFirstRun, ALL_DERIVATION_KEYS, type Purpose } from './steps';
 
 describe('stepsFor', () => {
   it('returns the dev set in order for the dev purpose', () => {
@@ -12,6 +12,35 @@ describe('stepsFor', () => {
 
   it('falls back to the generic set when the purpose is unanswered', () => {
     expect(stepsFor(null).map((s) => s.key)).toEqual(['upload', 'share', 'client_used', 'invite']);
+  });
+
+  // The store copies `purpose` in from the API unvalidated. A fifth purpose
+  // deployed API-side before the web build, or a bad value written straight
+  // to D1, must fall back to the generic set rather than throwing - onboarding
+  // must never be load-bearing for the whole dashboard.
+  it('falls back to the generic set for an unknown purpose value rather than throwing', () => {
+    expect(() => stepsFor('wizard' as Purpose)).not.toThrow();
+    expect(stepsFor('wizard' as Purpose).map((s) => s.key)).toEqual(stepsFor(null).map((s) => s.key));
+  });
+});
+
+describe('shouldShowFirstRun', () => {
+  it('is true when the workspace is empty, has no trash, and onboarding is not dismissed', () => {
+    expect(shouldShowFirstRun({ total_files: 0, trash_bytes: 0 }, false)).toBe(true);
+  });
+
+  it('is false when the workspace is empty but onboarding was dismissed', () => {
+    expect(shouldShowFirstRun({ total_files: 0, trash_bytes: 0 }, true)).toBe(false);
+  });
+
+  it('is false when the workspace has live files', () => {
+    expect(shouldShowFirstRun({ total_files: 5, trash_bytes: 0 }, false)).toBe(false);
+  });
+
+  // The bug this predicate exists to fix: a long-time account that selects
+  // all and deletes has zero live files but still occupies its quota.
+  it('is false when there are no live files but trash still holds bytes', () => {
+    expect(shouldShowFirstRun({ total_files: 0, trash_bytes: 1024 }, false)).toBe(false);
   });
 });
 

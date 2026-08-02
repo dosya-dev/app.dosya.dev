@@ -147,5 +147,30 @@ export const STEP_SETS: Record<Purpose | 'generic', OnboardingStep[]> = {
 };
 
 export function stepsFor(purpose: Purpose | null): OnboardingStep[] {
-  return STEP_SETS[purpose ?? 'generic'];
+  // `purpose` is copied in from the API unvalidated (see stores/onboarding.ts),
+  // and this file cannot import the API's own PURPOSES check since the two
+  // apps share no package. SetupPill renders inside the router root, whose
+  // errorElement is the app's error page - an unknown value here (a fifth
+  // purpose deployed API-side before the web build, or a value written
+  // straight to D1) must fall back, not throw, or it takes down every
+  // dashboard route for the affected user. Onboarding must never be
+  // load-bearing.
+  return STEP_SETS[purpose as Purpose] ?? STEP_SETS.generic;
+}
+
+/**
+ * Whether the dashboard should show the first-run home screen instead of the
+ * normal dashboard.
+ *
+ * Requires no live files AND no trashed bytes. `total_files` alone is not
+ * enough: a two-year-old account that selects all and deletes still occupies
+ * its quota, and showing "put your first file in" would make the storage and
+ * plan cards disappear while the data is still there. Kept dependency-free so
+ * it is trivial to unit test on its own.
+ */
+export function shouldShowFirstRun(
+  stats: { total_files: number; trash_bytes: number },
+  dismissed: boolean,
+): boolean {
+  return stats.total_files === 0 && stats.trash_bytes === 0 && !dismissed;
 }

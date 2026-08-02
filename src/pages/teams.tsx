@@ -18,7 +18,7 @@ import {
 } from '@/components/ui/select';
 import {
   UserPlus, X, Copy, Check, Loader2, Link2, Mail,
-  Settings, Plus, Users, Clock, Share2, Send,
+  Settings, Plus, Users, Clock, Share2, Send, AlertCircle, RefreshCw,
 } from 'lucide-react';
 import { timeAgo, avatarColor, initials, actionLabel } from '@/lib/helpers';
 import { toast } from '@/lib/toast';
@@ -97,6 +97,11 @@ export default function TeamsPage() {
   const [stats, setStats] = useState<TeamStats | null>(null);
   const [wsName, setWsName] = useState('');
   const [loading, setLoading] = useState(true);
+  /** Set in the catch below - `/api/team` always returns at least the caller's
+   *  own owner row, so an empty member list on success is impossible. Without
+   *  this flag a failed/offline load fell through to the initial `[]` and
+   *  rendered the solo-user empty state over a real load failure. */
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // Modals
   const [inviteOpen, setInviteOpen] = useState(false);
@@ -107,6 +112,7 @@ export default function TeamsPage() {
 
   const load = useCallback(async () => {
     if (!wsId) return;
+    setLoadError(null);
     try {
       const [teamRes, linksRes, rolesRes] = await Promise.all([
         api<{ ok: boolean; members: TeamMember[]; invites: Invite[]; activity: Activity[]; stats: TeamStats; workspace?: { name: string } }>(`/api/team?workspace_id=${wsId}`),
@@ -120,7 +126,12 @@ export default function TeamsPage() {
       }
       if (linksRes.ok) setLinks(linksRes.links);
       if (rolesRes.ok) setRoles(rolesRes.roles);
-    } catch { /* */ }
+    } catch (err) {
+      // `/api/team` always returns at least the caller's own owner row, so
+      // `members` staying empty here means the request failed, not that the
+      // workspace is solo. Distinct from the empty state on purpose.
+      setLoadError(apiErrorMessage(err, 'Team members could not be loaded.'));
+    }
     setLoading(false);
   }, [wsId]);
 
@@ -204,7 +215,19 @@ export default function TeamsPage() {
                   <span key={h} className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">{h}</span>
                 ))}
               </div>
-              {members.length === 0 ? (
+              {loadError ? (
+                /* Distinct from the empty state on purpose - "you are the only
+                   member" is a lie when the request failed, and without a
+                   retry the only way out was a full page reload. */
+                <div className="flex flex-col items-center justify-center py-10 text-center">
+                  <AlertCircle className="size-8 text-destructive/40 mb-3" />
+                  <p className="text-sm font-medium text-foreground mb-1">Could not load team members</p>
+                  <p className="text-xs text-muted-foreground max-w-80 mb-3">{loadError}</p>
+                  <Button variant="outline" size="sm" className="h-7 text-xs" onClick={load}>
+                    <RefreshCw className="size-3 mr-1" /> Try again
+                  </Button>
+                </div>
+              ) : members.length === 1 ? (
                 <EmptyState
                   icon={Users}
                   title="You are the only member"

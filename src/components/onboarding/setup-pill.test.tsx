@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach, beforeAll, beforeEach } from 'vitest';
+import { describe, it, expect, afterEach, beforeAll, beforeEach, vi } from 'vitest';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { MemoryRouter } from 'react-router-dom';
@@ -19,6 +19,10 @@ const NONE = {
 // The dev purpose's four steps: upload, api_key, client_used, share.
 const DEV_ALL_DONE = { ...NONE, upload: true, api_key: true, client_used: true, share: true };
 
+// Captured before any test can replace it, so it can be restored between
+// tests that stub `dismiss` to assert call counts.
+const REAL_DISMISS = useOnboarding.getState().dismiss;
+
 describe('SetupPill', () => {
   let root: Root | null = null;
   let container: HTMLDivElement | null = null;
@@ -27,7 +31,7 @@ describe('SetupPill', () => {
     useWorkspace.setState({ activeId: 'ws_1' });
     // loaded: true keeps the priming effect from firing a real fetch; each
     // test overrides purpose/steps/dismissed as needed.
-    useOnboarding.setState({ purpose: 'dev', dismissed: false, steps: NONE, loaded: true, failed: false });
+    useOnboarding.setState({ purpose: 'dev', dismissed: false, steps: NONE, loaded: true, failed: false, dismiss: REAL_DISMISS });
   });
 
   afterEach(() => {
@@ -81,5 +85,39 @@ describe('SetupPill', () => {
     const pill = container!.querySelector('[data-testid="setup-pill"]');
     expect(pill).not.toBeNull();
     expect(pill!.textContent).toContain('Setup 1/4');
+  });
+
+  // The first-run home screen shows this same checklist inline exactly when
+  // the workspace has no files - i.e. exactly when `upload` is false. The
+  // pill must not duplicate it.
+  it('renders nothing when upload is not done, even with other steps complete', () => {
+    useOnboarding.setState({ purpose: 'dev', steps: { ...NONE, api_key: true, client_used: true, share: true } });
+    render();
+    expect(container!.querySelector('[data-testid="setup-pill"]')).toBeNull();
+    expect(container!.textContent).toBe('');
+  });
+
+  describe('auto-dismiss on completion', () => {
+    it('calls dismiss exactly once when the active purpose set becomes complete', () => {
+      const dismiss = vi.fn(async () => { useOnboarding.setState({ dismissed: true }); });
+      useOnboarding.setState({ purpose: 'dev', steps: DEV_ALL_DONE, dismissed: false, dismiss });
+      render();
+      expect(dismiss).toHaveBeenCalledTimes(1);
+      expect(container!.querySelector('[data-testid="setup-pill"]')).toBeNull();
+    });
+
+    it('does not call dismiss when already dismissed', () => {
+      const dismiss = vi.fn(async () => {});
+      useOnboarding.setState({ purpose: 'dev', steps: DEV_ALL_DONE, dismissed: true, dismiss });
+      render();
+      expect(dismiss).not.toHaveBeenCalled();
+    });
+
+    it('does not call dismiss when setup is incomplete', () => {
+      const dismiss = vi.fn(async () => {});
+      useOnboarding.setState({ purpose: 'dev', steps: { ...NONE, upload: true }, dismissed: false, dismiss });
+      render();
+      expect(dismiss).not.toHaveBeenCalled();
+    });
   });
 });

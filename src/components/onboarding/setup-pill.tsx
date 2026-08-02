@@ -31,9 +31,32 @@ export function SetupPill() {
   // has to be able to prime the store. refresh() is a no-op once dismissed.
   useEffect(() => { if (!loaded && wsId) void refresh(wsId); }, [loaded, wsId, refresh]);
 
+  const { done, total } = steps ? completedCount(purpose, steps) : { done: 0, total: 0 };
+  const complete = steps !== null && done >= total;
+
+  // Auto-dismiss instead of merely hiding once the checklist is complete.
+  // dismissed_at is never written by a bare `return null`, so a derivation
+  // that later flips back to false - changing a password deletes other
+  // sessions, undoing "desktop" for a 'personal' user who already finished
+  // setup - would resurrect the pill. dismiss() sets `dismissed` true
+  // synchronously before its network call, so gating on `complete &&
+  // !dismissed` fires this exactly once: the next render already sees
+  // dismissed=true and the condition is false, so it cannot loop.
+  // This deliberately drops the spec's "show a done state for the rest of
+  // the session" in favour of the simpler auto-dismiss.
+  useEffect(() => {
+    if (complete && !dismissed) void dismiss();
+  }, [complete, dismissed, dismiss]);
+
   if (dismissed || !steps) return null;
 
-  const { done, total } = completedCount(purpose, steps);
+  // The first-run home screen (dashboard.tsx) renders this same checklist
+  // inline, and it shows precisely when the workspace has no files - which
+  // is precisely when the "upload" derivation is false. Reusing that flag
+  // here, instead of plumbing dashboard stats into the topbar, keeps the
+  // pill from duplicating the first-run screen's own checklist.
+  if (!steps.upload) return null;
+
   if (done >= total) return null;
 
   return (
