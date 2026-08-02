@@ -2,7 +2,9 @@ import { Button } from '@/components/ui/button';
 import { Home, ArrowLeft } from 'lucide-react';
 
 // Shared full-page layout for 404 / 500 / error states.
-export function ErrorLayout({ code, title, message }: { code: string; title: string; message: string }) {
+// `code` is optional: states like the post-deploy reload are not an HTTP
+// status, and a giant empty number would just leave a hole above the title.
+export function ErrorLayout({ code, title, message }: { code?: string; title: string; message: string }) {
   return (
     <div className="min-h-screen bg-background flex flex-col items-center justify-center text-center px-4" style={{ backgroundImage: 'url(/grid.svg)', backgroundRepeat: 'repeat' }}>
       <a href="/" className="inline-flex items-center gap-2 font-mono italic font-semibold text-lg mb-10">
@@ -10,7 +12,7 @@ export function ErrorLayout({ code, title, message }: { code: string; title: str
         dosya.dev
       </a>
 
-      <p className="text-7xl sm:text-8xl font-extrabold tracking-tight text-muted-foreground/30 select-none mb-2">{code}</p>
+      {code && <p className="text-7xl sm:text-8xl font-extrabold tracking-tight text-muted-foreground/30 select-none mb-2">{code}</p>}
       <h1 className="text-2xl sm:text-3xl font-bold mb-3">{title}</h1>
       <p className="text-muted-foreground text-base max-w-md mb-8">{message}</p>
 
