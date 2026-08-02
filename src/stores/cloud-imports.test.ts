@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { ApiError } from '@/api/client';
 import type { CloudJob } from '@/api/cloud-import';
 
@@ -12,7 +12,7 @@ vi.mock('@/api/cloud-import', () => ({
   cancelJob: (...args: unknown[]) => cancelJobMock(...args),
 }));
 
-const { useCloudImports, ACTIVE_CLOUD_STATUSES, jobProgress, retryAfterFromError } =
+const { useCloudImports, ACTIVE_CLOUD_STATUSES, CLOUD_IMPORT_POLL_MS, jobProgress, retryAfterFromError } =
   await import('./cloud-imports');
 
 function job(over: Partial<CloudJob> = {}): CloudJob {
@@ -40,6 +40,26 @@ beforeEach(() => {
   createImportMock.mockReset();
   cancelJobMock.mockReset();
   useCloudImports.setState({ jobs: [] });
+});
+
+afterEach(async () => {
+  // refresh()'s poll timer is a module-level singleton (CLOUD_IMPORT_POLL_MS
+  // in cloud-imports.ts), not store state, so it does NOT reset with the
+  // useCloudImports.setState() above. job()'s default status is 'running'
+  // (active), so most tests in this file that call refresh() or start()
+  // leave an armed timer behind unless something later feeds it an inactive
+  // list - left alone, that would fire a real 5-second setInterval calling
+  // listJobsMock again well after this test's own assertions have already
+  // run, and would starve every later test of ever arming a *new* timer
+  // (the `!pollTimer` guard would see the stale one and never replace it).
+  // Force it clear the same way the app does when an import finishes: feed
+  // refresh() an empty list. Runs after the poll-timer describe block's own
+  // afterEach below (Vitest runs nested afterEach hooks before file-level
+  // ones), so by the time this fires any fake-timer switch has already
+  // happened and this is a harmless no-op there - it is the real fix for
+  // every other test in this file.
+  listJobsMock.mockResolvedValue([]);
+  await useCloudImports.getState().refresh();
 });
 
 describe('ACTIVE_CLOUD_STATUSES', () => {
@@ -107,7 +127,7 @@ describe('retryAfterFromError', () => {
 });
 
 describe('useCloudImports.start', () => {
-  it('start() creates the job and refreshes, but drives nothing', async () => {
+  it('start() creates the job and refreshes', async () => {
     createImportMock.mockResolvedValue({ job_id: 'job1', status: 'discovering' });
     listJobsMock.mockResolvedValue([job({ status: 'discovering' })]);
 
@@ -120,10 +140,77 @@ describe('useCloudImports.start', () => {
   });
 
   it('refresh() never calls a process endpoint', async () => {
-    // processJob no longer exists; this pins that it stays gone.
+    // processJob no longer exists; this pins that it stays gone. Deliberately
+    // vi.importActual, not a plain dynamic import() - the vi.mock() factory
+    // at the top of this file intercepts import('@/api/cloud-import')
+    // wherever it appears, dynamic or static, so a plain import() here would
+    // only ever inspect the mock factory's own shape (which we wrote by
+    // hand, minus processJob, so it would trivially "pass" even if the real
+    // module still exported processJob). vi.importActual bypasses vi.mock
+    // and loads the real, unmocked module, so this actually pins the
+    // shipped API surface.
     listJobsMock.mockResolvedValue([job({ status: 'running' })]);
     await useCloudImports.getState().refresh();
-    expect(Object.keys(await import('@/api/cloud-import'))).not.toContain('processJob');
+    const actual = await vi.importActual<typeof import('@/api/cloud-import')>('@/api/cloud-import');
+    expect(Object.keys(actual)).not.toContain('processJob');
+  });
+});
+
+describe('the poll timer (via refresh())', () => {
+  // The old drive() loop was the only repeating caller of refresh() - delete
+  // it without replacing that, and a job's card renders one snapshot and
+  // never moves again until the page reloads. refresh() now owns a small
+  // self-starting/self-stopping poll timer instead (CLOUD_IMPORT_POLL_MS),
+  // same shape as stores/remote-downloads.ts's timer. These two tests would
+  // both fail against the pre-poller version of refresh() - the first
+  // because a second listJobs() call never happens on its own, the second
+  // because a "stops polling" claim is meaningless when nothing ever started.
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(async () => {
+    // Clear any interval this test armed using the SAME (still-fake) timer
+    // implementation that created it, before switching back to real timers
+    // below - clearInterval on a fake-timer id after vi.useRealTimers() has
+    // already run is not something to rely on. See the file-level afterEach
+    // above for why this matters to every other test in this file too.
+    listJobsMock.mockResolvedValue([]);
+    await useCloudImports.getState().refresh();
+    vi.useRealTimers();
+  });
+
+  it('advances the job without a remount while it stays active', async () => {
+    listJobsMock
+      .mockResolvedValueOnce([job({ status: 'running', completed_bytes: 100 })])
+      .mockResolvedValueOnce([job({ status: 'running', completed_bytes: 500 })]);
+
+    await useCloudImports.getState().refresh();
+    expect(listJobsMock).toHaveBeenCalledTimes(1);
+    expect(useCloudImports.getState().jobs[0].completed_bytes).toBe(100);
+
+    // No manual refresh() call here - only the poll timer itself should
+    // produce the second listJobs() call.
+    await vi.advanceTimersByTimeAsync(CLOUD_IMPORT_POLL_MS);
+    expect(listJobsMock).toHaveBeenCalledTimes(2);
+    expect(useCloudImports.getState().jobs[0].completed_bytes).toBe(500);
+  });
+
+  it('stops polling once the job reaches a terminal status', async () => {
+    listJobsMock
+      .mockResolvedValueOnce([job({ status: 'running' })])
+      .mockResolvedValueOnce([job({ status: 'complete' })]);
+
+    await useCloudImports.getState().refresh();
+    expect(listJobsMock).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(CLOUD_IMPORT_POLL_MS);
+    expect(listJobsMock).toHaveBeenCalledTimes(2); // the poll that discovers completion
+
+    // Plenty more time passes; a terminal status must not keep polling.
+    await vi.advanceTimersByTimeAsync(CLOUD_IMPORT_POLL_MS * 10);
+    expect(listJobsMock).toHaveBeenCalledTimes(2);
   });
 });
 

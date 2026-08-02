@@ -53,8 +53,9 @@ export function useCloudBrowser(accountId: string | null) {
   const [reconnectRequired, setReconnectRequired] = useState(false);
   // Seconds until the next automatic retry after a provider 429. Not a
   // reconnect case and not a fatal error - the dialog should keep whatever is
-  // on screen and quietly retry, matching how the drive() polling loop in
-  // stores/cloud-imports.ts already treats a 429 as a wait, not a stop.
+  // on screen and quietly retry. Same 429-is-a-wait-not-a-stop treatment as
+  // retryAfterFromError (imported below) gives the shared status logic in
+  // stores/cloud-imports.ts.
   const [rateLimitedSeconds, setRateLimitedSeconds] = useState<number | null>(null);
   const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Holds the current `load` so the 429 retry (scheduled via a plain
