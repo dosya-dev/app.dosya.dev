@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -9,6 +9,7 @@ import { API_BASE } from '@/api/client';
 import { PublicNav } from '@/components/public-nav';
 import { PasswordStrengthMeter } from '@/components/password-strength-meter';
 import { MIN_PASSWORD_LENGTH } from '@/lib/password-strength';
+import { TurnstileWidget, type TurnstileHandle } from '@/components/turnstile-widget';
 
 export default function SignUpPage() {
   const navigate = useNavigate();
@@ -25,6 +26,7 @@ export default function SignUpPage() {
   const [lastUsed] = useState<string | null>(() => {
     try { return localStorage.getItem('dosya_last_login_method'); } catch { return null; }
   });
+  const turnstileRef = useRef<TurnstileHandle>(null);
 
   useEffect(() => {
     const r = searchParams.get('ref');
@@ -47,10 +49,16 @@ export default function SignUpPage() {
       const res = await fetch(`${API_BASE}/api/auth/signup`, {
         method: 'POST',
         credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Turnstile-Token': turnstileRef.current?.getToken() ?? '',
+        },
         body: JSON.stringify({ name, email, password, ...(ref ? { ref } : {}) }),
       });
       const data = await res.json();
+      // Single-use token: reset on every outcome, not just failures, or a
+      // retry after a rejected sign-up fails verification instead.
+      turnstileRef.current?.reset();
       if (res.ok && data.ok) {
         try { sessionStorage.removeItem('dosya_ref'); } catch { /* */ }
         navigate(data.redirect ?? '/verify');
@@ -58,6 +66,7 @@ export default function SignUpPage() {
         setError(data.error ?? 'Sign-up failed');
       }
     } catch {
+      turnstileRef.current?.reset();
       setError('Network error');
     }
     setLoading(false);
@@ -164,6 +173,7 @@ export default function SignUpPage() {
                     <a href="https://dosya.dev/terms-of-service" target="_blank" rel="noreferrer" className="font-medium underline underline-offset-4 hover:text-foreground">Terms of Service</a>
                   </span>
                 </label>
+                <TurnstileWidget action="signup" ref={turnstileRef} />
                 <Button type="submit" className="w-full h-10" disabled={loading}>
                   {loading ? <Loader2 className="size-4 animate-spin mr-2" /> : null}
                   Create Account
