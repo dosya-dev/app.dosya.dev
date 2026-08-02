@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
+import { EmptyState } from '@/components/ui/empty-state';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
@@ -19,7 +20,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import {
   Plus, ArrowLeft, Mail, Copy, Check, Send, Trash2, Loader2,
-  ChevronDown, FolderOpen, Home, X, Search,
+  ChevronDown, FolderOpen, Home, X, Search, Inbox,
 } from 'lucide-react';
 import { timeAgo } from '@/lib/helpers';
 import { toast } from '@/lib/toast';
@@ -141,9 +142,16 @@ export default function FileRequestsPage() {
             ))}
           </div>
         ) : filtered.length === 0 ? (
-          <div className="py-12 text-center text-muted-foreground text-sm">
-            {search ? 'No requests match your search' : 'No file requests yet. Click "New request" to create one.'}
-          </div>
+          search ? (
+            <div className="py-12 text-center text-muted-foreground text-sm">No requests match your search</div>
+          ) : (
+            <EmptyState
+              icon={Inbox}
+              title="No file requests yet"
+              description="A file request collects files from people who do not have an account. Send them a link and their uploads land in the folder you choose."
+              actions={<Button size="sm" className="h-7 text-xs" onClick={() => setCreateOpen(true)}>Create a request</Button>}
+            />
+          )
         ) : (
           filtered.map((r) => {
             const revoked = r.is_revoked === 1;

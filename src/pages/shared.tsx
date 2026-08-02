@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import { api } from '@/api/client';
 import { useWorkspace } from '@/stores/workspace';
 // card unused for now but may be needed later
@@ -6,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { EmptyState } from '@/components/ui/empty-state';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
@@ -13,7 +15,7 @@ import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from '@/components/ui/table';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Search, Copy, Check, X } from 'lucide-react';
+import { Search, Copy, Check, X, Share2 } from 'lucide-react';
 import { humanSize, timeAgo, colorFor, labelFor } from '@/lib/helpers';
 import { toast } from '@/lib/toast';
 
@@ -142,7 +144,16 @@ export default function SharedPage() {
           {loading ? (
             <div className="space-y-2 mt-4">{[1,2,3,4].map((i) => <Skeleton key={i} className="h-14 w-full" />)}</div>
           ) : filtered.length === 0 ? (
-            <p className="py-12 text-center text-sm text-muted-foreground">No shared links{filter !== 'all' ? ' with this status' : ''}</p>
+            links.length === 0 ? (
+              <EmptyState
+                icon={Share2}
+                title="Nothing shared yet"
+                description="A share link lets anyone open a file without a dosya account. You can set an expiry, a password, or limit it to specific email addresses."
+                actions={<Link to="/files"><Button size="sm" className="h-7 text-xs">Go to Files</Button></Link>}
+              />
+            ) : (
+              <p className="py-12 text-center text-sm text-muted-foreground">No shared links{filter !== 'all' ? ' with this status' : ''}</p>
+            )
           ) : (
             <Table className="mt-1">
               <TableHeader>

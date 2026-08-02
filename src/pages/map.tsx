@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import maplibregl from 'maplibre-gl';
 import { Protocol } from 'pmtiles';
 import { MapPin as MapPinIcon, Loader2 } from 'lucide-react';
@@ -14,6 +14,8 @@ import { fileThumbUrl, fileRawUrl } from '@/lib/file-url';
 import { FileViewer } from '@/components/file-viewer';
 import { FilesSidebar } from '@/components/files-sidebar';
 import { filterNavParams, groupNavParams } from '@/lib/files-params';
+import { Button } from '@/components/ui/button';
+import { EmptyState } from '@/components/ui/empty-state';
 
 let pmtilesRegistered = false;
 function ensurePmtiles() {
@@ -347,19 +349,33 @@ export default function MapPage() {
       )}
 
       {!loading && visiblePins.length === 0 && (
-        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center text-center pointer-events-none">
-          <MapPinIcon className="size-12 text-muted-foreground/30 mb-4" />
-          <p className="text-sm font-medium text-muted-foreground mb-1">
-            {pins.length > 0 ? 'No pins to show' : 'No files or folders with a location yet'}
-          </p>
-          <p className="text-xs text-muted-foreground">
-            {pins.length > 0
-              ? 'All located items are approximate - enable the toggle above to see them.'
-              : counts.pending > 0
-                ? 'Scanning your files for location…'
-                : 'Files with location data, or uploaded with location capture on, will appear here.'}
-          </p>
-        </div>
+        pins.length === 0 && counts.pending === 0 ? (
+          // Genuinely no located items anywhere - distinct from the two cases
+          // below, which just hide what's already there (approximate filter)
+          // or are still finding out (scan in progress).
+          <div className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none">
+            <div className="pointer-events-auto">
+              <EmptyState
+                icon={MapPinIcon}
+                title="No geotagged photos yet"
+                description="Photos taken on a phone usually carry GPS coordinates. Upload some and they will appear here on the map where they were taken."
+                actions={<Link to="/files"><Button size="sm" className="h-7 text-xs">Go to Files</Button></Link>}
+              />
+            </div>
+          </div>
+        ) : (
+          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center text-center pointer-events-none">
+            <MapPinIcon className="size-12 text-muted-foreground/30 mb-4" />
+            <p className="text-sm font-medium text-muted-foreground mb-1">
+              {pins.length > 0 ? 'No pins to show' : 'No files or folders with a location yet'}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {pins.length > 0
+                ? 'All located items are approximate - enable the toggle above to see them.'
+                : 'Scanning your files for location…'}
+            </p>
+          </div>
+        )
       )}
 
       </div>

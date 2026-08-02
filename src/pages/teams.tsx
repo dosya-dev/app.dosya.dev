@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { EmptyState } from '@/components/ui/empty-state';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
@@ -204,7 +205,16 @@ export default function TeamsPage() {
                 ))}
               </div>
               {members.length === 0 ? (
-                <p className="py-8 text-center text-xs text-muted-foreground">No members</p>
+                <EmptyState
+                  icon={Users}
+                  title="You are the only member"
+                  description="Invite people to share this workspace. Roles control who can upload, share, delete and manage billing."
+                  actions={
+                    <Button size="sm" className="h-7 text-xs" onClick={() => { setInviteOpen(true); setInviteTab('email'); }}>
+                      Invite someone
+                    </Button>
+                  }
+                />
               ) : members.map((m) => (
                 <div key={m.membership_id} className="grid grid-cols-[2.2fr_1.6fr_1fr_1fr_80px] px-5 items-center min-h-[58px] border-b last:border-b-0 hover:bg-muted/50 group">
                   <div className="flex items-center gap-3 py-2.5">
