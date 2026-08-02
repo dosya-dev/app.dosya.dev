@@ -75,7 +75,7 @@ function SharedView() {
       <h1 className="mb-1 text-xl font-semibold">Shared</h1>
       <p className="mb-4 text-sm text-(--demo-muted-fg)">Files you've shared with a public link.</p>
       {shared.length === 0 ? (
-        <p className="py-8 text-center text-sm text-(--demo-muted-fg)">Nothing shared yet — open a file and hit Share.</p>
+        <p className="py-8 text-center text-sm text-(--demo-muted-fg)">Nothing shared yet - open a file and hit Share.</p>
       ) : (
         <div className="space-y-1">
           {shared.map((f) => (
@@ -132,7 +132,7 @@ function Root() {
         dispatch({ type: 'TOAST', toast: { text: 'Search across everything in the full app', cta: true } });
         break;
       case 'logout':
-        dispatch({ type: 'TOAST', toast: { text: 'This is a demo — sign up to get your own workspace', cta: true } });
+        dispatch({ type: 'TOAST', toast: { text: 'This is a demo - sign up to get your own workspace', cta: true } });
         break;
     }
   }

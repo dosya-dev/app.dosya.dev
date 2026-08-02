@@ -113,7 +113,7 @@ export function shareSlug(): string {
   return Array.from({ length: 5 }, () => alphabet[Math.floor(Math.random() * alphabet.length)]).join('');
 }
 
-// File-type icon mapping → /file-icons/{icon}.svg — copied verbatim from
+// File-type icon mapping → /file-icons/{icon}.svg - copied verbatim from
 // apps/web/src/lib/helpers.ts so the demo uses the exact same glyph assets.
 export function extOf(name: string): string {
   return name.includes('.') ? name.split('.').pop()!.toLowerCase() : '';
