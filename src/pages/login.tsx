@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Loader2, Eye, EyeOff } from 'lucide-react';
 import { API_BASE } from '@/api/client';
 import { PublicNav } from '@/components/public-nav';
+import { TurnstileWidget, type TurnstileHandle } from '@/components/turnstile-widget';
 
 // OAuth callbacks redirect here as /login?error=<provider>_<reason> on failure.
 const PROVIDER_LABELS: Record<string, string> = { github: 'GitHub', google: 'Google', apple: 'Apple' };
@@ -62,6 +63,7 @@ export default function LoginPage() {
   const [lastUsed] = useState<string | null>(() => {
     try { return localStorage.getItem('dosya_last_login_method'); } catch { return null; }
   });
+  const turnstileRef = useRef<TurnstileHandle>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -72,16 +74,23 @@ export default function LoginPage() {
       const res = await fetch(`${API_BASE}/api/auth/login`, {
         method: 'POST',
         credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Turnstile-Token': turnstileRef.current?.getToken() ?? '',
+        },
         body: JSON.stringify({ email, password }),
       });
       const data = await res.json();
+      // Single-use token: reset on every outcome, not just failures, or a
+      // second attempt after a wrong password fails verification instead.
+      turnstileRef.current?.reset();
       if (res.ok && data.ok) {
         navigate(data.redirect ?? '/');
       } else {
         setError(data.error ?? 'Sign-in failed');
       }
     } catch {
+      turnstileRef.current?.reset();
       setError("Can't reach the server. Check your connection and try again.");
     }
     setLoading(false);
@@ -173,6 +182,7 @@ export default function LoginPage() {
                   </button>
                 </div>
               </div>
+              <TurnstileWidget action="login" ref={turnstileRef} />
               <Button type="submit" className="w-full h-10" disabled={loading}>
                 {loading ? <Loader2 className="size-4 animate-spin mr-2" /> : null}
                 Log In
