@@ -10,7 +10,7 @@ import { Lightbox } from './core/Lightbox';
 import { ShareModal } from './core/ShareModal';
 import { UploadLayer } from './core/UploadLayer';
 import { ThemeBar } from './web/ThemeBar';
-import { fileIconSrc, folderIconSrc, DEMO_WORKSPACE, type DemoFile } from './engine/demoData';
+import { fileIconSrc, folderIconSrc, DEMO_WORKSPACE, type DemoFile, type DemoThemeId } from './engine/demoData';
 import './demo-themes.css';
 
 type MobileTab = 'files' | 'backup' | 'settings';
@@ -236,9 +236,14 @@ function Root() {
   );
 }
 
-export default function MobileDemo() {
+interface MobileDemoProps {
+  /** Restyles this demo instance to match a theme picked elsewhere on the page. */
+  theme?: DemoThemeId;
+}
+
+export default function MobileDemo({ theme }: MobileDemoProps = {}) {
   return (
-    <DemoProvider>
+    <DemoProvider theme={theme}>
       <Root />
     </DemoProvider>
   );

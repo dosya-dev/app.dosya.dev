@@ -148,8 +148,23 @@ export function breadcrumbs(s: DemoState): DemoFolder[] {
 interface DemoCtx { state: DemoState; dispatch: Dispatch<DemoAction> }
 const DemoContext = createContext<DemoCtx | null>(null);
 
-export function DemoProvider({ children }: { children: ReactNode }) {
-  const [state, dispatch] = useReducer(demoReducer, initialDemoState);
+export function DemoProvider({ children, theme }: { children: ReactNode; theme?: DemoThemeId }) {
+  // Lazy initializer: seeds the very first render from `theme` when the
+  // caller supplies one, so there is no flash of the default theme before
+  // the effect below can run.
+  const [state, dispatch] = useReducer(
+    demoReducer,
+    initialDemoState,
+    (init) => (theme ? { ...init, theme } : init),
+  );
+
+  // Re-sync only when the `theme` PROP changes, not on every render. The
+  // demo's own in-app theme switcher (ThemeBar) dispatches SET_THEME too;
+  // if this effect ran on every render it would fight that switcher back to
+  // the prop's value on the next unrelated re-render.
+  useEffect(() => {
+    if (theme) dispatch({ type: 'SET_THEME', theme });
+  }, [theme]);
 
   // Upload ticker: advances all in-flight uploads. Reduced motion → finish instantly.
   const uploading = state.uploads.length > 0;

@@ -11,6 +11,7 @@ import { ReferralStep } from '@/components/tour/referral-step';
 import WebDemo from '@/components/demo/WebDemo';
 import DesktopDemo from '@/components/demo/DesktopDemo';
 import MobileDemo from '@/components/demo/MobileDemo';
+import type { DemoThemeId } from '@/components/demo/engine/demoData';
 
 /**
  * The full-screen welcome tour.
@@ -47,8 +48,12 @@ export default function WelcomePage() {
     setIndex((i) => i + 1);
   }, [isLast, finish]);
 
+  // The app's theme ids and the demo's are the same list (see theme-step.tsx),
+  // so this cast is just spelling out that shared contract for the compiler.
+  const previewTheme = demoTheme as DemoThemeId;
+
   return (
-    <div data-demo-theme={demoTheme}>
+    <div>
       <TourLayout
         step={step}
         index={index}
@@ -81,14 +86,14 @@ export default function WelcomePage() {
         preview={
           step.id === 'welcome' ? (
             <div className="space-y-4">
-              <WebDemo />
+              <WebDemo theme={previewTheme} />
               <div className="grid grid-cols-1 sm:grid-cols-[2fr_1fr] gap-4">
-                <DesktopDemo />
-                <MobileDemo />
+                <DesktopDemo theme={previewTheme} />
+                <MobileDemo theme={previewTheme} />
               </div>
             </div>
           ) : (
-            <WebDemo />
+            <WebDemo theme={previewTheme} />
           )
         }
       />

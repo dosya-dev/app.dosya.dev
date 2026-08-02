@@ -15,7 +15,7 @@ import { ShareModal } from './core/ShareModal';
 import { PreviewPane } from './core/PreviewPane';
 import { Lightbox } from './core/Lightbox';
 import { DemoToast } from './core/DemoToast';
-import { humanSize, KIND_COLORS, SIGNUP_URL } from './engine/demoData';
+import { humanSize, KIND_COLORS, SIGNUP_URL, type DemoThemeId } from './engine/demoData';
 import './demo-themes.css';
 
 export type WebView = 'dashboard' | 'files' | 'uploads' | 'shared' | 'vault' | 'team' | 'integrations' | 'settings';
@@ -151,9 +151,14 @@ function Root() {
   );
 }
 
-export default function WebDemo(): ReactNode {
+interface WebDemoProps {
+  /** Restyles this demo instance to match a theme picked elsewhere on the page. */
+  theme?: DemoThemeId;
+}
+
+export default function WebDemo({ theme }: WebDemoProps = {}): ReactNode {
   return (
-    <DemoProvider>
+    <DemoProvider theme={theme}>
       <Root />
     </DemoProvider>
   );
