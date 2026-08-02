@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Copy, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { api } from '@/api/client';
@@ -24,6 +24,7 @@ interface ReferralResponse {
 export function ReferralStep() {
   const [link, setLink] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -36,13 +37,28 @@ export function ReferralStep() {
     return () => { cancelled = true; };
   }, []);
 
+  // The "Copied" confirmation reverts itself after 2s. If the component is
+  // gone before that fires, clear it - the same guard as `cancelled` above,
+  // for the other pending callback.
+  useEffect(() => {
+    return () => {
+      if (copiedTimer.current !== null) clearTimeout(copiedTimer.current);
+    };
+  }, []);
+
   if (!link) return null;
 
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(link);
       setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      // Clear any timer from a previous click first, so rapid repeat clicks
+      // restart the 2s window instead of stacking timers behind each other.
+      if (copiedTimer.current !== null) clearTimeout(copiedTimer.current);
+      copiedTimer.current = setTimeout(() => {
+        copiedTimer.current = null;
+        setCopied(false);
+      }, 2000);
     } catch { /* clipboard blocked; the input is selectable anyway */ }
   };
 
