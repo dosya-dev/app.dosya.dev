@@ -1,7 +1,13 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 
 const SCRIPT_SRC = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
-const SITEKEY = import.meta.env.VITE_TURNSTILE_SITEKEY as string;
+// Public by design - a Turnstile sitekey is served in the HTML to every
+// visitor, and is domain-locked at Cloudflare. The literal is a fallback
+// because the dosya-web Pages project does not inject build variables (its
+// build log reports "Build environment variables: (none found)", including
+// for the pre-existing NPM_TOKEN). The env var still wins where it works.
+const SITEKEY = (import.meta.env.VITE_TURNSTILE_SITEKEY as string | undefined)
+  || '0x4AAAAAAEEZLpy907cv9Zl_';
 
 interface TurnstileApi {
   render(el: HTMLElement, opts: Record<string, unknown>): string;
