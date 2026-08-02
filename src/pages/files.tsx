@@ -9,6 +9,7 @@ import { runBulk } from '@/lib/bulk-run';
 import type { FileItem, FolderItem, Breadcrumb, Pagination } from '@/lib/file-types';
 import { useWorkspace } from '@/stores/workspace';
 import { Button } from '@/components/ui/button';
+import { EmptyState } from '@/components/ui/empty-state';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -1109,27 +1110,39 @@ export default function FilesPage() {
               </Button>
             </div>
           ) : folders.length === 0 && files.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-20 text-center">
-              <FolderOpen className="size-12 text-muted-foreground/30 mb-4" />
-              <p className="text-sm font-medium text-muted-foreground mb-1">
-                {isDeletedView ? 'Trash is empty'
+            <EmptyState
+              icon={FolderOpen}
+              title={
+                isDeletedView ? 'Trash is empty'
                   : search ? 'No files match your search'
                   : currentGroup ? 'This group is empty'
                   : filterEmptyLabel ? filterEmptyLabel
-                  : 'This folder is empty'}
-              </p>
-              {currentGroup && !search && (
-                <p className="text-xs text-muted-foreground max-w-64">
-                  Right-click any file or folder and choose "Add to group" to collect items here.
-                </p>
-              )}
-              {filterEmptyLabel && !search && !currentGroup && (
-                <Button variant="outline" size="sm" className="h-7 text-xs mt-1" onClick={() => setSearchParams(filterNavParams(searchParams, ''))}>
-                  Show all files
-                </Button>
-              )}
-              {!isDeletedView && !search && !currentGroup && !filterEmptyLabel && <p className="text-xs text-muted-foreground">Upload files or create a folder to get started</p>}
-            </div>
+                  : 'This folder is empty'
+              }
+              description={
+                currentGroup && !search
+                  ? 'Right-click any file or folder and choose "Add to group" to collect items here.'
+                  : (!isDeletedView && !search && !currentGroup && !filterEmptyLabel)
+                    ? 'Drop files anywhere on this page to upload them.'
+                    : undefined
+              }
+              actions={
+                filterEmptyLabel && !search && !currentGroup ? (
+                  <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setSearchParams(filterNavParams(searchParams, ''))}>
+                    Show all files
+                  </Button>
+                ) : (!isDeletedView && !search && !currentGroup && !filterEmptyLabel) ? (
+                  <>
+                    <Link to={uploadHref}>
+                      <Button size="sm" className="h-7 text-xs"><Upload className="size-3 mr-1" /> Upload files</Button>
+                    </Link>
+                    <Link to="/integrations/google">
+                      <Button variant="outline" size="sm" className="h-7 text-xs">Import from Drive</Button>
+                    </Link>
+                  </>
+                ) : undefined
+              }
+            />
           ) : (
             <>
               {folders.length > 0 && view === 'grid' && (
