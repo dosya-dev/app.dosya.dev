@@ -76,8 +76,25 @@ export function TourLayout({
         </button>
       </header>
 
-      <main className="flex-1 grid grid-cols-1 lg:grid-cols-[35fr_65fr] gap-8 px-6 pb-6 items-center">
-        <div className="max-w-md">
+      {/*
+        lg:items-start (rather than centring) is what stops the copy column
+        from being vertically centred inside a row as tall as the preview
+        stack - that centring is what pushed the heading, and with it the
+        Next button, down past the fold on page 1 (WebDemo + Desktop/Mobile
+        demos stack to ~1430px there). Below lg the two panes stack instead
+        of sitting side by side, so alignment has no visible effect.
+      */}
+      <main className="flex-1 grid grid-cols-1 lg:grid-cols-[35fr_65fr] gap-8 px-6 pb-6 lg:items-start">
+        {/*
+          lg:min-h-screen gives the sticky nav below room to travel: a sticky
+          element can only move within its containing block, so without a
+          height floor here a short page (few points, no preview) would give
+          it nowhere to go. It is a MIN height, so it never clips content -
+          it only pads out short pages, which costs a little unused space
+          under the dots on those pages in exchange for not having to guess
+          any individual page's content height.
+        */}
+        <div className="max-w-md lg:min-h-screen">
           <h1 className="text-2xl font-bold tracking-tight mb-6">{step.heading}</h1>
 
           <ul className="space-y-4">
@@ -91,32 +108,48 @@ export function TourLayout({
 
           {extra && <div className="mt-6">{extra}</div>}
 
-          <div className="flex items-center gap-2 mt-8">
-            {!isFirst && (
-              <Button variant="outline" data-testid="tour-back" onClick={onBack} className="gap-1.5">
-                <ArrowLeft className="size-4" /> Back
+          {/*
+            Sticky rather than a fixed bottom bar: it stays part of the copy
+            column's normal flow (no overlay, no extra reserved space needed
+            elsewhere) but is pinned just above the viewport's bottom edge
+            once the page has scrolled that far, on any page whose preview
+            column happens to be taller than the copy. bg-background covers
+            the points list if the two ever cross.
+          */}
+          <div className="mt-8 lg:sticky lg:bottom-6 lg:bg-background lg:pt-2">
+            <div className="flex items-center gap-2">
+              {!isFirst && (
+                <Button variant="outline" data-testid="tour-back" onClick={onBack} className="gap-1.5">
+                  <ArrowLeft className="size-4" /> Back
+                </Button>
+              )}
+              <Button data-testid="tour-next" onClick={onNext} className="gap-1.5">
+                {isLast ? <><Check className="size-4" /> Finish</> : <>Next <ArrowRight className="size-4" /></>}
               </Button>
-            )}
-            <Button data-testid="tour-next" onClick={onNext} className="gap-1.5">
-              {isLast ? <><Check className="size-4" /> Finish</> : <>Next <ArrowRight className="size-4" /></>}
-            </Button>
-          </div>
+            </div>
 
-          <div className="flex items-center gap-1.5 mt-8" aria-label={`Step ${index + 1} of ${total}`}>
-            {Array.from({ length: total }, (_, i) => (
-              <span
-                key={i}
-                data-testid={`tour-dot-${i}`}
-                data-current={i === index ? 'true' : 'false'}
-                className={`h-1.5 rounded-full transition-all ${
-                  i === index ? 'w-6 bg-primary' : 'w-1.5 bg-muted-foreground/30'
-                }`}
-              />
-            ))}
+            <div className="flex items-center gap-1.5 mt-8" aria-label={`Step ${index + 1} of ${total}`}>
+              {Array.from({ length: total }, (_, i) => (
+                <span
+                  key={i}
+                  data-testid={`tour-dot-${i}`}
+                  data-current={i === index ? 'true' : 'false'}
+                  className={`h-1.5 rounded-full transition-all ${
+                    i === index ? 'w-6 bg-primary' : 'w-1.5 bg-muted-foreground/30'
+                  }`}
+                />
+              ))}
+            </div>
           </div>
         </div>
 
-        <div className="min-w-0">
+        {/*
+          lg:max-h-screen + overflow-hidden caps the row's own height: without
+          it, a tall preview stack (page 1) grows the page to whatever height
+          it needs, taking the copy column and the sticky nav's travel range
+          along with it. Cropping over squashing so the demos stay undistorted.
+        */}
+        <div className="min-w-0 lg:max-h-screen lg:overflow-hidden">
           <DemoBoundary>{preview}</DemoBoundary>
         </div>
       </main>

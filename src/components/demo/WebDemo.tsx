@@ -15,7 +15,7 @@ import { ShareModal } from './core/ShareModal';
 import { PreviewPane } from './core/PreviewPane';
 import { Lightbox } from './core/Lightbox';
 import { DemoToast } from './core/DemoToast';
-import { humanSize, KIND_COLORS, SIGNUP_URL, type DemoThemeId } from './engine/demoData';
+import { humanSize, KIND_COLORS, type DemoThemeId } from './engine/demoData';
 import './demo-themes.css';
 
 export type WebView = 'dashboard' | 'files' | 'uploads' | 'shared' | 'vault' | 'team' | 'integrations' | 'settings';
@@ -94,6 +94,11 @@ function SharedView() {
 }
 
 function Placeholder({ icon: Icon, title, blurb }: { icon: LucideIcon; title: string; blurb: string }) {
+  // Same rule as DemoToast: ctaHref is null inside the tour, where the
+  // viewer already has an account and the link would only send them away
+  // from it. Undefined (the marketing site's default) keeps the real
+  // sign-up link.
+  const { state } = useDemo();
   return (
     <div className="grid h-full place-items-center p-8 text-center">
       <div className="max-w-xs">
@@ -102,9 +107,11 @@ function Placeholder({ icon: Icon, title, blurb }: { icon: LucideIcon; title: st
         </div>
         <p className="text-base font-semibold">{title}</p>
         <p className="mt-1 text-sm text-(--demo-muted-fg)">{blurb}</p>
-        <a href={SIGNUP_URL} className="mt-3 inline-block rounded-lg bg-(--demo-primary) px-4 py-2 text-xs font-semibold text-(--demo-primary-fg) hover:opacity-90">
-          Sign up free to use it
-        </a>
+        {state.ctaHref && (
+          <a href={state.ctaHref} className="mt-3 inline-block rounded-lg bg-(--demo-primary) px-4 py-2 text-xs font-semibold text-(--demo-primary-fg) hover:opacity-90">
+            Sign up free to use it
+          </a>
+        )}
       </div>
     </div>
   );
