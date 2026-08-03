@@ -49,6 +49,8 @@ const PERM_INFO: PermInfo[] = [
   { key: 'access_shared', label: 'Access Shared', hint: 'View the shared links page.', category: 'Page access' },
   { key: 'access_team', label: 'Access Team', hint: 'View the team page.', category: 'Page access' },
   { key: 'access_settings', label: 'Access Settings', hint: 'Open the workspace settings page.', category: 'Page access' },
+  { key: 'access_webdav', label: 'Use WebDAV', hint: 'Mount the workspace over WebDAV in Finder, Explorer or a WebDAV client.', category: 'Protocol access' },
+  { key: 'access_s3', label: 'Use the S3 gateway', hint: 'Access the workspace with S3 tools such as rclone or the AWS CLI.', category: 'Protocol access' },
 ];
 
 const ROLE_COLORS: Record<string, string> = { owner: '#16A34A', admin: '#4338CA', member: '#706E69', viewer: '#92400E' };
