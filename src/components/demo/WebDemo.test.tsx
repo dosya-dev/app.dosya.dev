@@ -63,3 +63,81 @@ describe('Placeholder CTA link', () => {
     expect(link!.getAttribute('href')).toBeTruthy();
   });
 });
+
+// The tour keeps ONE WebDemo instance mounted as it moves between pages
+// (sharing -> security -> integrations), changing the `initialView` prop on
+// it each time rather than remounting. A plain `useState(() => ...)` lazy
+// initializer only runs on the very first render, so without a resync
+// effect the preview silently stays on whatever the first page set - the
+// tour's per-page-preview promise (sharing shows Shared, security shows
+// Vault, integrations shows Integrations) just would not hold. This exact
+// scenario - re-rendering the SAME root with a new initialView, the way
+// React reuses a component instance across prop updates - is what a test
+// that only checks the prop was passed (see welcome.test.tsx's stubbed
+// "passes the expected view to the demo on each step") cannot catch.
+describe('initialView re-sync on the same mounted instance', () => {
+  let root: Root | null = null;
+  let container: HTMLDivElement | null = null;
+
+  afterEach(() => {
+    if (root) act(() => root!.unmount());
+    container?.remove();
+    root = null;
+    container = null;
+  });
+
+  function render(node: React.ReactNode) {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    act(() => { root!.render(node); });
+  }
+
+  function rerender(node: React.ReactNode) {
+    act(() => { root!.render(node); });
+  }
+
+  it('switches the rendered view when initialView changes on a re-render, not just at mount', () => {
+    render(<WebDemo initialView="shared" />);
+    expect(container!.querySelector('h1')!.textContent).toBe('Shared');
+    expect(container!.textContent).not.toContain('A separate, extra-protected space');
+
+    rerender(<WebDemo initialView="vault" />);
+    expect(container!.textContent).toContain('A separate, extra-protected space for your most sensitive files.');
+    expect(container!.querySelector('h1')).toBeNull(); // Vault is a Placeholder, not SharedView's <h1>
+
+    rerender(<WebDemo initialView="integrations" />);
+    expect(container!.textContent).not.toContain('A separate, extra-protected space');
+  });
+
+  it('does not clobber an in-demo sidebar selection until initialView actually changes', () => {
+    render(<WebDemo initialView="shared" />);
+    const settingsBtn = Array.from(container!.querySelectorAll('button'))
+      .find((b) => b.textContent?.trim() === 'Settings')!;
+    act(() => { settingsBtn.click(); });
+    expect(container!.textContent).toContain('Appearance, security, storage and workspace preferences.');
+
+    // Re-rendering with the SAME initialView must not fight the manual
+    // selection back - the resync effect is keyed on state.initialView and
+    // must only fire when that value actually changes.
+    rerender(<WebDemo initialView="shared" />);
+    expect(container!.textContent).toContain('Appearance, security, storage and workspace preferences.');
+
+    // A genuinely new initialView still wins, same as the tour moving pages.
+    rerender(<WebDemo initialView="vault" />);
+    expect(container!.textContent).toContain('A separate, extra-protected space for your most sensitive files.');
+  });
+
+  it('starts on dashboard and stays fully user-driven when initialView is never passed (marketing default)', () => {
+    render(<WebDemo />);
+    expect(container!.textContent).toContain('Good afternoon');
+    const sharedBtn = Array.from(container!.querySelectorAll('button'))
+      .find((b) => b.textContent?.trim() === 'Shared')!;
+    act(() => { sharedBtn.click(); });
+    expect(container!.querySelector('h1')!.textContent).toBe('Shared');
+    // Re-rendering with no initialView at all (as every marketing call site
+    // does) must not reset the user's own navigation.
+    rerender(<WebDemo />);
+    expect(container!.querySelector('h1')!.textContent).toBe('Shared');
+  });
+});

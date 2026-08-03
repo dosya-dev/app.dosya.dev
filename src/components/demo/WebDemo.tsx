@@ -1,4 +1,4 @@
-import { useState, type DragEvent, type ReactNode } from 'react';
+import { useEffect, useState, type DragEvent, type ReactNode } from 'react';
 import { Lock, Users, Plug, Settings, type LucideIcon } from 'lucide-react';
 import { DemoProvider, useDemo } from './engine/demoState';
 import { WebShell } from './shells/WebShell';
@@ -125,6 +125,22 @@ function Root() {
   // spells out that shared contract for the compiler, the same way
   // welcome.tsx casts its own theme id.
   const [view, setView] = useState<WebView>(() => (state.initialView as WebView | undefined) ?? 'dashboard');
+
+  // Re-sync only when state.initialView changes, not on every render - the
+  // useState above only seeds the FIRST render, but the tour keeps one
+  // WebDemo instance mounted as it moves from page to page (sharing ->
+  // security -> integrations), changing this prop on it each time. Without
+  // this effect the view would never move past whatever the first page set.
+  // Guarded on truthiness so callers that never pass initialView (every
+  // marketing call site) are unaffected: state.initialView stays undefined,
+  // the effect never fires, and the view is exactly as before - seeded once
+  // to 'dashboard' and otherwise fully driven by onSelect below. Clicking
+  // the demo's own sidebar calls setView directly and does not touch
+  // state.initialView, so it is not fought back on the next unrelated
+  // re-render - same rule as DemoProvider's theme resync effect.
+  useEffect(() => {
+    if (state.initialView) setView(state.initialView as WebView);
+  }, [state.initialView]);
 
   function onSelect(id: string) {
     switch (id) {

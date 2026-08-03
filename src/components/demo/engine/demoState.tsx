@@ -30,9 +30,12 @@ export interface DemoState {
   /** Whether the in-demo theme pickers (ThemeBar, ThemeSwitcher) render at
    * all. False when a host page supplies its own theme picker instead. */
   showThemeControls: boolean;
-  /** One-time seed for the demo's initial page. Only WebDemo understands the
+  /** Which page the demo should be showing. Only WebDemo understands the
    * values (its WebView union); typed loosely here since this engine has no
-   * knowledge of that type. */
+   * knowledge of that type. Re-synced from the `initialView` prop whenever
+   * that prop changes (see DemoProvider below) - the tour reuses one WebDemo
+   * instance across pages and relies on this to switch the preview as the
+   * user moves between them, not just to seed the first render. */
   initialView?: string;
 }
 
@@ -48,7 +51,8 @@ export type DemoAction =
   | { type: 'CLOSE_SHARE' }
   | { type: 'PREVIEW'; fileId: string | null }
   | { type: 'SET_THEME'; theme: DemoThemeId }
-  | { type: 'TOAST'; toast: DemoToastState | null };
+  | { type: 'TOAST'; toast: DemoToastState | null }
+  | { type: 'SET_INITIAL_VIEW'; view: string };
 
 // First-click sort direction per column (mirrors apps/web list-sort semantics).
 const FIRST_DIR: Record<SortKey, 'asc' | 'desc'> = { name: 'asc', region: 'asc', size: 'desc', modified: 'desc' };
@@ -126,6 +130,7 @@ export function demoReducer(s: DemoState, a: DemoAction): DemoState {
     case 'PREVIEW': return { ...s, previewFileId: a.fileId };
     case 'SET_THEME': return { ...s, theme: a.theme };
     case 'TOAST': return { ...s, toast: a.toast };
+    case 'SET_INITIAL_VIEW': return { ...s, initialView: a.view };
     default: return s;
   }
 }
@@ -171,8 +176,11 @@ export interface DemoProviderProps {
    * marketing site is unchanged; a host page with its own theme picker
    * (the tour) passes false to avoid a second, non-functional one. */
   showThemeControls?: boolean;
-  /** Seeds the demo's initial page. Only WebDemo reads this; defaults to
-   * the demo's own default view so the marketing site is unchanged. */
+  /** Which page the demo should show. Only WebDemo reads this; defaults to
+   * the demo's own default view so the marketing site is unchanged. Re-synced
+   * on every change, the same as `theme` below - the tour changes this prop
+   * on the same WebDemo instance as it moves between pages, so a one-time
+   * seed is not enough. */
   initialView?: string;
 }
 
@@ -181,9 +189,9 @@ export function DemoProvider({
 }: DemoProviderProps) {
   // Lazy initializer: seeds the very first render from the props above when
   // the caller supplies them, so there is no flash of the un-configured demo
-  // before the effect below can run. ctaHref and showThemeControls do not
-  // change after mount in any current caller, so unlike `theme` they get no
-  // resync effect - only the one-time seed here.
+  // before the effects below can run. ctaHref and showThemeControls do not
+  // change after mount in any current caller, so unlike `theme` and
+  // `initialView` they get no resync effect - only the one-time seed here.
   const [state, dispatch] = useReducer(
     demoReducer,
     initialDemoState,
@@ -203,6 +211,17 @@ export function DemoProvider({
   useEffect(() => {
     if (theme) dispatch({ type: 'SET_THEME', theme });
   }, [theme]);
+
+  // Re-sync only when the `initialView` PROP changes, not on every render -
+  // same rule as `theme` above, and for the same reason: the tour keeps one
+  // WebDemo instance mounted across pages and changes this prop on it, so a
+  // one-time seed (the lazy initializer above) never reaches later pages.
+  // WebDemo's own Root component watches state.initialView and re-seeds its
+  // local view state from it; navigating the demo's own sidebar does not
+  // touch state.initialView, so it does not get fought back on every render.
+  useEffect(() => {
+    if (initialView) dispatch({ type: 'SET_INITIAL_VIEW', view: initialView });
+  }, [initialView]);
 
   // Upload ticker: advances all in-flight uploads. Reduced motion → finish instantly.
   const uploading = state.uploads.length > 0;
