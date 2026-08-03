@@ -15,13 +15,44 @@ export function jobProgress(
   return Math.min(100, Math.floor((job.completed_bytes / job.total_bytes) * 100));
 }
 
+/**
+ * Ids of jobs that just crossed from an active status (discovering/running)
+ * to a terminal one (complete/failed/cancelled) - i.e. left `prevActiveIds`
+ * and are no longer active in `jobs`. A job whose id was never in
+ * prevActiveIds (freshly observed already-terminal, or simply untracked so
+ * far) is not reported: there is no active -> terminal edge to see, just a
+ * terminal job appearing.
+ *
+ * Pure and React-free on purpose - this used to live inside a useEffect in
+ * pages/use-cloud-import-refresh.ts, reachable only while a component called
+ * its hook. The caller (now the module-scope subscriber in
+ * lib/query-client.ts) owns the prevActiveIds -> next-prevActiveIds
+ * bookkeeping across calls; this function only ever answers "what completed
+ * between these two snapshots", which keeps it as unit-testable as
+ * jobProgress/retryAfterFromError below without needing to render anything.
+ *
+ * Deliberately NOT workspace-scoped (the old hook filtered on
+ * `job.workspace_id`, which only worked because a page component knows its
+ * own workspace). A module-scope subscriber has no "current workspace" to
+ * filter on, and doesn't need one: React Query only refetches queries with
+ * active observers, so an invalidation for a workspace nobody is viewing
+ * costs nothing.
+ */
+export function completedJobIds(prevActiveIds: ReadonlySet<string>, jobs: CloudJob[]): string[] {
+  const currentActive = new Set(jobs.filter((j) => ACTIVE_CLOUD_STATUSES.has(j.status)).map((j) => j.id));
+  return jobs
+    .filter((j) => prevActiveIds.has(j.id) && !currentActive.has(j.id))
+    .map((j) => j.id);
+}
+
 export const CLOUD_IMPORT_POLL_MS = 5_000;
 // Singleton interval, not store state - matches stores/remote-downloads.ts's
 // timer exactly (same POLL_MS, same "only run while something is active"
 // shape). Module-scoped rather than tied to any one component's mount
-// lifecycle, because `jobs` is read by more than one component
-// (ImportProgressCard, use-cloud-import-refresh's completion hook) and none
-// of them should own starting/stopping a shared poll.
+// lifecycle, because `jobs` is read by more than one subscriber
+// (ImportProgressCard, and the module-scope completion listener in
+// lib/query-client.ts) and none of them should own starting/stopping a
+// shared poll.
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 
 interface CloudImportState {

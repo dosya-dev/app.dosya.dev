@@ -12,8 +12,9 @@ vi.mock('@/api/cloud-import', () => ({
   cancelJob: (...args: unknown[]) => cancelJobMock(...args),
 }));
 
-const { useCloudImports, ACTIVE_CLOUD_STATUSES, CLOUD_IMPORT_POLL_MS, jobProgress, retryAfterFromError } =
-  await import('./cloud-imports');
+const {
+  useCloudImports, ACTIVE_CLOUD_STATUSES, CLOUD_IMPORT_POLL_MS, jobProgress, retryAfterFromError, completedJobIds,
+} = await import('./cloud-imports');
 
 function job(over: Partial<CloudJob> = {}): CloudJob {
   return {
@@ -90,6 +91,60 @@ describe('jobProgress', () => {
 
   it('returns null for a zero-byte total rather than dividing by zero', () => {
     expect(jobProgress({ status: 'running', total_bytes: 0, completed_bytes: 0 })).toBeNull();
+  });
+});
+
+describe('completedJobIds', () => {
+  // Ported from the deleted pages/use-cloud-import-refresh.test.tsx: same
+  // edge-vs-tick behaviour, minus the React harness and minus the
+  // workspace-scoping the module-scope subscriber in lib/query-client.ts no
+  // longer has a workspace to scope to.
+
+  it('returns the id of a job that transitioned running -> complete', () => {
+    const prevActiveIds = new Set(['job1']);
+    const result = completedJobIds(prevActiveIds, [job({ id: 'job1', status: 'complete' })]);
+    expect(result).toEqual(['job1']);
+  });
+
+  it('returns the id of a job that transitioned discovering -> failed', () => {
+    const prevActiveIds = new Set(['job1']);
+    const result = completedJobIds(prevActiveIds, [job({ id: 'job1', status: 'failed' })]);
+    expect(result).toEqual(['job1']);
+  });
+
+  it('returns the id of a job that transitioned running -> cancelled', () => {
+    const prevActiveIds = new Set(['job1']);
+    const result = completedJobIds(prevActiveIds, [job({ id: 'job1', status: 'cancelled' })]);
+    expect(result).toEqual(['job1']);
+  });
+
+  it('does not return an id for an ordinary progress tick (still active, counts changed)', () => {
+    const prevActiveIds = new Set(['job1']);
+    const result = completedJobIds(prevActiveIds, [job({ id: 'job1', status: 'running', completed_files: 4 })]);
+    expect(result).toEqual([]);
+  });
+
+  it('does not return an id for a job that was never seen as active', () => {
+    // Nothing put 'job1' into prevActiveIds (e.g. the app only started
+    // observing after the job had already finished) - there is no
+    // active -> terminal edge to observe here, just a terminal job appearing.
+    const result = completedJobIds(new Set(), [job({ id: 'job1', status: 'complete' })]);
+    expect(result).toEqual([]);
+  });
+
+  it('returns both ids when two jobs complete in the same update, without dropping either', () => {
+    const prevActiveIds = new Set(['job1', 'job2']);
+    const result = completedJobIds(prevActiveIds, [
+      job({ id: 'job1', status: 'complete' }),
+      job({ id: 'job2', status: 'failed' }),
+    ]);
+    expect(result.sort()).toEqual(['job1', 'job2']);
+  });
+
+  it('is not scoped to a workspace - unlike the deleted hook, callers get every completion', () => {
+    const prevActiveIds = new Set(['job1']);
+    const result = completedJobIds(prevActiveIds, [job({ id: 'job1', workspace_id: 'ws2', status: 'complete' })]);
+    expect(result).toEqual(['job1']);
   });
 });
 

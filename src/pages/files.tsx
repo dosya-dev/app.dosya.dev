@@ -53,7 +53,6 @@ import { toast } from '@/lib/toast';
 import { FolderPickerDialog } from '@/components/folder-picker-dialog';
 import { ProviderPickerDialog } from '@/components/cloud-import/provider-picker-dialog';
 import { ImportProgressCard } from '@/components/cloud-import/import-progress-card';
-import { useCloudImportCompletionRefresh } from './use-cloud-import-refresh';
 
 // ── Types ──────────────────────────────────────────────────
 // Listing row shapes live in lib/file-types so this page and the file viewer
@@ -431,10 +430,11 @@ export default function FilesPage() {
     if (!isPlaceholder) lastItemCount.current = folders.length + files.length;
   }, [folders, files, isPlaceholder]);
 
-  // Refresh the list when a cloud import in this workspace finishes - see
-  // use-cloud-import-refresh.ts for why this reacts rather than polls, and
-  // why it's workspace-scoped but not folder-scoped.
-  useCloudImportCompletionRefresh(wsId, loadFiles);
+  // Cloud-import completion invalidates the files cache app-wide via a
+  // module-scope store subscription (see lib/query-client.ts) rather than a
+  // page-scoped effect here - a page-scoped listener only reacts while this
+  // page happens to be mounted, and cloud imports are long-running
+  // background jobs that routinely finish while the user is elsewhere.
 
   // Deep-link from the upload dock (?file=<id>): once that file is in the loaded
   // list, scroll it into view and flash the highlight. Keyed on the param VALUE

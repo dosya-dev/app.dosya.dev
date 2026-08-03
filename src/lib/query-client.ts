@@ -12,6 +12,7 @@
 import { QueryClient } from '@tanstack/react-query';
 import { ApiError } from '@/api/client';
 import { FILES_QUERY_ROOT } from '@/lib/files-request';
+import { ACTIVE_CLOUD_STATUSES, completedJobIds, useCloudImports } from '@/stores/cloud-imports';
 
 /**
  * 401 and 403 are terminal: the session is gone or the permission is absent,
@@ -56,3 +57,44 @@ if (typeof window !== 'undefined') {
     queryClient.invalidateQueries({ queryKey: [FILES_QUERY_ROOT] });
   });
 }
+
+/**
+ * Cloud imports (stores/cloud-imports.ts) are the same shape of problem as
+ * the upload listener above, just longer-running: they poll in the
+ * background for minutes, so "the user is on some other page when the job
+ * finishes" is the normal case, not the edge case. This used to be
+ * useCloudImportCompletionRefresh, a useEffect-scoped hook called only from
+ * FilesPage - it stopped listening the moment that page unmounted, so an
+ * import finishing while the user was anywhere else silently left the
+ * listing missing the imported files (staleTime 30s means a remount doesn't
+ * even guarantee a revalidation). Fixed the same way as upload-complete:
+ * module scope, wired once for the app's lifetime.
+ *
+ * useCloudImports is a zustand store, not a DOM event source, so this does
+ * NOT need the `typeof window !== 'undefined'` guard above - .subscribe() is
+ * plain JS with no `window` dependency and cannot throw in a non-DOM
+ * context. The guard above exists only because `window.addEventListener`
+ * itself would throw if `window` doesn't exist; nothing here calls it.
+ *
+ * The active -> terminal edge detection is `completedJobIds`, kept pure and
+ * exported from stores/cloud-imports.ts precisely so it stays unit-tested
+ * without rendering anything. This subscriber owns only the prevActiveIds
+ * bookkeeping between calls - recomputing it is one line, mirroring what
+ * completedJobIds already computes internally to find the edge.
+ *
+ * Deliberately NOT workspace-scoped, unlike the old hook: a module-scope
+ * subscriber has no "current workspace" to filter on. Invalidating
+ * [FILES_QUERY_ROOT] app-wide is correct here for the same reason it is for
+ * uploads - React Query only refetches queries with active observers, so
+ * invalidating for a workspace nobody is viewing costs nothing.
+ */
+let prevActiveCloudImportIds = new Set<string>();
+useCloudImports.subscribe((state) => {
+  const completed = completedJobIds(prevActiveCloudImportIds, state.jobs);
+  prevActiveCloudImportIds = new Set(
+    state.jobs.filter((j) => ACTIVE_CLOUD_STATUSES.has(j.status)).map((j) => j.id),
+  );
+  if (completed.length > 0) {
+    queryClient.invalidateQueries({ queryKey: [FILES_QUERY_ROOT] });
+  }
+});
