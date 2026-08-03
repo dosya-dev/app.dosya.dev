@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Loader2 } from 'lucide-react';
 import { API_BASE } from '@/api/client';
 import { PublicNav } from '@/components/public-nav';
+import { TurnstileWidget, type TurnstileHandle } from '@/components/turnstile-widget';
 
 export default function VerifyPage() {
   const navigate = useNavigate();
@@ -16,6 +17,7 @@ export default function VerifyPage() {
   const [info, setInfo] = useState('');
   const [loading, setLoading] = useState(false);
   const [resending, setResending] = useState(false);
+  const turnstileRef = useRef<TurnstileHandle>(null);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -26,13 +28,22 @@ export default function VerifyPage() {
       const res = await fetch(`${API_BASE}/api/auth/verify`, {
         method: 'POST',
         credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Turnstile-Token': turnstileRef.current?.getToken() ?? '',
+        },
         body: JSON.stringify(email ? { email, code } : { code }),
       });
       const data = await res.json();
+      // Single-use token: reset on every outcome, not just failures, or a
+      // retry after a wrong code fails verification instead.
+      turnstileRef.current?.reset();
       if (res.ok && data.ok) navigate(data.redirect ?? '/create-workspace');
       else setError(data.error ?? 'Verification failed');
-    } catch { setError("Can't reach the server. Check your connection and try again."); }
+    } catch {
+      turnstileRef.current?.reset();
+      setError("Can't reach the server. Check your connection and try again.");
+    }
     setLoading(false);
   };
 
@@ -43,13 +54,24 @@ export default function VerifyPage() {
       const res = await fetch(`${API_BASE}/api/auth/resend-verification`, {
         method: 'POST',
         credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Turnstile-Token': turnstileRef.current?.getToken() ?? '',
+        },
         body: JSON.stringify(email ? { email } : {}),
       });
       const data = await res.json();
+      // Single-use token: reset on every outcome, not just failures, or a
+      // retry after a failed resend fails verification instead. Shares the
+      // page's one widget with submit() - both routes serve the same
+      // verify-your-email flow for the same user.
+      turnstileRef.current?.reset();
       if (res.ok && data.ok) setInfo('A new code has been sent to your email.');
       else setError(data.error ?? 'Could not resend code');
-    } catch { setError("Can't reach the server. Check your connection and try again."); }
+    } catch {
+      turnstileRef.current?.reset();
+      setError("Can't reach the server. Check your connection and try again.");
+    }
     setResending(false);
   };
 
@@ -83,6 +105,7 @@ export default function VerifyPage() {
                   autoFocus
                   className="h-12 text-center text-2xl tracking-[10px] font-semibold"
                 />
+                <TurnstileWidget action="verify" ref={turnstileRef} />
                 <Button type="submit" className="w-full h-10" disabled={loading}>
                   {loading ? <Loader2 className="size-4 animate-spin mr-2" /> : null}
                   Verify email

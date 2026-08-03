@@ -11,7 +11,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "preview": "vite preview",
-    "deploy": "npm run build && wrangler pages deploy dist --project-name=dosya-web"
+    "deploy": "npm run build && wrangler pages deploy dist --project-name=dosya-web",
+    "vendor:demos": "node scripts/vendor-demos.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.4.1",

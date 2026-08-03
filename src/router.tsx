@@ -49,6 +49,7 @@ const VerifyPage = lazy(() => import('@/pages/verify'));
 const ForgotPasswordPage = lazy(() => import('@/pages/forgot-password'));
 const ResetPasswordPage = lazy(() => import('@/pages/reset-password'));
 const NotFoundPage = lazy(() => import('@/pages/not-found'));
+const WelcomePage = lazy(() => import('@/pages/welcome'));
 
 // Root layout: keeps the browser tab title in sync with the route for every
 // page. The Suspense boundary covers routes outside DashboardLayout (login,
@@ -115,6 +116,11 @@ export const router = createBrowserRouter([
     ],
   },
   { path: '/login', element: <LoginPage /> },
+  // Outside DashboardLayout, on purpose: bootDashboard redirects tour-less
+  // users here, and the boot gate lives inside DashboardLayout. Nesting this
+  // route under it would put the gate above the route it redirects to - the
+  // exact loop this placement avoids.
+  { path: '/welcome', element: <WelcomePage /> },
   { path: '/login/2fa', element: <Login2faPage /> },
   { path: '/sign-up', element: <SignUpPage /> },
   { path: '/verify', element: <VerifyPage /> },
