@@ -6,7 +6,7 @@ import { useDocumentTitle } from '@/lib/page-title';
 import { folderNavParams, filterNavParams, groupNavParams } from '@/lib/files-params';
 import { enqueue } from '@/lib/upload-runner';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
-import { useFilesListing } from '@/hooks/use-files-listing';
+import { useFilesListing, fetchFilesListing } from '@/hooks/use-files-listing';
 import { runBulk } from '@/lib/bulk-run';
 import type { FileItem, FolderItem } from '@/lib/file-types';
 import { filesQueryKey, filesRequestPath, type FilesView } from '@/lib/files-request';
@@ -376,7 +376,9 @@ export default function FilesPage() {
     const next: FilesView = { ...view, folderId, group: '', page: 1 };
     queryClient.prefetchQuery({
       queryKey: filesQueryKey(next),
-      queryFn: () => api(filesRequestPath(next)),
+      // Shares useFilesListing's validation (see fetchFilesListing) so an
+      // ok:false body can never be cached under this key as if it were data.
+      queryFn: () => fetchFilesListing(filesRequestPath(next)),
     });
   }, [queryClient, view, isDeletedView]);
 

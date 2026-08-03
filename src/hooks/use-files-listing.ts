@@ -19,12 +19,28 @@ import { api, apiErrorMessage } from '@/api/client';
 import { filesQueryKey, filesRequestPath, FILES_QUERY_ROOT, type FilesView } from '@/lib/files-request';
 import type { FileItem, FolderItem, Breadcrumb, Pagination } from '@/lib/file-types';
 
-interface FilesResponse {
+export interface FilesResponse {
   ok: boolean;
   folders: FolderItem[];
   files: FileItem[];
   breadcrumbs: Breadcrumb[];
   pagination?: Pagination;
+}
+
+/**
+ * Fetch a listing and reject an `ok:false` body.
+ *
+ * Shared with the hover prefetch in files.tsx: a prefetch writes to the SAME
+ * cache key the hook reads, so if it skipped this check it could cache a
+ * failure as data and the hook would serve it for a full staleTime without
+ * ever running its own validation.
+ */
+export async function fetchFilesListing(path: string): Promise<FilesResponse> {
+  const data = await api<FilesResponse>(path);
+  // A 200 with ok:false is a real failure; surfacing it as data would render
+  // the ordinary "no files here" empty state and read as "my files are gone".
+  if (!data.ok) throw new Error('This folder could not be loaded.');
+  return data;
 }
 
 export interface FilesListing {
@@ -47,13 +63,7 @@ export function useFilesListing(view: FilesView | null): FilesListing {
 
   const query = useQuery({
     queryKey: view ? filesQueryKey(view) : [FILES_QUERY_ROOT, 'none', 'none'],
-    queryFn: async () => {
-      const data = await api<FilesResponse>(filesRequestPath(view!));
-      // A 200 with ok:false is a real failure; surfacing it as data would render
-      // the ordinary "no files here" empty state and read as "my files are gone".
-      if (!data.ok) throw new Error('This folder could not be loaded.');
-      return data;
-    },
+    queryFn: () => fetchFilesListing(filesRequestPath(view!)),
     enabled: !!view,
     placeholderData: keepPreviousData,
   });
