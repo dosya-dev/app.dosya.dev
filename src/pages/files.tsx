@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef, memo, type MouseEvent as ReactMouseEvent } from 'react';
 import { useSearchParams, Link, useNavigate } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { api, API_BASE, ApiError, apiErrorMessage, responseErrorMessage } from '@/api/client';
 import { useDocumentTitle } from '@/lib/page-title';
 import { folderNavParams, filterNavParams, groupNavParams } from '@/lib/files-params';
@@ -8,7 +9,7 @@ import { useDebouncedValue } from '@/hooks/use-debounced-value';
 import { useFilesListing } from '@/hooks/use-files-listing';
 import { runBulk } from '@/lib/bulk-run';
 import type { FileItem, FolderItem } from '@/lib/file-types';
-import type { FilesView } from '@/lib/files-request';
+import { filesQueryKey, filesRequestPath, type FilesView } from '@/lib/files-request';
 import { useWorkspace } from '@/stores/workspace';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -358,6 +359,22 @@ export default function FilesPage() {
     folders, files, breadcrumbs, pagination,
     isLoading: loading, isPlaceholder, error: loadError, refresh: loadFiles,
   } = useFilesListing(view);
+
+  const queryClient = useQueryClient();
+
+  /**
+   * Warm a folder's first page while the pointer is still travelling to it.
+   * By the time the click lands the payload is usually already cached, so the
+   * folder opens with no network wait at all.
+   */
+  const prefetchFolder = useCallback((folderId: string) => {
+    if (!view || isDeletedView) return; // trashed folders are not browsable this way
+    const next: FilesView = { ...view, folderId, page: 1 };
+    queryClient.prefetchQuery({
+      queryKey: filesQueryKey(next),
+      queryFn: () => api(filesRequestPath(next)),
+    });
+  }, [queryClient, view, isDeletedView]);
 
   // Reflect the current folder in the browser tab title. Moved below the hook
   // because `breadcrumbs` now comes from it instead of local state.
@@ -1145,7 +1162,8 @@ export default function FilesPage() {
                         anySelected={totalSelected > 0}
                         onClick={(e) => { if (e.ctrlKey || e.metaKey) { e.stopPropagation(); toggleSelectFolder(f.id); } else navigateToFolder(f.id); }}
                         onSelect={() => toggleSelectFolder(f.id)}
-                        onContextMenu={(e) => onContextMenu(e, 'folder', f)} />
+                        onContextMenu={(e) => onContextMenu(e, 'folder', f)}
+                        onPrefetch={() => prefetchFolder(f.id)} />
                     ))}
                   </div>
                 </div>
@@ -1208,6 +1226,7 @@ export default function FilesPage() {
                         className={`flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-muted/50 cursor-pointer group ${selectedFolders.has(f.id) ? 'bg-primary/10' : ''}`}
                         onClick={(e) => { if (e.ctrlKey || e.metaKey) { e.stopPropagation(); toggleSelectFolder(f.id); } else navigateToFolder(f.id); }}
                         onContextMenu={(e) => onContextMenu(e, 'folder', f)}
+                        onMouseEnter={() => prefetchFolder(f.id)}
                       >
                         <SelectCheckbox
                           checked={selectedFolders.has(f.id)}
@@ -1665,14 +1684,15 @@ export default function FilesPage() {
 
 // ── Folder Card ────────────────────────────────────────────
 
-function FolderCard({ folder, selected, anySelected, onClick, onSelect, onContextMenu }: {
+function FolderCard({ folder, selected, anySelected, onClick, onSelect, onContextMenu, onPrefetch }: {
   folder: FolderItem; selected?: boolean; anySelected?: boolean;
   onClick: (e: ReactMouseEvent) => void; onSelect: () => void; onContextMenu: (e: ReactMouseEvent) => void;
+  onPrefetch: () => void;
 }) {
   const iconSrc = folderIconSrc(folder.file_count, !!folder.is_synced);
 
   return (
-    <Card className={`gap-0 py-0 p-3 hover:shadow-md hover:-translate-y-px transition-all cursor-pointer group relative ${selected ? 'ring-2 ring-primary' : ''}`} onClick={onClick} onContextMenu={onContextMenu}>
+    <Card className={`gap-0 py-0 p-3 hover:shadow-md hover:-translate-y-px transition-all cursor-pointer group relative ${selected ? 'ring-2 ring-primary' : ''}`} onClick={onClick} onContextMenu={onContextMenu} onMouseEnter={onPrefetch}>
       <SelectCheckbox
         checked={!!selected}
         onCheckedChange={() => onSelect()}
