@@ -5,8 +5,10 @@ import { useDocumentTitle } from '@/lib/page-title';
 import { folderNavParams, filterNavParams, groupNavParams } from '@/lib/files-params';
 import { enqueue } from '@/lib/upload-runner';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
+import { useFilesListing } from '@/hooks/use-files-listing';
 import { runBulk } from '@/lib/bulk-run';
-import type { FileItem, FolderItem, Breadcrumb, Pagination } from '@/lib/file-types';
+import type { FileItem, FolderItem } from '@/lib/file-types';
+import type { FilesView } from '@/lib/files-request';
 import { useWorkspace } from '@/stores/workspace';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -139,15 +141,6 @@ export default function FilesPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  const [folders, setFolders] = useState<FolderItem[]>([]);
-  const [files, setFiles] = useState<FileItem[]>([]);
-  const [breadcrumbs, setBreadcrumbs] = useState<Breadcrumb[]>([]);
-  const [pagination, setPagination] = useState<Pagination | null>(null);
-  const [loading, setLoading] = useState(true);
-  /** Non-null when the last listing request failed - renders a retry state
-   *  instead of the "this folder is empty" message. */
-  const [loadError, setLoadError] = useState<string | null>(null);
-
   // Search lives in the URL (?q=) so it survives a refresh and can be linked
   // to. `searchInput` is the raw typed value that keeps the field responsive;
   // it is committed to the URL - and therefore to the API - only after a pause,
@@ -183,9 +176,11 @@ export default function FilesPage() {
       setSearchParams(p, { replace: true });
     }
   };
-  const [view, setView] = useState<ViewMode>(loadSavedView);
+  // Named `viewMode` (not `view`) because `view` names the FilesView passed to
+  // useFilesListing below - this is grid/list display mode, unrelated to that.
+  const [viewMode, setViewMode] = useState<ViewMode>(loadSavedView);
   const changeView = (next: ViewMode) => {
-    setView(next);
+    setViewMode(next);
     localStorage.setItem(VIEW_STORAGE_KEY, next);
   };
   const [visibleColumns, setVisibleColumns] = useState<Set<ColumnKey>>(loadSavedColumns);
@@ -340,14 +335,33 @@ export default function FilesPage() {
   const deepLinkFileId = searchParams.get('file');
   const currentPage = parseInt(searchParams.get('page') || '1');
 
-  // Reflect the current folder in the browser tab title
-  useDocumentTitle(breadcrumbs.length > 0 ? `${breadcrumbs[breadcrumbs.length - 1].name} · Files` : 'Files');
-
   // ── Load files ─────────────────────────────────────────────
 
   const currentFilter = searchParams.get('filter') || '';
   const currentGroup = searchParams.get('group') || '';
   const isDeletedView = currentFilter === 'deleted';
+
+  const view: FilesView | null = useMemo(
+    () => (wsId ? {
+      workspaceId: wsId,
+      folderId: currentFolderId,
+      filter: currentFilter,
+      group: currentGroup,
+      sort: sortParam,
+      search,
+      page: currentPage,
+    } : null),
+    [wsId, currentFolderId, currentFilter, currentGroup, sortParam, search, currentPage],
+  );
+
+  const {
+    folders, files, breadcrumbs, pagination,
+    isLoading: loading, isPlaceholder, error: loadError, refresh: loadFiles,
+  } = useFilesListing(view);
+
+  // Reflect the current folder in the browser tab title. Moved below the hook
+  // because `breadcrumbs` now comes from it instead of local state.
+  useDocumentTitle(breadcrumbs.length > 0 ? `${breadcrumbs[breadcrumbs.length - 1].name} · Files` : 'Files');
 
   // A filtered view stays applied while you browse into folders, so an empty
   // result usually means "nothing of this type here" rather than an empty folder.
@@ -357,49 +371,14 @@ export default function FilesPage() {
   // filters doesn't flash 8 placeholder rows when the view only has 1 item.
   const lastItemCount = useRef<number | null>(null);
 
-  const loadFiles = useCallback(async () => {
-    if (!wsId) return;
-    setLoading(true);
-    setLoadError(null);
-    const params = new URLSearchParams({ workspace_id: wsId, sort: sortParam, page: String(currentPage), per_page: '100' });
-    if (search) params.set('q', search);
-    if (isDeletedView) {
-      // Inside the trash, `folder` addresses a TRASHED folder (a distinct
-      // param the API keeps separate from the live `folder_id` filter) -
-      // see GET /api/files in apps/api for the split.
-      params.set('deleted', '1');
-      if (currentFolderId) params.set('folder', currentFolderId);
-    } else if (currentFolderId) {
-      params.set('folder_id', currentFolderId);
-    }
-    if (currentFilter === 'hidden') params.set('hidden', '1');
-    else if (currentFilter && currentFilter !== 'deleted') params.set('filter', currentFilter);
-    if (currentGroup) params.set('group_id', currentGroup);
+  // Selection is per-view: ids from the previous folder must not survive into
+  // the next one. Keyed on the arrays' identity, which React Query replaces
+  // only when a new payload lands.
+  useEffect(() => { clearSelection(); }, [folders, files]);
 
-    try {
-      const data = await api<{
-        ok: boolean; folders: FolderItem[]; files: FileItem[];
-        breadcrumbs: Breadcrumb[]; pagination?: Pagination;
-      }>(`/api/files?${params}`);
-      if (data.ok) {
-        setFolders(data.folders); setFiles(data.files);
-        lastItemCount.current = data.folders.length + data.files.length;
-        setBreadcrumbs(data.breadcrumbs);
-        if (data.pagination) setPagination(data.pagination);
-        clearSelection();
-      } else {
-        setLoadError('This folder could not be loaded.');
-      }
-    } catch (err) {
-      // Swallowing this used to render the ordinary "no files here" empty
-      // state, so an auth/network failure was indistinguishable from an empty
-      // folder - people assumed their files were gone.
-      setLoadError(apiErrorMessage(err, 'This folder could not be loaded.'));
-    }
-    setLoading(false);
-  }, [wsId, sortParam, currentPage, search, currentFolderId, isDeletedView, currentFilter, currentGroup]);
-
-  useEffect(() => { loadFiles(); }, [loadFiles]);
+  useEffect(() => {
+    if (!isPlaceholder) lastItemCount.current = folders.length + files.length;
+  }, [folders, files, isPlaceholder]);
 
   // Refresh the list when a cloud import in this workspace finishes - see
   // use-cloud-import-refresh.ts for why this reacts rather than polls, and
@@ -1019,10 +998,10 @@ export default function FilesPage() {
           </SelectContent>
         </Select>
         <div className="flex border rounded-md overflow-hidden">
-          <button onClick={() => changeView('grid')} className={`p-1.5 ${view === 'grid' ? 'bg-accent text-accent-foreground' : 'hover:bg-muted/50'}`}><Grid3X3 className="size-3.5" /></button>
-          <button onClick={() => changeView('list')} className={`p-1.5 ${view === 'list' ? 'bg-accent text-accent-foreground' : 'hover:bg-muted/50'}`}><List className="size-3.5" /></button>
+          <button onClick={() => changeView('grid')} className={`p-1.5 ${viewMode === 'grid' ? 'bg-accent text-accent-foreground' : 'hover:bg-muted/50'}`}><Grid3X3 className="size-3.5" /></button>
+          <button onClick={() => changeView('list')} className={`p-1.5 ${viewMode === 'list' ? 'bg-accent text-accent-foreground' : 'hover:bg-muted/50'}`}><List className="size-3.5" /></button>
         </div>
-        {view === 'list' && (
+        {viewMode === 'list' && (
           <DropdownMenu open={columnPickerOpen} onOpenChange={setColumnPickerOpen}>
             <DropdownMenuTrigger
               className={`h-8 px-2 text-xs border rounded-md flex items-center gap-1.5 hover:bg-muted/50 ${columnPickerOpen ? 'bg-muted' : ''}`}
@@ -1097,7 +1076,7 @@ export default function FilesPage() {
         <div className="flex-1 overflow-y-auto p-5" onClick={() => setSelectedFile(null)}>
           {/* Cloud import progress - collapses to nothing (empty:hidden) when no job is active */}
           <div className="mb-4 empty:hidden"><ImportProgressCard /></div>
-          {loading ? <FileSkeleton view={view} count={lastItemCount.current ?? undefined} /> : loadError ? (
+          {loading ? <FileSkeleton view={viewMode} count={lastItemCount.current ?? undefined} /> : loadError ? (
             /* Distinct from the empty state on purpose - "this folder is
                empty" is a lie when the request failed, and without a retry
                the only way out was a full page reload. */
@@ -1145,7 +1124,7 @@ export default function FilesPage() {
             />
           ) : (
             <>
-              {folders.length > 0 && view === 'grid' && (
+              {folders.length > 0 && viewMode === 'grid' && (
                 <div className="mb-5">
                   <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">Folders</p>
                   <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
@@ -1160,7 +1139,7 @@ export default function FilesPage() {
                   </div>
                 </div>
               )}
-              {files.length > 0 && view === 'grid' && (
+              {files.length > 0 && viewMode === 'grid' && (
                 <div>
                   <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">Files</p>
                   <div className={`grid grid-cols-2 md:grid-cols-3 ${selectedFile ? 'lg:grid-cols-3' : 'lg:grid-cols-4'} gap-3`}>
@@ -1191,7 +1170,7 @@ export default function FilesPage() {
                   </div>
                 </div>
               )}
-              {view === 'list' && (files.length > 0 || folders.length > 0) && (
+              {viewMode === 'list' && (files.length > 0 || folders.length > 0) && (
                 <div>
                   {/* Table header - click a column to sort by it, click again to flip */}
                   <div className="flex items-center gap-3 px-3 py-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider border-b mb-0.5">
