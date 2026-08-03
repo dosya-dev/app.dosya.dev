@@ -24,6 +24,7 @@ import { THEMES, type Mode } from '@/lib/themes';
 import { readCache, writeCache, applyTheme, subscribeThemeChange, type ThemePref } from '@/lib/theme';
 import { enableWebPush } from '../lib/web-push';
 import { PROVIDER_LABELS } from '@/components/cloud-import/import-progress-card';
+import { FolderPickerDialog } from '@/components/folder-picker-dialog';
 
 // ── Types ──────────────────────────────────────────────────
 
@@ -42,6 +43,10 @@ interface ApiKey {
   id: string; name: string; scope: string; key_prefix: string;
   created_at: number; s3_access_key_id: string | null;
   surfaces: string | null;
+  // Folder anchor (migration 0095). NULL/NULL means the key sees the whole
+  // account - see apps/api/src/lib/access/anchor.ts.
+  workspace_id: string | null;
+  root_folder_id: string | null;
 }
 // Mirrors what GET /api/me/sessions actually returns. It previously declared
 // ip/user_agent/login_method/last_active_at - none of which the API sends - so every
@@ -95,6 +100,27 @@ const SURFACE_LABELS: Record<string, string> = Object.fromEntries(SURFACE_OPTION
 function formatSurfaces(surfaces: string | null): string {
   if (!surfaces) return 'All protocols';
   return surfaces.split(',').map((s) => SURFACE_LABELS[s] ?? s).join(', ');
+}
+
+// Sentinel for the "no workspace pin" option in the create-key workspace
+// Select - '' isn't usable there since an unselected/placeholder value reads
+// the same way in that component.
+const WHOLE_ACCOUNT = '__whole_account__';
+
+// A key with no workspace_id sees the whole account (see anchor.ts's
+// isAnchored/workspaceAllowed). A workspace_id with no root_folder_id is
+// pinned to that workspace but not narrowed inside it, so it shows just the
+// workspace name; a root_folder_id narrows further to "workspace / folder".
+function formatAnchor(
+  k: ApiKey,
+  workspaces: Workspace[],
+  folderNames: Record<string, string>,
+): string {
+  if (!k.workspace_id) return 'Whole account';
+  const wsName = workspaces.find((w) => w.id === k.workspace_id)?.name ?? 'Unknown workspace';
+  if (!k.root_folder_id) return wsName;
+  const folderName = folderNames[k.root_folder_id] ?? '…';
+  return `${wsName} / ${folderName}`;
 }
 
 const LANGUAGES = [
@@ -213,7 +239,7 @@ export default function ProfilePage() {
         {/* Default to true while /api/me is loading: better to show an action that may
             401 than to hide a working one from someone who does have a password. */}
         <PasswordSection tfa={tfa} onTfaChanged={load2fa} hasPassword={user?.has_password ?? true} />
-        <ApiKeysSection keys={keys} onChanged={loadKeys} />
+        <ApiKeysSection keys={keys} workspaces={workspaces} onChanged={loadKeys} />
         <SessionsSection sessions={sessions} onChanged={loadSessions} />
         <NotificationsSection />
         <IntegrationsSection accounts={driveAccounts} onChanged={loadDrive} />
@@ -851,16 +877,50 @@ function RegenCodesModal({ open, onOpenChange, onDone }: { open: boolean; onOpen
 
 interface S3Creds { access_key_id: string; secret_access_key: string; endpoint: string; region: string }
 
-function ApiKeysSection({ keys, onChanged }: { keys: ApiKey[]; onChanged: () => void }) {
+function ApiKeysSection({ keys, workspaces, onChanged }: { keys: ApiKey[]; workspaces: Workspace[]; onChanged: () => void }) {
   const [createOpen, setCreateOpen] = useState(false);
   const [keyName, setKeyName] = useState('');
   const [keyScope, setKeyScope] = useState('full');
   // Defaults to none selected: an empty set means unrestricted, sent as an
   // absent `surfaces` field rather than an empty array (see createKey below).
   const [keySurfaces, setKeySurfaces] = useState<Set<string>>(new Set());
+  // Anchor: WHOLE_ACCOUNT means no workspace_id is sent at all. A folder can
+  // only be chosen once a real workspace is, so picking WHOLE_ACCOUNT clears
+  // any previously-chosen folder too (see the Select's onValueChange below).
+  const [keyWorkspaceId, setKeyWorkspaceId] = useState(WHOLE_ACCOUNT);
+  const [keyFolderId, setKeyFolderId] = useState<string | null>(null);
+  const [keyFolderName, setKeyFolderName] = useState('');
+  const [folderPickerOpen, setFolderPickerOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [plainKey, setPlainKey] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+
+  const workspaceSelectItems = [
+    { value: WHOLE_ACCOUNT, label: 'Whole account' },
+    ...workspaces.map((w) => ({ value: w.id, label: w.name })),
+  ];
+
+  // Folder anchors on existing keys arrive as bare IDs (GET /api/me/api-keys
+  // deliberately doesn't join folder names in - see the phase B2 brief). The
+  // key list needs the name, not just the ID, so resolve any unseen ones
+  // through the same GET /api/folders/:id every other folder-detail lookup
+  // in this app uses. Membership is guaranteed: a key's root_folder_id can
+  // only be set to a folder in a workspace the creating user belonged to.
+  const [folderNames, setFolderNames] = useState<Record<string, string>>({});
+  useEffect(() => {
+    const ids = [...new Set(keys.map((k) => k.root_folder_id).filter((id): id is string => !!id))];
+    const missing = ids.filter((id) => !(id in folderNames));
+    if (missing.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      const entries = await Promise.all(missing.map(async (id) => {
+        const res = await req<{ ok: boolean; folder?: { name: string } }>(`/api/folders/${id}`);
+        return [id, res.ok && res.folder ? res.folder.name : 'Unknown folder'] as const;
+      }));
+      if (!cancelled) setFolderNames((prev) => ({ ...prev, ...Object.fromEntries(entries) }));
+    })();
+    return () => { cancelled = true; };
+  }, [keys, folderNames]);
 
   const toggleSurface = (value: string) => {
     setKeySurfaces((prev) => {
@@ -878,6 +938,7 @@ function ApiKeysSection({ keys, onChanged }: { keys: ApiKey[]; onChanged: () => 
   const createKey = async () => {
     if (!keyName.trim()) return;
     setCreating(true);
+    const hasWorkspace = keyWorkspaceId !== WHOLE_ACCOUNT;
     const res = await req<{ ok: boolean; key?: { plain_key: string }; error?: string }>('/api/me/api-keys', {
       method: 'POST',
       body: JSON.stringify({
@@ -886,10 +947,18 @@ function ApiKeysSection({ keys, onChanged }: { keys: ApiKey[]; onChanged: () => 
         // Send surfaces only when at least one is chosen - an absent field
         // (not an empty array) is what the endpoint treats as unrestricted.
         ...(keySurfaces.size > 0 ? { surfaces: [...keySurfaces] } : {}),
+        // root_folder_id requires workspace_id (see the endpoint's validation
+        // order) - only send the folder when a real workspace is pinned.
+        ...(hasWorkspace ? { workspace_id: keyWorkspaceId } : {}),
+        ...(hasWorkspace && keyFolderId ? { root_folder_id: keyFolderId } : {}),
       }),
     });
-    if (res.ok && res.key) { setPlainKey(res.key.plain_key); setCreateOpen(false); setKeyName(''); setKeySurfaces(new Set()); onChanged(); }
-    else toast.error('Create failed', res.error ?? 'The API key could not be created.');
+    if (res.ok && res.key) {
+      setPlainKey(res.key.plain_key); setCreateOpen(false);
+      setKeyName(''); setKeySurfaces(new Set());
+      setKeyWorkspaceId(WHOLE_ACCOUNT); setKeyFolderId(null); setKeyFolderName('');
+      onChanged();
+    } else toast.error('Create failed', res.error ?? 'The API key could not be created.');
     setCreating(false);
   };
 
@@ -929,11 +998,12 @@ function ApiKeysSection({ keys, onChanged }: { keys: ApiKey[]; onChanged: () => 
       <Card>
         <CardContent>
           {/* Header */}
-          <div className="grid grid-cols-[1.1fr_1.2fr_0.7fr_0.9fr_0.7fr_auto_64px] gap-2 px-1 pb-2 border-b">
+          <div className="grid grid-cols-[1fr_1.1fr_0.6fr_0.8fr_0.9fr_0.6fr_auto_64px] gap-2 px-1 pb-2 border-b">
             <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Name</span>
             <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Token</span>
             <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Scope</span>
             <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Protocols</span>
+            <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Anchor</span>
             <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Created</span>
             <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">S3</span>
             <span />
@@ -943,11 +1013,12 @@ function ApiKeysSection({ keys, onChanged }: { keys: ApiKey[]; onChanged: () => 
             <p className="py-8 text-center text-xs text-muted-foreground">No API keys yet</p>
           ) : (
             keys.map((k) => (
-              <div key={k.id} className="grid grid-cols-[1.1fr_1.2fr_0.7fr_0.9fr_0.7fr_auto_64px] gap-2 px-1 py-3 border-b last:border-b-0 items-center group">
+              <div key={k.id} className="grid grid-cols-[1fr_1.1fr_0.6fr_0.8fr_0.9fr_0.6fr_auto_64px] gap-2 px-1 py-3 border-b last:border-b-0 items-center group">
                 <span className="text-xs font-medium truncate">{k.name}</span>
                 <span className="text-[11px] text-muted-foreground font-mono">dos_···· {k.key_prefix.slice(0, 4)}</span>
                 <Badge variant={k.scope === 'full' ? 'default' : 'secondary'} className="text-[10px] w-fit">{SCOPE_LABELS[k.scope] ?? k.scope}</Badge>
                 <span className="text-[11px] text-muted-foreground truncate" title={formatSurfaces(k.surfaces)}>{formatSurfaces(k.surfaces)}</span>
+                <span className="text-[11px] text-muted-foreground truncate" title={formatAnchor(k, workspaces, folderNames)}>{formatAnchor(k, workspaces, folderNames)}</span>
                 <span className="text-[11px] text-muted-foreground">{new Date(k.created_at * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
                 <span>
                   {k.s3_access_key_id ? (
@@ -1004,6 +1075,41 @@ function ApiKeysSection({ keys, onChanged }: { keys: ApiKey[]; onChanged: () => 
                 ))}
               </div>
             </div>
+            <div>
+              <p className="text-xs font-medium mb-0.5">Workspace</p>
+              <p className="text-[11px] text-muted-foreground mb-2">Optional. Pins the key to one workspace instead of your whole account.</p>
+              <Select
+                value={keyWorkspaceId}
+                onValueChange={(v) => {
+                  setKeyWorkspaceId((v as string) ?? WHOLE_ACCOUNT);
+                  setKeyFolderId(null);
+                  setKeyFolderName('');
+                }}
+                items={workspaceSelectItems}
+              >
+                <SelectTrigger className="w-full h-9 text-sm"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={WHOLE_ACCOUNT}>Whole account</SelectItem>
+                  {workspaces.map((w) => <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            {keyWorkspaceId !== WHOLE_ACCOUNT && (
+              <div>
+                <p className="text-xs font-medium mb-0.5">Limit to a folder</p>
+                <p className="text-[11px] text-muted-foreground mb-2">Optional. The key will only see this folder and everything inside it, and can only be used over WebDAV or the S3 gateway.</p>
+                {keyFolderId ? (
+                  <div className="flex items-center gap-2">
+                    <span className="flex-1 text-xs truncate border rounded-lg px-3 py-2">{keyFolderName || 'Folder'}</span>
+                    <Button variant="outline" size="sm" onClick={() => { setKeyFolderId(null); setKeyFolderName(''); }}>Clear</Button>
+                  </div>
+                ) : (
+                  <Button variant="outline" size="sm" className="w-full h-9 text-xs" onClick={() => setFolderPickerOpen(true)}>
+                    Choose folder…
+                  </Button>
+                )}
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
@@ -1013,6 +1119,22 @@ function ApiKeysSection({ keys, onChanged }: { keys: ApiKey[]; onChanged: () => 
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Folder picker for the "Limit to a folder" anchor, scoped to whichever
+          workspace is currently chosen above. Reuses the same dialog the
+          move-file flow uses (see files.tsx) rather than a bespoke tree. */}
+      {folderPickerOpen && keyWorkspaceId !== WHOLE_ACCOUNT && (
+        <FolderPickerDialog
+          open
+          onClose={() => setFolderPickerOpen(false)}
+          workspaceId={keyWorkspaceId}
+          selectedId={keyFolderId}
+          selectedName={keyFolderName}
+          onSelect={(id, name) => { setKeyFolderId(id); setKeyFolderName(name); setFolderPickerOpen(false); }}
+          title="Limit key to a folder"
+          confirmLabel="Select folder"
+        />
+      )}
 
       {/* Show plain key dialog */}
       <Dialog open={!!plainKey} onOpenChange={() => setPlainKey(null)}>
