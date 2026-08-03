@@ -1,12 +1,15 @@
 import { useState, useEffect, useCallback, useMemo, useRef, memo, type MouseEvent as ReactMouseEvent } from 'react';
 import { useSearchParams, Link, useNavigate } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { api, API_BASE, ApiError, apiErrorMessage, responseErrorMessage } from '@/api/client';
 import { useDocumentTitle } from '@/lib/page-title';
 import { folderNavParams, filterNavParams, groupNavParams } from '@/lib/files-params';
 import { enqueue } from '@/lib/upload-runner';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
+import { useFilesListing, fetchFilesListing } from '@/hooks/use-files-listing';
 import { runBulk } from '@/lib/bulk-run';
-import type { FileItem, FolderItem, Breadcrumb, Pagination } from '@/lib/file-types';
+import type { FileItem, FolderItem } from '@/lib/file-types';
+import { filesQueryKey, filesRequestPath, type FilesView } from '@/lib/files-request';
 import { useWorkspace } from '@/stores/workspace';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -139,15 +142,6 @@ export default function FilesPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  const [folders, setFolders] = useState<FolderItem[]>([]);
-  const [files, setFiles] = useState<FileItem[]>([]);
-  const [breadcrumbs, setBreadcrumbs] = useState<Breadcrumb[]>([]);
-  const [pagination, setPagination] = useState<Pagination | null>(null);
-  const [loading, setLoading] = useState(true);
-  /** Non-null when the last listing request failed - renders a retry state
-   *  instead of the "this folder is empty" message. */
-  const [loadError, setLoadError] = useState<string | null>(null);
-
   // Search lives in the URL (?q=) so it survives a refresh and can be linked
   // to. `searchInput` is the raw typed value that keeps the field responsive;
   // it is committed to the URL - and therefore to the API - only after a pause,
@@ -183,9 +177,11 @@ export default function FilesPage() {
       setSearchParams(p, { replace: true });
     }
   };
-  const [view, setView] = useState<ViewMode>(loadSavedView);
+  // Named `viewMode` (not `view`) because `view` names the FilesView passed to
+  // useFilesListing below - this is grid/list display mode, unrelated to that.
+  const [viewMode, setViewMode] = useState<ViewMode>(loadSavedView);
   const changeView = (next: ViewMode) => {
-    setView(next);
+    setViewMode(next);
     localStorage.setItem(VIEW_STORAGE_KEY, next);
   };
   const [visibleColumns, setVisibleColumns] = useState<Set<ColumnKey>>(loadSavedColumns);
@@ -340,14 +336,82 @@ export default function FilesPage() {
   const deepLinkFileId = searchParams.get('file');
   const currentPage = parseInt(searchParams.get('page') || '1');
 
-  // Reflect the current folder in the browser tab title
-  useDocumentTitle(breadcrumbs.length > 0 ? `${breadcrumbs[breadcrumbs.length - 1].name} · Files` : 'Files');
-
   // ── Load files ─────────────────────────────────────────────
 
   const currentFilter = searchParams.get('filter') || '';
   const currentGroup = searchParams.get('group') || '';
   const isDeletedView = currentFilter === 'deleted';
+
+  const view: FilesView | null = useMemo(
+    () => (wsId ? {
+      workspaceId: wsId,
+      folderId: currentFolderId,
+      filter: currentFilter,
+      group: currentGroup,
+      sort: sortParam,
+      search,
+      page: currentPage,
+    } : null),
+    [wsId, currentFolderId, currentFilter, currentGroup, sortParam, search, currentPage],
+  );
+
+  const {
+    folders, files, breadcrumbs, pagination,
+    isLoading: loading, isPlaceholder, error: loadError, refresh: loadFiles,
+  } = useFilesListing(view);
+
+  const queryClient = useQueryClient();
+
+  /**
+   * Warm a folder's first page while the pointer is still travelling to it.
+   * By the time the click lands the payload is usually already cached, so the
+   * folder opens with no network wait at all.
+   */
+  const prefetchFolder = useCallback((folderId: string) => {
+    if (!view || isDeletedView) return; // trashed folders are not browsable this way
+    // Mirror folderNavParams: a group is a flat, folder-spanning view, so
+    // entering a folder (even one shown as a group member) always exits the
+    // group. Keeping view.group here would prefetch a group_id-qualified key
+    // that the click's actual navigation never requests.
+    const next: FilesView = { ...view, folderId, group: '', page: 1 };
+    queryClient.prefetchQuery({
+      queryKey: filesQueryKey(next),
+      // Shares useFilesListing's validation (see fetchFilesListing) so an
+      // ok:false body can never be cached under this key as if it were data.
+      queryFn: () => fetchFilesListing(filesRequestPath(next)),
+    });
+  }, [queryClient, view, isDeletedView]);
+
+  // Hover-intent delay for the prefetch above. The folders query has no LIMIT,
+  // so a busy directory renders every subfolder - firing prefetchFolder
+  // straight off onMouseEnter meant one diagonal mouse sweep toward a target
+  // crossed every intervening row and fired a full /api/files request (several
+  // D1 round trips plus a recursive CTE) for each. A single ref is enough: at
+  // most one row is "the current hover target" at a time, so entering a new
+  // row before the timer fires is exactly the "was never actually the intent"
+  // case this is supposed to skip.
+  const HOVER_PREFETCH_DELAY_MS = 120;
+  const prefetchTimer = useRef<number | null>(null);
+  const scheduleFolderPrefetch = useCallback((folderId: string) => {
+    if (prefetchTimer.current != null) window.clearTimeout(prefetchTimer.current);
+    prefetchTimer.current = window.setTimeout(() => {
+      prefetchTimer.current = null;
+      prefetchFolder(folderId);
+    }, HOVER_PREFETCH_DELAY_MS);
+  }, [prefetchFolder]);
+  const cancelFolderPrefetch = useCallback(() => {
+    if (prefetchTimer.current != null) {
+      window.clearTimeout(prefetchTimer.current);
+      prefetchTimer.current = null;
+    }
+  }, []);
+  useEffect(() => () => {
+    if (prefetchTimer.current != null) window.clearTimeout(prefetchTimer.current);
+  }, []);
+
+  // Reflect the current folder in the browser tab title. Moved below the hook
+  // because `breadcrumbs` now comes from it instead of local state.
+  useDocumentTitle(breadcrumbs.length > 0 ? `${breadcrumbs[breadcrumbs.length - 1].name} · Files` : 'Files');
 
   // A filtered view stays applied while you browse into folders, so an empty
   // result usually means "nothing of this type here" rather than an empty folder.
@@ -357,49 +421,15 @@ export default function FilesPage() {
   // filters doesn't flash 8 placeholder rows when the view only has 1 item.
   const lastItemCount = useRef<number | null>(null);
 
-  const loadFiles = useCallback(async () => {
-    if (!wsId) return;
-    setLoading(true);
-    setLoadError(null);
-    const params = new URLSearchParams({ workspace_id: wsId, sort: sortParam, page: String(currentPage), per_page: '100' });
-    if (search) params.set('q', search);
-    if (isDeletedView) {
-      // Inside the trash, `folder` addresses a TRASHED folder (a distinct
-      // param the API keeps separate from the live `folder_id` filter) -
-      // see GET /api/files in apps/api for the split.
-      params.set('deleted', '1');
-      if (currentFolderId) params.set('folder', currentFolderId);
-    } else if (currentFolderId) {
-      params.set('folder_id', currentFolderId);
-    }
-    if (currentFilter === 'hidden') params.set('hidden', '1');
-    else if (currentFilter && currentFilter !== 'deleted') params.set('filter', currentFilter);
-    if (currentGroup) params.set('group_id', currentGroup);
+  // Selection is per-view: ids from the previous folder must not survive into the
+  // next one. Keyed on the view rather than the fetched rows, so a background
+  // revalidation that happens to return changed data does not wipe an in-progress
+  // multi-select.
+  useEffect(() => { clearSelection(); }, [view]);
 
-    try {
-      const data = await api<{
-        ok: boolean; folders: FolderItem[]; files: FileItem[];
-        breadcrumbs: Breadcrumb[]; pagination?: Pagination;
-      }>(`/api/files?${params}`);
-      if (data.ok) {
-        setFolders(data.folders); setFiles(data.files);
-        lastItemCount.current = data.folders.length + data.files.length;
-        setBreadcrumbs(data.breadcrumbs);
-        if (data.pagination) setPagination(data.pagination);
-        clearSelection();
-      } else {
-        setLoadError('This folder could not be loaded.');
-      }
-    } catch (err) {
-      // Swallowing this used to render the ordinary "no files here" empty
-      // state, so an auth/network failure was indistinguishable from an empty
-      // folder - people assumed their files were gone.
-      setLoadError(apiErrorMessage(err, 'This folder could not be loaded.'));
-    }
-    setLoading(false);
-  }, [wsId, sortParam, currentPage, search, currentFolderId, isDeletedView, currentFilter, currentGroup]);
-
-  useEffect(() => { loadFiles(); }, [loadFiles]);
+  useEffect(() => {
+    if (!isPlaceholder) lastItemCount.current = folders.length + files.length;
+  }, [folders, files, isPlaceholder]);
 
   // Refresh the list when a cloud import in this workspace finishes - see
   // use-cloud-import-refresh.ts for why this reacts rather than polls, and
@@ -484,13 +514,10 @@ export default function FilesPage() {
     return () => window.removeEventListener('dosya:favourites-changed', onChanged);
   }, [loadFavourites]);
 
-  // Uploads finish in the background (dock/other tab), so the listing has to
-  // react to the runner rather than to the handler that started the upload.
-  useEffect(() => {
-    const onUploaded = () => loadFiles();
-    window.addEventListener('dosya:upload-complete', onUploaded);
-    return () => window.removeEventListener('dosya:upload-complete', onUploaded);
-  }, [loadFiles]);
+  // Upload-complete invalidation lives at module scope in lib/query-client.ts
+  // now, not here - see its docstring for why a page-scoped effect isn't
+  // enough. This page still repaints from the cache like any other query
+  // subscriber once that invalidation lands.
 
   const toggleFavourite = async (fileId: string) => {
     const isFav = favourites.has(fileId);
@@ -552,7 +579,10 @@ export default function FilesPage() {
       const ep = deleteTarget.type === 'file' ? `/api/files/${deleteTarget.id}` : `/api/folders/${deleteTarget.id}`;
       await api(ep, { method: 'DELETE' });
       toast.success('Deleted', deleteTarget.permanent ? `${deleteTarget.name} was permanently deleted.` : `${deleteTarget.name} was deleted.`);
-      setDeleteTarget(null); loadFiles();
+      // The deleted row can be part of the current bulk selection even though
+      // this is the single-item delete path - clear explicitly so a stale id
+      // for a now-gone row doesn't linger in `selected`/`selectedFolders`.
+      setDeleteTarget(null); clearSelection(); loadFiles();
     } catch (err) {
       // A row-level permanent delete on a folder that isn't a trash root
       // 404/400s with an explanatory message ("...restore or delete that
@@ -581,7 +611,9 @@ export default function FilesPage() {
       } else {
         toast.success('Restored', `"${restoredName}" restored.`);
       }
-      loadFiles();
+      // Restoring drops this row out of the Deleted view - clear explicitly so
+      // a stale id for it can't linger in the bulk selection.
+      clearSelection(); loadFiles();
     } catch (err) {
       // Surfaces the 409 storage-cap message and the 400 "not a trash root"
       // message from PUT /api/folders/:id rather than a generic failure.
@@ -598,7 +630,9 @@ export default function FilesPage() {
     try {
       await api(`/api/files/${f.id}`, { method: 'PUT' });
       toast.success('Restored', `"${f.name}" restored.`);
-      loadFiles();
+      // Restoring drops this row out of the Deleted view - clear explicitly so
+      // a stale id for it can't linger in the bulk selection.
+      clearSelection(); loadFiles();
     } catch (err) {
       toast.error('Restore failed', apiErrorMessage(err, 'The file could not be restored.'));
     }
@@ -644,7 +678,10 @@ export default function FilesPage() {
       const ep = moveOpen.type === 'file' ? `/api/files/${moveOpen.id}/move` : `/api/folders/${moveOpen.id}/move`;
       const body = moveOpen.type === 'file' ? { folder_id: folderId } : { parent_id: folderId };
       await api(ep, { method: 'PUT', body: JSON.stringify(body) });
-      toast.success('Moved', 'The file has been moved.'); setMoveOpen(null); loadFiles();
+      toast.success('Moved', 'The file has been moved.');
+      // The moved row leaves the current folder - clear explicitly so a stale
+      // id for it can't linger in the bulk selection.
+      setMoveOpen(null); clearSelection(); loadFiles();
     } catch { toast.error('Move failed', 'The file could not be moved.'); }
   };
 
@@ -1019,10 +1056,10 @@ export default function FilesPage() {
           </SelectContent>
         </Select>
         <div className="flex border rounded-md overflow-hidden">
-          <button onClick={() => changeView('grid')} className={`p-1.5 ${view === 'grid' ? 'bg-accent text-accent-foreground' : 'hover:bg-muted/50'}`}><Grid3X3 className="size-3.5" /></button>
-          <button onClick={() => changeView('list')} className={`p-1.5 ${view === 'list' ? 'bg-accent text-accent-foreground' : 'hover:bg-muted/50'}`}><List className="size-3.5" /></button>
+          <button onClick={() => changeView('grid')} className={`p-1.5 ${viewMode === 'grid' ? 'bg-accent text-accent-foreground' : 'hover:bg-muted/50'}`}><Grid3X3 className="size-3.5" /></button>
+          <button onClick={() => changeView('list')} className={`p-1.5 ${viewMode === 'list' ? 'bg-accent text-accent-foreground' : 'hover:bg-muted/50'}`}><List className="size-3.5" /></button>
         </div>
-        {view === 'list' && (
+        {viewMode === 'list' && (
           <DropdownMenu open={columnPickerOpen} onOpenChange={setColumnPickerOpen}>
             <DropdownMenuTrigger
               className={`h-8 px-2 text-xs border rounded-md flex items-center gap-1.5 hover:bg-muted/50 ${columnPickerOpen ? 'bg-muted' : ''}`}
@@ -1097,7 +1134,7 @@ export default function FilesPage() {
         <div className="flex-1 overflow-y-auto p-5" onClick={() => setSelectedFile(null)}>
           {/* Cloud import progress - collapses to nothing (empty:hidden) when no job is active */}
           <div className="mb-4 empty:hidden"><ImportProgressCard /></div>
-          {loading ? <FileSkeleton view={view} count={lastItemCount.current ?? undefined} /> : loadError ? (
+          {loading ? <FileSkeleton view={viewMode} count={lastItemCount.current ?? undefined} /> : loadError ? (
             /* Distinct from the empty state on purpose - "this folder is
                empty" is a lie when the request failed, and without a retry
                the only way out was a full page reload. */
@@ -1145,7 +1182,7 @@ export default function FilesPage() {
             />
           ) : (
             <>
-              {folders.length > 0 && view === 'grid' && (
+              {folders.length > 0 && viewMode === 'grid' && (
                 <div className="mb-5">
                   <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">Folders</p>
                   <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
@@ -1155,12 +1192,14 @@ export default function FilesPage() {
                         anySelected={totalSelected > 0}
                         onClick={(e) => { if (e.ctrlKey || e.metaKey) { e.stopPropagation(); toggleSelectFolder(f.id); } else navigateToFolder(f.id); }}
                         onSelect={() => toggleSelectFolder(f.id)}
-                        onContextMenu={(e) => onContextMenu(e, 'folder', f)} />
+                        onContextMenu={(e) => onContextMenu(e, 'folder', f)}
+                        onPrefetch={() => scheduleFolderPrefetch(f.id)}
+                        onPrefetchCancel={cancelFolderPrefetch} />
                     ))}
                   </div>
                 </div>
               )}
-              {files.length > 0 && view === 'grid' && (
+              {files.length > 0 && viewMode === 'grid' && (
                 <div>
                   <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">Files</p>
                   <div className={`grid grid-cols-2 md:grid-cols-3 ${selectedFile ? 'lg:grid-cols-3' : 'lg:grid-cols-4'} gap-3`}>
@@ -1191,7 +1230,7 @@ export default function FilesPage() {
                   </div>
                 </div>
               )}
-              {view === 'list' && (files.length > 0 || folders.length > 0) && (
+              {viewMode === 'list' && (files.length > 0 || folders.length > 0) && (
                 <div>
                   {/* Table header - click a column to sort by it, click again to flip */}
                   <div className="flex items-center gap-3 px-3 py-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider border-b mb-0.5">
@@ -1218,6 +1257,8 @@ export default function FilesPage() {
                         className={`flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-muted/50 cursor-pointer group ${selectedFolders.has(f.id) ? 'bg-primary/10' : ''}`}
                         onClick={(e) => { if (e.ctrlKey || e.metaKey) { e.stopPropagation(); toggleSelectFolder(f.id); } else navigateToFolder(f.id); }}
                         onContextMenu={(e) => onContextMenu(e, 'folder', f)}
+                        onMouseEnter={() => scheduleFolderPrefetch(f.id)}
+                        onMouseLeave={cancelFolderPrefetch}
                       >
                         <SelectCheckbox
                           checked={selectedFolders.has(f.id)}
@@ -1535,7 +1576,10 @@ export default function FilesPage() {
         open={!!hideTarget}
         target={hideTarget}
         onClose={() => setHideTarget(null)}
-        onDone={loadFiles}
+        // Hiding/unhiding can drop the row out of the current view (the
+        // default listing excludes hidden items; the Hidden filter shows only
+        // them) - clear explicitly so a stale id can't linger in the selection.
+        onDone={() => { clearSelection(); loadFiles(); }}
       />
 
       {/* Get-info dialog */}
@@ -1672,14 +1716,15 @@ export default function FilesPage() {
 
 // ── Folder Card ────────────────────────────────────────────
 
-function FolderCard({ folder, selected, anySelected, onClick, onSelect, onContextMenu }: {
+function FolderCard({ folder, selected, anySelected, onClick, onSelect, onContextMenu, onPrefetch, onPrefetchCancel }: {
   folder: FolderItem; selected?: boolean; anySelected?: boolean;
   onClick: (e: ReactMouseEvent) => void; onSelect: () => void; onContextMenu: (e: ReactMouseEvent) => void;
+  onPrefetch: () => void; onPrefetchCancel: () => void;
 }) {
   const iconSrc = folderIconSrc(folder.file_count, !!folder.is_synced);
 
   return (
-    <Card className={`gap-0 py-0 p-3 hover:shadow-md hover:-translate-y-px transition-all cursor-pointer group relative ${selected ? 'ring-2 ring-primary' : ''}`} onClick={onClick} onContextMenu={onContextMenu}>
+    <Card className={`gap-0 py-0 p-3 hover:shadow-md hover:-translate-y-px transition-all cursor-pointer group relative ${selected ? 'ring-2 ring-primary' : ''}`} onClick={onClick} onContextMenu={onContextMenu} onMouseEnter={onPrefetch} onMouseLeave={onPrefetchCancel}>
       <SelectCheckbox
         checked={!!selected}
         onCheckedChange={() => onSelect()}
