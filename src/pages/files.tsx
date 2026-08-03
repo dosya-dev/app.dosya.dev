@@ -369,7 +369,11 @@ export default function FilesPage() {
    */
   const prefetchFolder = useCallback((folderId: string) => {
     if (!view || isDeletedView) return; // trashed folders are not browsable this way
-    const next: FilesView = { ...view, folderId, page: 1 };
+    // Mirror folderNavParams: a group is a flat, folder-spanning view, so
+    // entering a folder (even one shown as a group member) always exits the
+    // group. Keeping view.group here would prefetch a group_id-qualified key
+    // that the click's actual navigation never requests.
+    const next: FilesView = { ...view, folderId, group: '', page: 1 };
     queryClient.prefetchQuery({
       queryKey: filesQueryKey(next),
       queryFn: () => api(filesRequestPath(next)),
