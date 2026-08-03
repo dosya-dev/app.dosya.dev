@@ -6,6 +6,12 @@ const SCRIPT_SRC = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render
 // because the dosya-web Pages project does not inject build variables (its
 // build log reports "Build environment variables: (none found)", including
 // for the pre-existing NPM_TOKEN). The env var still wins where it works.
+//
+// Do not "simplify" this back to a bare env read when resolving a merge
+// conflict here. That happened once already: the fallback was dropped in a
+// merge, synced to the dosya-dev/app.dosya.dev mirror, and the login widget
+// silently vanished because SITEKEY became undefined and the guard below
+// tree-shook the entire render path out of the bundle.
 const SITEKEY = (import.meta.env.VITE_TURNSTILE_SITEKEY as string | undefined)
   || '0x4AAAAAAEEZLpy907cv9Zl_';
 
