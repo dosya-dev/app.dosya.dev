@@ -382,6 +382,33 @@ export default function FilesPage() {
     });
   }, [queryClient, view, isDeletedView]);
 
+  // Hover-intent delay for the prefetch above. The folders query has no LIMIT,
+  // so a busy directory renders every subfolder - firing prefetchFolder
+  // straight off onMouseEnter meant one diagonal mouse sweep toward a target
+  // crossed every intervening row and fired a full /api/files request (several
+  // D1 round trips plus a recursive CTE) for each. A single ref is enough: at
+  // most one row is "the current hover target" at a time, so entering a new
+  // row before the timer fires is exactly the "was never actually the intent"
+  // case this is supposed to skip.
+  const HOVER_PREFETCH_DELAY_MS = 120;
+  const prefetchTimer = useRef<number | null>(null);
+  const scheduleFolderPrefetch = useCallback((folderId: string) => {
+    if (prefetchTimer.current != null) window.clearTimeout(prefetchTimer.current);
+    prefetchTimer.current = window.setTimeout(() => {
+      prefetchTimer.current = null;
+      prefetchFolder(folderId);
+    }, HOVER_PREFETCH_DELAY_MS);
+  }, [prefetchFolder]);
+  const cancelFolderPrefetch = useCallback(() => {
+    if (prefetchTimer.current != null) {
+      window.clearTimeout(prefetchTimer.current);
+      prefetchTimer.current = null;
+    }
+  }, []);
+  useEffect(() => () => {
+    if (prefetchTimer.current != null) window.clearTimeout(prefetchTimer.current);
+  }, []);
+
   // Reflect the current folder in the browser tab title. Moved below the hook
   // because `breadcrumbs` now comes from it instead of local state.
   useDocumentTitle(breadcrumbs.length > 0 ? `${breadcrumbs[breadcrumbs.length - 1].name} · Files` : 'Files');
@@ -487,13 +514,10 @@ export default function FilesPage() {
     return () => window.removeEventListener('dosya:favourites-changed', onChanged);
   }, [loadFavourites]);
 
-  // Uploads finish in the background (dock/other tab), so the listing has to
-  // react to the runner rather than to the handler that started the upload.
-  useEffect(() => {
-    const onUploaded = () => loadFiles();
-    window.addEventListener('dosya:upload-complete', onUploaded);
-    return () => window.removeEventListener('dosya:upload-complete', onUploaded);
-  }, [loadFiles]);
+  // Upload-complete invalidation lives at module scope in lib/query-client.ts
+  // now, not here - see its docstring for why a page-scoped effect isn't
+  // enough. This page still repaints from the cache like any other query
+  // subscriber once that invalidation lands.
 
   const toggleFavourite = async (fileId: string) => {
     const isFav = favourites.has(fileId);
@@ -1169,7 +1193,8 @@ export default function FilesPage() {
                         onClick={(e) => { if (e.ctrlKey || e.metaKey) { e.stopPropagation(); toggleSelectFolder(f.id); } else navigateToFolder(f.id); }}
                         onSelect={() => toggleSelectFolder(f.id)}
                         onContextMenu={(e) => onContextMenu(e, 'folder', f)}
-                        onPrefetch={() => prefetchFolder(f.id)} />
+                        onPrefetch={() => scheduleFolderPrefetch(f.id)}
+                        onPrefetchCancel={cancelFolderPrefetch} />
                     ))}
                   </div>
                 </div>
@@ -1232,7 +1257,8 @@ export default function FilesPage() {
                         className={`flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-muted/50 cursor-pointer group ${selectedFolders.has(f.id) ? 'bg-primary/10' : ''}`}
                         onClick={(e) => { if (e.ctrlKey || e.metaKey) { e.stopPropagation(); toggleSelectFolder(f.id); } else navigateToFolder(f.id); }}
                         onContextMenu={(e) => onContextMenu(e, 'folder', f)}
-                        onMouseEnter={() => prefetchFolder(f.id)}
+                        onMouseEnter={() => scheduleFolderPrefetch(f.id)}
+                        onMouseLeave={cancelFolderPrefetch}
                       >
                         <SelectCheckbox
                           checked={selectedFolders.has(f.id)}
@@ -1690,15 +1716,15 @@ export default function FilesPage() {
 
 // ── Folder Card ────────────────────────────────────────────
 
-function FolderCard({ folder, selected, anySelected, onClick, onSelect, onContextMenu, onPrefetch }: {
+function FolderCard({ folder, selected, anySelected, onClick, onSelect, onContextMenu, onPrefetch, onPrefetchCancel }: {
   folder: FolderItem; selected?: boolean; anySelected?: boolean;
   onClick: (e: ReactMouseEvent) => void; onSelect: () => void; onContextMenu: (e: ReactMouseEvent) => void;
-  onPrefetch: () => void;
+  onPrefetch: () => void; onPrefetchCancel: () => void;
 }) {
   const iconSrc = folderIconSrc(folder.file_count, !!folder.is_synced);
 
   return (
-    <Card className={`gap-0 py-0 p-3 hover:shadow-md hover:-translate-y-px transition-all cursor-pointer group relative ${selected ? 'ring-2 ring-primary' : ''}`} onClick={onClick} onContextMenu={onContextMenu} onMouseEnter={onPrefetch}>
+    <Card className={`gap-0 py-0 p-3 hover:shadow-md hover:-translate-y-px transition-all cursor-pointer group relative ${selected ? 'ring-2 ring-primary' : ''}`} onClick={onClick} onContextMenu={onContextMenu} onMouseEnter={onPrefetch} onMouseLeave={onPrefetchCancel}>
       <SelectCheckbox
         checked={!!selected}
         onCheckedChange={() => onSelect()}
