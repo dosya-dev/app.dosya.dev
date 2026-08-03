@@ -12,7 +12,7 @@
 import { QueryClient } from '@tanstack/react-query';
 import { ApiError } from '@/api/client';
 import { FILES_QUERY_ROOT } from '@/lib/files-request';
-import { ACTIVE_CLOUD_STATUSES, completedJobIds, useCloudImports } from '@/stores/cloud-imports';
+import { activeJobIds, completedJobIds, useCloudImports } from '@/stores/cloud-imports';
 
 /**
  * 401 and 403 are terminal: the session is gone or the permission is absent,
@@ -79,8 +79,10 @@ if (typeof window !== 'undefined') {
  * The active -> terminal edge detection is `completedJobIds`, kept pure and
  * exported from stores/cloud-imports.ts precisely so it stays unit-tested
  * without rendering anything. This subscriber owns only the prevActiveIds
- * bookkeeping between calls - recomputing it is one line, mirroring what
- * completedJobIds already computes internally to find the edge.
+ * bookkeeping between calls: it hands the previous snapshot to
+ * completedJobIds, then reuses that same module's `activeJobIds` to capture
+ * the next one, so the "what counts as active" rule is defined in exactly
+ * one place rather than duplicated here.
  *
  * Deliberately NOT workspace-scoped, unlike the old hook: a module-scope
  * subscriber has no "current workspace" to filter on. Invalidating
@@ -91,9 +93,7 @@ if (typeof window !== 'undefined') {
 let prevActiveCloudImportIds = new Set<string>();
 useCloudImports.subscribe((state) => {
   const completed = completedJobIds(prevActiveCloudImportIds, state.jobs);
-  prevActiveCloudImportIds = new Set(
-    state.jobs.filter((j) => ACTIVE_CLOUD_STATUSES.has(j.status)).map((j) => j.id),
-  );
+  prevActiveCloudImportIds = activeJobIds(state.jobs);
   if (completed.length > 0) {
     queryClient.invalidateQueries({ queryKey: [FILES_QUERY_ROOT] });
   }

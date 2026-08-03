@@ -15,6 +15,11 @@ export function jobProgress(
   return Math.min(100, Math.floor((job.completed_bytes / job.total_bytes) * 100));
 }
 
+/** Ids of jobs currently in an active status (discovering/running). */
+export function activeJobIds(jobs: CloudJob[]): Set<string> {
+  return new Set(jobs.filter((j) => ACTIVE_CLOUD_STATUSES.has(j.status)).map((j) => j.id));
+}
+
 /**
  * Ids of jobs that just crossed from an active status (discovering/running)
  * to a terminal one (complete/failed/cancelled) - i.e. left `prevActiveIds`
@@ -27,9 +32,10 @@ export function jobProgress(
  * pages/use-cloud-import-refresh.ts, reachable only while a component called
  * its hook. The caller (now the module-scope subscriber in
  * lib/query-client.ts) owns the prevActiveIds -> next-prevActiveIds
- * bookkeeping across calls; this function only ever answers "what completed
- * between these two snapshots", which keeps it as unit-testable as
- * jobProgress/retryAfterFromError below without needing to render anything.
+ * bookkeeping across calls (via `activeJobIds`, above); this function only
+ * ever answers "what completed between these two snapshots", which keeps it
+ * as unit-testable as jobProgress/retryAfterFromError below without needing
+ * to render anything.
  *
  * Deliberately NOT workspace-scoped (the old hook filtered on
  * `job.workspace_id`, which only worked because a page component knows its
@@ -39,7 +45,7 @@ export function jobProgress(
  * costs nothing.
  */
 export function completedJobIds(prevActiveIds: ReadonlySet<string>, jobs: CloudJob[]): string[] {
-  const currentActive = new Set(jobs.filter((j) => ACTIVE_CLOUD_STATUSES.has(j.status)).map((j) => j.id));
+  const currentActive = activeJobIds(jobs);
   return jobs
     .filter((j) => prevActiveIds.has(j.id) && !currentActive.has(j.id))
     .map((j) => j.id);

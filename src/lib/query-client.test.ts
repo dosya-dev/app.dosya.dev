@@ -95,6 +95,19 @@ describe('module-scope cloud-import completion listener', () => {
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: [FILES_QUERY_ROOT] });
   });
 
+  test('does not fire again on a later update where the job stays terminal', () => {
+    // The non-obvious bookkeeping this pins: after the first active ->
+    // terminal edge, the job's id drops out of the subscriber's
+    // prevActiveCloudImportIds, so a further update where it is still
+    // 'complete' (unchanged) must not read as a fresh edge and re-invalidate.
+    useCloudImports.setState({ jobs: [job({ status: 'running' })] });
+    useCloudImports.setState({ jobs: [job({ status: 'complete' })] });
+    expect(invalidateSpy).toHaveBeenCalledTimes(1);
+
+    useCloudImports.setState({ jobs: [job({ status: 'complete' })] });
+    expect(invalidateSpy).toHaveBeenCalledTimes(1);
+  });
+
   test('a job going active -> failed invalidates the files cache', () => {
     useCloudImports.setState({ jobs: [job({ status: 'discovering' })] });
     useCloudImports.setState({ jobs: [job({ status: 'failed' })] });
