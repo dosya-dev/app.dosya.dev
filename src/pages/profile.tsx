@@ -5,6 +5,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
@@ -40,6 +41,7 @@ interface TfaStatus {
 interface ApiKey {
   id: string; name: string; scope: string; key_prefix: string;
   created_at: number; s3_access_key_id: string | null;
+  surfaces: string | null;
 }
 // Mirrors what GET /api/me/sessions actually returns. It previously declared
 // ip/user_agent/login_method/last_active_at - none of which the API sends - so every
@@ -77,6 +79,23 @@ const NAV = [
 ];
 
 const SCOPE_LABELS: Record<string, string> = { full: 'Full access', read: 'Read only', upload: 'Upload only' };
+
+// Order also drives the create-form checkbox list.
+const SURFACE_OPTIONS: { value: string; label: string }[] = [
+  { value: 'webdav', label: 'WebDAV' },
+  { value: 'sftp', label: 'SFTP' },
+  { value: 's3', label: 'S3 gateway' },
+  { value: 'api', label: 'REST API' },
+];
+const SURFACE_LABELS: Record<string, string> = Object.fromEntries(SURFACE_OPTIONS.map((o) => [o.value, o.label]));
+
+// null (or unset) means the key was created before migration 0094, or was
+// created with no restriction - both are unrestricted, matching the API's
+// `parseSurfaces()` in apps/api/src/lib/access/credential.ts.
+function formatSurfaces(surfaces: string | null): string {
+  if (!surfaces) return 'All protocols';
+  return surfaces.split(',').map((s) => SURFACE_LABELS[s] ?? s).join(', ');
+}
 
 const LANGUAGES = [
   { value: 'en', label: 'English (AU)' },
@@ -836,9 +855,20 @@ function ApiKeysSection({ keys, onChanged }: { keys: ApiKey[]; onChanged: () => 
   const [createOpen, setCreateOpen] = useState(false);
   const [keyName, setKeyName] = useState('');
   const [keyScope, setKeyScope] = useState('full');
+  // Defaults to none selected: an empty set means unrestricted, sent as an
+  // absent `surfaces` field rather than an empty array (see createKey below).
+  const [keySurfaces, setKeySurfaces] = useState<Set<string>>(new Set());
   const [creating, setCreating] = useState(false);
   const [plainKey, setPlainKey] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+
+  const toggleSurface = (value: string) => {
+    setKeySurfaces((prev) => {
+      const next = new Set(prev);
+      if (next.has(value)) next.delete(value); else next.add(value);
+      return next;
+    });
+  };
 
   // S3 modal
   const [s3Open, setS3Open] = useState(false);
@@ -849,9 +879,16 @@ function ApiKeysSection({ keys, onChanged }: { keys: ApiKey[]; onChanged: () => 
     if (!keyName.trim()) return;
     setCreating(true);
     const res = await req<{ ok: boolean; key?: { plain_key: string }; error?: string }>('/api/me/api-keys', {
-      method: 'POST', body: JSON.stringify({ name: keyName.trim(), scope: keyScope }),
+      method: 'POST',
+      body: JSON.stringify({
+        name: keyName.trim(),
+        scope: keyScope,
+        // Send surfaces only when at least one is chosen - an absent field
+        // (not an empty array) is what the endpoint treats as unrestricted.
+        ...(keySurfaces.size > 0 ? { surfaces: [...keySurfaces] } : {}),
+      }),
     });
-    if (res.ok && res.key) { setPlainKey(res.key.plain_key); setCreateOpen(false); setKeyName(''); onChanged(); }
+    if (res.ok && res.key) { setPlainKey(res.key.plain_key); setCreateOpen(false); setKeyName(''); setKeySurfaces(new Set()); onChanged(); }
     else toast.error('Create failed', res.error ?? 'The API key could not be created.');
     setCreating(false);
   };
@@ -892,10 +929,11 @@ function ApiKeysSection({ keys, onChanged }: { keys: ApiKey[]; onChanged: () => 
       <Card>
         <CardContent>
           {/* Header */}
-          <div className="grid grid-cols-[1.2fr_1.3fr_0.8fr_0.7fr_auto_64px] gap-2 px-1 pb-2 border-b">
+          <div className="grid grid-cols-[1.1fr_1.2fr_0.7fr_0.9fr_0.7fr_auto_64px] gap-2 px-1 pb-2 border-b">
             <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Name</span>
             <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Token</span>
             <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Scope</span>
+            <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Protocols</span>
             <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Created</span>
             <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">S3</span>
             <span />
@@ -905,10 +943,11 @@ function ApiKeysSection({ keys, onChanged }: { keys: ApiKey[]; onChanged: () => 
             <p className="py-8 text-center text-xs text-muted-foreground">No API keys yet</p>
           ) : (
             keys.map((k) => (
-              <div key={k.id} className="grid grid-cols-[1.2fr_1.3fr_0.8fr_0.7fr_auto_64px] gap-2 px-1 py-3 border-b last:border-b-0 items-center group">
+              <div key={k.id} className="grid grid-cols-[1.1fr_1.2fr_0.7fr_0.9fr_0.7fr_auto_64px] gap-2 px-1 py-3 border-b last:border-b-0 items-center group">
                 <span className="text-xs font-medium truncate">{k.name}</span>
                 <span className="text-[11px] text-muted-foreground font-mono">dos_···· {k.key_prefix.slice(0, 4)}</span>
                 <Badge variant={k.scope === 'full' ? 'default' : 'secondary'} className="text-[10px] w-fit">{SCOPE_LABELS[k.scope] ?? k.scope}</Badge>
+                <span className="text-[11px] text-muted-foreground truncate" title={formatSurfaces(k.surfaces)}>{formatSurfaces(k.surfaces)}</span>
                 <span className="text-[11px] text-muted-foreground">{new Date(k.created_at * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
                 <span>
                   {k.s3_access_key_id ? (
@@ -953,6 +992,18 @@ function ApiKeysSection({ keys, onChanged }: { keys: ApiKey[]; onChanged: () => 
                 {Object.entries(SCOPE_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}
               </SelectContent>
             </Select>
+            <div>
+              <p className="text-xs font-medium mb-0.5">Protocols</p>
+              <p className="text-[11px] text-muted-foreground mb-2">Leave all unchecked to allow every protocol. Selecting some restricts this key to only those.</p>
+              <div className="space-y-1.5">
+                {SURFACE_OPTIONS.map((opt) => (
+                  <label key={opt.value} className="flex items-center gap-2.5 text-xs cursor-pointer">
+                    <Checkbox className="size-4" checked={keySurfaces.has(opt.value)} onCheckedChange={() => toggleSurface(opt.value)} />
+                    {opt.label}
+                  </label>
+                ))}
+              </div>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
