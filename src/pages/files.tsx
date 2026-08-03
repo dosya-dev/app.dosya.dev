@@ -371,10 +371,11 @@ export default function FilesPage() {
   // filters doesn't flash 8 placeholder rows when the view only has 1 item.
   const lastItemCount = useRef<number | null>(null);
 
-  // Selection is per-view: ids from the previous folder must not survive into
-  // the next one. Keyed on the arrays' identity, which React Query replaces
-  // only when a new payload lands.
-  useEffect(() => { clearSelection(); }, [folders, files]);
+  // Selection is per-view: ids from the previous folder must not survive into the
+  // next one. Keyed on the view rather than the fetched rows, so a background
+  // revalidation that happens to return changed data does not wipe an in-progress
+  // multi-select.
+  useEffect(() => { clearSelection(); }, [view]);
 
   useEffect(() => {
     if (!isPlaceholder) lastItemCount.current = folders.length + files.length;
@@ -531,7 +532,10 @@ export default function FilesPage() {
       const ep = deleteTarget.type === 'file' ? `/api/files/${deleteTarget.id}` : `/api/folders/${deleteTarget.id}`;
       await api(ep, { method: 'DELETE' });
       toast.success('Deleted', deleteTarget.permanent ? `${deleteTarget.name} was permanently deleted.` : `${deleteTarget.name} was deleted.`);
-      setDeleteTarget(null); loadFiles();
+      // The deleted row can be part of the current bulk selection even though
+      // this is the single-item delete path - clear explicitly so a stale id
+      // for a now-gone row doesn't linger in `selected`/`selectedFolders`.
+      setDeleteTarget(null); clearSelection(); loadFiles();
     } catch (err) {
       // A row-level permanent delete on a folder that isn't a trash root
       // 404/400s with an explanatory message ("...restore or delete that
@@ -560,7 +564,9 @@ export default function FilesPage() {
       } else {
         toast.success('Restored', `"${restoredName}" restored.`);
       }
-      loadFiles();
+      // Restoring drops this row out of the Deleted view - clear explicitly so
+      // a stale id for it can't linger in the bulk selection.
+      clearSelection(); loadFiles();
     } catch (err) {
       // Surfaces the 409 storage-cap message and the 400 "not a trash root"
       // message from PUT /api/folders/:id rather than a generic failure.
@@ -577,7 +583,9 @@ export default function FilesPage() {
     try {
       await api(`/api/files/${f.id}`, { method: 'PUT' });
       toast.success('Restored', `"${f.name}" restored.`);
-      loadFiles();
+      // Restoring drops this row out of the Deleted view - clear explicitly so
+      // a stale id for it can't linger in the bulk selection.
+      clearSelection(); loadFiles();
     } catch (err) {
       toast.error('Restore failed', apiErrorMessage(err, 'The file could not be restored.'));
     }
@@ -623,7 +631,10 @@ export default function FilesPage() {
       const ep = moveOpen.type === 'file' ? `/api/files/${moveOpen.id}/move` : `/api/folders/${moveOpen.id}/move`;
       const body = moveOpen.type === 'file' ? { folder_id: folderId } : { parent_id: folderId };
       await api(ep, { method: 'PUT', body: JSON.stringify(body) });
-      toast.success('Moved', 'The file has been moved.'); setMoveOpen(null); loadFiles();
+      toast.success('Moved', 'The file has been moved.');
+      // The moved row leaves the current folder - clear explicitly so a stale
+      // id for it can't linger in the bulk selection.
+      setMoveOpen(null); clearSelection(); loadFiles();
     } catch { toast.error('Move failed', 'The file could not be moved.'); }
   };
 
@@ -1514,7 +1525,10 @@ export default function FilesPage() {
         open={!!hideTarget}
         target={hideTarget}
         onClose={() => setHideTarget(null)}
-        onDone={loadFiles}
+        // Hiding/unhiding can drop the row out of the current view (the
+        // default listing excludes hidden items; the Hidden filter shows only
+        // them) - clear explicitly so a stale id can't linger in the selection.
+        onDone={() => { clearSelection(); loadFiles(); }}
       />
 
       {/* Get-info dialog */}
