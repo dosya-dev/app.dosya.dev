@@ -17,10 +17,16 @@ import type { DemoThemeId } from '@/components/demo/engine/demoData';
 // Which page each non-welcome step's preview opens to. Steps not listed here
 // (welcome, ready) keep the demo's own default (dashboard). Values are the
 // exact WebView union members, not the tour's own step ids.
-const STEP_VIEW: Partial<Record<TourStepId, WebView>> = {
+// Which view the preview shows on each page. Every step needs an entry: the
+// prop only re-syncs when it CHANGES, so a step with no entry passes undefined
+// and the demo simply keeps whatever the previous page left it on - page 5
+// used to sit on the integrations view it inherited from page 4.
+const STEP_VIEW: Record<TourStepId, WebView> = {
+  welcome: 'dashboard',
   sharing: 'shared',
   security: 'vault',
   integrations: 'integrations',
+  ready: 'dashboard',
 };
 
 /**
@@ -109,7 +115,7 @@ export default function WelcomePage() {
                 just be a second, non-functional one. ctaHref=null: the
                 viewer inside the tour already has an account, so the demo's
                 "Sign up free" toast link would only navigate them out. */}
-            <WebDemo theme={previewTheme} showThemeControls={false} ctaHref={null} />
+            <WebDemo theme={previewTheme} showThemeControls={false} ctaHref={null} initialView={STEP_VIEW[step.id]} />
             <div className="grid grid-cols-1 sm:grid-cols-[2fr_1fr] gap-4">
               <DesktopDemo theme={previewTheme} showThemeControls={false} ctaHref={null} />
               <MobileDemo theme={previewTheme} showThemeControls={false} ctaHref={null} />

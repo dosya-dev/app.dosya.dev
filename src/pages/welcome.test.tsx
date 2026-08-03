@@ -193,15 +193,17 @@ describe('WelcomePage', () => {
 
   // The spec promises a different preview per page: sharing shows the
   // Shared view, security shows the Vault, integrations shows Integrations.
-  // Welcome and Ready keep the demo's own default (dashboard, i.e. no seed).
+  // Welcome and Ready are explicitly 'dashboard' rather than left unset: the
+  // prop only re-syncs when it CHANGES, so an unset step inherited whatever
+  // the previous page left behind - Ready used to sit on integrations.
   it('passes the expected view to the demo on each step', async () => {
     await render();
     const expected: Record<string, string | undefined> = {
-      welcome: undefined,
+      welcome: 'dashboard',
       sharing: 'shared',
       security: 'vault',
       integrations: 'integrations',
-      ready: undefined,
+      ready: 'dashboard',
     };
     for (let i = 0; i < TOUR_STEPS.length; i++) {
       const step = TOUR_STEPS[i];
