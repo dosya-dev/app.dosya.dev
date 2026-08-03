@@ -6,8 +6,28 @@ import type { UploadInput, UploadItem } from '@/lib/upload-types';
 
 // File bytes live only here - never in the store or localStorage.
 const fileMap = new Map<string, File>();
-// In-flight XHRs, so cancel() can abort them.
-const activeXhr = new Map<string, XMLHttpRequest>();
+// In-flight XHRs per item, so cancel() can abort them. A multipart upload runs
+// several parts at once, so one item can own more than one XHR at a time.
+const activeXhr = new Map<string, Set<XMLHttpRequest>>();
+
+/** Parts in flight per file. Peak memory is roughly this times part_size. */
+export const PART_CONCURRENCY = 4;
+
+function trackXhr(id: string, xhr: XMLHttpRequest): void {
+  let set = activeXhr.get(id);
+  if (!set) {
+    set = new Set();
+    activeXhr.set(id, set);
+  }
+  set.add(xhr);
+}
+
+function untrackXhr(id: string, xhr: XMLHttpRequest): void {
+  const set = activeXhr.get(id);
+  if (!set) return;
+  set.delete(xhr);
+  if (set.size === 0) activeXhr.delete(id);
+}
 // Bounded auto-retry counter for server concurrency-limit rejections.
 const concurrencyRetries = new Map<string, number>();
 // Ids the user canceled - checked after every await so an in-flight async step
@@ -29,6 +49,81 @@ export function missingPartNumbers(totalParts: number, uploaded: number[]): numb
   const out: number[] = [];
   for (let n = 1; n <= totalParts; n++) if (!done.has(n)) out.push(n);
   return out;
+}
+
+/** Total byte size of the given part numbers, honouring a short final part. */
+export function bytesForParts(parts: number[], partSize: number, fileSize: number): number {
+  return parts.reduce((sum, n) => {
+    const start = (n - 1) * partSize;
+    return sum + Math.max(0, Math.min(start + partSize, fileSize) - start);
+  }, 0);
+}
+
+/**
+ * Byte accounting for one multipart upload.
+ *
+ * Parts run concurrently and each XHR only ever knows its own progress, so the
+ * item's total is the sum of three things: bytes already stored server-side
+ * from a previous run, the exact size of parts this run has finished, and the
+ * latest in-flight `loaded` of the parts still going. Reporting any one part's
+ * absolute offset (what the serial version did) would make parallel parts
+ * overwrite each other and send progress backwards.
+ */
+export class PartBytes {
+  private done = 0;
+  private live = new Map<number, number>();
+
+  constructor(private readonly resumed: number) {}
+
+  /** Record a part's latest in-flight byte count; returns the new total. */
+  onProgress(part: number, loaded: number): number {
+    this.live.set(part, loaded);
+    return this.total();
+  }
+
+  /** Retire a finished part at its exact size; returns the new total. */
+  onComplete(part: number, size: number): number {
+    this.live.delete(part);
+    this.done += size;
+    return this.total();
+  }
+
+  total(): number {
+    let sum = this.resumed + this.done;
+    for (const loaded of this.live.values()) sum += loaded;
+    return sum;
+  }
+}
+
+/**
+ * Run `items` through `run` with at most `limit` in flight.
+ *
+ * After the first failure no further items are started, and the error is
+ * rethrown once the already-running ones settle - so a failed part can't leave
+ * siblings racing on in the background. `shouldStop` lets a cancel short-circuit
+ * the queue without being an error in its own right.
+ */
+export async function runPool<T>(
+  items: T[],
+  limit: number,
+  run: (item: T) => Promise<void>,
+  shouldStop: () => boolean = () => false,
+): Promise<void> {
+  let cursor = 0;
+  let failure: unknown = null;
+  const worker = async (): Promise<void> => {
+    while (cursor < items.length && !failure && !shouldStop()) {
+      const item = items[cursor++];
+      try {
+        await run(item);
+      } catch (err) {
+        failure ??= err;
+      }
+    }
+  };
+  const workers = Math.max(0, Math.min(limit, items.length));
+  await Promise.all(Array.from({ length: workers }, worker));
+  if (failure) throw failure;
 }
 
 const store = () => useUploads.getState();
@@ -55,6 +150,11 @@ const speedSamples = new Map<string, { bytes: number; time: number; ema: number 
 function reportBytes(id: string, bytes: number, total: number): void {
   const now = Date.now();
   const prev = speedSamples.get(id);
+  // Parts upload concurrently now, so this is called several times more often
+  // than when they were serial - and patchItem writes localStorage every time.
+  // Coalesce to ~1 update per 250ms per item. The wider sampling interval also
+  // steadies the EMA rather than degrading it.
+  if (prev && now - prev.time < 250) return;
   let ema = prev?.ema ?? 0;
   if (prev) {
     const dt = now - prev.time;
@@ -72,14 +172,15 @@ function reportBytes(id: string, bytes: number, total: number): void {
   });
 }
 
-// PUT with progress + abort. Reports absolute bytes (baseBytes + loaded).
+// PUT with progress + abort. `onLoaded` gets the bytes sent so far for THIS
+// request only - aggregating across parallel parts is the caller's job.
 function xhrPut(
   id: string, url: string, body: Blob, contentType: string,
-  baseBytes: number, total: number,
+  onLoaded: (loaded: number) => void,
 ): Promise<any> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-    activeXhr.set(id, xhr);
+    trackXhr(id, xhr);
     xhr.open('PUT', url);
     xhr.withCredentials = true;
     xhr.setRequestHeader('Content-Type', contentType);
@@ -89,18 +190,18 @@ function xhrPut(
       const now = Date.now();
       if (now - lastTick < 300) return;
       lastTick = now;
-      reportBytes(id, baseBytes + e.loaded, total);
+      onLoaded(e.loaded);
     };
     xhr.onload = () => {
-      activeXhr.delete(id);
+      untrackXhr(id, xhr);
       try {
         const d = JSON.parse(xhr.responseText);
         if (xhr.status >= 200 && xhr.status < 300 && d.ok) resolve(d);
         else reject(new Error(d.error ?? `HTTP ${xhr.status}`));
       } catch { reject(new Error(`HTTP ${xhr.status}`)); }
     };
-    xhr.onerror = () => { activeXhr.delete(id); reject(new Error('Network error')); };
-    xhr.onabort = () => { activeXhr.delete(id); reject(new DOMException('Aborted', 'AbortError')); };
+    xhr.onerror = () => { untrackXhr(id, xhr); reject(new Error('Network error')); };
+    xhr.onabort = () => { untrackXhr(id, xhr); reject(new DOMException('Aborted', 'AbortError')); };
     xhr.send(body);
   });
 }
@@ -131,19 +232,38 @@ async function uploadParts(
 ): Promise<void> {
   store().patchItem(id, { part_size: partSize, total_parts: totalParts });
   const already = getItem(id)?.uploaded_parts ?? [];
-  for (const n of missingPartNumbers(totalParts, already)) {
-    if (bailIfCanceled(id)) return;
+  const queue = missingPartNumbers(totalParts, already);
+  const bytes = new PartBytes(bytesForParts(already, partSize, file.size));
+
+  async function sendPart(n: number): Promise<void> {
     const start = (n - 1) * partSize;
     const chunk = file.slice(start, Math.min(start + partSize, file.size));
-    const d = await xhrPut(id, `${API_BASE}/api/upload/${sessionId}/part/${n}`,
-      chunk, 'application/octet-stream', start, file.size);
+    await xhrPut(id, `${API_BASE}/api/upload/${sessionId}/part/${n}`,
+      chunk, 'application/octet-stream',
+      (loaded) => reportBytes(id, bytes.onProgress(n, loaded), file.size));
+    // Read-then-patch, with no await between the two statements: concurrent
+    // parts cannot interleave here, so no append can lose another's.
     const uploaded = [...(getItem(id)?.uploaded_parts ?? []), n];
-    const bytes = d.bytes_uploaded ?? start + chunk.size;
+    const total = bytes.onComplete(n, chunk.size);
     store().patchItem(id, {
-      uploaded_parts: uploaded, bytesUploaded: bytes,
-      progress: Math.min(100, Math.round((bytes / file.size) * 100)),
+      uploaded_parts: uploaded, bytesUploaded: total,
+      progress: Math.min(100, Math.round((total / file.size) * 100)),
     });
   }
+
+  // The server creates the R2 multipart upload lazily, on the first part it
+  // receives, deriving a fresh file id and r2_key in the process. Parts racing
+  // that path each create their own MPU under their own key; COALESCE keeps one
+  // of each and the losers' etags are unusable at complete time. So the first
+  // part of a fresh session goes alone, and the rest fan out only once
+  // r2_upload_id is persisted. A resumed session already has one and can fan
+  // out immediately. Same reasoning as apps/cli/src/multipart.ts.
+  if (already.length === 0 && queue.length > 0) {
+    await sendPart(queue.shift()!);
+    if (bailIfCanceled(id)) return;
+  }
+
+  await runPool(queue, PART_CONCURRENCY, sendPart, () => canceledIds.has(id));
   if (bailIfCanceled(id)) return;
   const res = await fetch(`${API_BASE}/api/upload/${sessionId}/complete`, {
     method: 'POST', credentials: 'include',
@@ -217,7 +337,8 @@ async function runOne(id: string): Promise<void> {
         await uploadParts(id, file, init.session_id, init.resumable.part_size, init.resumable.total_parts);
       } else {
         const putRes = await xhrPut(id, `${API_BASE}${init.upload_url}`, file,
-          file.type || 'application/octet-stream', 0, file.size);
+          file.type || 'application/octet-stream',
+          (loaded) => reportBytes(id, loaded, file.size));
         if (bailIfCanceled(id)) return;
         markComplete(id, { bytesUploaded: file.size, fileId: putRes?.file?.id });
       }
@@ -279,8 +400,10 @@ export function enqueue(files: File[] | FileList, input: UploadInput): void {
 export function cancel(id: string): void {
   canceledIds.add(id);
   heldIds.delete(id);
-  const xhr = activeXhr.get(id);
-  if (xhr) xhr.abort();              // triggers onabort → AbortError → status 'canceled'
+  const xhrs = activeXhr.get(id);
+  // Abort every in-flight part, not just one - a multipart upload has several.
+  // Each abort triggers onabort → AbortError → status 'canceled'.
+  if (xhrs?.size) for (const xhr of Array.from(xhrs)) xhr.abort();
   else store().patchItem(id, { status: 'canceled', speedBps: 0 });
   fileMap.delete(id);
   speedSamples.delete(id);
