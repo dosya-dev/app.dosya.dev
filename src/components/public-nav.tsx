@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Sun, Moon } from 'lucide-react';
+import { withThemeSweep } from '@/lib/theme';
 
 // Marketing navbar for public pages (login, etc.), ported from the Astro site's Menu.
 // Centered rounded card, original logo + mono-italic wordmark, Pricing, CTA, theme toggle.
@@ -8,9 +9,11 @@ export function PublicNav({ cta = 'login' }: { cta?: 'login' | 'signup' }) {
     () => typeof document !== 'undefined' && document.documentElement.classList.contains('dark'),
   );
   const toggleTheme = () => {
-    const isDark = document.documentElement.classList.toggle('dark');
-    localStorage.setItem('theme', isDark ? 'dark' : 'light');
-    setDark(isDark);
+    withThemeSweep(() => {
+      const isDark = document.documentElement.classList.toggle('dark');
+      localStorage.setItem('theme', isDark ? 'dark' : 'light');
+      setDark(isDark);
+    });
   };
 
   return (

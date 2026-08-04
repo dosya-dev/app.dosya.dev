@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { api } from '@/api/client';
 import { THEMES } from '@/lib/themes';
-import { applyTheme, readCache, writeCache } from '@/lib/theme';
+import { applyThemeAnimated, readCache, writeCache } from '@/lib/theme';
 
 interface ThemeStepProps {
   /** Told the new theme id so the demo preview can restyle with the app. */
@@ -25,7 +25,7 @@ export function ThemeStep({ onThemeChange }: ThemeStepProps) {
   const pick = async (themeId: string) => {
     const pref = { theme: themeId, mode: readCache().mode };
     setSelected(themeId);
-    applyTheme(pref);
+    applyThemeAnimated(pref);
     writeCache(pref);
     onThemeChange(themeId);
 

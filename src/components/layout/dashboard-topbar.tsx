@@ -10,7 +10,7 @@ import {
 import { Search, User, LogOut, Settings, CreditCard, LifeBuoy, Sun, Moon, Palette, Gift } from 'lucide-react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { api, API_BASE } from '@/api/client';
-import { readCache, writeCache, applyTheme, subscribeThemeChange } from '@/lib/theme';
+import { readCache, writeCache, applyThemeAnimated, subscribeThemeChange } from '@/lib/theme';
 import { useWorkspace } from '@/stores/workspace';
 import { useUploads } from '@/stores/uploads';
 import { logoutAndRedirect } from '@/lib/logout';
@@ -72,7 +72,7 @@ export function DashboardTopbar() {
     const cur = readCache();
     const nextMode = dark ? 'light' : 'dark';
     const pref = { theme: cur.theme, mode: nextMode as 'light' | 'dark' };
-    applyTheme(pref);
+    applyThemeAnimated(pref);
     writeCache(pref);
     setDark(nextMode === 'dark');
     api('/api/me/appearance', { method: 'PUT', body: JSON.stringify(pref) }).catch(() => { /* fire-and-forget */ });

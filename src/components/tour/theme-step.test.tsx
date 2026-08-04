@@ -2,13 +2,13 @@ import { describe, it, expect, afterEach, beforeAll, beforeEach, vi } from 'vite
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 
-const applyTheme = vi.fn();
+const applyThemeAnimated = vi.fn();
 const writeCache = vi.fn();
 vi.mock('@/lib/theme', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/theme')>();
   return {
     ...actual,
-    applyTheme: (...a: unknown[]) => applyTheme(...a),
+    applyThemeAnimated: (...a: unknown[]) => applyThemeAnimated(...a),
     writeCache: (...a: unknown[]) => writeCache(...a),
     readCache: () => ({ theme: 'default', mode: 'system' }),
   };
@@ -25,7 +25,7 @@ describe('ThemeStep', () => {
   let root: Root | null = null;
   let container: HTMLDivElement | null = null;
 
-  beforeEach(() => { applyTheme.mockClear(); writeCache.mockClear(); });
+  beforeEach(() => { applyThemeAnimated.mockClear(); writeCache.mockClear(); });
   afterEach(() => {
     if (root) act(() => root!.unmount());
     container?.remove();
@@ -59,7 +59,7 @@ describe('ThemeStep', () => {
       container!.querySelector<HTMLButtonElement>('[data-testid="tour-theme-ocean"]')!.click();
     });
 
-    expect(applyTheme).toHaveBeenCalledWith(expect.objectContaining({ theme: 'ocean' }));
+    expect(applyThemeAnimated).toHaveBeenCalledWith(expect.objectContaining({ theme: 'ocean' }));
     expect(onThemeChange).toHaveBeenCalledWith('ocean');
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(String(fetchMock.mock.calls[0][0])).toContain('/api/me/appearance');
@@ -74,7 +74,7 @@ describe('ThemeStep', () => {
       container!.querySelector<HTMLButtonElement>('[data-testid="tour-theme-amber"]')!.click();
     });
 
-    expect(applyTheme).toHaveBeenCalledWith(expect.objectContaining({ theme: 'amber' }));
+    expect(applyThemeAnimated).toHaveBeenCalledWith(expect.objectContaining({ theme: 'amber' }));
     expect(onThemeChange).toHaveBeenCalledWith('amber');
     expect(container!.querySelector('[data-testid="tour-theme-amber"]')!.getAttribute('data-selected')).toBe('true');
   });

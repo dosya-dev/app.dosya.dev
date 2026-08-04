@@ -21,7 +21,7 @@ import {
 import { toast } from '@/lib/toast';
 import { timeAgo } from '@/lib/helpers';
 import { THEMES, type Mode } from '@/lib/themes';
-import { readCache, writeCache, applyTheme, subscribeThemeChange, type ThemePref } from '@/lib/theme';
+import { readCache, writeCache, applyTheme, applyThemeAnimated, subscribeThemeChange, type ThemePref } from '@/lib/theme';
 import { enableWebPush } from '../lib/web-push';
 import { PROVIDER_LABELS } from '@/components/cloud-import/import-progress-card';
 import { FolderPickerDialog } from '@/components/folder-picker-dialog';
@@ -461,14 +461,14 @@ function AppearanceSection() {
   const save = async (next: ThemePref) => {
     const prev = pref;
     setPref(next);
-    applyTheme(next);
+    applyThemeAnimated(next);
     writeCache(next);
     const res = await req('/api/me/appearance', {
       method: 'PUT', body: JSON.stringify(next),
     });
     if (!res.ok) {
       setPref(prev);
-      applyTheme(prev);
+      applyTheme(prev); // instant: a second wipe on a failed save reads as a bug
       writeCache(prev);
       toast.error('Couldn\'t save', res.error ?? 'Your theme could not be saved.');
     }
