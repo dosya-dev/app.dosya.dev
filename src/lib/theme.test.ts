@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { applyTheme, resolveDark, readCache, writeCache, subscribeThemeChange, type ThemePref } from './theme';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { applyTheme, applyThemeAnimated, withThemeSweep, resolveDark, readCache, writeCache, subscribeThemeChange, type ThemePref } from './theme';
 
 function mockMatchMedia(dark: boolean) {
   vi.stubGlobal('matchMedia', (q: string) => ({
@@ -55,6 +55,70 @@ describe('cache', () => {
   it('migrates a legacy theme=dark key', () => {
     localStorage.setItem('theme', 'dark');
     expect(readCache()).toEqual({ theme: 'default', mode: 'dark' });
+  });
+});
+
+describe('withThemeSweep', () => {
+  // lib.dom declares startViewTransition as always-present and fully typed, so
+  // reach it through a loose shape to stub a two-line fake and to delete it.
+  const doc = document as unknown as { startViewTransition?: unknown };
+
+  /** Stub the API and hand back the promise resolver so a test can end the transition. */
+  function stubViewTransition(outcome: 'finish' | 'interrupt' = 'finish') {
+    let settle = () => {};
+    doc.startViewTransition = (cb: () => void) => {
+      cb();
+      return {
+        finished: new Promise<void>((resolve, reject) => {
+          settle = outcome === 'finish' ? resolve : () => reject(new Error('skipped'));
+        }),
+      };
+    };
+    return () => { settle(); };
+  }
+
+  afterEach(() => { delete doc.startViewTransition; });
+
+  it('applies instantly and arms nothing when the API is missing', () => {
+    delete doc.startViewTransition;
+    let ran = 0;
+    withThemeSweep(() => { ran += 1; });
+    expect(ran).toBe(1);
+    expect(document.documentElement.hasAttribute('data-theme-sweep')).toBe(false);
+  });
+
+  it('arms data-theme-sweep for the length of the transition', async () => {
+    const finish = stubViewTransition();
+    applyThemeAnimated({ theme: 'ocean', mode: 'dark' });
+    // The mutation ran, and the CSS is armed until the transition settles.
+    expect(document.documentElement.getAttribute('data-theme')).toBe('ocean');
+    expect(document.documentElement.hasAttribute('data-theme-sweep')).toBe(true);
+    finish();
+    await vi.waitFor(() => expect(document.documentElement.hasAttribute('data-theme-sweep')).toBe(false));
+  });
+
+  it('disarms when a second toggle interrupts the transition', async () => {
+    const interrupt = stubViewTransition('interrupt');
+    withThemeSweep(() => {});
+    interrupt();
+    // A rejected finished promise must still clean up, or the wipe rules stay
+    // armed and catch every later view transition.
+    await vi.waitFor(() => expect(document.documentElement.hasAttribute('data-theme-sweep')).toBe(false));
+  });
+
+  it('skips the transition under prefers-reduced-motion', () => {
+    vi.stubGlobal('matchMedia', (q: string) => ({
+      matches: q.includes('reduced-motion'), media: q, onchange: null,
+      addEventListener: () => {}, removeEventListener: () => {},
+      addListener: () => {}, removeListener: () => {}, dispatchEvent: () => false,
+    }));
+    let started = 0;
+    doc.startViewTransition = (cb: () => void) => { started += 1; cb(); return { finished: Promise.resolve() }; };
+    let ran = 0;
+    withThemeSweep(() => { ran += 1; });
+    expect(started).toBe(0);
+    expect(ran).toBe(1);
+    expect(document.documentElement.hasAttribute('data-theme-sweep')).toBe(false);
   });
 });
 
