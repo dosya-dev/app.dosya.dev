@@ -18,7 +18,10 @@ export function DesktopDashboard({ onNavigate }: { onNavigate: (id: string) => v
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold text-(--demo-fg)">Welcome back, {DEMO_USER.name.split(' ')[0]}</h1>
+          {/* Not an <h1>: see WebDashboard.tsx. On /desktop this mockup rendered
+              *before* the real page H1, so "Welcome back, Alex" was the first
+              heading a crawler saw on the site's most-linked page. */}
+          <div className="text-xl font-semibold text-(--demo-fg)">Welcome back, {DEMO_USER.name.split(' ')[0]}</div>
           <p className="text-sm text-(--demo-muted-fg)">Here's what's happening in your workspace</p>
         </div>
         <button onClick={() => onNavigate('upload')}

@@ -26,7 +26,7 @@ function RowThumb({ file }: { file: DemoFile }) {
   if (file.kind === 'image' && file.thumb) {
     return <span className="size-5 shrink-0 rounded ring-1 ring-black/10" style={{ background: file.thumb }} />;
   }
-  return <img src={fileIconSrc(file.name)} alt="" className="size-5 shrink-0" />;
+  return <img src={fileIconSrc(file.name)} alt="" className="size-5 shrink-0" width={20} height={20} />;
 }
 
 function ListView() {
@@ -55,7 +55,7 @@ function ListView() {
           onClick={() => dispatch({ type: 'NAVIGATE', folderId: f.id })}
           onKeyDown={(e) => e.key === 'Enter' && dispatch({ type: 'NAVIGATE', folderId: f.id })}>
           <span className="flex min-w-32 flex-1 items-center gap-2 text-[13px] font-medium">
-            <img src={folderIconSrc(hasChildren(f.id))} alt="" className="size-5 shrink-0" />
+            <img src={folderIconSrc(hasChildren(f.id))} alt="" className="size-5 shrink-0" width={20} height={20} />
             <span className="truncate">{f.name}</span>
           </span>
           <span className="w-20 text-xs text-(--demo-muted-fg)">-</span>
@@ -106,7 +106,7 @@ export function FileGrid() {
       {folders.map((f) => (
         <button key={f.id} data-demo-tile onClick={() => dispatch({ type: 'NAVIGATE', folderId: f.id })}
           className="flex aspect-[3/2] flex-col items-center justify-center gap-2 rounded-xl border border-(--demo-border) bg-(--demo-card) hover:bg-(--demo-muted)">
-          <img src={folderIconSrc(hasChildren(f.id))} alt="" className="size-10" />
+          <img src={folderIconSrc(hasChildren(f.id))} alt="" className="size-10" width={40} height={40} />
           <span className="max-w-full truncate px-2 text-xs font-medium">{f.name}</span>
         </button>
       ))}
@@ -141,7 +141,7 @@ function FileTile({ file }: { file: DemoFile }) {
       ) : (
         <div className="flex h-full flex-col bg-(--demo-card)">
           <div className="grid flex-1 place-items-center bg-(--demo-muted)/40">
-            <img src={fileIconSrc(file.name)} alt="" className="size-11" />
+            <img src={fileIconSrc(file.name)} alt="" className="size-11" width={44} height={44} />
           </div>
           <div className="border-t border-(--demo-border) p-2">
             <p className="truncate text-[11px] font-medium">{file.name}</p>

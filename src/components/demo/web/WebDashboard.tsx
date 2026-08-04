@@ -18,7 +18,11 @@ export function WebDashboard({ onNavigate }: { onNavigate: (id: string) => void 
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-xl font-bold tracking-tight text-(--demo-fg)">Good afternoon, {DEMO_USER.name.split(' ')[0]}</h1>
+          {/* Not an <h1>: this mockup renders inside the marketing homepage, and a
+              second H1 ("Good afternoon, Alex") competed with the real page H1 in
+              the document outline. Visual output is unchanged - styling is all
+              utility classes and both tags are block-level. */}
+          <div className="text-xl font-bold tracking-tight text-(--demo-fg)">Good afternoon, {DEMO_USER.name.split(' ')[0]}</div>
           <p className="mt-1 text-sm text-(--demo-muted-fg)">Here's your workspace at a glance</p>
         </div>
         <button onClick={() => onNavigate('uploads')}

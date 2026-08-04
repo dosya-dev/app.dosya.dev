@@ -20,7 +20,7 @@ export function DesktopShell({ children }: { children: ReactNode }) {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <img src="/logo.svg" alt="" className="size-5" />
+          <img src="/logo.svg" alt="" className="size-5" width={20} height={20} />
           <span className="text-sm font-semibold text-(--demo-fg)">dosya.dev</span>
         </div>
         <div className="flex flex-1 items-center justify-end">
