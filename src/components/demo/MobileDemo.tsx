@@ -80,7 +80,7 @@ function MobileTile({ file }: { file: DemoFile }) {
             {file.shared && <span className="absolute left-1 top-1 grid size-4 place-items-center rounded-full bg-black/45 text-[8px] text-white">↗</span>}
           </>
         ) : (
-          <span className="grid h-full place-items-center bg-(--demo-muted)/50"><img src={fileIconSrc(file.name)} alt="" className="size-9" /></span>
+          <span className="grid h-full place-items-center bg-(--demo-muted)/50"><img src={fileIconSrc(file.name)} alt="" className="size-9" width={36} height={36} /></span>
         )}
       </span>
       <span className="mt-1 block truncate text-[11px] text-(--demo-fg)">{file.name}</span>
@@ -98,7 +98,7 @@ function MobileFiles() {
       {folders.map((f) => (
         <button key={f.id} data-demo-tile onClick={() => dispatch({ type: 'NAVIGATE', folderId: f.id })} className="text-left">
           <span className="grid aspect-square place-items-center rounded-xl bg-(--demo-muted)/50">
-            <img src={folderIconSrc(hasChildren(f.id))} alt="" className="size-14" />
+            <img src={folderIconSrc(hasChildren(f.id))} alt="" className="size-14" width={56} height={56} />
           </span>
           <span className="mt-1 block truncate text-[11px] font-medium text-(--demo-fg)">{f.name}</span>
         </button>

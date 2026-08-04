@@ -34,7 +34,7 @@ export function WebIntegrations() {
             className="group relative flex flex-col rounded-xl border border-(--demo-border) bg-(--demo-card) p-4 text-left transition-colors hover:border-(--demo-fg)/20 hover:bg-(--demo-muted)/40">
             <div className="mb-3 flex items-center justify-between">
               <div className="grid size-9 place-items-center rounded-lg bg-(--demo-muted)">
-                {it.iconSrc ? <img src={it.iconSrc} alt="" className="size-4.5" /> : <it.icon className="size-4.5 text-(--demo-fg)" />}
+                {it.iconSrc ? <img src={it.iconSrc} alt="" className="size-4.5" width={18} height={18} /> : <it.icon className="size-4.5 text-(--demo-fg)" />}
               </div>
               <ArrowRight className="size-4 -translate-x-1 text-(--demo-muted-fg) opacity-0 transition-all group-hover:translate-x-0 group-hover:opacity-100" />
             </div>
