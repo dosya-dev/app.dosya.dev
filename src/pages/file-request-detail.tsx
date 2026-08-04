@@ -1,7 +1,9 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { api, API_BASE, responseErrorMessage } from '@/api/client';
 import { useDocumentTitle } from '@/lib/page-title';
+import { FILES_QUERY_ROOT } from '@/lib/files-request';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
@@ -125,6 +127,15 @@ export default function FileRequestDetailPage() {
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [zipping, setZipping] = useState(false);
 
+  const queryClient = useQueryClient();
+  // Rename/delete here mutate the SAME workspace files the main /files page's
+  // React Query cache holds - without this, renaming or deleting an upload
+  // from this page leaves that cache stale (same shape as the upload-complete
+  // fix in lib/query-client.ts) until its own staleTime elapses.
+  const invalidateFilesCache = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: [FILES_QUERY_ROOT] });
+  }, [queryClient]);
+
   useDocumentTitle(request?.title ? `${request.title} · File request` : 'File request');
 
   const load = useCallback(async () => {
@@ -178,7 +189,7 @@ export default function FileRequestDetailPage() {
         method: 'PUT', body: JSON.stringify({ name: renameName.trim() }),
       });
       toast.success('Renamed', 'The file has been renamed.');
-      setRenameTarget(null); load();
+      setRenameTarget(null); load(); invalidateFilesCache();
     } catch { toast.error('Rename failed', 'The file could not be renamed.'); }
   };
 
@@ -189,7 +200,7 @@ export default function FileRequestDetailPage() {
       toast.success('Deleted', `${deleteTarget.name} was deleted.`);
       setSelected((prev) => { const next = new Set(prev); next.delete(deleteTarget.id); return next; });
       setDeleteTarget(null);
-      load();
+      load(); invalidateFilesCache();
     } catch { toast.error('Delete failed', 'The file could not be deleted.'); }
   };
 
@@ -201,7 +212,7 @@ export default function FileRequestDetailPage() {
         body: JSON.stringify({ workspace_id: request.workspace_id, file_ids: Array.from(selected), folder_ids: [] }),
       });
       toast.success('Deleted', `${selected.size} file${selected.size === 1 ? '' : 's'} deleted.`);
-      setSelected(new Set()); setBulkDeleteOpen(false); load();
+      setSelected(new Set()); setBulkDeleteOpen(false); load(); invalidateFilesCache();
     } catch { toast.error('Delete failed', 'The selected files could not be deleted.'); }
   };
 
