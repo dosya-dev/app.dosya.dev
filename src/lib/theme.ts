@@ -40,6 +40,51 @@ export function applyTheme(pref: ThemePref): void {
   if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent(THEME_CHANGE_EVENT, { detail: pref }));
 }
 
+/** lib.dom types startViewTransition as always-present; it isn't, so read it
+ *  through a shape that admits `undefined` and check before calling. */
+type StartViewTransition = (cb: () => void) => { finished: Promise<void> };
+
+function viewTransitionStarter(): StartViewTransition | null {
+  if (typeof document === 'undefined') return null;
+  const fn = (document as { startViewTransition?: unknown }).startViewTransition;
+  return typeof fn === 'function' ? (fn as StartViewTransition).bind(document) : null;
+}
+
+/**
+ * Run a theme mutation behind a left-to-right wipe.
+ *
+ * The View Transitions API screenshots the page, runs `mutate()`, then
+ * cross-fades old to new; index.css replaces that cross-fade with a clip-path
+ * wipe while `data-theme-sweep` is set, so only theme changes sweep and any
+ * other transition keeps its default. Browsers without the API and anyone on
+ * prefers-reduced-motion get the instant swap they had before.
+ *
+ * Only for user-initiated changes. Boot and account reconciliation call
+ * applyTheme() directly - a wipe on page load would look like a glitch.
+ */
+export function withThemeSweep(mutate: () => void): void {
+  const start = viewTransitionStarter();
+  const reduced = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (!start || reduced) { mutate(); return; }
+
+  const el = document.documentElement;
+  el.setAttribute('data-theme-sweep', '');
+  const done = () => el.removeAttribute('data-theme-sweep');
+  try {
+    // Rejects when a second toggle interrupts this one; that's not an error,
+    // it just means this sweep was skipped - either way, disarm the CSS.
+    start(mutate).finished.then(done, done);
+  } catch {
+    done();
+    mutate();
+  }
+}
+
+/** applyTheme() with the wipe. Use from toggles and pickers, not from boot. */
+export function applyThemeAnimated(pref: ThemePref): void {
+  withThemeSweep(() => applyTheme(pref));
+}
+
 /** Re-apply on OS scheme change while the user is on 'system'. Returns an unsubscribe fn. */
 export function initSystemListener(getPref: () => ThemePref): () => void {
   if (typeof matchMedia !== 'function') return () => {};
