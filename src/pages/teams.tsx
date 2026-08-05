@@ -18,8 +18,9 @@ import {
 } from '@/components/ui/select';
 import {
   UserPlus, X, Copy, Check, Loader2, Link2, Mail,
-  Settings, Plus, Users, Clock, Share2, Send, AlertCircle, RefreshCw,
+  Settings, Plus, Users, Clock, Share2, Send, AlertCircle, RefreshCw, Folder,
 } from 'lucide-react';
+import { FolderPickerDialog } from '@/components/folder-picker-dialog';
 import { timeAgo, avatarColor, initials, actionLabel } from '@/lib/helpers';
 import { toast } from '@/lib/toast';
 
@@ -58,6 +59,12 @@ interface TeamMember {
   joined_at: number; name: string; email: string; is_you: boolean;
   avatar_url: string | null;
   last_active_at: number | null;
+  // Folder anchor (phase C). null means the member sees the whole workspace.
+  // root_folder_name is null both when unset AND when the anchor folder was
+  // since trashed (see the LEFT JOIN's is_deleted = 0 in /api/team) - either
+  // way there's nothing sensible to show but "Folder" as a fallback.
+  root_folder_id: string | null;
+  root_folder_name: string | null;
 }
 interface Invite {
   id: string; email: string; role_id: string;
@@ -75,7 +82,7 @@ interface Activity {
   avatar_url: string | null;
 }
 interface TeamStats { members: number; pending: number; shares_this_week: number }
-interface Role { id: string; name: string; is_builtin?: boolean; is_custom?: boolean }
+interface Role { id: string; name: string; is_builtin?: boolean; is_custom?: boolean; permissions?: Record<string, boolean> }
 
 const ROLE_LABELS: Record<string, string> = { role_owner: 'Owner', role_admin: 'Admin', role_member: 'Member', role_viewer: 'Viewer' };
 const ROLE_COLORS: Record<string, string> = {
@@ -109,6 +116,13 @@ export default function TeamsPage() {
   const [removeTarget, setRemoveTarget] = useState<{ id: string; name: string } | null>(null);
   const [revokeTarget, setRevokeTarget] = useState<{ id: string; email: string } | null>(null);
   const [profileMember, setProfileMember] = useState<TeamMember | null>(null);
+
+  // Folder anchor (phase C, task 5) - "Limit to a folder" per member.
+  const [anchorTarget, setAnchorTarget] = useState<TeamMember | null>(null);
+  const [anchorFolderId, setAnchorFolderId] = useState<string | null>(null);
+  const [anchorFolderName, setAnchorFolderName] = useState('');
+  const [anchorPickerOpen, setAnchorPickerOpen] = useState(false);
+  const [savingAnchor, setSavingAnchor] = useState(false);
 
   const load = useCallback(async () => {
     if (!wsId) return;
@@ -146,6 +160,33 @@ export default function TeamsPage() {
     } catch { toast.error('Remove failed', 'The member could not be removed.'); }
   };
 
+  const openAnchorDialog = (m: TeamMember) => {
+    setAnchorTarget(m);
+    setAnchorFolderId(m.root_folder_id);
+    setAnchorFolderName(m.root_folder_name ?? '');
+  };
+
+  const saveAnchor = async () => {
+    if (!anchorTarget) return;
+    setSavingAnchor(true);
+    try {
+      const res = await api<{ ok: boolean; error?: string }>(`/api/team/members/${anchorTarget.membership_id}`, {
+        method: 'PUT', body: JSON.stringify({ root_folder_id: anchorFolderId }),
+      });
+      if (res.ok) {
+        toast.success(
+          'Folder access updated',
+          anchorFolderId ? `${anchorTarget.name} is now confined to the selected folder.` : `${anchorTarget.name} can now see the whole workspace.`,
+        );
+        setAnchorTarget(null);
+        load();
+      } else {
+        toast.error('Update failed', res.error ?? 'The folder restriction could not be saved.');
+      }
+    } catch (err) { toast.error('Update failed', apiErrorMessage(err, 'The folder restriction could not be saved.')); }
+    setSavingAnchor(false);
+  };
+
   const [resendingId, setResendingId] = useState<string | null>(null);
   const resendInvite = async (inv: Invite) => {
     setResendingId(inv.id);
@@ -180,6 +221,12 @@ export default function TeamsPage() {
 
   // Resolve a role id to its display name (built-in or custom).
   const roleName = (id: string) => roles.find((r) => r.id === id)?.name ?? ROLE_LABELS[id] ?? id;
+
+  // Whether the current user can set another member's folder anchor. The
+  // server enforces manage_roles on every request regardless, but hiding the
+  // control otherwise would just be a button that always 400s.
+  const myRoleId = members.find((m) => m.is_you)?.role_id;
+  const canManageRoles = !!myRoleId && (roles.find((r) => r.id === myRoleId)?.permissions?.manage_roles ?? false);
 
   if (loading) return <TeamSkeleton />;
 
@@ -250,10 +297,20 @@ export default function TeamsPage() {
                       <p className="text-[11px] text-muted-foreground">{m.email}</p>
                     </div>
                   </div>
-                  <div><Badge className={`text-[11px] ${ROLE_COLORS[m.role_id] ?? ROLE_COLORS.role_member}`}>{roleName(m.role_id)}</Badge></div>
+                  <div>
+                    <Badge className={`text-[11px] ${ROLE_COLORS[m.role_id] ?? ROLE_COLORS.role_member}`}>{roleName(m.role_id)}</Badge>
+                    <p className="text-[10px] text-muted-foreground mt-0.5 truncate max-w-[160px]">
+                      {m.root_folder_id ? (m.root_folder_name ?? 'Folder') : 'Whole workspace'}
+                    </p>
+                  </div>
                   <span className="text-xs text-muted-foreground">{timeAgo(m.joined_at)}</span>
                   <span className="text-xs text-muted-foreground">&nbsp;</span>
-                  <div className="flex justify-end opacity-0 group-hover:opacity-100">
+                  <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100">
+                    {!m.is_you && m.role_id !== 'role_owner' && canManageRoles && (
+                      <Button variant="outline" size="sm" className="h-6 w-6 p-0" title="Set folder access" onClick={() => openAnchorDialog(m)}>
+                        <Folder className="size-3" />
+                      </Button>
+                    )}
                     {!m.is_you && m.role_id !== 'role_owner' && (
                       <Button variant="outline" size="sm" className="h-6 w-6 p-0 text-destructive border-destructive/30" onClick={() => setRemoveTarget({ id: m.membership_id, name: m.name })}>
                         <X className="size-3" />
@@ -385,6 +442,54 @@ export default function TeamsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Folder access dialog (phase C, task 5) */}
+      <Dialog open={!!anchorTarget} onOpenChange={(v) => { if (!v) setAnchorTarget(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>Folder access</DialogTitle></DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Control what <span className="font-semibold text-foreground">{anchorTarget?.name}</span> can see in this workspace.
+          </p>
+          <div>
+            <p className="text-xs font-medium mb-0.5">Limit to a folder</p>
+            <p className="text-[11px] text-muted-foreground mb-2">
+              Optional. This member will only see this folder and everything inside it, everywhere - the web app, WebDAV, and the S3 gateway.
+            </p>
+            {anchorFolderId ? (
+              <div className="flex items-center gap-2">
+                <span className="flex-1 text-xs truncate border rounded-lg px-3 py-2">{anchorFolderName || 'Folder'}</span>
+                <Button variant="outline" size="sm" onClick={() => { setAnchorFolderId(null); setAnchorFolderName(''); }}>Clear</Button>
+              </div>
+            ) : (
+              <Button variant="outline" size="sm" className="w-full h-9 text-xs" onClick={() => setAnchorPickerOpen(true)}>
+                Choose folder…
+              </Button>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAnchorTarget(null)}>Cancel</Button>
+            <Button onClick={saveAnchor} disabled={savingAnchor}>
+              {savingAnchor ? <Loader2 className="size-4 animate-spin mr-1.5" /> : null} Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Folder picker for the anchor dialog above. Reuses the same dialog
+          phase B2 put on the profile page for anchored API keys - no new
+          tree, no new dependency. */}
+      {anchorPickerOpen && wsId && (
+        <FolderPickerDialog
+          open
+          onClose={() => setAnchorPickerOpen(false)}
+          workspaceId={wsId}
+          selectedId={anchorFolderId}
+          selectedName={anchorFolderName}
+          onSelect={(id, name) => { setAnchorFolderId(id); setAnchorFolderName(name); setAnchorPickerOpen(false); }}
+          title="Limit to a folder"
+          confirmLabel="Select folder"
+        />
+      )}
 
       {/* Revoke invite dialog */}
       {/* Member profile modal */}
