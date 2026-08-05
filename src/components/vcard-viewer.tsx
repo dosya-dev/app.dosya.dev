@@ -91,7 +91,7 @@ export function VCardView({ file, rawUrl, workspaceId, onSaved }: Props) {
     });
     if (!init.ok || !init.session_id) { toast.error('Save failed', init.error ?? 'Could not start upload'); return; }
     const put = await fetch(`${API_BASE}/api/upload/${init.session_id}`, {
-      method: 'PUT', headers: { 'Content-Type': 'text/vcard' }, body: blob,
+      method: 'PUT', credentials: 'include', headers: { 'Content-Type': 'text/vcard' }, body: blob,
     });
     const putData = await put.json() as { ok: boolean; error?: string };
     if (!put.ok || !putData.ok) { toast.error('Save failed', putData.error ?? 'Failed to save'); return; }

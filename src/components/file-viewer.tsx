@@ -308,6 +308,7 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
             }
             const uploadRes = await fetch(`${API_BASE}/api/upload/${initRes.session_id}`, {
               method: 'PUT',
+              credentials: 'include',
               headers: { 'Content-Type': blob.type || 'application/octet-stream' },
               body: blob,
             });
@@ -599,7 +600,7 @@ function TextViewer({ file, rawUrl, downloadUrl }: { file: FileItem; rawUrl: str
     if (file.size_bytes > TEXT_PREVIEW_MAX) { setState('toobig'); return; }
     setState('loading');
     let cancelled = false;
-    fetch(rawUrl)
+    fetch(rawUrl, { credentials: 'include' })
       .then((r) => (r.ok ? r.text() : Promise.reject()))
       .then((text) => {
         if (cancelled) return;
