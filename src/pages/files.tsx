@@ -25,7 +25,7 @@ import {
   FolderOpen, Grid3X3, List, Loader2,
   Lock, Pencil, Copy, Move, Eye, EyeOff, History,
   MessageSquare, Star, SlidersHorizontal, RotateCcw, RefreshCw, Info,
-  ArrowUp, ArrowDown, Cloud, AlertCircle,
+  ArrowUp, ArrowDown, Cloud, AlertCircle, SquarePen,
 } from 'lucide-react';
 import {
   DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem,
@@ -47,7 +47,7 @@ import { HideModal } from '@/components/hide-modal';
 import { FilesSidebar } from '@/components/files-sidebar';
 import { FilePreviewImage } from '@/components/file-preview-image';
 import { OriginBadge } from '@/components/origin-badge';
-import { humanSize, timeAgo, extOf, fileIconSrc, folderIconSrc, colorFor, originLabel } from '@/lib/helpers';
+import { humanSize, timeAgo, extOf, fileIconSrc, folderIconSrc, colorFor, originLabel, isOfficeFile } from '@/lib/helpers';
 import { serializeSort, parseSort, toggleSort, DEFAULT_SORT, type SortKey, type SortSpec } from '@/lib/list-sort';
 import { toast } from '@/lib/toast';
 import { FolderPickerDialog } from '@/components/folder-picker-dialog';
@@ -904,6 +904,7 @@ export default function FilesPage() {
     }
     return [
       { label: 'View', icon: <Eye />, onClick: () => openFileWithLockCheck(f, 'view') },
+      { label: 'Open in editor', icon: <SquarePen />, hidden: !isOfficeFile(f.name), onClick: () => window.open(`/editor/${f.id}`, '_blank') },
       { label: 'Download', icon: <Download />, onClick: () => handleDownload(f.id) },
       { label: 'Share', icon: <Share2 />, onClick: () => openShare(f.id, f.name) },
       { label: 'Comments', icon: <MessageSquare />, onClick: () => navigate(`/comments?file_id=${f.id}&workspace_id=${wsId}&name=${encodeURIComponent(f.name)}`) },

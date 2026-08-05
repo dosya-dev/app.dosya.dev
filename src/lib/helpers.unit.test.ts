@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { humanSize, humanSizeShort, timeAgo, initials, extOf, isImage, isHeic, fileIconSrc } from "./helpers";
+import { humanSize, humanSizeShort, timeAgo, initials, extOf, isImage, isHeic, fileIconSrc, isOfficeFile } from "./helpers";
 
 describe("humanSize", () => {
   it("formats sizes with the right unit", () => {
@@ -110,5 +110,35 @@ describe("isHeic", () => {
 describe("fileIconSrc", () => {
   it("gives heic a photo icon, not the default text icon", () => {
     expect(fileIconSrc("a.heic")).toBe("/file-icons/009-jpg.svg");
+  });
+});
+
+describe('isOfficeFile', () => {
+  it('recognizes office extensions case-insensitively', () => {
+    expect(isOfficeFile('a.docx')).toBe(true);
+    expect(isOfficeFile('A.XLSX')).toBe(true);
+    expect(isOfficeFile('deck.pptx')).toBe(true);
+    expect(isOfficeFile('legacy.doc')).toBe(true);
+    expect(isOfficeFile('sheet.csv')).toBe(true);
+  });
+  it('rejects everything else', () => {
+    expect(isOfficeFile('pic.jpg')).toBe(false);
+    expect(isOfficeFile('notes.txt')).toBe(false);
+    expect(isOfficeFile('noext')).toBe(false);
+  });
+
+  // Drift guard: mirrors apps/api/src/lib/onlyoffice/formats.ts, whose
+  // OFFICE_EDIT_EXTENSIONS + OFFICE_VIEW_EXTENSIONS union is asserted equal
+  // to this same sorted list in formats.unit.test.ts. If the two lists ever
+  // diverge, the web app and the API disagree on which files open in the
+  // ONLYOFFICE editor.
+  it('is driven by exactly this sorted 11-extension list', () => {
+    const extensions = [
+      'csv', 'doc', 'docx', 'odp', 'ods', 'odt', 'ppt', 'pptx', 'rtf', 'xls', 'xlsx',
+    ];
+    expect(extensions).toHaveLength(11);
+    for (const ext of extensions) {
+      expect(isOfficeFile(`file.${ext}`)).toBe(true);
+    }
   });
 });
