@@ -1184,6 +1184,7 @@ function ApiKeysSection({ keys, workspaces, onChanged }: { keys: ApiKey[]; works
               <p className="text-xs font-medium mb-0.5">Allowed IP ranges</p>
               <p className="text-[11px] text-muted-foreground mb-2">
                 Optional, comma-separated. Requests from other addresses will be refused.
+                IP restrictions apply to SFTP connections as the SFTP server's address, not yours.
               </p>
               <Textarea
                 placeholder="203.0.113.0/24, 2001:db8::/32"

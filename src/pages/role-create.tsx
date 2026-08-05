@@ -305,7 +305,9 @@ export default function RoleCreatePage() {
               <div>
                 <label className="text-sm font-medium block mb-1">Allowed IP ranges</label>
                 <p className="text-xs text-muted-foreground mb-2">
-                  Optional, comma-separated. Members using this role will be refused from any other address.
+                  Optional, comma-separated. Members using this role will be refused from any other
+                  address over WebDAV and the S3 gateway. Role conditions do not apply to the REST
+                  API or SFTP - restrict an individual API key for those.
                 </p>
                 <Textarea
                   placeholder="203.0.113.0/24, 2001:db8::/32"
