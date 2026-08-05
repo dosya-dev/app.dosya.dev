@@ -4,7 +4,7 @@ import {
   LayoutDashboard, FolderOpen, Upload, Share2, Users, Settings, User, Inbox,
   MessageSquare, Activity, Search, CreditCard, Shield, ShieldCheck, LogIn,
   Building2, Bell, MapPin, Plug, RefreshCw, HardDrive, Server, Cloud, Monitor,
-  Terminal, Code2, FolderInput, Gift, LayoutGrid, BarChart3, type LucideIcon,
+  Terminal, Code2, FolderInput, Gift, LayoutGrid, BarChart3, FileText, type LucideIcon,
 } from 'lucide-react';
 
 // Single source of truth for each route's browser tab title AND in-app header icon.
@@ -88,6 +88,7 @@ export function titleForPath(pathname: string): string {
   if (pathname in TITLES) return TITLES[pathname];
   if (pathname.startsWith('/file-requests/')) return 'File request';
   if (pathname.startsWith('/integrations')) return 'Integrations';
+  if (pathname.startsWith('/editor/')) return 'Editor';
   return '';
 }
 
@@ -95,13 +96,14 @@ export function iconForPath(pathname: string): LucideIcon | null {
   if (pathname in ICONS) return ICONS[pathname];
   if (pathname.startsWith('/file-requests/')) return Inbox;
   if (pathname.startsWith('/integrations')) return Plug;
+  if (pathname.startsWith('/editor/')) return FileText;
   return null;
 }
 
 // Routes whose pages set their own title from loaded data (folder name, request name).
 // RouteTitle leaves these alone so it doesn't clobber the data-driven title.
 function isSelfManaged(pathname: string): boolean {
-  return pathname === '/files' || pathname.startsWith('/file-requests/');
+  return pathname === '/files' || pathname.startsWith('/file-requests/') || pathname.startsWith('/editor/');
 }
 
 /** Renders nothing; keeps document.title in sync with the route. Mount once at the router root. */

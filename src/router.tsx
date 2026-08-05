@@ -50,6 +50,7 @@ const ForgotPasswordPage = lazy(() => import('@/pages/forgot-password'));
 const ResetPasswordPage = lazy(() => import('@/pages/reset-password'));
 const NotFoundPage = lazy(() => import('@/pages/not-found'));
 const WelcomePage = lazy(() => import('@/pages/welcome'));
+const EditorPage = lazy(() => import('@/pages/editor'));
 
 // Root layout: keeps the browser tab title in sync with the route for every
 // page. The Suspense boundary covers routes outside DashboardLayout (login,
@@ -121,6 +122,10 @@ export const router = createBrowserRouter([
   // route under it would put the gate above the route it redirects to - the
   // exact loop this placement avoids.
   { path: '/welcome', element: <WelcomePage /> },
+  // Outside DashboardLayout, on purpose: the editor is full-viewport with no
+  // sidebar. Auth is enforced by the API - an unauthenticated visitor gets
+  // the page shell with the error card ("Not authenticated").
+  { path: '/editor/:fileId', element: <EditorPage /> },
   { path: '/login/2fa', element: <Login2faPage /> },
   { path: '/sign-up', element: <SignUpPage /> },
   { path: '/verify', element: <VerifyPage /> },
