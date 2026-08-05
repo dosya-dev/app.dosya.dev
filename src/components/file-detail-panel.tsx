@@ -365,7 +365,7 @@ function FilePreview({ file, utSuffix }: { file: FileItem; utSuffix: string }) {
     setPreviewError(false);
     setTextContent(null);
     if (isText(file.name)) {
-      fetch(`${API_BASE}/api/files/${file.id}/raw${utSuffix}`)
+      fetch(`${API_BASE}/api/files/${file.id}/raw${utSuffix}`, { credentials: 'include' })
         .then((r) => r.ok ? r.text() : Promise.reject())
         .then((t) => setTextContent(t.slice(0, 2000)))
         .catch(() => setPreviewError(true));

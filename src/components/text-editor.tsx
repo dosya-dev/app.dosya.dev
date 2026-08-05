@@ -53,7 +53,7 @@ export function TextEditorOverlay({ file, rawUrl, workspaceId, onClose, onSaved 
     let cancelled = false;
     (async () => {
       try {
-        const text = await fetch(initialRawUrl).then((r) => (r.ok ? r.text() : Promise.reject()));
+        const text = await fetch(initialRawUrl, { credentials: 'include' }).then((r) => (r.ok ? r.text() : Promise.reject()));
         if (cancelled || !containerRef.current) return;
         const { EditorView, basicSetup } = await import('codemirror');
         const { oneDark } = await import('@codemirror/theme-one-dark');
@@ -94,6 +94,7 @@ export function TextEditorOverlay({ file, rawUrl, workspaceId, onClose, onSaved 
       if (!init.ok || !init.session_id) { toast.error('Save failed', init.error ?? 'Could not start upload'); setSaving(false); return; }
       const put = await fetch(`${API_BASE}/api/upload/${init.session_id}`, {
         method: 'PUT',
+        credentials: 'include',
         headers: { 'Content-Type': file.mime_type || 'text/plain' },
         body: blob,
       });

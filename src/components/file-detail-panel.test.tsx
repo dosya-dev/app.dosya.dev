@@ -105,3 +105,18 @@ describe('FileDetailPanel - Source row label lookup', () => {
     expect(propRowValue('Source')).toBeUndefined();
   });
 });
+
+describe('FileDetailPanel - text preview fetch', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('sends the session cookie (credentials: include) on the raw-content fetch', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, text: async () => '<h1>hi</h1>' });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await renderPanel(testFile({ name: 'page.html', mime_type: 'text/plain', extension: 'html' }));
+
+    const rawCall = fetchMock.mock.calls.find(([u]) => String(u).includes('/api/files/f1/raw'));
+    expect(rawCall, 'expected a fetch of the /raw endpoint').toBeDefined();
+    expect(rawCall![1]).toMatchObject({ credentials: 'include' });
+  });
+});
