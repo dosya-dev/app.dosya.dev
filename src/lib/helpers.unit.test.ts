@@ -126,4 +126,19 @@ describe('isOfficeFile', () => {
     expect(isOfficeFile('notes.txt')).toBe(false);
     expect(isOfficeFile('noext')).toBe(false);
   });
+
+  // Drift guard: mirrors apps/api/src/lib/onlyoffice/formats.ts, whose
+  // OFFICE_EDIT_EXTENSIONS + OFFICE_VIEW_EXTENSIONS union is asserted equal
+  // to this same sorted list in formats.unit.test.ts. If the two lists ever
+  // diverge, the web app and the API disagree on which files open in the
+  // ONLYOFFICE editor.
+  it('is driven by exactly this sorted 11-extension list', () => {
+    const extensions = [
+      'csv', 'doc', 'docx', 'odp', 'ods', 'odt', 'ppt', 'pptx', 'rtf', 'xls', 'xlsx',
+    ];
+    expect(extensions).toHaveLength(11);
+    for (const ext of extensions) {
+      expect(isOfficeFile(`file.${ext}`)).toBe(true);
+    }
+  });
 });
