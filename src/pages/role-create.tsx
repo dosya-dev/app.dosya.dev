@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/dialog';
 import { ChevronLeft, Loader2, Check, X, Pencil, Trash2, Eye } from 'lucide-react';
 import { toast } from '@/lib/toast';
+import { gbToBytes, mbToBytes, bytesToGb, bytesToMb } from '@/lib/usage-units';
 
 // Day-of-week checkboxes for active_hours.days (0 = Sunday, matching
 // apps/api/src/lib/access/active-hours.ts). Kept page-local, same as
@@ -25,21 +26,6 @@ const DAY_OPTIONS: { value: number; label: string }[] = [
   { value: 3, label: 'Wed' }, { value: 4, label: 'Thu' }, { value: 5, label: 'Fri' },
   { value: 6, label: 'Sat' },
 ];
-
-// Usage limits (migration 0098). Egress and max file size are collected in
-// GB/MB - friendlier units than raw bytes - and converted to the bytes
-// role_conditions actually stores just before the request goes out (see
-// handleSave). 1024-based (GiB/MiB), matching every other byte<->GB
-// conversion in this codebase, and profile.tsx's identical constants for the
-// API-key form - the two forms don't share a component (see the DAY_OPTIONS
-// comment above), so these are kept page-local too.
-const GIB = 1024 ** 3;
-const MIB = 1024 ** 2;
-
-/** bytes -> a friendly decimal string in `unit`, trimmed of float noise/trailing zeros. */
-function bytesToUnitString(bytes: number, unit: number): string {
-  return String(Math.round((bytes / unit) * 1e6) / 1e6);
-}
 
 function timezoneOptions(): string[] {
   try {
@@ -203,8 +189,8 @@ export default function RoleCreatePage() {
       // save that only touches permissions would re-submit blank limit
       // fields and silently clear a restriction nobody meant to touch.
       setRoleRequestsPerMinute(role.requests_per_minute !== null ? String(role.requests_per_minute) : '');
-      setRoleEgressGbPerDay(role.egress_bytes_per_day !== null ? bytesToUnitString(role.egress_bytes_per_day, GIB) : '');
-      setRoleMaxFileSizeMb(role.max_file_size_bytes !== null ? bytesToUnitString(role.max_file_size_bytes, MIB) : '');
+      setRoleEgressGbPerDay(role.egress_bytes_per_day !== null ? bytesToGb(role.egress_bytes_per_day) : '');
+      setRoleMaxFileSizeMb(role.max_file_size_bytes !== null ? bytesToMb(role.max_file_size_bytes) : '');
       setRoleMaxConcurrentTransfers(role.max_concurrent_transfers !== null ? String(role.max_concurrent_transfers) : '');
     }).catch(() => {});
   }, [roleId, wsId]);
@@ -237,12 +223,13 @@ export default function RoleCreatePage() {
       // also EDITS an existing role, so a blank field must be sent as
       // explicit `null` to clear a previously-set limit, not omitted (which
       // the PUT endpoint reads as "leave it untouched"). Egress (GB) and max
-      // file size (MB) are converted to bytes HERE, client-side - the wire
-      // format for all four fields is bytes-or-null, with no unit suffix
-      // accepted server-side (see write-validation.ts's validateUsageLimit).
+      // file size (MB) convert to bytes via the shared lib/usage-units.ts
+      // helpers (also used by profile.tsx - see that module's doc), which
+      // already return `null` for blank input, matching this form's own
+      // null-not-omitted rule for free.
       requests_per_minute: roleRequestsPerMinute.trim() ? Math.round(Number(roleRequestsPerMinute)) : null,
-      egress_bytes_per_day: roleEgressGbPerDay.trim() ? Math.round(Number(roleEgressGbPerDay) * GIB) : null,
-      max_file_size_bytes: roleMaxFileSizeMb.trim() ? Math.round(Number(roleMaxFileSizeMb) * MIB) : null,
+      egress_bytes_per_day: gbToBytes(roleEgressGbPerDay),
+      max_file_size_bytes: mbToBytes(roleMaxFileSizeMb),
       max_concurrent_transfers: roleMaxConcurrentTransfers.trim() ? Math.round(Number(roleMaxConcurrentTransfers)) : null,
     };
     try {
@@ -436,7 +423,7 @@ export default function RoleCreatePage() {
                 <div>
                   <label className="text-xs font-medium block mb-1">Egress per day (GB)</label>
                   <Input
-                    type="number" min="0" step="any" placeholder="GB per day"
+                    type="number" min="1" step="any" placeholder="GB per day"
                     value={roleEgressGbPerDay}
                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => setRoleEgressGbPerDay(e.target.value)}
                     className="h-9 text-sm" disabled={isViewMode}
@@ -445,7 +432,7 @@ export default function RoleCreatePage() {
                 <div>
                   <label className="text-xs font-medium block mb-1">Max file size (MB)</label>
                   <Input
-                    type="number" min="0" step="any" placeholder="MB"
+                    type="number" min="1" step="any" placeholder="MB"
                     value={roleMaxFileSizeMb}
                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => setRoleMaxFileSizeMb(e.target.value)}
                     className="h-9 text-sm" disabled={isViewMode}

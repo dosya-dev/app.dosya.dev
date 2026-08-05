@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { toast } from '@/lib/toast';
 import { timeAgo } from '@/lib/helpers';
+import { gbToBytes, mbToBytes } from '@/lib/usage-units';
 import { THEMES, type Mode } from '@/lib/themes';
 import { readCache, writeCache, applyTheme, applyThemeAnimated, subscribeThemeChange, type ThemePref } from '@/lib/theme';
 import { enableWebPush } from '../lib/web-push';
@@ -136,16 +137,6 @@ const DAY_OPTIONS: { value: number; label: string }[] = [
   { value: 3, label: 'Wed' }, { value: 4, label: 'Thu' }, { value: 5, label: 'Fri' },
   { value: 6, label: 'Sat' },
 ];
-
-// Usage limits (migration 0098). The form collects egress as GB and max file
-// size as MB - friendlier units than raw bytes - and converts to the bytes
-// the api_keys columns actually store just before the request goes out (see
-// ApiKeysSection's createKey). 1024-based (GiB/MiB), matching every other
-// byte<->GB conversion in this codebase (see lib/helpers.ts's formatBytes,
-// lib/billing/cart-math.ts's GB). requests_per_minute and
-// max_concurrent_transfers are already plain counts - no conversion needed.
-const GIB = 1024 ** 3;
-const MIB = 1024 ** 2;
 
 // IANA timezone names for the active-hours zone picker. Intl.supportedValuesOf
 // isn't implemented everywhere (older Safari/WebKit) - fall back to a short
@@ -1010,6 +1001,15 @@ function ApiKeysSection({ keys, workspaces, onChanged }: { keys: ApiKey[]; works
     if (!keyName.trim()) return;
     setCreating(true);
     const hasWorkspace = keyWorkspaceId !== WHOLE_ACCOUNT;
+    // Usage limits (migration 0098) - computed once here (not inline in the
+    // body below) so the null-check and the value sent are guaranteed to be
+    // the same conversion, not two separate calls that could observe a
+    // changed input between them. Egress (GB) and max file size (MB) convert
+    // to bytes via the shared lib/usage-units.ts helpers (also used by
+    // role-create.tsx, so the two forms cannot drift on this math - see that
+    // module's doc); null means blank (no restriction).
+    const egressBytesPerDay = gbToBytes(keyEgressGbPerDay);
+    const maxFileSizeBytes = mbToBytes(keyMaxFileSizeMb);
     const res = await req<{ ok: boolean; key?: { plain_key: string }; error?: string }>('/api/me/api-keys', {
       method: 'POST',
       body: JSON.stringify({
@@ -1031,16 +1031,12 @@ function ApiKeysSection({ keys, workspaces, onChanged }: { keys: ApiKey[]; works
           ? { active_hours: { tz: keyTz, days: [...keyDays].sort(), from: keyFrom, to: keyTo } }
           : {}),
         // Usage limits (migration 0098) - blank means unlimited, sent as an
-        // absent field just like the two conditions above. Egress (GB) and
-        // max file size (MB) are converted to bytes HERE, client-side - the
-        // API's wire format for all four fields is bytes-or-null, with no
-        // unit suffix accepted server-side (see write-validation.ts's
-        // validateUsageLimit). Math.round guards against a fractional GB/MB
-        // value producing a non-integer byte count, which the server would
-        // otherwise 400 on.
+        // absent field just like the two conditions above.
+        // requests_per_minute/max_concurrent_transfers are already plain
+        // counts, no conversion needed.
         ...(keyRequestsPerMinute.trim() ? { requests_per_minute: Math.round(Number(keyRequestsPerMinute)) } : {}),
-        ...(keyEgressGbPerDay.trim() ? { egress_bytes_per_day: Math.round(Number(keyEgressGbPerDay) * GIB) } : {}),
-        ...(keyMaxFileSizeMb.trim() ? { max_file_size_bytes: Math.round(Number(keyMaxFileSizeMb) * MIB) } : {}),
+        ...(egressBytesPerDay !== null ? { egress_bytes_per_day: egressBytesPerDay } : {}),
+        ...(maxFileSizeBytes !== null ? { max_file_size_bytes: maxFileSizeBytes } : {}),
         ...(keyMaxConcurrentTransfers.trim() ? { max_concurrent_transfers: Math.round(Number(keyMaxConcurrentTransfers)) } : {}),
       }),
     });
@@ -1278,7 +1274,7 @@ function ApiKeysSection({ keys, workspaces, onChanged }: { keys: ApiKey[]; works
                 <div>
                   <label className="text-[11px] text-muted-foreground block mb-1">Egress per day (GB)</label>
                   <Input
-                    type="number" min="0" step="any" placeholder="GB per day"
+                    type="number" min="1" step="any" placeholder="GB per day"
                     value={keyEgressGbPerDay}
                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => setKeyEgressGbPerDay(e.target.value)}
                     className="h-8 text-xs"
@@ -1287,7 +1283,7 @@ function ApiKeysSection({ keys, workspaces, onChanged }: { keys: ApiKey[]; works
                 <div>
                   <label className="text-[11px] text-muted-foreground block mb-1">Max file size (MB)</label>
                   <Input
-                    type="number" min="0" step="any" placeholder="MB"
+                    type="number" min="1" step="any" placeholder="MB"
                     value={keyMaxFileSizeMb}
                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => setKeyMaxFileSizeMb(e.target.value)}
                     className="h-8 text-xs"
