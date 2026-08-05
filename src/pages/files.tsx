@@ -53,6 +53,7 @@ import { toast } from '@/lib/toast';
 import { FolderPickerDialog } from '@/components/folder-picker-dialog';
 import { ProviderPickerDialog } from '@/components/cloud-import/provider-picker-dialog';
 import { ImportProgressCard } from '@/components/cloud-import/import-progress-card';
+import { listProviders, type CloudProvider } from '@/api/cloud-import';
 
 // ── Types ──────────────────────────────────────────────────
 // Listing row shapes live in lib/file-types so this page and the file viewer
@@ -325,6 +326,12 @@ export default function FilesPage() {
   const [moveOpen, setMoveOpen] = useState<{ id: string; type: 'file' | 'folder' } | null>(null);
   const [bulkMoveOpen, setBulkMoveOpen] = useState(false);
   const [cloudImportOpen, setCloudImportOpen] = useState(false);
+  const [cloudImportProvider, setCloudImportProvider] = useState('google');
+  const [cloudProviders, setCloudProviders] = useState<CloudProvider[]>([]);
+  useEffect(() => {
+    // Empty on failure: the button then opens the google picker as before.
+    void listProviders().then(setCloudProviders).catch(() => {});
+  }, []);
   const [highlightId, setHighlightId] = useState<string | null>(null);
   const highlightTimer = useRef<number | null>(null);
   // Guards the one-shot restore of an open file/viewer from the URL on first load,
@@ -1086,7 +1093,22 @@ export default function FilesPage() {
         {!isDeletedView && (
           <>
             <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={() => setCreateFolderOpen(true)}><FolderPlus className="size-3.5" /> New folder</Button>
-            <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={() => setCloudImportOpen(true)}><Cloud className="size-3.5" /> Import from cloud</Button>
+            {cloudProviders.length > 1 ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger render={<Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" />}>
+                  <Cloud className="size-3.5" /> Import from cloud
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  {cloudProviders.map((p) => (
+                    <DropdownMenuItem key={p.id} onClick={() => { setCloudImportProvider(p.id); setCloudImportOpen(true); }}>
+                      Import from {p.label}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : (
+              <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={() => { setCloudImportProvider(cloudProviders[0]?.id ?? 'google'); setCloudImportOpen(true); }}><Cloud className="size-3.5" /> Import from cloud</Button>
+            )}
             <Link to={uploadHref}><Button size="sm" className="h-8 text-xs gap-1.5"><Upload className="size-3.5" /> Upload</Button></Link>
           </>
         )}
@@ -1595,7 +1617,7 @@ export default function FilesPage() {
       <ProviderPickerDialog
         open={cloudImportOpen}
         onOpenChange={setCloudImportOpen}
-        provider="google"
+        provider={cloudImportProvider}
         destFolderId={currentFolderId}
         destLabel={currentFolderId ? (breadcrumbs.at(-1)?.name ?? 'this folder') : undefined}
       />

@@ -10,7 +10,7 @@ import {
 import { humanSize, timeAgo, extOf, isImage, isVideo, isText, isAudio, fileIconSrc, regionLabel, colorFor } from '@/lib/helpers';
 import { FilePreviewImage } from '@/components/file-preview-image';
 import { toast } from '@/lib/toast';
-import { IMPORT_SOURCE_LABELS } from '@/components/cloud-import/import-progress-card';
+import { IMPORT_SOURCE_LABELS } from '@/lib/cloud-providers';
 
 
 interface FileItem {

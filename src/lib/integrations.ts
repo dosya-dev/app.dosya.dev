@@ -10,7 +10,7 @@ export interface IntegrationCtx {
 }
 
 export type IntegrationSlug =
-  | 'rclone' | 'webdav' | 'sftp' | 's3' | 'desktop' | 'cli' | 'rest-api' | 'google' | 'webhooks'
+  | 'rclone' | 'webdav' | 'sftp' | 's3' | 'desktop' | 'cli' | 'rest-api' | 'google' | 'onedrive' | 'webhooks'
   | 'remote-download';
 
 export interface IntegrationMeta {
@@ -94,6 +94,14 @@ export const INTEGRATIONS: IntegrationMeta[] = [
     tag: 'Import',
     icon: HardDrive,
     iconSrc: '/google-color.svg',
+  },
+  {
+    slug: 'onedrive',
+    title: 'OneDrive',
+    description: 'Import folders and files from OneDrive, with your folder structure preserved.',
+    tag: 'Import',
+    icon: HardDrive,
+    iconSrc: '/onedrive-color.svg',
   },
   {
     slug: 'webhooks',

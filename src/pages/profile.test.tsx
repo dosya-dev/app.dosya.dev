@@ -28,6 +28,7 @@ describe('IntegrationsSection', () => {
           accounts={[
             { id: 'cca_1', provider: 'google', account_email: 'a@example.com', account_name: 'A', created_at: 0 },
           ]}
+          providers={[{ id: 'google', label: 'Google Drive' }, { id: 'onedrive', label: 'OneDrive' }]}
           onChanged={() => {}}
         />,
       );
@@ -53,10 +54,7 @@ describe('IntegrationsSection', () => {
     expect(container!.textContent).toContain('a@example.com');
   });
 
-  // MINOR 16 (2026-07-30 review): every account row used to render
-  // /google-color.svg unconditionally, regardless of acc.provider - wrong
-  // the moment a second provider's account showed up in the same list.
-  it('(MINOR 16) renders the google icon for a google account and a fallback icon (not google-color.svg) for an unrecognised provider', async () => {
+  it('(MINOR 16) renders each provider\'s own icon and a fallback (never another provider\'s mark) for an unmapped one', async () => {
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -66,7 +64,9 @@ describe('IntegrationsSection', () => {
           accounts={[
             { id: 'cca_1', provider: 'google', account_email: 'g@example.com', account_name: 'G', created_at: 0 },
             { id: 'cca_2', provider: 'onedrive', account_email: 'o@example.com', account_name: 'O', created_at: 0 },
+            { id: 'cca_3', provider: 'dropbox', account_email: 'd@example.com', account_name: 'D', created_at: 0 },
           ]}
+          providers={[{ id: 'google', label: 'Google Drive' }, { id: 'onedrive', label: 'OneDrive' }]}
           onChanged={() => {}}
         />,
       );
@@ -74,12 +74,33 @@ describe('IntegrationsSection', () => {
     });
 
     const rows = [...container.querySelectorAll('p.text-xs.font-medium.truncate')];
-    const googleRow = rows.find((r) => r.textContent === 'g@example.com')!.closest('div.flex.items-center.justify-between')!;
-    const oneDriveRow = rows.find((r) => r.textContent === 'o@example.com')!.closest('div.flex.items-center.justify-between')!;
+    const rowFor = (email: string) =>
+      rows.find((r) => r.textContent === email)!.closest('div.flex.items-center.justify-between')!;
 
-    expect(googleRow.querySelector('img')?.getAttribute('src')).toBe('/google-color.svg');
-    // The unrecognised provider must NOT silently render google's icon.
-    expect(oneDriveRow.querySelector('img')).toBeNull();
-    expect(oneDriveRow.querySelector('svg')).not.toBeNull();
+    expect(rowFor('g@example.com').querySelector('img')?.getAttribute('src')).toBe('/google-color.svg');
+    expect(rowFor('o@example.com').querySelector('img')?.getAttribute('src')).toBe('/onedrive-color.svg');
+    // The unmapped provider must NOT silently render another provider's icon.
+    expect(rowFor('d@example.com').querySelector('img')).toBeNull();
+    expect(rowFor('d@example.com').querySelector('svg')).not.toBeNull();
+  });
+
+  it('renders one connect row per provider from the providers prop', async () => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    await act(async () => {
+      root!.render(
+        <IntegrationsSection
+          accounts={[]}
+          providers={[{ id: 'google', label: 'Google Drive' }, { id: 'onedrive', label: 'OneDrive' }]}
+          onChanged={() => {}}
+        />,
+      );
+      await Promise.resolve();
+    });
+
+    const links = [...container.querySelectorAll('a')].map((a) => a.getAttribute('href'));
+    expect(links.some((h) => h?.endsWith('/api/cloud/connect/google'))).toBe(true);
+    expect(links.some((h) => h?.endsWith('/api/cloud/connect/onedrive'))).toBe(true);
   });
 });

@@ -8,6 +8,7 @@ import { listAccounts, type CloudAccount, type CloudEntryDto } from '@/api/cloud
 import { useCloudImports } from '@/stores/cloud-imports';
 import { useWorkspace } from '@/stores/workspace';
 import { toast } from '@/lib/toast';
+import { PROVIDER_LABELS } from '@/lib/cloud-providers';
 import { useCloudBrowser } from './use-cloud-browser';
 
 interface Props {
@@ -18,10 +19,6 @@ interface Props {
   destFolderId: string | null;
   destLabel?: string;
 }
-
-const PROVIDER_LABELS: Record<string, string> = {
-  google: 'Google Drive',
-};
 
 /**
  * Lets a user browse a connected cloud account and pick files/folders to
@@ -55,7 +52,11 @@ export function ProviderPickerDialog({
       if (cancelled) return;
       const mine = all.filter((a) => a.provider === provider);
       setAccounts(mine);
-      setAccountId((current) => current ?? mine[0]?.id ?? null);
+      // Keep the current selection only if it still belongs to THIS
+      // provider's accounts - files.tsx swaps `provider` on one persistent
+      // dialog instance, so a plain `current ?? ...` would keep the other
+      // provider's account id alive across the switch.
+      setAccountId((current) => (mine.some((a) => a.id === current) ? current : mine[0]?.id ?? null));
       setAccountsLoaded(true);
     });
     return () => { cancelled = true; };

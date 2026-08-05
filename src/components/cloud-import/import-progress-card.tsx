@@ -4,31 +4,6 @@ import { Button } from '@/components/ui/button';
 import { ACTIVE_CLOUD_STATUSES, jobProgress, useCloudImports } from '@/stores/cloud-imports';
 import type { CloudJob } from '@/api/cloud-import';
 
-/**
- * Two label maps with DIFFERENT key spaces. Keep them separate: conflating
- * them does not blank the label out - consumers guard lookups with a
- * `?? provider` fallback - it silently renders the raw provider id instead,
- * e.g. a lowercase "google" heading instead of "Google Drive".
- *
- * IMPORT_SOURCE_LABELS is keyed by `files.import_source` values, where
- * Google is the historical string 'google-drive' (that's what's already
- * stored on existing rows).
- *
- * PROVIDER_LABELS is keyed by provider id (job.provider, account.provider,
- * connect-route slugs), where Google is 'google'.
- */
-export const IMPORT_SOURCE_LABELS: Record<string, string> = {
-  'google-drive': 'Google Drive',
-  onedrive: 'OneDrive',
-  dropbox: 'Dropbox',
-};
-
-export const PROVIDER_LABELS: Record<string, string> = {
-  google: 'Google Drive',
-  onedrive: 'OneDrive',
-  dropbox: 'Dropbox',
-};
-
 type JobCounts = Pick<
   CloudJob, 'status' | 'total_files' | 'completed_files' | 'failed_files' | 'skipped_files'
 >;

@@ -286,6 +286,31 @@ describe('ProviderPickerDialog - selection survives navigation (component level)
   });
 });
 
+describe('ProviderPickerDialog - account resets on a provider switch (stale-account regression guard)', () => {
+  it('does not keep browsing the old provider\'s account when provider changes on the same mounted instance', async () => {
+    // files.tsx keeps a single ProviderPickerDialog mounted and just swaps the
+    // `provider` prop when the user picks a different cloud service - it
+    // never unmounts the dialog. `setAccountId((current) => current ?? ...)`
+    // kept whatever account id was already selected (the google one) even
+    // though it doesn't belong to onedrive's account list at all, so the
+    // browser kept fetching the google account's files under the onedrive
+    // dialog. The fix only keeps `current` when it's still one of the new
+    // provider's accounts.
+    listAccountsMock.mockResolvedValue([
+      account({ id: 'g1', provider: 'google', account_email: 'g@example.com' }),
+      account({ id: 'o1', provider: 'onedrive', account_email: 'o@example.com' }),
+    ]);
+    browseMock.mockResolvedValue({ entries: [], cursor: null });
+
+    const { rerender } = await renderDialog({ provider: 'google' });
+    expect(browseMock).toHaveBeenLastCalledWith(expect.objectContaining({ accountId: 'g1' }));
+
+    await rerender({ provider: 'onedrive' });
+
+    expect(browseMock).toHaveBeenLastCalledWith(expect.objectContaining({ accountId: 'o1' }));
+  });
+});
+
 describe('ProviderPickerDialog - reset on reopen (IMPORTANT 1 regression guard)', () => {
   it('clears crumbs and selection when closed and reopened while the component stays mounted', async () => {
     listAccountsMock.mockResolvedValue([account()]);

@@ -24,7 +24,8 @@ import { timeAgo } from '@/lib/helpers';
 import { THEMES, type Mode } from '@/lib/themes';
 import { readCache, writeCache, applyTheme, applyThemeAnimated, subscribeThemeChange, type ThemePref } from '@/lib/theme';
 import { enableWebPush } from '../lib/web-push';
-import { PROVIDER_LABELS } from '@/components/cloud-import/import-progress-card';
+import { PROVIDER_LABELS, PROVIDER_ICONS } from '@/lib/cloud-providers';
+import { listProviders, type CloudProvider } from '@/api/cloud-import';
 import { FolderPickerDialog } from '@/components/folder-picker-dialog';
 
 // ── Types ──────────────────────────────────────────────────
@@ -192,6 +193,7 @@ export default function ProfilePage() {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [driveAccounts, setDriveAccounts] = useState<DriveAccount[]>([]);
+  const [cloudProviders, setCloudProviders] = useState<CloudProvider[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeSection, setActiveSection] = useState('identity');
 
@@ -218,6 +220,12 @@ export default function ProfilePage() {
   const loadDrive = useCallback(async () => {
     const res = await req<{ ok: boolean; accounts: DriveAccount[] }>('/api/cloud/accounts');
     if (res.ok) setDriveAccounts(res.accounts);
+  }, []);
+
+  useEffect(() => {
+    // A failed fetch just leaves the connect rows empty - the section still
+    // renders any already-connected accounts.
+    void listProviders().then(setCloudProviders).catch(() => {});
   }, []);
 
   const load = useCallback(async () => {
@@ -278,7 +286,7 @@ export default function ProfilePage() {
         <ApiKeysSection keys={keys} workspaces={workspaces} onChanged={loadKeys} />
         <SessionsSection sessions={sessions} onChanged={loadSessions} />
         <NotificationsSection />
-        <IntegrationsSection accounts={driveAccounts} onChanged={loadDrive} />
+        <IntegrationsSection accounts={driveAccounts} providers={cloudProviders} onChanged={loadDrive} />
         <WorkspacesSection workspaces={workspaces} />
         <DeleteAccountSection />
       </div>
@@ -1518,16 +1526,7 @@ function Toggle({ checked, disabled, onChange }: { checked: boolean; disabled?: 
 
 // ── Integrations ───────────────────────────────────────────
 
-// MINOR 16 (2026-07-30 review): a per-account row icon, keyed by provider id
-// - NOT hardcoded to google-color.svg. Only google has a real icon asset
-// today, so an unmapped provider falls back to a generic icon rather than
-// silently reusing google's, which would render every onedrive/dropbox
-// account with a Google icon the moment a second provider actually connects.
-const PROVIDER_ICONS: Record<string, string> = {
-  google: '/google-color.svg',
-};
-
-export function IntegrationsSection({ accounts, onChanged }: { accounts: DriveAccount[]; onChanged: () => void }) {
+export function IntegrationsSection({ accounts, providers, onChanged }: { accounts: DriveAccount[]; providers: CloudProvider[]; onChanged: () => void }) {
   const [disconnecting, setDisconnecting] = useState<string | null>(null);
 
   const disconnect = async (id: string) => {
@@ -1540,31 +1539,35 @@ export function IntegrationsSection({ accounts, onChanged }: { accounts: DriveAc
   // /api/cloud/accounts already orders rows by provider ASC, so a stable list
   // of the distinct providers present is enough to build each group - no
   // need for a separate Map.
-  const providers = [...new Set(accounts.map((a) => a.provider))];
+  const connectedProviders = [...new Set(accounts.map((a) => a.provider))];
 
   return (
     <section id="section-integrations">
       <h2 className="text-base font-semibold mb-3">Integrations</h2>
       <Card>
         <CardContent>
-          <div className="flex items-center justify-between py-3 border-b">
-            <div className="flex items-center gap-3">
-              <img src="/google-color.svg" width="20" height="20" alt="Google" />
-              <div>
-                <p className="text-sm font-medium">Google Drive</p>
-                <p className="text-xs text-muted-foreground">Import files directly from your Google Drive</p>
+          {providers.map((p) => (
+            <div key={p.id} className="flex items-center justify-between py-3 border-b">
+              <div className="flex items-center gap-3">
+                {PROVIDER_ICONS[p.id]
+                  ? <img src={PROVIDER_ICONS[p.id]} width="20" height="20" alt={p.label} />
+                  : <Plug className="size-5 text-muted-foreground" />}
+                <div>
+                  <p className="text-sm font-medium">{p.label}</p>
+                  <p className="text-xs text-muted-foreground">Import files directly from your {p.label}</p>
+                </div>
               </div>
+              <a href={`${API_BASE}/api/cloud/connect/${p.id}`}>
+                <Button variant="outline" size="sm" className="text-xs gap-1">
+                  <Plus className="size-3" /> Connect account
+                </Button>
+              </a>
             </div>
-            <a href={`${API_BASE}/api/cloud/connect/google`}>
-              <Button variant="outline" size="sm" className="text-xs gap-1">
-                <Plus className="size-3" /> Connect account
-              </Button>
-            </a>
-          </div>
+          ))}
           {accounts.length === 0 ? (
             <p className="py-4 text-center text-xs text-muted-foreground">No accounts connected</p>
           ) : (
-            providers.map((provider) => (
+            connectedProviders.map((provider) => (
               <div key={provider}>
                 {/*
                   PROVIDER_LABELS is keyed by provider id ('google'), NOT by

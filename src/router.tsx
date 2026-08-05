@@ -38,6 +38,7 @@ const DesktopSetup = lazy(() => import('@/pages/integrations/desktop'));
 const CliSetup = lazy(() => import('@/pages/integrations/cli'));
 const RestApiSetup = lazy(() => import('@/pages/integrations/rest-api'));
 const GoogleSetup = lazy(() => import('@/pages/integrations/google'));
+const OneDriveSetup = lazy(() => import('@/pages/integrations/onedrive'));
 const WebhooksPage = lazy(() => import('@/pages/integrations/webhooks'));
 const RemoteDownloadPage = lazy(() => import('@/pages/integrations/remote-download'));
 const FileRequestDetailPage = lazy(() => import('@/pages/file-request-detail'));
@@ -103,6 +104,7 @@ export const router = createBrowserRouter([
       { path: '/integrations/cli', element: <CliSetup /> },
       { path: '/integrations/rest-api', element: <RestApiSetup /> },
       { path: '/integrations/google', element: <GoogleSetup /> },
+      { path: '/integrations/onedrive', element: <OneDriveSetup /> },
       { path: '/integrations/webhooks', element: <WebhooksPage /> },
       { path: '/integrations/remote-download', element: <RemoteDownloadPage /> },
       { path: '/shared', element: <SharedPage /> },

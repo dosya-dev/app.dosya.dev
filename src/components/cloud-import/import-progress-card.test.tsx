@@ -2,12 +2,8 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import type { CloudJob } from '@/api/cloud-import';
-import {
-  IMPORT_SOURCE_LABELS,
-  ImportProgressCard,
-  PROVIDER_LABELS,
-  describeJob,
-} from './import-progress-card';
+import { ImportProgressCard, describeJob } from './import-progress-card';
+import { IMPORT_SOURCE_LABELS, PROVIDER_LABELS } from '@/lib/cloud-providers';
 import { useCloudImports } from '@/stores/cloud-imports';
 
 beforeAll(() => {
