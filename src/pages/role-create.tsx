@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/dialog';
 import { ChevronLeft, Loader2, Check, X, Pencil, Trash2, Eye } from 'lucide-react';
 import { toast } from '@/lib/toast';
+import { gbToBytes, mbToBytes, bytesToGb, bytesToMb } from '@/lib/usage-units';
 
 // Day-of-week checkboxes for active_hours.days (0 = Sunday, matching
 // apps/api/src/lib/access/active-hours.ts). Kept page-local, same as
@@ -86,6 +87,12 @@ interface ExistingRole {
   // can never bind to a shared builtin role id.
   allowed_ips: string | null;
   active_hours: string | null;
+  // Usage limits (migration 0098). Same row, same "always null for builtin
+  // roles" reasoning as the two conditions fields above.
+  requests_per_minute: number | null;
+  egress_bytes_per_day: number | null;
+  max_file_size_bytes: number | null;
+  max_concurrent_transfers: number | null;
 }
 
 // ── Page ──────────────────────────────────────────────────
@@ -119,6 +126,15 @@ export default function RoleCreatePage() {
   const [roleDays, setRoleDays] = useState<Set<number>>(new Set([1, 2, 3, 4, 5]));
   const [roleFrom, setRoleFrom] = useState('09:00');
   const [roleTo, setRoleTo] = useState('17:00');
+
+  // Usage limits (migration 0098). Blank means unlimited. Kept as strings
+  // (not numbers) so the input can be legitimately empty without coercing to
+  // 0 - see handleSave's Math.round(Number(...)) conversion, same pattern as
+  // profile.tsx's identical API-key fields.
+  const [roleRequestsPerMinute, setRoleRequestsPerMinute] = useState('');
+  const [roleEgressGbPerDay, setRoleEgressGbPerDay] = useState('');
+  const [roleMaxFileSizeMb, setRoleMaxFileSizeMb] = useState('');
+  const [roleMaxConcurrentTransfers, setRoleMaxConcurrentTransfers] = useState('');
 
   const toggleRoleDay = (value: number) => {
     if (isViewMode) return;
@@ -168,6 +184,14 @@ export default function RoleCreatePage() {
       } else {
         setRoleHoursEnabled(false);
       }
+      // Usage limits (migration 0098) - loaded the same way as the two
+      // conditions fields above, and for the SAME reason: without this, a
+      // save that only touches permissions would re-submit blank limit
+      // fields and silently clear a restriction nobody meant to touch.
+      setRoleRequestsPerMinute(role.requests_per_minute !== null ? String(role.requests_per_minute) : '');
+      setRoleEgressGbPerDay(role.egress_bytes_per_day !== null ? bytesToGb(role.egress_bytes_per_day) : '');
+      setRoleMaxFileSizeMb(role.max_file_size_bytes !== null ? bytesToMb(role.max_file_size_bytes) : '');
+      setRoleMaxConcurrentTransfers(role.max_concurrent_transfers !== null ? String(role.max_concurrent_transfers) : '');
     }).catch(() => {});
   }, [roleId, wsId]);
 
@@ -194,6 +218,19 @@ export default function RoleCreatePage() {
       active_hours: roleHoursEnabled
         ? { tz: roleTz, days: [...roleDays].sort(), from: roleFrom, to: roleTo }
         : null,
+      // Usage limits (migration 0098). Same "always send a concrete value,
+      // never omit" reasoning as the two conditions fields above: this form
+      // also EDITS an existing role, so a blank field must be sent as
+      // explicit `null` to clear a previously-set limit, not omitted (which
+      // the PUT endpoint reads as "leave it untouched"). Egress (GB) and max
+      // file size (MB) convert to bytes via the shared lib/usage-units.ts
+      // helpers (also used by profile.tsx - see that module's doc), which
+      // already return `null` for blank input, matching this form's own
+      // null-not-omitted rule for free.
+      requests_per_minute: roleRequestsPerMinute.trim() ? Math.round(Number(roleRequestsPerMinute)) : null,
+      egress_bytes_per_day: gbToBytes(roleEgressGbPerDay),
+      max_file_size_bytes: mbToBytes(roleMaxFileSizeMb),
+      max_concurrent_transfers: roleMaxConcurrentTransfers.trim() ? Math.round(Number(roleMaxConcurrentTransfers)) : null,
     };
     try {
       if (editId) {
@@ -357,6 +394,59 @@ export default function RoleCreatePage() {
                     </div>
                   </div>
                 )}
+              </div>
+            </div>
+          </Card>
+
+          {/* Usage limits (migration 0098) - applies to every member seated on
+              this role, composing with any limits their own API key sets as
+              min(key, role) per metric (neither layer can widen the other -
+              see apps/api/src/lib/usage/enforce.ts). */}
+          <Card className="gap-0 py-0 mb-5">
+            <div className="px-5 py-3 border-b">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Usage limits</p>
+            </div>
+            <div className="px-5 py-4">
+              <p className="text-xs text-muted-foreground mb-3 max-w-md">
+                Optional. These limits apply to every member using this role, across every protocol.
+              </p>
+              <div className="grid grid-cols-2 gap-3 max-w-md">
+                <div>
+                  <label className="text-xs font-medium block mb-1">Requests per minute</label>
+                  <Input
+                    type="number" min="1" step="1" placeholder="requests per minute"
+                    value={roleRequestsPerMinute}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setRoleRequestsPerMinute(e.target.value)}
+                    className="h-9 text-sm" disabled={isViewMode}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-medium block mb-1">Egress per day (GB)</label>
+                  <Input
+                    type="number" min="1" step="any" placeholder="GB per day"
+                    value={roleEgressGbPerDay}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setRoleEgressGbPerDay(e.target.value)}
+                    className="h-9 text-sm" disabled={isViewMode}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-medium block mb-1">Max file size (MB)</label>
+                  <Input
+                    type="number" min="1" step="any" placeholder="MB"
+                    value={roleMaxFileSizeMb}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setRoleMaxFileSizeMb(e.target.value)}
+                    className="h-9 text-sm" disabled={isViewMode}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-medium block mb-1">Max concurrent transfers</label>
+                  <Input
+                    type="number" min="1" step="1" placeholder="count"
+                    value={roleMaxConcurrentTransfers}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setRoleMaxConcurrentTransfers(e.target.value)}
+                    className="h-9 text-sm" disabled={isViewMode}
+                  />
+                </div>
               </div>
             </div>
           </Card>

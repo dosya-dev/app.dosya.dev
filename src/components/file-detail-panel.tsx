@@ -5,9 +5,9 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import {
   X, Download, Copy, Trash2, Eye, Share2, Lock,
-  RotateCcw, Loader2,
+  RotateCcw, Loader2, SquarePen,
 } from 'lucide-react';
-import { humanSize, timeAgo, extOf, isImage, isVideo, isText, isAudio, fileIconSrc, regionLabel, colorFor } from '@/lib/helpers';
+import { humanSize, timeAgo, extOf, isImage, isVideo, isText, isAudio, fileIconSrc, regionLabel, colorFor, isOfficeFile } from '@/lib/helpers';
 import { FilePreviewImage } from '@/components/file-preview-image';
 import { toast } from '@/lib/toast';
 import { IMPORT_SOURCE_LABELS } from '@/lib/cloud-providers';
@@ -339,6 +339,11 @@ export function FileDetailPanel({ file, onClose, onDownload, onCopy, onDelete, o
                 <Button size="sm" className="w-full justify-start gap-2 h-10 text-xs bg-green-500 hover:bg-green-600 text-white" onClick={() => onDownload(file.id)}>
                   <Download className="size-3.5" /> Download
                 </Button>
+                {isOfficeFile(file.name) && (
+                  <Button variant="outline" size="sm" className="w-full justify-start gap-2 h-10 text-xs" onClick={() => window.open(`/editor/${file.id}`, '_blank')}>
+                    <SquarePen className="size-3.5 text-muted-foreground" /> Open in editor
+                  </Button>
+                )}
                 <Button variant="outline" size="sm" className="w-full justify-start gap-2 h-10 text-xs" onClick={() => onShare(file.id, file.name)}>
                   <Share2 className="size-3.5 text-muted-foreground" /> Share
                 </Button>

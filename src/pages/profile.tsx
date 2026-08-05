@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { toast } from '@/lib/toast';
 import { timeAgo } from '@/lib/helpers';
+import { gbToBytes, mbToBytes } from '@/lib/usage-units';
 import { THEMES, type Mode } from '@/lib/themes';
 import { readCache, writeCache, applyTheme, applyThemeAnimated, subscribeThemeChange, type ThemePref } from '@/lib/theme';
 import { enableWebPush } from '../lib/web-push';
@@ -944,6 +945,14 @@ function ApiKeysSection({ keys, workspaces, onChanged }: { keys: ApiKey[]; works
   const [keyDays, setKeyDays] = useState<Set<number>>(new Set([1, 2, 3, 4, 5]));
   const [keyFrom, setKeyFrom] = useState('09:00');
   const [keyTo, setKeyTo] = useState('17:00');
+  // Usage limits (migration 0098). Blank means unlimited - sent as an absent
+  // field, same rule as the two conditions above (see createKey below). Kept
+  // as strings (not numbers) so the input can be legitimately empty without
+  // coercing to 0 - see createKey's Math.round(Number(...)) conversion.
+  const [keyRequestsPerMinute, setKeyRequestsPerMinute] = useState('');
+  const [keyEgressGbPerDay, setKeyEgressGbPerDay] = useState('');
+  const [keyMaxFileSizeMb, setKeyMaxFileSizeMb] = useState('');
+  const [keyMaxConcurrentTransfers, setKeyMaxConcurrentTransfers] = useState('');
   const [creating, setCreating] = useState(false);
   const [plainKey, setPlainKey] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -1000,6 +1009,15 @@ function ApiKeysSection({ keys, workspaces, onChanged }: { keys: ApiKey[]; works
     if (!keyName.trim()) return;
     setCreating(true);
     const hasWorkspace = keyWorkspaceId !== WHOLE_ACCOUNT;
+    // Usage limits (migration 0098) - computed once here (not inline in the
+    // body below) so the null-check and the value sent are guaranteed to be
+    // the same conversion, not two separate calls that could observe a
+    // changed input between them. Egress (GB) and max file size (MB) convert
+    // to bytes via the shared lib/usage-units.ts helpers (also used by
+    // role-create.tsx, so the two forms cannot drift on this math - see that
+    // module's doc); null means blank (no restriction).
+    const egressBytesPerDay = gbToBytes(keyEgressGbPerDay);
+    const maxFileSizeBytes = mbToBytes(keyMaxFileSizeMb);
     const res = await req<{ ok: boolean; key?: { plain_key: string }; error?: string }>('/api/me/api-keys', {
       method: 'POST',
       body: JSON.stringify({
@@ -1020,6 +1038,14 @@ function ApiKeysSection({ keys, workspaces, onChanged }: { keys: ApiKey[]; works
         ...(keyHoursEnabled
           ? { active_hours: { tz: keyTz, days: [...keyDays].sort(), from: keyFrom, to: keyTo } }
           : {}),
+        // Usage limits (migration 0098) - blank means unlimited, sent as an
+        // absent field just like the two conditions above.
+        // requests_per_minute/max_concurrent_transfers are already plain
+        // counts, no conversion needed.
+        ...(keyRequestsPerMinute.trim() ? { requests_per_minute: Math.round(Number(keyRequestsPerMinute)) } : {}),
+        ...(egressBytesPerDay !== null ? { egress_bytes_per_day: egressBytesPerDay } : {}),
+        ...(maxFileSizeBytes !== null ? { max_file_size_bytes: maxFileSizeBytes } : {}),
+        ...(keyMaxConcurrentTransfers.trim() ? { max_concurrent_transfers: Math.round(Number(keyMaxConcurrentTransfers)) } : {}),
       }),
     });
     if (res.ok && res.key) {
@@ -1028,6 +1054,7 @@ function ApiKeysSection({ keys, workspaces, onChanged }: { keys: ApiKey[]; works
       setKeyWorkspaceId(WHOLE_ACCOUNT); setKeyFolderId(null); setKeyFolderName('');
       setKeyAllowedIps(''); setKeyHoursEnabled(false); setKeyDays(new Set([1, 2, 3, 4, 5]));
       setKeyFrom('09:00'); setKeyTo('17:00');
+      setKeyRequestsPerMinute(''); setKeyEgressGbPerDay(''); setKeyMaxFileSizeMb(''); setKeyMaxConcurrentTransfers('');
       onChanged();
     } else toast.error('Create failed', res.error ?? 'The API key could not be created.');
     setCreating(false);
@@ -1236,6 +1263,50 @@ function ApiKeysSection({ keys, workspaces, onChanged }: { keys: ApiKey[]; works
                   </div>
                 </div>
               )}
+            </div>
+            <div>
+              <p className="text-xs font-medium mb-0.5">Usage limits</p>
+              <p className="text-[11px] text-muted-foreground mb-2">
+                Optional. These limits apply to this key across every protocol it's allowed to use - REST, WebDAV, SFTP and the S3 gateway.
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[11px] text-muted-foreground block mb-1">Requests per minute</label>
+                  <Input
+                    type="number" min="1" step="1" placeholder="requests per minute"
+                    value={keyRequestsPerMinute}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setKeyRequestsPerMinute(e.target.value)}
+                    className="h-8 text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] text-muted-foreground block mb-1">Egress per day (GB)</label>
+                  <Input
+                    type="number" min="1" step="any" placeholder="GB per day"
+                    value={keyEgressGbPerDay}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setKeyEgressGbPerDay(e.target.value)}
+                    className="h-8 text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] text-muted-foreground block mb-1">Max file size (MB)</label>
+                  <Input
+                    type="number" min="1" step="any" placeholder="MB"
+                    value={keyMaxFileSizeMb}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setKeyMaxFileSizeMb(e.target.value)}
+                    className="h-8 text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] text-muted-foreground block mb-1">Max concurrent transfers</label>
+                  <Input
+                    type="number" min="1" step="1" placeholder="count"
+                    value={keyMaxConcurrentTransfers}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setKeyMaxConcurrentTransfers(e.target.value)}
+                    className="h-8 text-xs"
+                  />
+                </div>
+              </div>
             </div>
           </div>
           <DialogFooter>
