@@ -17,6 +17,7 @@ const ApiAnalyticsPage = lazy(() => import('@/pages/api-analytics'));
 const FilesPage = lazy(() => import('@/pages/files'));
 const EncryptedPage = lazy(() => import('@/pages/encrypted'));
 const MapPage = lazy(() => import('@/pages/map'));
+const DuplicatesPage = lazy(() => import('@/pages/duplicates'));
 const CreateWorkspacePage = lazy(() => import('@/pages/create-workspace'));
 const TeamsPage = lazy(() => import('@/pages/teams'));
 const SharedPage = lazy(() => import('@/pages/shared'));
@@ -83,6 +84,7 @@ export const router = createBrowserRouter([
       { path: '/', element: <DashboardPage /> },
       { path: '/files', element: <FilesPage /> },
       { path: '/map', element: <MapPage /> },
+      { path: '/duplicates', element: <DuplicatesPage /> },
       { path: '/file-requests', element: <FileRequestsPage /> },
       { path: '/file-requests/:id', element: <FileRequestDetailPage /> },
       { path: '/support', element: <SupportPage /> },

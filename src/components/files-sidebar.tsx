@@ -13,7 +13,7 @@ import {
 import {
   Files, FileText, Video, Image, Share2, Trash2, EyeOff,
   FileInput, Star, FolderOpen, ChevronLeft, ChevronRight, Plus, X,
-  Loader2, MapPin,
+  Loader2, MapPin, CopyX,
 } from 'lucide-react';
 import { toast } from '@/lib/toast';
 
@@ -208,6 +208,15 @@ export function FilesSidebar({ onFilterChange, onFavouriteClick, onGroupClick }:
           >
             <MapPin className="size-4" />
             {!collapsed && <span className="truncate flex-1 text-left">Map</span>}
+          </button>
+
+          <button
+            onClick={() => navigate('/duplicates')}
+            className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-xs text-muted-foreground hover:bg-muted/50 hover:text-foreground transition-colors"
+            title={collapsed ? 'Duplicates' : undefined}
+          >
+            <CopyX className="size-4" />
+            {!collapsed && <span className="truncate flex-1 text-left">Duplicates</span>}
           </button>
         </nav>
 
