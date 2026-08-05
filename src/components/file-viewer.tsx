@@ -14,6 +14,7 @@ import { useInFileFind } from '@/lib/use-in-file-find';
 import { TextFindBar } from '@/components/text-find-bar';
 import { TextEditorOverlay } from '@/components/text-editor';
 import { VCardView } from '@/components/vcard-viewer';
+import { OfficePreview } from '@/components/office-preview';
 import type { FileItem } from '@/lib/file-types';
 
 
@@ -566,8 +567,10 @@ function FileContent({ file, rawUrl, downloadUrl, version, workspaceId, onSaved 
     return <TextViewer file={file} rawUrl={rawUrl} downloadUrl={downloadUrl} />;
   }
 
-  // Fallback
-  return (
+  // Shared by the office-preview fallback and the plain unsupported-type
+  // fallback below - the "Open in editor" button only ever applies to office
+  // files, so it's conditional here rather than duplicated in both callers.
+  const fallbackCard = (
     <div className="bg-background border rounded-xl p-10 text-center min-w-70">
       <p className="text-4xl font-bold text-muted-foreground/30 tracking-wider mb-3">{ext.toUpperCase() || 'FILE'}</p>
       <p className="text-sm text-muted-foreground mb-5 break-all">{file.name}</p>
@@ -590,6 +593,13 @@ function FileContent({ file, rawUrl, downloadUrl, version, workspaceId, onSaved 
       </a>
     </div>
   );
+
+  if (isOfficeFile(file.name)) {
+    return <OfficePreview file={file} version={version} fallback={fallbackCard} />;
+  }
+
+  // Fallback
+  return fallbackCard;
 }
 
 const TEXT_PREVIEW_MAX = 2 * 1024 * 1024; // 2 MB
