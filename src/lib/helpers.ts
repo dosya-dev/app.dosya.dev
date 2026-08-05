@@ -178,6 +178,7 @@ const ACTION_LABELS: Record<string, string> = {
   file_request_uploaded: 'uploaded to request', file_request_revoked: 'revoked file request',
   member_invited: 'invited', member_joined: 'joined', member_removed: 'removed',
   member_left: 'left the workspace', invite_revoked: 'revoked invite for',
+  member_anchor_updated: 'changed the folder access of',
   ownership_transferred: 'transferred ownership to',
   workspace_created: 'created workspace', workspace_updated: 'updated workspace',
   workspace_settings_changed: 'changed settings', settings_updated: 'updated settings',
