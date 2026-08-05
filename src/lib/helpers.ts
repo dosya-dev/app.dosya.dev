@@ -82,6 +82,16 @@ export function isText(name: string): boolean {
   return TEXT_EXTS.has(extOf(name));
 }
 
+const OFFICE_EXTS = new Set([
+  'docx', 'xlsx', 'pptx', 'doc', 'xls', 'ppt', 'odt', 'ods', 'odp', 'rtf', 'csv',
+]);
+
+// Files that open in the ONLYOFFICE editor at /editor/:fileId. Keep in sync
+// with apps/api/src/lib/onlyoffice/formats.ts.
+export function isOfficeFile(name: string): boolean {
+  return OFFICE_EXTS.has(extOf(name));
+}
+
 const AUDIO_EXTS = new Set(['mp3', 'wav', 'ogg', 'flac', 'aac', 'm4a', 'wma']);
 export function isAudio(name: string): boolean {
   return AUDIO_EXTS.has(extOf(name));

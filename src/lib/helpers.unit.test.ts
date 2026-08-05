@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { humanSize, humanSizeShort, timeAgo, initials, extOf, isImage, isHeic, fileIconSrc } from "./helpers";
+import { humanSize, humanSizeShort, timeAgo, initials, extOf, isImage, isHeic, fileIconSrc, isOfficeFile } from "./helpers";
 
 describe("humanSize", () => {
   it("formats sizes with the right unit", () => {
@@ -110,5 +110,20 @@ describe("isHeic", () => {
 describe("fileIconSrc", () => {
   it("gives heic a photo icon, not the default text icon", () => {
     expect(fileIconSrc("a.heic")).toBe("/file-icons/009-jpg.svg");
+  });
+});
+
+describe('isOfficeFile', () => {
+  it('recognizes office extensions case-insensitively', () => {
+    expect(isOfficeFile('a.docx')).toBe(true);
+    expect(isOfficeFile('A.XLSX')).toBe(true);
+    expect(isOfficeFile('deck.pptx')).toBe(true);
+    expect(isOfficeFile('legacy.doc')).toBe(true);
+    expect(isOfficeFile('sheet.csv')).toBe(true);
+  });
+  it('rejects everything else', () => {
+    expect(isOfficeFile('pic.jpg')).toBe(false);
+    expect(isOfficeFile('notes.txt')).toBe(false);
+    expect(isOfficeFile('noext')).toBe(false);
   });
 });
