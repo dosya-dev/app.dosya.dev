@@ -2,10 +2,10 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { api, API_BASE } from '@/api/client';
 import { Badge } from '@/components/ui/badge';
 import {
-  X, Download, ChevronLeft, ChevronRight, Pencil, Clock,
+  X, Download, ChevronLeft, ChevronRight, Pencil, Clock, SquarePen,
 
 } from 'lucide-react';
-import { humanSize, extOf, isImage, isVideo, isAudio, fileIconSrc } from '@/lib/helpers';
+import { humanSize, extOf, isImage, isVideo, isAudio, fileIconSrc, isOfficeFile } from '@/lib/helpers';
 import { FilePreviewImage } from '@/components/file-preview-image';
 import { toast } from '@/lib/toast';
 import { isTextReadable, langFromExtension, looksBinary } from '@/lib/text-detect';
@@ -571,6 +571,16 @@ function FileContent({ file, rawUrl, downloadUrl, version, workspaceId, onSaved 
     <div className="bg-background border rounded-xl p-10 text-center min-w-70">
       <p className="text-4xl font-bold text-muted-foreground/30 tracking-wider mb-3">{ext.toUpperCase() || 'FILE'}</p>
       <p className="text-sm text-muted-foreground mb-5 break-all">{file.name}</p>
+      {isOfficeFile(file.name) && (
+        <a
+          href={`/editor/${file.id}`}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-foreground text-background text-sm font-semibold hover:opacity-90 mr-2"
+        >
+          <SquarePen className="size-4" /> Open in editor
+        </a>
+      )}
       <a
         href={downloadUrl}
         download

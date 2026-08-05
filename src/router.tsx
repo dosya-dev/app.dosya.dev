@@ -17,6 +17,7 @@ const ApiAnalyticsPage = lazy(() => import('@/pages/api-analytics'));
 const FilesPage = lazy(() => import('@/pages/files'));
 const EncryptedPage = lazy(() => import('@/pages/encrypted'));
 const MapPage = lazy(() => import('@/pages/map'));
+const DuplicatesPage = lazy(() => import('@/pages/duplicates'));
 const CreateWorkspacePage = lazy(() => import('@/pages/create-workspace'));
 const TeamsPage = lazy(() => import('@/pages/teams'));
 const SharedPage = lazy(() => import('@/pages/shared'));
@@ -50,6 +51,7 @@ const ForgotPasswordPage = lazy(() => import('@/pages/forgot-password'));
 const ResetPasswordPage = lazy(() => import('@/pages/reset-password'));
 const NotFoundPage = lazy(() => import('@/pages/not-found'));
 const WelcomePage = lazy(() => import('@/pages/welcome'));
+const EditorPage = lazy(() => import('@/pages/editor'));
 
 // Root layout: keeps the browser tab title in sync with the route for every
 // page. The Suspense boundary covers routes outside DashboardLayout (login,
@@ -83,6 +85,7 @@ export const router = createBrowserRouter([
       { path: '/', element: <DashboardPage /> },
       { path: '/files', element: <FilesPage /> },
       { path: '/map', element: <MapPage /> },
+      { path: '/duplicates', element: <DuplicatesPage /> },
       { path: '/file-requests', element: <FileRequestsPage /> },
       { path: '/file-requests/:id', element: <FileRequestDetailPage /> },
       { path: '/support', element: <SupportPage /> },
@@ -121,6 +124,10 @@ export const router = createBrowserRouter([
   // route under it would put the gate above the route it redirects to - the
   // exact loop this placement avoids.
   { path: '/welcome', element: <WelcomePage /> },
+  // Outside DashboardLayout, on purpose: the editor is full-viewport with no
+  // sidebar. Auth is enforced by the API - an unauthenticated visitor gets
+  // the page shell with the error card ("Not authenticated").
+  { path: '/editor/:fileId', element: <EditorPage /> },
   { path: '/login/2fa', element: <Login2faPage /> },
   { path: '/sign-up', element: <SignUpPage /> },
   { path: '/verify', element: <VerifyPage /> },
