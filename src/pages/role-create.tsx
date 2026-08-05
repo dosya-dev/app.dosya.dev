@@ -5,12 +5,35 @@ import { useWorkspace } from '@/stores/workspace';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
 import { ChevronLeft, Loader2, Check, X, Pencil, Trash2, Eye } from 'lucide-react';
 import { toast } from '@/lib/toast';
+
+// Day-of-week checkboxes for active_hours.days (0 = Sunday, matching
+// apps/api/src/lib/access/active-hours.ts). Kept page-local, same as
+// profile.tsx's identical picker - the two forms don't share a component.
+const DAY_OPTIONS: { value: number; label: string }[] = [
+  { value: 0, label: 'Sun' }, { value: 1, label: 'Mon' }, { value: 2, label: 'Tue' },
+  { value: 3, label: 'Wed' }, { value: 4, label: 'Thu' }, { value: 5, label: 'Fri' },
+  { value: 6, label: 'Sat' },
+];
+
+function timezoneOptions(): string[] {
+  try {
+    const zones = (Intl as unknown as { supportedValuesOf?: (key: string) => string[] }).supportedValuesOf?.('timeZone');
+    if (zones && zones.length > 0) return zones;
+  } catch { /* not supported in this runtime */ }
+  const here = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  return [...new Set([here, 'Etc/UTC', 'America/New_York', 'America/Los_Angeles', 'Europe/London', 'Europe/Berlin', 'Asia/Tokyo', 'Asia/Singapore', 'Australia/Sydney'])];
+}
 
 // ── Permission definitions ────────────────────────────────
 
@@ -58,6 +81,11 @@ const ROLE_COLORS: Record<string, string> = { owner: '#16A34A', admin: '#4338CA'
 interface ExistingRole {
   id: string; name: string; is_builtin: boolean; is_custom: boolean;
   permissions: Record<string, boolean>;
+  // Access conditions (migration 0097). Always null for builtin roles - see
+  // apps/api/src/pages/api/roles/[id].ts's PUT handler for why a condition
+  // can never bind to a shared builtin role id.
+  allowed_ips: string | null;
+  active_hours: string | null;
 }
 
 // ── Page ──────────────────────────────────────────────────
@@ -81,6 +109,25 @@ export default function RoleCreatePage() {
   const [error, setError] = useState('');
   const [existingRoles, setExistingRoles] = useState<ExistingRole[]>([]);
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; name: string } | null>(null);
+
+  // Access conditions (migration 0097). Blank/disabled means unrestricted -
+  // sent as an absent field on save, same rule as profile.tsx's identical
+  // API-key fields (see handleSave below).
+  const [roleAllowedIps, setRoleAllowedIps] = useState('');
+  const [roleHoursEnabled, setRoleHoursEnabled] = useState(false);
+  const [roleTz, setRoleTz] = useState(() => Intl.DateTimeFormat().resolvedOptions().timeZone);
+  const [roleDays, setRoleDays] = useState<Set<number>>(new Set([1, 2, 3, 4, 5]));
+  const [roleFrom, setRoleFrom] = useState('09:00');
+  const [roleTo, setRoleTo] = useState('17:00');
+
+  const toggleRoleDay = (value: number) => {
+    if (isViewMode) return;
+    setRoleDays((prev) => {
+      const next = new Set(prev);
+      if (next.has(value)) next.delete(value); else next.add(value);
+      return next;
+    });
+  };
 
   const title = isViewMode ? 'View role permissions' : editId ? 'Edit custom role' : 'Create custom role';
 
@@ -108,6 +155,19 @@ export default function RoleCreatePage() {
         Object.entries(role.permissions).forEach(([k, v]) => { next[k] = v; });
         return next;
       });
+      setRoleAllowedIps(role.allowed_ips ?? '');
+      if (role.active_hours) {
+        try {
+          const parsed = JSON.parse(role.active_hours) as { tz: string; days: number[]; from: string; to: string };
+          setRoleHoursEnabled(true);
+          setRoleTz(parsed.tz);
+          setRoleDays(new Set(parsed.days));
+          setRoleFrom(parsed.from);
+          setRoleTo(parsed.to);
+        } catch { /* leave the active-hours fields at their defaults */ }
+      } else {
+        setRoleHoursEnabled(false);
+      }
     }).catch(() => {});
   }, [roleId, wsId]);
 
@@ -120,16 +180,31 @@ export default function RoleCreatePage() {
     if (!roleName.trim()) { setError('Role name is required.'); return; }
     setError('');
     setSaving(true);
+    // Access conditions. Unlike the API-key create form (profile.tsx), this
+    // page ALSO edits an existing role - so blank must be sent EXPLICITLY,
+    // not omitted: an absent field means "leave role_conditions untouched"
+    // on the server (see roles/[id].ts's PUT), which would make clearing a
+    // previously-set restriction impossible from this form. Sending "" /
+    // null here is exactly what the server's own validators already
+    // normalise to "no restriction" (validateAllowedIps("") and
+    // validateActiveHours(null) both -> null), so always sending concrete
+    // values works identically for create and for a genuine clear-on-edit.
+    const conditions = {
+      allowed_ips: roleAllowedIps.trim(),
+      active_hours: roleHoursEnabled
+        ? { tz: roleTz, days: [...roleDays].sort(), from: roleFrom, to: roleTo }
+        : null,
+    };
     try {
       if (editId) {
         const res = await api<{ ok: boolean; error?: string }>(`/api/roles/${editId}`, {
-          method: 'PUT', body: JSON.stringify({ name: roleName.trim(), permissions: permState }),
+          method: 'PUT', body: JSON.stringify({ name: roleName.trim(), permissions: permState, ...conditions }),
         });
         if (res.ok) { toast.success('Role updated', 'The role and its permissions have been saved.'); window.location.href = '/settings#roles'; }
         else setError(res.error ?? 'Failed');
       } else {
         const res = await api<{ ok: boolean; error?: string }>('/api/roles', {
-          method: 'POST', body: JSON.stringify({ workspace_id: wsId, name: roleName.trim(), permissions: permState }),
+          method: 'POST', body: JSON.stringify({ workspace_id: wsId, name: roleName.trim(), permissions: permState, ...conditions }),
         });
         if (res.ok) { toast.success('Role created', 'Your new role is ready to assign.'); window.location.href = '/settings#roles'; }
         else setError(res.error ?? 'Failed');
@@ -216,6 +291,71 @@ export default function RoleCreatePage() {
                   ))}
                 </div>
               ))}
+            </div>
+          </Card>
+
+          {/* Access conditions (migration 0097) - applies to every member seated
+              on this role, intersected with any conditions their own API key sets
+              (neither layer can widen the other - see conditions.ts). */}
+          <Card className="gap-0 py-0 mb-5">
+            <div className="px-5 py-3 border-b">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Access conditions</p>
+            </div>
+            <div className="px-5 py-4 space-y-4">
+              <div>
+                <label className="text-sm font-medium block mb-1">Allowed IP ranges</label>
+                <p className="text-xs text-muted-foreground mb-2">
+                  Optional, comma-separated. Members using this role will be refused from any other address.
+                </p>
+                <Textarea
+                  placeholder="203.0.113.0/24, 2001:db8::/32"
+                  value={roleAllowedIps}
+                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setRoleAllowedIps(e.target.value)}
+                  className="text-sm min-h-[3.5rem] max-w-md"
+                  disabled={isViewMode}
+                />
+              </div>
+              <div>
+                <label className="flex items-center gap-2.5 text-sm font-medium cursor-pointer mb-1">
+                  <Checkbox
+                    className="size-4"
+                    checked={roleHoursEnabled}
+                    onCheckedChange={() => !isViewMode && setRoleHoursEnabled((v) => !v)}
+                    disabled={isViewMode}
+                  />
+                  Restrict to active hours
+                </label>
+                <p className="text-xs text-muted-foreground mb-2">
+                  Optional. Members using this role will be refused outside this weekly window.
+                </p>
+                {roleHoursEnabled && (
+                  <div className="space-y-2 rounded-lg border p-3 max-w-md">
+                    <Select
+                      value={roleTz}
+                      onValueChange={(v) => setRoleTz(v as string)}
+                      items={timezoneOptions().map((tz) => ({ value: tz, label: tz }))}
+                    >
+                      <SelectTrigger className="w-full h-8 text-xs" disabled={isViewMode}><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {timezoneOptions().map((tz) => <SelectItem key={tz} value={tz}>{tz}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                    <div className="flex flex-wrap gap-2">
+                      {DAY_OPTIONS.map((d) => (
+                        <label key={d.value} className="flex items-center gap-1 text-[11px] cursor-pointer">
+                          <Checkbox className="size-3.5" checked={roleDays.has(d.value)} onCheckedChange={() => toggleRoleDay(d.value)} disabled={isViewMode} />
+                          {d.label}
+                        </label>
+                      ))}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Input type="time" value={roleFrom} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setRoleFrom(e.target.value)} className="h-8 text-xs flex-1" disabled={isViewMode} />
+                      <span className="text-[11px] text-muted-foreground">to</span>
+                      <Input type="time" value={roleTo} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setRoleTo(e.target.value)} className="h-8 text-xs flex-1" disabled={isViewMode} />
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </Card>
 

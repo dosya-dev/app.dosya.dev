@@ -4,6 +4,7 @@ import { api, API_BASE, ApiError } from '@/api/client';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -16,7 +17,7 @@ import {
 import {
   User, Lock, Key, Monitor, Bell, Plug, Building2, Trash2,
   Plus, Copy, Check, Loader2, LogOut, X, Camera, ShieldCheck,
-  Smartphone, Download, RefreshCw, Mail, Palette, ChartColumn,
+  Smartphone, Download, RefreshCw, Mail, Palette, ChartColumn, ShieldAlert,
 } from 'lucide-react';
 import { toast } from '@/lib/toast';
 import { timeAgo } from '@/lib/helpers';
@@ -47,6 +48,10 @@ interface ApiKey {
   // account - see apps/api/src/lib/access/anchor.ts.
   workspace_id: string | null;
   root_folder_id: string | null;
+  // Access conditions (migration 0097). NULL means unrestricted for that one
+  // condition - see apps/api/src/lib/access/{cidr,active-hours}.ts.
+  allowed_ips: string | null;
+  active_hours: string | null;
 }
 // Mirrors what GET /api/me/sessions actually returns. It previously declared
 // ip/user_agent/login_method/last_active_at - none of which the API sends - so every
@@ -121,6 +126,37 @@ function formatAnchor(
   if (!k.root_folder_id) return wsName;
   const folderName = folderNames[k.root_folder_id] ?? '…';
   return `${wsName} / ${folderName}`;
+}
+
+// Day-of-week checkboxes for active_hours.days (0 = Sunday, matching
+// apps/api/src/lib/access/active-hours.ts). Order is display order, not the
+// stored value order.
+const DAY_OPTIONS: { value: number; label: string }[] = [
+  { value: 0, label: 'Sun' }, { value: 1, label: 'Mon' }, { value: 2, label: 'Tue' },
+  { value: 3, label: 'Wed' }, { value: 4, label: 'Thu' }, { value: 5, label: 'Fri' },
+  { value: 6, label: 'Sat' },
+];
+
+// IANA timezone names for the active-hours zone picker. Intl.supportedValuesOf
+// isn't implemented everywhere (older Safari/WebKit) - fall back to a short
+// list anchored on the browser's own zone so the picker is never empty.
+function timezoneOptions(): string[] {
+  try {
+    const zones = (Intl as unknown as { supportedValuesOf?: (key: string) => string[] }).supportedValuesOf?.('timeZone');
+    if (zones && zones.length > 0) return zones;
+  } catch { /* not supported in this runtime */ }
+  const here = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  return [...new Set([here, 'Etc/UTC', 'America/New_York', 'America/Los_Angeles', 'Europe/London', 'Europe/Berlin', 'Asia/Tokyo', 'Asia/Singapore', 'Australia/Sydney'])];
+}
+
+// A short, non-revealing summary for the key list - deliberately does NOT
+// echo the allowlist/window contents (same "name the kind, not the details"
+// rule the API's own refusal messages follow - see conditions.ts).
+function formatConditions(k: ApiKey): string | null {
+  const parts: string[] = [];
+  if (k.allowed_ips) parts.push('IP-restricted');
+  if (k.active_hours) parts.push('time-restricted');
+  return parts.length > 0 ? parts.join(' + ') : null;
 }
 
 const LANGUAGES = [
@@ -891,9 +927,26 @@ function ApiKeysSection({ keys, workspaces, onChanged }: { keys: ApiKey[]; works
   const [keyFolderId, setKeyFolderId] = useState<string | null>(null);
   const [keyFolderName, setKeyFolderName] = useState('');
   const [folderPickerOpen, setFolderPickerOpen] = useState(false);
+  // Access conditions (migration 0097). Blank/disabled means unrestricted -
+  // sent as an absent field, same "don't send what wasn't set" rule as
+  // surfaces above (see createKey below).
+  const [keyAllowedIps, setKeyAllowedIps] = useState('');
+  const [keyHoursEnabled, setKeyHoursEnabled] = useState(false);
+  const [keyTz, setKeyTz] = useState(() => Intl.DateTimeFormat().resolvedOptions().timeZone);
+  const [keyDays, setKeyDays] = useState<Set<number>>(new Set([1, 2, 3, 4, 5]));
+  const [keyFrom, setKeyFrom] = useState('09:00');
+  const [keyTo, setKeyTo] = useState('17:00');
   const [creating, setCreating] = useState(false);
   const [plainKey, setPlainKey] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+
+  const toggleKeyDay = (value: number) => {
+    setKeyDays((prev) => {
+      const next = new Set(prev);
+      if (next.has(value)) next.delete(value); else next.add(value);
+      return next;
+    });
+  };
 
   const workspaceSelectItems = [
     { value: WHOLE_ACCOUNT, label: 'Whole account' },
@@ -951,12 +1004,22 @@ function ApiKeysSection({ keys, workspaces, onChanged }: { keys: ApiKey[]; works
         // order) - only send the folder when a real workspace is pinned.
         ...(hasWorkspace ? { workspace_id: keyWorkspaceId } : {}),
         ...(hasWorkspace && keyFolderId ? { root_folder_id: keyFolderId } : {}),
+        // Access conditions (migration 0097) - blank/disabled means
+        // unrestricted, sent as an absent field so the server's own
+        // trim()||null normalisation never even runs on a value we didn't
+        // mean to set.
+        ...(keyAllowedIps.trim() ? { allowed_ips: keyAllowedIps.trim() } : {}),
+        ...(keyHoursEnabled
+          ? { active_hours: { tz: keyTz, days: [...keyDays].sort(), from: keyFrom, to: keyTo } }
+          : {}),
       }),
     });
     if (res.ok && res.key) {
       setPlainKey(res.key.plain_key); setCreateOpen(false);
       setKeyName(''); setKeySurfaces(new Set());
       setKeyWorkspaceId(WHOLE_ACCOUNT); setKeyFolderId(null); setKeyFolderName('');
+      setKeyAllowedIps(''); setKeyHoursEnabled(false); setKeyDays(new Set([1, 2, 3, 4, 5]));
+      setKeyFrom('09:00'); setKeyTo('17:00');
       onChanged();
     } else toast.error('Create failed', res.error ?? 'The API key could not be created.');
     setCreating(false);
@@ -1018,7 +1081,14 @@ function ApiKeysSection({ keys, workspaces, onChanged }: { keys: ApiKey[]; works
                 <span className="text-[11px] text-muted-foreground font-mono">dos_···· {k.key_prefix.slice(0, 4)}</span>
                 <Badge variant={k.scope === 'full' ? 'default' : 'secondary'} className="text-[10px] w-fit">{SCOPE_LABELS[k.scope] ?? k.scope}</Badge>
                 <span className="text-[11px] text-muted-foreground truncate" title={formatSurfaces(k.surfaces)}>{formatSurfaces(k.surfaces)}</span>
-                <span className="text-[11px] text-muted-foreground truncate" title={formatAnchor(k, workspaces, folderNames)}>{formatAnchor(k, workspaces, folderNames)}</span>
+                <span className="text-[11px] text-muted-foreground truncate flex items-center gap-1" title={formatAnchor(k, workspaces, folderNames)}>
+                  {formatAnchor(k, workspaces, folderNames)}
+                  {formatConditions(k) && (
+                    <span title={formatConditions(k) ?? undefined} className="shrink-0">
+                      <ShieldAlert className="size-3 text-amber-600 dark:text-amber-400" aria-label={formatConditions(k) ?? undefined} />
+                    </span>
+                  )}
+                </span>
                 <span className="text-[11px] text-muted-foreground">{new Date(k.created_at * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
                 <span>
                   {k.s3_access_key_id ? (
@@ -1055,7 +1125,7 @@ function ApiKeysSection({ keys, workspaces, onChanged }: { keys: ApiKey[]; works
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent className="max-w-sm">
           <DialogHeader><DialogTitle>Create API key</DialogTitle></DialogHeader>
-          <div className="space-y-3">
+          <div className="space-y-3 max-h-[65vh] overflow-y-auto pr-1">
             <Input placeholder="Key name" value={keyName} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setKeyName(e.target.value)} className="h-9 text-sm" />
             <Select value={keyScope} onValueChange={(v) => setKeyScope(v as string)} items={SCOPE_LABELS}>
               <SelectTrigger className="w-full h-9 text-sm"><SelectValue /></SelectTrigger>
@@ -1110,6 +1180,54 @@ function ApiKeysSection({ keys, workspaces, onChanged }: { keys: ApiKey[]; works
                 )}
               </div>
             )}
+            <div>
+              <p className="text-xs font-medium mb-0.5">Allowed IP ranges</p>
+              <p className="text-[11px] text-muted-foreground mb-2">
+                Optional, comma-separated. Requests from other addresses will be refused.
+              </p>
+              <Textarea
+                placeholder="203.0.113.0/24, 2001:db8::/32"
+                value={keyAllowedIps}
+                onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setKeyAllowedIps(e.target.value)}
+                className="text-sm min-h-[3.5rem]"
+              />
+            </div>
+            <div>
+              <label className="flex items-center gap-2.5 text-xs font-medium cursor-pointer mb-0.5">
+                <Checkbox className="size-4" checked={keyHoursEnabled} onCheckedChange={() => setKeyHoursEnabled((v) => !v)} />
+                Restrict to active hours
+              </label>
+              <p className="text-[11px] text-muted-foreground mb-2">
+                Optional. Requests outside this weekly window will be refused.
+              </p>
+              {keyHoursEnabled && (
+                <div className="space-y-2 rounded-lg border p-2.5">
+                  <Select
+                    value={keyTz}
+                    onValueChange={(v) => setKeyTz(v as string)}
+                    items={timezoneOptions().map((tz) => ({ value: tz, label: tz }))}
+                  >
+                    <SelectTrigger className="w-full h-8 text-xs"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {timezoneOptions().map((tz) => <SelectItem key={tz} value={tz}>{tz}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                  <div className="flex flex-wrap gap-2">
+                    {DAY_OPTIONS.map((d) => (
+                      <label key={d.value} className="flex items-center gap-1 text-[11px] cursor-pointer">
+                        <Checkbox className="size-3.5" checked={keyDays.has(d.value)} onCheckedChange={() => toggleKeyDay(d.value)} />
+                        {d.label}
+                      </label>
+                    ))}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Input type="time" value={keyFrom} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setKeyFrom(e.target.value)} className="h-8 text-xs flex-1" />
+                    <span className="text-[11px] text-muted-foreground">to</span>
+                    <Input type="time" value={keyTo} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setKeyTo(e.target.value)} className="h-8 text-xs flex-1" />
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
