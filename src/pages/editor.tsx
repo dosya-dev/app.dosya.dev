@@ -36,17 +36,33 @@ function loadDocsApi(serverUrl: string): Promise<void> {
   return new Promise((resolve, reject) => {
     if (window.DocsAPI) { resolve(); return; }
     const existing = document.getElementById(SCRIPT_ID) as HTMLScriptElement | null;
-    if (existing) {
-      existing.addEventListener('load', () => resolve());
-      existing.addEventListener('error', () => reject(new Error('Document server unreachable')));
-      return;
+    const script = existing ?? document.createElement('script');
+
+    // Shared settle handler for both the fresh-tag and existing-tag paths.
+    // A script element fires load/error only once per src, so a failed tag
+    // left in the DOM would never fire again - the next loadDocsApi() call
+    // would attach listeners that never settle and "Try again" would hang
+    // forever. Removing the tag on error guarantees the next call finds no
+    // existing tag and creates a genuinely fresh one.
+    const onLoad = () => {
+      script.removeEventListener('load', onLoad);
+      script.removeEventListener('error', onError);
+      resolve();
+    };
+    const onError = () => {
+      script.removeEventListener('load', onLoad);
+      script.removeEventListener('error', onError);
+      script.remove();
+      reject(new Error('Document server unreachable'));
+    };
+    script.addEventListener('load', onLoad);
+    script.addEventListener('error', onError);
+
+    if (!existing) {
+      script.id = SCRIPT_ID;
+      script.src = `${serverUrl}/web-apps/apps/api/documents/api.js`;
+      document.head.appendChild(script);
     }
-    const script = document.createElement('script');
-    script.id = SCRIPT_ID;
-    script.src = `${serverUrl}/web-apps/apps/api/documents/api.js`;
-    script.onload = () => resolve();
-    script.onerror = () => reject(new Error('Document server unreachable'));
-    document.head.appendChild(script);
   });
 }
 

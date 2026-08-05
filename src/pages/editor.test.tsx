@@ -82,4 +82,35 @@ describe('EditorPage', () => {
     await act(async () => {});
     expect(container!.textContent).toContain('Read-only');
   });
+
+  // A dead script tag left behind after a failed load would never fire
+  // load/error again (script elements fire those events only once per src),
+  // so a retry that just re-attached listeners to it would hang forever -
+  // "Try again" is exactly the recovery path the brief requires to work.
+  it('recovers after a failed document-server script load when retried', async () => {
+    apiMock.mockResolvedValue(okConfig);
+    mount();
+    await act(async () => {});
+
+    const firstScript = document.getElementById('onlyoffice-docsapi') as HTMLScriptElement | null;
+    expect(firstScript).toBeTruthy();
+
+    act(() => {
+      firstScript!.dispatchEvent(new Event('error'));
+    });
+    await act(async () => {});
+
+    expect(container!.textContent).toContain('could not be loaded');
+    expect(document.head.contains(firstScript)).toBe(false);
+    expect(document.getElementById('onlyoffice-docsapi')).toBeNull();
+
+    act(() => {
+      container!.querySelector('button')!.click();
+    });
+    await act(async () => {});
+
+    const secondScript = document.getElementById('onlyoffice-docsapi') as HTMLScriptElement | null;
+    expect(secondScript).toBeTruthy();
+    expect(secondScript).not.toBe(firstScript);
+  });
 });
