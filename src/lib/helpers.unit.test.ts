@@ -132,6 +132,16 @@ describe('isOfficeFile', () => {
   // to this same sorted list in formats.unit.test.ts. If the two lists ever
   // diverge, the web app and the API disagree on which files open in the
   // ONLYOFFICE editor.
+  //
+  // There are FOUR copies of this 11-extension list and no shared source of
+  // truth, so a change to one must be mirrored in the other three by hand:
+  //   1. apps/api/src/lib/onlyoffice/formats.ts (OFFICE_EDIT_EXTENSIONS + OFFICE_VIEW_EXTENSIONS)
+  //   2. apps/web/src/lib/helpers.ts (OFFICE_EXTS, isOfficeFile)
+  //   3. apps/desktop/src/renderer/lib/file-type.ts (OFFICE_EXTS, isOfficeFile)
+  //   4. this test file (the sorted list below)
+  // The desktop app has no vitest runner (Playwright only), so its copy
+  // cannot be pinned by an assertion - this comment is that pin. If you
+  // touch this list, update all four.
   it('is driven by exactly this sorted 11-extension list', () => {
     const extensions = [
       'csv', 'doc', 'docx', 'odp', 'ods', 'odt', 'ppt', 'pptx', 'rtf', 'xls', 'xlsx',

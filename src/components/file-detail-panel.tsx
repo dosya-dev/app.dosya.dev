@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { humanSize, timeAgo, extOf, isImage, isVideo, isText, isAudio, fileIconSrc, regionLabel, colorFor, isOfficeFile } from '@/lib/helpers';
 import { FilePreviewImage } from '@/components/file-preview-image';
+import { OfficePreview } from '@/components/office-preview';
 import { toast } from '@/lib/toast';
 import { IMPORT_SOURCE_LABELS } from '@/lib/cloud-providers';
 
@@ -377,7 +378,7 @@ function FilePreview({ file, utSuffix }: { file: FileItem; utSuffix: string }) {
     }
   }, [file.id, file.name, utSuffix]);
 
-  if (previewError || (!isImage(file.name) && !isVideo(file.name) && !file.name.toLowerCase().endsWith('.pdf') && !isText(file.name) && !isAudio(file.name))) {
+  if (previewError || (!isImage(file.name) && !isVideo(file.name) && !file.name.toLowerCase().endsWith('.pdf') && !isText(file.name) && !isAudio(file.name) && !isOfficeFile(file.name))) {
     const ext = extOf(file.name).toUpperCase() || 'FILE';
     return (
       <div className="w-full h-28 flex items-center justify-center" style={{ background: colorFor(file.name) + '18' }}>
@@ -446,6 +447,22 @@ function FilePreview({ file, utSuffix }: { file: FileItem; utSuffix: string }) {
         <pre className="m-0 p-3 text-[11px] leading-relaxed text-[#d4d4d4] font-mono whitespace-pre-wrap break-all h-full overflow-hidden">
           {textContent ?? 'Loading\u2026'}
         </pre>
+      </div>
+    );
+  }
+
+  if (isOfficeFile(file.name)) {
+    return (
+      <div className="w-full h-48 bg-muted/50 overflow-hidden">
+        <OfficePreview
+          file={file}
+          compact
+          fallback={
+            <div className="w-full h-28 flex items-center justify-center" style={{ background: colorFor(file.name) + '18' }}>
+              <img src={fileIconSrc(file.name)} alt={extOf(file.name).toUpperCase() || 'FILE'} className="size-16" />
+            </div>
+          }
+        />
       </div>
     );
   }
