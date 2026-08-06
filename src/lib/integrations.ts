@@ -10,7 +10,7 @@ export interface IntegrationCtx {
 }
 
 export type IntegrationSlug =
-  | 'rclone' | 'webdav' | 'sftp' | 's3' | 'desktop' | 'cli' | 'rest-api' | 'google' | 'onedrive' | 'webhooks'
+  | 'rclone' | 'webdav' | 'sftp' | 's3' | 'desktop' | 'cli' | 'rest-api' | 'google' | 'onedrive' | 'dropbox' | 'webhooks'
   | 'remote-download';
 
 export interface IntegrationMeta {
@@ -102,6 +102,14 @@ export const INTEGRATIONS: IntegrationMeta[] = [
     tag: 'Import',
     icon: HardDrive,
     iconSrc: '/onedrive-color.svg',
+  },
+  {
+    slug: 'dropbox',
+    title: 'Dropbox',
+    description: 'Import folders and files from Dropbox, with your folder structure preserved.',
+    tag: 'Import',
+    icon: HardDrive,
+    iconSrc: '/dropbox-color.svg',
   },
   {
     slug: 'webhooks',

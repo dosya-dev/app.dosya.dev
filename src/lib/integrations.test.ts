@@ -9,9 +9,9 @@ import {
 const ctx = { workspaceId: 'ws_abc123', workspaceName: 'My Team', email: 'ada@example.com' };
 
 describe('integrations metadata', () => {
-  it('exposes exactly the eleven integrations in order', () => {
+  it('exposes exactly the twelve integrations in order', () => {
     expect(INTEGRATIONS.map((i) => i.slug)).toEqual([
-      'rclone', 'webdav', 'sftp', 's3', 'desktop', 'cli', 'rest-api', 'google', 'onedrive', 'webhooks',
+      'rclone', 'webdav', 'sftp', 's3', 'desktop', 'cli', 'rest-api', 'google', 'onedrive', 'dropbox', 'webhooks',
       'remote-download',
     ]);
   });

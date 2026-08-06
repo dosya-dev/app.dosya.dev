@@ -64,7 +64,7 @@ describe('IntegrationsSection', () => {
           accounts={[
             { id: 'cca_1', provider: 'google', account_email: 'g@example.com', account_name: 'G', created_at: 0 },
             { id: 'cca_2', provider: 'onedrive', account_email: 'o@example.com', account_name: 'O', created_at: 0 },
-            { id: 'cca_3', provider: 'dropbox', account_email: 'd@example.com', account_name: 'D', created_at: 0 },
+            { id: 'cca_3', provider: 'icloud', account_email: 'd@example.com', account_name: 'D', created_at: 0 },
           ]}
           providers={[{ id: 'google', label: 'Google Drive' }, { id: 'onedrive', label: 'OneDrive' }]}
           onChanged={() => {}}

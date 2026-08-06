@@ -29,4 +29,5 @@ export const PROVIDER_LABELS: Record<string, string> = {
 export const PROVIDER_ICONS: Record<string, string> = {
   google: '/google-color.svg',
   onedrive: '/onedrive-color.svg',
+  dropbox: '/dropbox-color.svg',
 };
