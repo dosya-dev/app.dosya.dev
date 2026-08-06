@@ -6,6 +6,7 @@ import { API_BASE } from '@/api/client';
 import { getIntegration } from '@/lib/integrations';
 import { ProviderPickerDialog } from '@/components/cloud-import/provider-picker-dialog';
 import { ConnectedAccountsCard } from '@/components/cloud-import/connected-accounts-card';
+import { CloudConnectNotice } from '@/components/cloud-import/cloud-connect-notice';
 import { ImportProgressCard } from '@/components/cloud-import/import-progress-card';
 
 const meta = getIntegration('google')!;
@@ -17,6 +18,7 @@ export default function GoogleSetup() {
 
   return (
     <IntegrationLayout icon={meta.icon} iconSrc={meta.iconSrc} title={meta.title} description={meta.description}>
+      <CloudConnectNotice />
       <Step n={1} title="Connect your Google account">
         <p>Grant dosya read access to your Google Drive so you can import files from it:</p>
         <a
