@@ -174,6 +174,42 @@ describe('OfficePreview - 503 conversion-in-flight retry', () => {
       vi.useRealTimers();
     }
   });
+
+  it('gives up and renders the fallback after exhausting all retries on repeated 503s', async () => {
+    vi.useFakeTimers();
+    try {
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: false, status: 503,
+        headers: { get: (h: string) => (h === 'Retry-After' ? '3' : null) },
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      container = document.createElement('div');
+      document.body.appendChild(container);
+      root = createRoot(container);
+      await act(async () => {
+        root!.render(createElement(OfficePreview, {
+          file: officeFile(),
+          fallback: createElement('div', { 'data-testid': 'fallback' }, 'Fallback card'),
+        } as never));
+        await flush();
+      });
+
+      expect(container.textContent).toContain('Preparing preview');
+
+      // MAX_RETRIES is 2, so the initial attempt plus two retries (each after
+      // the 3s Retry-After delay) is enough time to exhaust every attempt.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(6000);
+      });
+
+      expect(container.querySelector('[data-testid="fallback"]')).toBeTruthy();
+      expect(container.querySelector('iframe')).toBeFalsy();
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe('OfficePreview - error paths', () => {
@@ -240,6 +276,54 @@ describe('OfficePreview - unmount cleanup', () => {
     root = null;
 
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:test');
+  });
+});
+
+describe('OfficePreview - stale-load replacement', () => {
+  it('swaps to the new file\'s preview and revokes the stale object URL when the file changes on the same root', async () => {
+    const objectUrls = ['blob:file-a', 'blob:file-b'];
+    let urlIndex = 0;
+    const createObjectURL = vi.fn(() => objectUrls[urlIndex++]);
+    const revokeObjectURL = vi.fn();
+    vi.stubGlobal('URL', { createObjectURL, revokeObjectURL });
+
+    const blobA = new Blob(['A']);
+    const blobB = new Blob(['B']);
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, blob: async () => blobA })
+      .mockResolvedValueOnce({ ok: true, status: 200, blob: async () => blobB });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const fileA = officeFile({ id: 'file-a' });
+    const fileB = officeFile({ id: 'file-b' });
+
+    await mount({ file: fileA });
+
+    let iframe = container!.querySelector('iframe');
+    expect(iframe!.getAttribute('src')).toBe('blob:file-a#toolbar=1');
+
+    // Rerender the SAME root with a different file - this is the
+    // stale-load-replacement path: the effect's cleanup (keyed on
+    // [file.id, version]) tears down file A's in-flight request before
+    // file B's effect runs.
+    await act(async () => {
+      root!.render(createElement(OfficePreview, {
+        file: fileB,
+        fallback: createElement('div', { 'data-testid': 'fallback' }, 'Fallback card'),
+      } as never));
+      await flush();
+    });
+
+    iframe = container!.querySelector('iframe');
+    expect(iframe!.getAttribute('src')).toBe('blob:file-b#toolbar=1');
+    // File A's blob URL is revoked as part of the effect-cleanup-on-
+    // dependency-change path, not just on final unmount.
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:file-a');
+
+    // File A's own AbortController is aborted at replacement time too, so a
+    // late-arriving response for the stale request can't do anything.
+    const [, fileARequestInit] = fetchMock.mock.calls[0];
+    expect((fileARequestInit as { signal: AbortSignal }).signal.aborted).toBe(true);
   });
 });
 
