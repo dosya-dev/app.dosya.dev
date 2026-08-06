@@ -10,6 +10,7 @@ import { PublicNav } from '@/components/public-nav';
 import { PasswordStrengthMeter } from '@/components/password-strength-meter';
 import { MIN_PASSWORD_LENGTH } from '@/lib/password-strength';
 import { TurnstileWidget, type TurnstileHandle } from '@/components/turnstile-widget';
+import { LegalLinks, LegalNotice } from '@/components/legal-notice';
 
 export default function SignUpPage() {
   const navigate = useNavigate();
@@ -53,7 +54,11 @@ export default function SignUpPage() {
           'Content-Type': 'application/json',
           'X-Turnstile-Token': turnstileRef.current?.getToken() ?? '',
         },
-        body: JSON.stringify({ name, email, password, ...(ref ? { ref } : {}) }),
+        // `terms` is required by the API, which records it against the new
+        // user row. Submitting is gated on the checkbox above, so this is
+        // always true by the time we get here - it is sent explicitly rather
+        // than assumed server-side so the acceptance is the client's claim.
+        body: JSON.stringify({ name, email, password, terms: true, ...(ref ? { ref } : {}) }),
       });
       const data = await res.json();
       // Single-use token: reset on every outcome, not just failures, or a
@@ -169,8 +174,7 @@ export default function SignUpPage() {
                 <label className="flex items-start gap-2 text-sm text-muted-foreground">
                   <Checkbox checked={terms} onCheckedChange={(checked) => setTerms(checked)} className="mt-0.5 size-4" />
                   <span>
-                    I agree to the{' '}
-                    <a href="https://dosya.dev/terms-of-service" target="_blank" rel="noreferrer" className="font-medium underline underline-offset-4 hover:text-foreground">Terms of Service</a>
+                    I agree to the <LegalLinks />
                   </span>
                 </label>
                 <TurnstileWidget action="signup" ref={turnstileRef} />
@@ -180,7 +184,11 @@ export default function SignUpPage() {
                 </Button>
               </form>
 
-              <p className="mt-6 text-center text-sm text-muted-foreground">
+              {/* Covers the OAuth buttons above the form, which create a real
+                  account without ever touching the consent checkbox. */}
+              <LegalNotice className="mt-6" />
+
+              <p className="mt-4 text-center text-sm text-muted-foreground">
                 Already have an account? <a href="/login" className="font-medium underline underline-offset-4 hover:text-foreground">Log in</a>
               </p>
             </CardContent>

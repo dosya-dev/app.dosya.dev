@@ -7,6 +7,7 @@ import { Loader2, Eye, EyeOff } from 'lucide-react';
 import { API_BASE } from '@/api/client';
 import { PublicNav } from '@/components/public-nav';
 import { TurnstileWidget, type TurnstileHandle } from '@/components/turnstile-widget';
+import { LegalNotice } from '@/components/legal-notice';
 
 // OAuth callbacks redirect here as /login?error=<provider>_<reason> on failure.
 const PROVIDER_LABELS: Record<string, string> = { github: 'GitHub', google: 'Google', apple: 'Apple' };
@@ -189,7 +190,9 @@ export default function LoginPage() {
               </Button>
             </form>
 
-            <p className="mt-6 text-center text-sm text-muted-foreground">
+            <LegalNotice className="mt-6" />
+
+            <p className="mt-4 text-center text-sm text-muted-foreground">
               Don't have an account? <a href="/sign-up" className="font-medium underline underline-offset-4 hover:text-foreground">Sign up</a>
             </p>
           </CardContent>
