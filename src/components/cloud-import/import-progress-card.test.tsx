@@ -4,6 +4,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import type { CloudJob } from '@/api/cloud-import';
 import { ImportProgressCard, describeJob } from './import-progress-card';
 import { IMPORT_SOURCE_LABELS, PROVIDER_LABELS } from '@/lib/cloud-providers';
+import { recordSamples, resetImportRateSamples } from '@/lib/import-rate';
 import { useCloudImports } from '@/stores/cloud-imports';
 
 beforeAll(() => {
@@ -207,5 +208,51 @@ describe('ImportProgressCard', () => {
 
     expect(container!.textContent).toContain('o@example.com');
     expect(container!.textContent).not.toContain('g@example.com');
+  });
+
+  it('shows size, speed and ETA once the rate window has samples', async () => {
+    resetImportRateSamples();
+    // Pin Date.now(): render()'s setState makes the import-rate subscriber
+    // record a sample with the real clock, which would smear the seeded
+    // window across 50+ years otherwise. Faking only Date keeps the act()
+    // flushing (real timers) intact.
+    vi.useFakeTimers({ toFake: ['Date'], now: 20_000 });
+    try {
+      const running = (bytes: number) => job({
+        id: 'jobRate1', status: 'running',
+        total_bytes: 100 * 1048576, completed_bytes: bytes,
+      });
+      // Seeds at t=0/t=10s plus the subscriber's own sample at t=20s:
+      // 20 MB over 20s = 1 MB/s; 60 MB remaining -> about 1m.
+      recordSamples([running(20 * 1048576)], 0);
+      recordSamples([running(30 * 1048576)], 10_000);
+
+      await render([running(40 * 1048576)]);
+
+      const stats = container!.querySelector('[data-testid="job-stats"]');
+      expect(stats?.textContent).toContain('40.0 MB of 100.0 MB');
+      expect(stats?.textContent).toContain('1.0 MB/s');
+      expect(stats?.textContent).toContain('about 1m left');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('shows only the byte counts before the rate window exists', async () => {
+    resetImportRateSamples();
+    await render([job({ id: 'jobRate2', status: 'running', total_bytes: 1048576, completed_bytes: 524288 })]);
+
+    const stats = container!.querySelector('[data-testid="job-stats"]');
+    expect(stats?.textContent).toContain('of 1.0 MB');
+    expect(stats?.textContent).not.toContain('/s');
+    expect(stats?.textContent).not.toContain('left');
+  });
+
+  it('shows bytes found so far while discovering, without speed or ETA', async () => {
+    resetImportRateSamples();
+    await render([job({ status: 'discovering', total_bytes: 3 * 1048576 })]);
+
+    const stats = container!.querySelector('[data-testid="job-stats"]');
+    expect(stats?.textContent).toBe('3.0 MB found so far');
   });
 });

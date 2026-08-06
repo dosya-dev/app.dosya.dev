@@ -3,6 +3,8 @@ import { Progress } from '@/components/ui/progress';
 import { Button } from '@/components/ui/button';
 import { ACTIVE_CLOUD_STATUSES, jobProgress, useCloudImports } from '@/stores/cloud-imports';
 import { PROVIDER_LABELS } from '@/lib/cloud-providers';
+import { humanDuration, jobRate } from '@/lib/import-rate';
+import { humanSize } from '@/lib/helpers';
 import type { CloudJob } from '@/api/cloud-import';
 
 type JobCounts = Pick<
@@ -28,6 +30,34 @@ export function describeJob(job: JobCounts): string {
 }
 
 /** Renders nothing when no cloud import is active. */
+/**
+ * Size / speed / ETA line for one job. Running jobs show
+ * "45 MB of 1.2 GB - 3.4 MB/s - about 4m left", with the speed and ETA
+ * slots blank until the rate window has two honest samples (and no ETA on a
+ * stall - see lib/import-rate.ts). Discovery shows only the bytes counted
+ * so far: the total is still growing, so a percent or ETA would be fiction.
+ */
+function JobStats({ job }: { job: CloudJob }) {
+  if (job.status === 'discovering') {
+    if (job.total_bytes <= 0) return null;
+    return (
+      <p className="text-xs text-muted-foreground" data-testid="job-stats">
+        {humanSize(job.total_bytes)} found so far
+      </p>
+    );
+  }
+  if (job.status !== 'running' || job.total_bytes <= 0) return null;
+
+  const rate = jobRate(job);
+  return (
+    <p className="text-xs text-muted-foreground tabular-nums" data-testid="job-stats">
+      {humanSize(job.completed_bytes)} of {humanSize(job.total_bytes)}
+      {rate.bytesPerSec != null && rate.bytesPerSec > 0 ? ` - ${humanSize(rate.bytesPerSec)}/s` : ''}
+      {rate.etaSeconds !== null ? ` - about ${humanDuration(rate.etaSeconds)} left` : ''}
+    </p>
+  );
+}
+
 export function ImportProgressCard({ provider }: { provider?: string } = {}) {
   const jobs = useCloudImports((s) => s.jobs);
   const refresh = useCloudImports((s) => s.refresh);
@@ -58,6 +88,7 @@ export function ImportProgressCard({ provider }: { provider?: string } = {}) {
               {PROVIDER_LABELS[job.provider] ?? job.provider}
               {job.account_email ? ` - from ${job.account_email}` : ''}
             </p>
+            <JobStats job={job} />
             {/*
               jobProgress() already returns exactly what Progress's `value`
               prop wants: number | null, with null meaning indeterminate.
