@@ -17,6 +17,7 @@ import {
 import { api, API_BASE } from '@/api/client';
 import { useWorkspace } from '@/stores/workspace';
 import { RemoteDownloadIndicator } from '@/components/layout/remote-download-indicator';
+import { CloudImportIndicator } from '@/components/layout/cloud-import-indicator';
 import { formatBytes } from '@/lib/billing/cart-math';
 
 interface Workspace {
@@ -282,7 +283,12 @@ export function DashboardSidebar() {
                     <SidebarMenuButton className={NAV_BTN_CLASS} isActive={location.pathname === item.url || location.pathname.startsWith(item.url + '/')}>
                       <item.icon className="size-4" />
                       <span>{item.title}</span>
-                      {item.url === '/integrations' && <RemoteDownloadIndicator />}
+                      {item.url === '/integrations' && (
+                        <span className="ml-auto flex items-center gap-1">
+                          <RemoteDownloadIndicator />
+                          <CloudImportIndicator />
+                        </span>
+                      )}
                     </SidebarMenuButton>
                   </Link>
                 </SidebarMenuItem>

@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { API_BASE } from '@/api/client';
 import { getIntegration } from '@/lib/integrations';
 import { ProviderPickerDialog } from '@/components/cloud-import/provider-picker-dialog';
+import { ConnectedAccountsCard } from '@/components/cloud-import/connected-accounts-card';
 
 const meta = getIntegration('google')!;
 
@@ -21,6 +22,7 @@ export default function GoogleSetup() {
         >
           <img src="/google-color.svg" alt="" className="size-4" /> Connect Google Drive
         </a>
+        <ConnectedAccountsCard provider="google" />
       </Step>
       <Step n={2} title="Import your files">
         <p>
