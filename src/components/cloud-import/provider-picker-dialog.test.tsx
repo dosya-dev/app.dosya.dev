@@ -311,6 +311,31 @@ describe('ProviderPickerDialog - account resets on a provider switch (stale-acco
   });
 });
 
+describe('ProviderPickerDialog - initialAccountId preselect (per-account Import buttons)', () => {
+  it('preselects the requested account over the default first-account pick', async () => {
+    listAccountsMock.mockResolvedValue([
+      account({ id: 'o1', provider: 'onedrive', account_email: 'o1@example.com' }),
+      account({ id: 'o2', provider: 'onedrive', account_email: 'o2@example.com' }),
+    ]);
+    browseMock.mockResolvedValue({ entries: [], cursor: null });
+
+    await renderDialog({ provider: 'onedrive', initialAccountId: 'o2' });
+
+    expect(browseMock).toHaveBeenLastCalledWith(expect.objectContaining({ accountId: 'o2' }));
+  });
+
+  it('falls back to the first account when the requested id does not belong to this provider', async () => {
+    listAccountsMock.mockResolvedValue([
+      account({ id: 'o1', provider: 'onedrive', account_email: 'o1@example.com' }),
+    ]);
+    browseMock.mockResolvedValue({ entries: [], cursor: null });
+
+    await renderDialog({ provider: 'onedrive', initialAccountId: 'g-stale' });
+
+    expect(browseMock).toHaveBeenLastCalledWith(expect.objectContaining({ accountId: 'o1' }));
+  });
+});
+
 describe('ProviderPickerDialog - reset on reopen (IMPORTANT 1 regression guard)', () => {
   it('clears crumbs and selection when closed and reopened while the component stays mounted', async () => {
     listAccountsMock.mockResolvedValue([account()]);

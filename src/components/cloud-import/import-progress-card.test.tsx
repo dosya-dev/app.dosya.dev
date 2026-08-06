@@ -101,6 +101,7 @@ describe('ImportProgressCard', () => {
     return {
       id: 'job1',
       provider: 'google',
+      account_email: null,
       workspace_id: 'ws1',
       status: 'running',
       total_files: 10,
@@ -174,5 +175,37 @@ describe('ImportProgressCard', () => {
 
     expect(cancel).toHaveBeenCalledTimes(1);
     expect(cancel).toHaveBeenCalledWith('job42');
+  });
+
+  it('shows the provider label and owning account email on each job row', async () => {
+    await render([job({ provider: 'onedrive', account_email: 'o@example.com' })]);
+    const source = container!.querySelector('[data-testid="job-source"]');
+    expect(source?.textContent).toBe('OneDrive - from o@example.com');
+  });
+
+  it('omits the email part when the account row is gone', async () => {
+    await render([job({ provider: 'onedrive', account_email: null })]);
+    expect(container!.querySelector('[data-testid="job-source"]')?.textContent).toBe('OneDrive');
+  });
+
+  it('filters to the given provider when the provider prop is set', async () => {
+    useCloudImports.setState({
+      jobs: [
+        job({ id: 'g1', provider: 'google', account_email: 'g@example.com' }),
+        job({ id: 'o1', provider: 'onedrive', account_email: 'o@example.com' }),
+      ],
+      refresh: vi.fn().mockResolvedValue(undefined),
+      cancel: vi.fn().mockResolvedValue(undefined),
+    });
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    await act(async () => {
+      root!.render(<ImportProgressCard provider="onedrive" />);
+      await Promise.resolve();
+    });
+
+    expect(container!.textContent).toContain('o@example.com');
+    expect(container!.textContent).not.toContain('g@example.com');
   });
 });

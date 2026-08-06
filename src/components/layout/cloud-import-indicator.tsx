@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useWorkspace } from '@/stores/workspace';
 import { ACTIVE_CLOUD_STATUSES, jobProgress, useCloudImports } from '@/stores/cloud-imports';
+import { PROVIDER_LABELS } from '@/lib/cloud-providers';
 import { describeJob } from '@/components/cloud-import/import-progress-card';
 
 const RADIUS = 5;
@@ -72,7 +73,9 @@ export function CloudImportIndicator() {
             const jobPct = jobProgress(job);
             return (
               <div key={job.id} className="flex items-center justify-between gap-4 text-[11px]">
-                <span className="max-w-[13rem] truncate">{describeJob(job)}</span>
+                <span className="max-w-52 truncate">
+                  {job.account_email ?? (PROVIDER_LABELS[job.provider] ?? job.provider)}: {describeJob(job)}
+                </span>
                 <span className="tabular-nums text-muted-foreground">
                   {jobPct !== null ? `${jobPct}%` : '…'}
                 </span>

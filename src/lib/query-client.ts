@@ -13,6 +13,8 @@ import { QueryClient } from '@tanstack/react-query';
 import { ApiError } from '@/api/client';
 import { FILES_QUERY_ROOT } from '@/lib/files-request';
 import { activeJobIds, completedJobIds, useCloudImports } from '@/stores/cloud-imports';
+import { completionToast } from '@/lib/cloud-import-toasts';
+import { toast } from '@/lib/toast';
 
 /**
  * 401 and 403 are terminal: the session is gone or the permission is absent,
@@ -96,5 +98,14 @@ useCloudImports.subscribe((state) => {
   prevActiveCloudImportIds = activeJobIds(state.jobs);
   if (completed.length > 0) {
     queryClient.invalidateQueries({ queryKey: [FILES_QUERY_ROOT] });
+    // Same edge, second consumer: tell the user each import finished and
+    // which account it came from. completedJobIds only ever reports
+    // active -> terminal transitions, so this cannot double-toast a job.
+    for (const id of completed) {
+      const job = state.jobs.find((j) => j.id === id);
+      if (!job) continue;
+      const t = completionToast(job);
+      if (t) toast[t.kind](t.title, t.description);
+    }
   }
 });

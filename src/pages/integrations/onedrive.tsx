@@ -6,11 +6,14 @@ import { API_BASE } from '@/api/client';
 import { getIntegration } from '@/lib/integrations';
 import { ProviderPickerDialog } from '@/components/cloud-import/provider-picker-dialog';
 import { ConnectedAccountsCard } from '@/components/cloud-import/connected-accounts-card';
+import { ImportProgressCard } from '@/components/cloud-import/import-progress-card';
 
 const meta = getIntegration('onedrive')!;
 
 export default function OneDriveSetup() {
   const [pickerOpen, setPickerOpen] = useState(false);
+  // Which account the picker preselects; null = the picker's own default.
+  const [pickerAccountId, setPickerAccountId] = useState<string | null>(null);
 
   return (
     <IntegrationLayout icon={meta.icon} iconSrc={meta.iconSrc} title={meta.title} description={meta.description}>
@@ -22,7 +25,10 @@ export default function OneDriveSetup() {
         >
           <img src="/onedrive-color.svg" alt="" className="size-4" /> Connect OneDrive
         </a>
-        <ConnectedAccountsCard provider="onedrive" />
+        <ConnectedAccountsCard
+          provider="onedrive"
+          onImport={(accountId) => { setPickerAccountId(accountId); setPickerOpen(true); }}
+        />
       </Step>
       <Step n={2} title="Import your files">
         <p>
@@ -36,13 +42,19 @@ export default function OneDriveSetup() {
       </Step>
       <Step n={3} title="Choose what to import">
         <p>Browse your OneDrive and pick the folders or files you want. Folder structure is preserved.</p>
-        <Button className="mt-2" onClick={() => setPickerOpen(true)}>Import from OneDrive</Button>
+        <Button className="mt-2" onClick={() => { setPickerAccountId(null); setPickerOpen(true); }}>
+          Import from OneDrive
+        </Button>
       </Step>
+      <div className="mt-4 empty:hidden">
+        <ImportProgressCard provider="onedrive" />
+      </div>
       <ProviderPickerDialog
         open={pickerOpen}
         onOpenChange={setPickerOpen}
         provider="onedrive"
         destFolderId={null}
+        initialAccountId={pickerAccountId}
       />
     </IntegrationLayout>
   );

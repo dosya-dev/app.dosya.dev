@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { Progress } from '@/components/ui/progress';
 import { Button } from '@/components/ui/button';
 import { ACTIVE_CLOUD_STATUSES, jobProgress, useCloudImports } from '@/stores/cloud-imports';
+import { PROVIDER_LABELS } from '@/lib/cloud-providers';
 import type { CloudJob } from '@/api/cloud-import';
 
 type JobCounts = Pick<
@@ -27,14 +28,18 @@ export function describeJob(job: JobCounts): string {
 }
 
 /** Renders nothing when no cloud import is active. */
-export function ImportProgressCard() {
+export function ImportProgressCard({ provider }: { provider?: string } = {}) {
   const jobs = useCloudImports((s) => s.jobs);
   const refresh = useCloudImports((s) => s.refresh);
   const cancel = useCloudImports((s) => s.cancel);
 
   useEffect(() => { void refresh(); }, [refresh]);
 
-  const active = jobs.filter((j) => ACTIVE_CLOUD_STATUSES.has(j.status));
+  // Optional provider filter: the /integrations setup pages show only their
+  // own provider's jobs; the files page passes nothing and shows them all.
+  const active = jobs.filter(
+    (j) => ACTIVE_CLOUD_STATUSES.has(j.status) && (!provider || j.provider === provider),
+  );
   if (active.length === 0) return null;
 
   return (
@@ -49,6 +54,10 @@ export function ImportProgressCard() {
                 Cancel
               </Button>
             </div>
+            <p className="text-xs text-muted-foreground" data-testid="job-source">
+              {PROVIDER_LABELS[job.provider] ?? job.provider}
+              {job.account_email ? ` - from ${job.account_email}` : ''}
+            </p>
             {/*
               jobProgress() already returns exactly what Progress's `value`
               prop wants: number | null, with null meaning indeterminate.

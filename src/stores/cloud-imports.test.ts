@@ -20,6 +20,7 @@ function job(over: Partial<CloudJob> = {}): CloudJob {
   return {
     id: 'job1',
     provider: 'google_drive',
+    account_email: null,
     workspace_id: 'ws1',
     status: 'running',
     total_files: 10,

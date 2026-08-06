@@ -14,7 +14,11 @@ import { toast } from '@/lib/toast';
  * all-providers management surface; this card is deliberately scoped to a
  * single provider.
  */
-export function ConnectedAccountsCard({ provider }: { provider: string }) {
+export function ConnectedAccountsCard({ provider, onImport }: {
+  provider: string;
+  /** When given, each account row shows an Import button calling this with the account id. */
+  onImport?: (accountId: string) => void;
+}) {
   const [accounts, setAccounts] = useState<CloudAccount[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [disconnecting, setDisconnecting] = useState<string | null>(null);
@@ -71,15 +75,22 @@ export function ConnectedAccountsCard({ provider }: { provider: string }) {
                 <p className="text-[11px] text-muted-foreground">Connected {timeAgo(acc.created_at)}</p>
               </div>
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              className="text-xs text-destructive border-destructive/30"
-              onClick={() => disconnect(acc.id)}
-              disabled={disconnecting === acc.id}
-            >
-              {disconnecting === acc.id ? <Loader2 className="size-3 animate-spin" /> : 'Disconnect'}
-            </Button>
+            <div className="flex items-center gap-2 shrink-0">
+              {onImport && (
+                <Button size="sm" className="text-xs" onClick={() => onImport(acc.id)}>
+                  Import
+                </Button>
+              )}
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-xs text-destructive border-destructive/30"
+                onClick={() => disconnect(acc.id)}
+                disabled={disconnecting === acc.id}
+              >
+                {disconnecting === acc.id ? <Loader2 className="size-3 animate-spin" /> : 'Disconnect'}
+              </Button>
+            </div>
           </div>
         ))
       )}

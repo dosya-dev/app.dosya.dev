@@ -24,6 +24,8 @@ export interface CloudEntryDto {
 export interface CloudJob {
   id: string;
   provider: string;
+  /** Owning account's email; null if the account row is gone. */
+  account_email: string | null;
   workspace_id: string;
   status: 'discovering' | 'running' | 'complete' | 'failed' | 'cancelled';
   total_files: number;

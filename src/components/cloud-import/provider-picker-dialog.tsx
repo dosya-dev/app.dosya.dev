@@ -18,6 +18,12 @@ interface Props {
   /** Destination folder in dosya. null = workspace root. */
   destFolderId: string | null;
   destLabel?: string;
+  /**
+   * Preselect this account when it belongs to `provider` (the per-account
+   * Import buttons on the /integrations setup pages). Absent or stale ids
+   * fall back to the keep-or-first behavior below.
+   */
+  initialAccountId?: string | null;
 }
 
 /**
@@ -31,7 +37,7 @@ interface Props {
  * expand a folder before it can be selected.
  */
 export function ProviderPickerDialog({
-  open, onOpenChange, provider, destFolderId, destLabel,
+  open, onOpenChange, provider, destFolderId, destLabel, initialAccountId,
 }: Props) {
   const workspaceId = useWorkspace((s) => s.activeId);
   const start = useCloudImports((s) => s.start);
@@ -52,15 +58,20 @@ export function ProviderPickerDialog({
       if (cancelled) return;
       const mine = all.filter((a) => a.provider === provider);
       setAccounts(mine);
-      // Keep the current selection only if it still belongs to THIS
-      // provider's accounts - files.tsx swaps `provider` on one persistent
-      // dialog instance, so a plain `current ?? ...` would keep the other
-      // provider's account id alive across the switch.
-      setAccountId((current) => (mine.some((a) => a.id === current) ? current : mine[0]?.id ?? null));
+      // An explicit initialAccountId (per-account Import buttons) wins when
+      // it belongs to this provider. Otherwise keep the current selection
+      // only if it still belongs to THIS provider's accounts - files.tsx
+      // swaps `provider` on one persistent dialog instance, so a plain
+      // `current ?? ...` would keep the other provider's account id alive
+      // across the switch.
+      setAccountId((current) => {
+        if (initialAccountId && mine.some((a) => a.id === initialAccountId)) return initialAccountId;
+        return mine.some((a) => a.id === current) ? current : mine[0]?.id ?? null;
+      });
       setAccountsLoaded(true);
     });
     return () => { cancelled = true; };
-  }, [open, provider]);
+  }, [open, provider, initialAccountId]);
 
   const browser = useCloudBrowser(accountId);
   const connectUrl = `${API_BASE}/api/cloud/connect/${provider}`;
@@ -91,6 +102,11 @@ export function ProviderPickerDialog({
         destFolderId,
         selection: browser.selection,
       });
+      const account = accounts.find((a) => a.id === accountId);
+      toast.success(
+        'Import started',
+        account ? `From ${account.account_email}` : undefined,
+      );
       browser.clearSelection();
       onOpenChange(false);
     } catch (err) {

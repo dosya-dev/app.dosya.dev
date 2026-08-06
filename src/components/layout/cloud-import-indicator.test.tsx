@@ -32,6 +32,7 @@ function job(overrides: Partial<CloudJob>): CloudJob {
   return {
     id: 'cij_1',
     provider: 'onedrive',
+    account_email: null,
     workspace_id: 'ws_1',
     status: 'running',
     total_files: 10,

@@ -39,12 +39,12 @@ const ACCOUNTS: CloudAccount[] = [
   { id: 'cca_o', provider: 'onedrive', account_email: 'o@example.com', account_name: 'O', created_at: 100 },
 ];
 
-async function render(provider: string) {
+async function render(provider: string, onImport?: (accountId: string) => void) {
   container = document.createElement('div');
   document.body.appendChild(container);
   root = createRoot(container);
   await act(async () => {
-    root!.render(createElement(ConnectedAccountsCard, { provider }));
+    root!.render(createElement(ConnectedAccountsCard, { provider, onImport }));
     await flush();
   });
 }
@@ -98,5 +98,25 @@ describe('ConnectedAccountsCard', () => {
     expect(listAccountsMock).toHaveBeenCalledTimes(2);
     expect(toastSuccessMock).toHaveBeenCalled();
     expect(container!.textContent).toContain('No OneDrive account connected yet.');
+  });
+
+  it('shows an Import button per account when onImport is given, calling it with the account id', async () => {
+    const onImport = vi.fn();
+    await render('onedrive', onImport);
+
+    const button = [...container!.querySelectorAll('button')]
+      .find((b) => b.textContent === 'Import')!;
+    expect(button).toBeTruthy();
+    await act(async () => {
+      button.click();
+      await flush();
+    });
+
+    expect(onImport).toHaveBeenCalledWith('cca_o');
+  });
+
+  it('shows no Import button without onImport', async () => {
+    await render('onedrive');
+    expect([...container!.querySelectorAll('button')].some((b) => b.textContent === 'Import')).toBe(false);
   });
 });
