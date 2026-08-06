@@ -17,6 +17,13 @@ export interface UploadItem {
   region: string;
   /** Set when this upload replaces an existing file's contents (new version). */
   file_id?: string | null;
+  /**
+   * Group this upload was started from, if any. A group is a flat collection
+   * rather than a real folder, so the file still lands in `folder_id`; this is
+   * what lets the runner enrol it into the group once it completes, so it shows
+   * up in the view the user actually dropped it on.
+   */
+  group_id?: string | null;
   status: UploadStatus;
   progress: number;        // 0..100
   bytesUploaded: number;
@@ -35,4 +42,6 @@ export interface UploadInput {
   region?: string;
   /** Set to upload a new version of an existing file instead of creating one. */
   file_id?: string | null;
+  /** Set when uploading from a group view, to enrol the result into that group. */
+  group_id?: string | null;
 }

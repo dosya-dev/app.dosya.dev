@@ -138,6 +138,36 @@ const getItem = (id: string): UploadItem | undefined => store().items.find((x) =
 function markComplete(id: string, patch: Partial<UploadItem>): void {
   store().patchItem(id, { status: 'complete', progress: 100, ...patch });
   window.dispatchEvent(new Event('dosya:upload-complete'));
+  void enrolInGroup(getItem(id));
+}
+
+/**
+ * Uploads started from a group view still land in a real folder - a group is a
+ * flat, folder-spanning collection, not a parent. Without this the file was
+ * stored correctly but never appeared in the group the user uploaded it to, so
+ * a completed upload looked like a lost one (a refresh didn't help, because the
+ * file genuinely wasn't in the group).
+ *
+ * Best-effort: the file is already safely stored, so a failure here must not
+ * turn a successful upload into a failed one.
+ */
+async function enrolInGroup(item: UploadItem | undefined): Promise<void> {
+  if (!item?.group_id || !item.fileId) return;
+  try {
+    await fetch(`${API_BASE}/api/groups/${item.group_id}`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ file_id: item.fileId }),
+    });
+    window.dispatchEvent(new Event('dosya:groups-changed'));
+    // Re-announce completion so the files listing invalidates AGAIN, now that
+    // the file is actually a member. markComplete fires upload-complete before
+    // awaiting this, so the first invalidation refetched a group that did not
+    // contain the file yet - without this the upload still looked lost in the
+    // very view it was started from, which is the bug being fixed.
+    window.dispatchEvent(new Event('dosya:upload-complete'));
+  } catch { /* file is stored either way; it just won't be listed in the group */ }
 }
 
 function newId(i: number): string {
@@ -388,6 +418,7 @@ export function enqueue(files: File[] | FileList, input: UploadInput): void {
       // picker (Files drag-and-drop, version upload) rely on this.
       region: input.region ?? '',
       file_id: input.file_id ?? null,
+      group_id: input.group_id ?? null,
       status: 'queued', progress: 0, bytesUploaded: 0,
       part_size: null, total_parts: null, uploaded_parts: [],
     };

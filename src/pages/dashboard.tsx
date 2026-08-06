@@ -152,8 +152,11 @@ export default function DashboardPage() {
         <StatCard label="File requests" value="-" sub="Active requests" />
         <StatCard label="Storage used" value={humanSizeShort(s.total_bytes)} sub={s.storage_cap_bytes ? `of ${humanSizeShort(s.storage_cap_bytes)}` : 'unlimited plan'} />
         <StatCard label="Current plan" value={PLAN_LABELS[s.plan] ?? s.plan}>
+          {/* This used to point at /#pricing, a marketing-site anchor. Inside the
+              app the router resolved it to the dashboard itself, so the button
+              appeared to do nothing. /billing?upgrade=1 opens the plan chooser. */}
           {s.plan === 'free' ? (
-            <Link to="/#pricing"><Button size="sm" className="mt-2 h-6 text-[11px]">Upgrade now</Button></Link>
+            <Link to="/billing?upgrade=1"><Button size="sm" className="mt-2 h-6 text-[11px]">Upgrade now</Button></Link>
           ) : (
             <Link to="/billing" className="text-[11px] text-muted-foreground hover:text-foreground">Manage billing</Link>
           )}

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useLayoutEffect } from 'react';
+import { useState, useEffect, useRef, useLayoutEffect, useCallback } from 'react';
 import { useLocation, useNavigate, Link } from 'react-router-dom';
 import {
   Sidebar, SidebarContent, SidebarGroup, SidebarGroupLabel, SidebarGroupContent,
@@ -106,20 +106,35 @@ export function DashboardSidebar() {
     ? ROLE_LABELS[activeWs.role_id] ?? roleName ?? 'Member'
     : '';
 
+  // Bumped whenever the workspace icon changes, to break the browser's cache on
+  // the icon URL - it is a fixed path, so a refetch alone still paints the old
+  // image.
+  const [iconVersion, setIconVersion] = useState(0);
+
   // Load workspaces
-  useEffect(() => {
-    (async () => {
-      try {
-        const data = await api<{ ok: boolean; workspaces: Workspace[] }>('/api/workspaces');
-        if (data.ok) {
-          setWorkspaces(data.workspaces);
-          if (!activeId && data.workspaces.length > 0) {
-            setActiveId(data.workspaces[0].id);
-          }
+  const loadWorkspaces = useCallback(async () => {
+    try {
+      const data = await api<{ ok: boolean; workspaces: Workspace[] }>('/api/workspaces');
+      if (data.ok) {
+        setWorkspaces(data.workspaces);
+        if (!activeId && data.workspaces.length > 0) {
+          setActiveId(data.workspaces[0].id);
         }
-      } catch { /* */ }
-    })();
+      }
+    } catch { /* */ }
   }, [activeId, setActiveId]);
+
+  useEffect(() => { void loadWorkspaces(); }, [loadWorkspaces]);
+
+  // Settings renames the workspace and swaps its icon through its own fetch, so
+  // this list used to sit on whatever it loaded at mount - the switcher kept the
+  // old name and icon until a full page reload. Same `dosya:*-changed` idiom the
+  // files sidebar already uses for favourites and groups.
+  useEffect(() => {
+    const onChanged = () => { setIconVersion((v) => v + 1); void loadWorkspaces(); };
+    window.addEventListener('dosya:workspace-changed', onChanged);
+    return () => window.removeEventListener('dosya:workspace-changed', onChanged);
+  }, [loadWorkspaces]);
 
   // Load storage
   useEffect(() => {
@@ -191,7 +206,7 @@ export function DashboardSidebar() {
                 <>
                   <div className={`flex h-8 w-8 items-center justify-center rounded-md text-[11px] font-bold text-white shrink-0 overflow-hidden ${activeWs.icon_image_url ? 'bg-muted' : ''}`} style={activeWs.icon_image_url ? undefined : { background: activeWs.icon_color }}>
                     {activeWs.icon_image_url
-                      ? <img src={`${API_BASE}/api/workspaces/${activeWs.id}/icon`} alt="" className="w-full h-full object-cover" />
+                      ? <img src={`${API_BASE}/api/workspaces/${activeWs.id}/icon?v=${iconVersion}`} alt="" className="w-full h-full object-cover" />
                       : activeWs.icon_initials}
                   </div>
                   <div className="min-w-0 flex-1 text-left group-data-[collapsible=icon]:hidden">

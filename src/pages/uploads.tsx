@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, memo, type DragEvent, type ChangeEvent } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { api } from '@/api/client';
 import { useWorkspace } from '@/stores/workspace';
 import { useUploads } from '@/stores/uploads';
@@ -13,7 +13,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
-import { Upload, Globe, Info, Check, AlertCircle, Loader2, Home, FolderOpen, Layers } from 'lucide-react';
+import { Upload, Globe, Info, Check, AlertCircle, Loader2, Home, FolderOpen, Layers, Search } from 'lucide-react';
 import { humanSize, folderIconSrc } from '@/lib/helpers';
 import { toast } from '@/lib/toast';
 import { FolderPickerDialog } from '@/components/folder-picker-dialog';
@@ -26,8 +26,14 @@ export default function UploadsPage() {
   const [searchParams] = useSearchParams();
   const [folderId, setFolderId] = useState<string | null>(searchParams.get('folder'));
   const [folderName, setFolderName] = useState(searchParams.get('folder_name') || 'Root (top level)');
+  // Set when the Files page sent us here from a group view. Groups are flat
+  // collections rather than folders, so the file still lands in a folder; the
+  // upload runner enrols it into the group once it completes.
+  const groupId = searchParams.get('group');
+  const [groupName, setGroupName] = useState('');
   const [selectedRegion, setSelectedRegion] = useState('ap-southeast-2');
   const [regions, setRegions] = useState<RegionInfo[]>([]);
+  const [regionQuery, setRegionQuery] = useState('');
   const [dragging, setDragging] = useState(false);
   const [selectFolderOpen, setSelectFolderOpen] = useState(false);
   const [concurrency, setConcurrency] = useState(getUserConcurrency());
@@ -64,9 +70,20 @@ export default function UploadsPage() {
     })();
   }, [wsId]);
 
+  // Resolve the group's display name so the header can say where files are going.
+  useEffect(() => {
+    if (!wsId || !groupId) { setGroupName(''); return; }
+    (async () => {
+      try {
+        const data = await api<{ ok: boolean; groups?: { id: string; name: string }[] }>(`/api/groups?workspace_id=${wsId}`);
+        if (data.ok) setGroupName(data.groups?.find((g) => g.id === groupId)?.name ?? '');
+      } catch { /* header just falls back to "this group" */ }
+    })();
+  }, [wsId, groupId]);
+
   function addFiles(files: FileList | File[]) {
     if (!wsId) return;
-    enqueue(files, { workspace_id: wsId, folder_id: folderId, region: selectedRegion });
+    enqueue(files, { workspace_id: wsId, folder_id: folderId, region: selectedRegion, group_id: groupId });
   }
 
   const onConcurrencyChange = (n: number) => { setConcurrency(n); setUserConcurrency(n); };
@@ -76,12 +93,29 @@ export default function UploadsPage() {
   const totalBytes = queue.reduce((s, e) => s + e.fileSize, 0);
   const doneCount = queue.filter((e) => e.status === 'complete').length;
 
+  // Selected region floats to the top so it stays visible; the rest keep the
+  // server's order. Matching is case-insensitive across city, country and code.
+  const visibleRegions = (() => {
+    const q = regionQuery.trim().toLowerCase();
+    const matched = q
+      ? regions.filter((r) =>
+          r.city.toLowerCase().includes(q) ||
+          r.country.toLowerCase().includes(q) ||
+          r.code.toLowerCase().includes(q))
+      : regions;
+    return [...matched].sort((a, b) => (a.code === selectedRegion ? -1 : b.code === selectedRegion ? 1 : 0));
+  })();
+
   return (
     <div className="p-6 overflow-y-auto">
       <div className="mb-6">
         <h1 className="text-xl font-bold tracking-tight">Upload files</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          {folderId ? <>Uploading to <span className="font-semibold text-foreground">{folderName}</span> · encrypted in transit</> : 'Files are end-to-end encrypted in transit. You pick the region.'}
+          {folderId
+            ? <>Uploading to <span className="font-semibold text-foreground">{folderName}</span> · encrypted in transit</>
+            : groupId
+              ? <>Uploading to <span className="font-semibold text-foreground">{groupName || 'this group'}</span> · files land at the top level and are added to the group</>
+              : 'Files are end-to-end encrypted in transit. You pick the region.'}
         </p>
       </div>
 
@@ -137,14 +171,30 @@ export default function UploadsPage() {
             <div className="border-t" />
             <div>
               <p className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-1"><Globe className="size-3" /> Select region</p>
+              {/* 46 regions in a scroll box meant hunting for one by eye. Filter
+                  on city, country or region code. */}
+              <div className="relative mb-1.5">
+                <Search className="size-3 text-muted-foreground absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <input
+                  type="search"
+                  value={regionQuery}
+                  onChange={(e) => setRegionQuery(e.target.value)}
+                  placeholder="Search city, country or code"
+                  aria-label="Search regions"
+                  className="w-full h-7 pl-7 pr-2 rounded-lg border bg-background text-[11px] outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                />
+              </div>
               <div className="grid grid-cols-2 gap-1.5 max-h-50 overflow-y-auto">
-                {[...regions].sort((a, b) => (a.code === selectedRegion ? -1 : b.code === selectedRegion ? 1 : 0)).map((r) => (
+                {visibleRegions.map((r) => (
                   <button key={r.code} className={`flex flex-col px-2.5 py-2 rounded-lg border text-left transition-colors ${r.code === selectedRegion ? 'border-green-500 bg-green-50 dark:bg-green-950/30' : 'hover:bg-muted/50'}`} onClick={() => setSelectedRegion(r.code)}>
                     <span className="text-[11px] font-medium">{r.city}, {r.country}</span>
                     <span className="text-[10px] text-muted-foreground">{r.code}</span>
                   </button>
                 ))}
               </div>
+              {visibleRegions.length === 0 && (
+                <p className="text-[11px] text-muted-foreground py-2 text-center">No region matches "{regionQuery}".</p>
+              )}
             </div>
             <div className="border-t" />
             <div>
@@ -191,13 +241,38 @@ export default function UploadsPage() {
 
 const QueueRow = memo(function QueueRow({ item }: { item: UploadItem }) {
   const ext = item.fileName.includes('.') ? item.fileName.split('.').pop()!.toUpperCase() : 'FILE';
+  const navigate = useNavigate();
+
+  // A finished upload used to say "Done" and stop there - the file was in the
+  // workspace but there was no way to get to it from here. Deep-link to it on
+  // the Files page (which scrolls to and highlights `?file=`), and offer the
+  // containing folder separately for "where did that land?".
+  const openFile = () => {
+    if (!item.fileId) { navigate('/files'); return; }
+    navigate(`/files?file=${item.fileId}${item.folder_id ? `&folder=${item.folder_id}` : ''}`);
+  };
+  const openFolder = () => navigate(item.folder_id ? `/files?folder=${item.folder_id}` : '/files');
+
   return (
     <div className="flex items-center gap-3 py-3 border-b last:border-b-0">
       <div className="w-9 h-9 rounded-lg shrink-0 flex items-center justify-center text-[9px] font-bold tracking-wider text-muted-foreground bg-muted">
         {ext}
       </div>
       <div className="flex-1 min-w-0">
-        <p className="text-xs font-medium truncate mb-1">{item.fileName}</p>
+        <div className="flex items-center gap-2 mb-1">
+          <p className="text-xs font-medium truncate">{item.fileName}</p>
+          {item.status === 'complete' && (
+            <span className="flex items-center gap-2 shrink-0">
+              <button onClick={openFile} className="text-[11px] font-medium text-green-600 hover:text-green-700 hover:underline">
+                View file
+              </button>
+              <span className="text-[11px] text-muted-foreground/40">·</span>
+              <button onClick={openFolder} className="text-[11px] font-medium text-muted-foreground hover:text-foreground hover:underline">
+                Go to location
+              </button>
+            </span>
+          )}
+        </div>
         <div className="flex items-center gap-2">
           <span className="text-[11px] text-muted-foreground">{humanSize(item.fileSize)}</span>
           <Progress

@@ -19,7 +19,11 @@ const PLAN_COLORS: Record<string, string> = {
 export default function BillingPage() {
   const [data, setData] = useState<BillingStatus | null>(null);
   const [loading, setLoading] = useState(true);
-  const [showChooser, setShowChooser] = useState(false);
+  // ?upgrade=1 opens the plan chooser straight away, so "Upgrade now" elsewhere
+  // in the app is one click rather than "land on billing, then find the button".
+  const [showChooser, setShowChooser] = useState(
+    () => new URLSearchParams(window.location.search).get('upgrade') === '1',
+  );
   const [portalOpening, setPortalOpening] = useState(false);
   const [portalError, setPortalError] = useState<string | null>(null);
 

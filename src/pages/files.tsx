@@ -561,10 +561,25 @@ export default function FilesPage() {
     if (!newFolderName.trim()) return;
     setCreatingFolder(true);
     try {
-      const res = await api<{ ok: boolean; error?: string }>('/api/folders', {
+      const res = await api<{ ok: boolean; error?: string; folder?: { id: string } }>('/api/folders', {
         method: 'POST', body: JSON.stringify({ workspace_id: wsId, parent_id: currentFolderId, name: newFolderName.trim() }),
       });
-      if (res.ok) { toast.success('Folder created', 'Your new folder is ready to use.'); setCreateFolderOpen(false); setNewFolderName(''); loadFiles(); }
+      if (res.ok) {
+        // A group is a flat collection, not a real parent folder, so the new
+        // folder is created at the workspace root. Without this it was then
+        // invisible in the group view the user created it from, which read as
+        // "New folder does nothing". Enrol it so it shows up where it was made.
+        if (currentGroup && res.folder?.id) {
+          try {
+            await api(`/api/groups/${currentGroup}`, { method: 'POST', body: JSON.stringify({ folder_id: res.folder.id }) });
+            window.dispatchEvent(new Event('dosya:groups-changed'));
+          } catch { /* the folder exists either way; the group view just won't list it */ }
+        }
+        toast.success('Folder created', currentGroup
+          ? 'Your new folder is ready and was added to this group.'
+          : 'Your new folder is ready to use.');
+        setCreateFolderOpen(false); setNewFolderName(''); loadFiles();
+      }
       else toast.error('Folder failed', res.error ?? 'The folder could not be created.');
     } catch { toast.error('Folder failed', 'The folder could not be created.'); }
     setCreatingFolder(false);
@@ -839,10 +854,15 @@ export default function FilesPage() {
     if (isDeletedView) return;
     const droppedFiles = e.dataTransfer.files;
     if (!droppedFiles.length || !wsId) return;
-    enqueue(droppedFiles, { workspace_id: wsId, folder_id: currentFolderId });
+    // In a group view there is no current folder, so the file lands at the
+    // workspace root - passing the group makes the runner enrol it once the
+    // upload finishes, so it appears where it was dropped.
+    enqueue(droppedFiles, { workspace_id: wsId, folder_id: currentFolderId, group_id: currentGroup || null });
     toast.info(
       `Uploading ${droppedFiles.length} file${droppedFiles.length > 1 ? 's' : ''}`,
-      'Progress is shown in the upload dock.',
+      currentGroup
+        ? 'Progress is shown in the upload dock. Files will be added to this group.'
+        : 'Progress is shown in the upload dock.',
     );
   };
 
@@ -967,7 +987,14 @@ export default function FilesPage() {
         { label: 'Upload files', icon: <Upload />, onClick: () => navigate(uploadHref) },
       ];
 
-  const uploadHref = `/uploads${currentFolderId ? `?folder=${currentFolderId}&folder_name=${encodeURIComponent(breadcrumbs.at(-1)?.name ?? '')}` : ''}`;
+  // Carries the current folder, or the current group, through to the Uploads
+  // page so a file started from a group view is enrolled into that group when
+  // it lands (a group is a flat collection, so it can't be a `folder` target).
+  const uploadHref = currentFolderId
+    ? `/uploads?folder=${currentFolderId}&folder_name=${encodeURIComponent(breadcrumbs.at(-1)?.name ?? '')}`
+    : currentGroup
+      ? `/uploads?group=${currentGroup}`
+      : '/uploads';
 
   // Column-header sorts (e.g. Uploader ↑) aren't among the six dropdown
   // presets - append a synthetic entry so the trigger still shows a label.

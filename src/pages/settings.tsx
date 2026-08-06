@@ -194,11 +194,20 @@ function WorkspaceInfoSection({ data, wsId, regions, onSaved }: { data: WsData; 
   const canRegion = canPerm(data, 'change_workspace_region');
   const canManage = canPerm(data, 'manage_settings');
 
+  // onSaved() only reloads this page's own copy of the workspace. The sidebar
+  // switcher holds a separate list it fetched at mount, so renaming a workspace
+  // or swapping its icon left the old name and icon in the top-left corner until
+  // a full page reload. Broadcasting lets the switcher refetch in place.
+  const saved = () => {
+    onSaved();
+    window.dispatchEvent(new Event('dosya:workspace-changed'));
+  };
+
   const save = async (body: Record<string, unknown>, field: string) => {
     setSaving(field);
     try {
       const res = await api<{ ok: boolean; error?: string }>(`/api/workspaces/${wsId}`, { method: 'PUT', body: JSON.stringify(body) });
-      if (res.ok) { toast.success('Saved', 'Your workspace settings have been updated.'); onSaved(); } else toast.error('Couldn\'t save', res.error ?? 'Your workspace settings were not updated.');
+      if (res.ok) { toast.success('Saved', 'Your workspace settings have been updated.'); saved(); } else toast.error('Couldn\'t save', res.error ?? 'Your workspace settings were not updated.');
     } catch (err) { toast.error('Couldn\'t save', apiErrorMessage(err, 'Could not reach the server. Please try again.')); }
     setSaving(null);
   };
@@ -214,7 +223,7 @@ function WorkspaceInfoSection({ data, wsId, regions, onSaved }: { data: WsData; 
       if (d.ok && d.icon_image_url) {
         setIconUrl(d.icon_image_url);
         setIconVersion(Date.now()); // cache-bust the served image
-        toast.success('Icon updated', 'Your new workspace icon has been uploaded.'); onSaved();
+        toast.success('Icon updated', 'Your new workspace icon has been uploaded.'); saved();
       } else toast.error('Upload failed', d.error ?? 'The workspace icon could not be uploaded.');
     } catch { toast.error('Upload failed', 'The workspace icon could not be uploaded.'); }
     setSaving(null);
@@ -224,7 +233,7 @@ function WorkspaceInfoSection({ data, wsId, regions, onSaved }: { data: WsData; 
     setSaving('icon');
     try {
       await fetch(`${API_BASE}/api/workspaces/${wsId}/icon`, { method: 'DELETE', credentials: 'include' });
-      setIconUrl(null); toast.success('Icon removed', 'Your workspace icon has been removed.'); onSaved();
+      setIconUrl(null); toast.success('Icon removed', 'Your workspace icon has been removed.'); saved();
     } catch { toast.error('Couldn\'t remove icon', 'The workspace icon could not be removed.'); }
     setSaving(null);
   };
