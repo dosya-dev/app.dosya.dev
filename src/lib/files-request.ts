@@ -19,6 +19,13 @@ export interface FilesView {
   sort: string;
   search: string;
   page: number;
+  /**
+   * Unlock token for `folderId`, once the user has entered the password of a
+   * full_lock folder. Part of the view - and so of the cache key - on purpose:
+   * the locked and unlocked listings of the same folder are different
+   * responses, and a token that expires must not keep serving the unlocked one.
+   */
+  unlockToken?: string | null;
 }
 
 /** Root segment of every files query key, for workspace-wide invalidation. */
@@ -27,7 +34,7 @@ export const FILES_QUERY_ROOT = 'files';
 const PER_PAGE = '100';
 
 export function filesRequestPath(view: FilesView): string {
-  const { workspaceId, folderId, filter, group, sort, search, page } = view;
+  const { workspaceId, folderId, filter, group, sort, search, page, unlockToken } = view;
   const isDeleted = filter === 'deleted';
 
   const params = new URLSearchParams({
@@ -46,6 +53,9 @@ export function filesRequestPath(view: FilesView): string {
     if (folderId) params.set('folder', folderId);
   } else if (folderId) {
     params.set('folder_id', folderId);
+    // Only meaningful alongside folder_id: the API checks the lock exactly when
+    // it is entering a live folder, and ignores `ut` in the trash.
+    if (unlockToken) params.set('ut', unlockToken);
   }
 
   if (filter === 'hidden') params.set('hidden', '1');

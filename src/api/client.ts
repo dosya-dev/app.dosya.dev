@@ -4,6 +4,8 @@
 export const API_BASE = import.meta.env.VITE_API_URL
   || (typeof window !== 'undefined' && window.location.hostname === 'localhost' ? '' : 'https://api.dosya.dev');
 
+import { humanizeApiError } from './error-copy';
+
 export class ApiError extends Error {
   status: number;
   body: string;
@@ -25,9 +27,27 @@ export class ApiError extends Error {
 export async function responseErrorMessage(res: Response, fallback: string): Promise<string> {
   try {
     const parsed = (await res.json()) as { error?: unknown };
-    if (typeof parsed.error === 'string' && parsed.error.trim().length > 0) return parsed.error;
+    if (typeof parsed.error === 'string' && parsed.error.trim().length > 0) return humanizeApiError(parsed.error);
   } catch { /* non-JSON body */ }
   return fallback;
+}
+
+/**
+ * The API's machine-readable error code, when the body carried one.
+ *
+ * Deliberately separate from apiErrorMessage: that returns something to SHOW,
+ * this returns something to BRANCH on. `folder_locked` needs both - the files
+ * page recognises the code to render an unlock prompt, and still needs a
+ * sentence for the cases where it reaches the screen anyway.
+ */
+export function apiErrorCode(err: unknown): string | null {
+  if (!(err instanceof ApiError)) return null;
+  try {
+    const parsed = JSON.parse(err.body) as { error?: unknown };
+    return typeof parsed.error === 'string' && parsed.error.trim().length > 0 ? parsed.error : null;
+  } catch {
+    return null; // non-JSON body (gateway/HTML error page)
+  }
 }
 
 /** Extract the server's error message from a thrown ApiError (falls back for real network failures). */
@@ -35,7 +55,7 @@ export function apiErrorMessage(err: unknown, fallback = 'Network error. Please 
   if (err instanceof ApiError) {
     try {
       const parsed = JSON.parse(err.body) as { error?: string };
-      if (parsed.error) return parsed.error;
+      if (parsed.error) return humanizeApiError(parsed.error);
     } catch { /* non-JSON body */ }
     // A non-JSON body is a gateway/HTML error page - not something to show users.
     if (err.body && !err.body.trimStart().startsWith('<')) return err.body;

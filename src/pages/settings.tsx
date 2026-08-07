@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { toast } from '@/lib/toast';
 import { humanSize } from '@/lib/helpers';
+import { DeleteWorkspaceDialog } from '@/components/delete-workspace-dialog';
 
 
 // ── Types ──────────────────────────────────────────────────
@@ -681,10 +682,14 @@ function DangerSection({ data, wsId, isOwner, navigate, onSaved }: { data: WsDat
     setActing(false);
   };
 
-  const handleDelete = async () => {
-    setActing(true);
-    try { const res = await api<{ ok: boolean }>(`/api/workspaces/${wsId}`, { method: 'DELETE' }); if (res.ok) { toast.success('Workspace deleted', 'The workspace and all its files have been removed.'); navigate('/'); } } catch (err) { toast.error('Couldn\'t delete', apiErrorMessage(err, 'The workspace could not be deleted.')); }
-    setActing(false);
+  /**
+   * Deletion itself lives in DeleteWorkspaceDialog: it is a three-step gate
+   * (review the damage, enter a mailed code, retype the name), not something
+   * this button can complete on its own.
+   */
+  const handleDeleted = () => {
+    toast.success('Workspace deleted', 'The workspace and all its files have been removed.');
+    navigate('/');
   };
 
   const handleTransfer = async () => {
@@ -761,13 +766,12 @@ function DangerSection({ data, wsId, isOwner, navigate, onSaved }: { data: WsDat
         </DialogContent>
       </Dialog>
 
-      <Dialog open={confirmDelete} onOpenChange={setConfirmDelete}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader><DialogTitle>Delete workspace?</DialogTitle></DialogHeader>
-          <p className="text-sm text-muted-foreground">This permanently deletes all files, members, and links. Cannot be undone.</p>
-          <DialogFooter><Button variant="outline" onClick={() => setConfirmDelete(false)}>Cancel</Button><Button variant="destructive" onClick={handleDelete} disabled={acting}>{acting && <Loader2 className="size-4 animate-spin mr-1.5" />}Delete workspace</Button></DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <DeleteWorkspaceDialog
+        open={confirmDelete}
+        onOpenChange={setConfirmDelete}
+        workspaceId={wsId}
+        onDeleted={handleDeleted}
+      />
     </section>
   );
 }

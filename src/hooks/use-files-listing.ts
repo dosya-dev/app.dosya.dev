@@ -15,7 +15,7 @@
  */
 import { useCallback } from 'react';
 import { useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
-import { api, apiErrorMessage } from '@/api/client';
+import { api, apiErrorCode, apiErrorMessage } from '@/api/client';
 import { filesQueryKey, filesRequestPath, FILES_QUERY_ROOT, type FilesView } from '@/lib/files-request';
 import type { FileItem, FolderItem, Breadcrumb, Pagination } from '@/lib/file-types';
 
@@ -51,6 +51,11 @@ export interface FilesListing {
   isLoading: boolean;
   isPlaceholder: boolean;
   error: string | null;
+  /**
+   * The API's machine code for the failure, when it sent one. The page branches
+   * on `folder_locked` to offer an unlock prompt instead of a dead error panel.
+   */
+  errorCode: string | null;
   refresh: () => void;
 }
 
@@ -82,6 +87,7 @@ export function useFilesListing(view: FilesView | null): FilesListing {
     isLoading: query.isLoading,
     isPlaceholder: query.isPlaceholderData,
     error: query.isError ? apiErrorMessage(query.error, 'This folder could not be loaded.') : null,
+    errorCode: query.isError ? apiErrorCode(query.error) : null,
     refresh,
   };
 }

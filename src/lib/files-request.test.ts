@@ -62,6 +62,27 @@ describe('filesRequestPath', () => {
   test('page is carried through', () => {
     expect(paramsOf({ ...base, page: 3 }).get('page')).toBe('3');
   });
+
+  test('an unlock token rides along with folder_id as ut', () => {
+    const p = paramsOf({ ...base, folderId: 'f1', unlockToken: 'ut_abc' });
+    expect(p.get('folder_id')).toBe('f1');
+    expect(p.get('ut')).toBe('ut_abc');
+  });
+
+  test('no ut param when there is no token', () => {
+    expect(paramsOf({ ...base, folderId: 'f1' }).get('ut')).toBeNull();
+  });
+
+  test('a token without a folder is never sent - the API only checks locks when entering one', () => {
+    expect(paramsOf({ ...base, unlockToken: 'ut_abc' }).get('ut')).toBeNull();
+  });
+
+  test('the trash ignores unlock tokens', () => {
+    // `deleted=1` takes the other branch entirely; sending ut there would imply
+    // a lock check the API does not perform on trashed folders.
+    const p = paramsOf({ ...base, filter: 'deleted', folderId: 'f1', unlockToken: 'ut_abc' });
+    expect(p.get('ut')).toBeNull();
+  });
 });
 
 describe('filesQueryKey', () => {
@@ -79,6 +100,10 @@ describe('filesQueryKey', () => {
     const variants: Partial<FilesView>[] = [
       { folderId: 'f1' }, { filter: 'images' }, { filter: 'deleted' }, { filter: 'hidden' },
       { group: 'g1' }, { sort: 'oldest' }, { search: 'x' }, { page: 2 },
+      // The token belongs in the key: a locked and an unlocked listing of the
+      // same folder are different responses, and an expired token must not keep
+      // serving the unlocked one from cache.
+      { folderId: 'f1', unlockToken: 'ut_abc' },
     ];
     const baseKey = JSON.stringify(filesQueryKey(base));
     for (const v of variants) {

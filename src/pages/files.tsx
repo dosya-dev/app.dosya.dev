@@ -43,6 +43,7 @@ import { FileDetailPanel } from '@/components/file-detail-panel';
 import { ShareModal } from '@/components/share-modal';
 import { FileViewer } from '@/components/file-viewer';
 import { LockModal } from '@/components/lock-modal';
+import { FolderLockedPanel } from '@/components/folder-locked-panel';
 import { HideModal } from '@/components/hide-modal';
 import { FilesSidebar } from '@/components/files-sidebar';
 import { FilePreviewImage } from '@/components/file-preview-image';
@@ -339,6 +340,21 @@ export default function FilesPage() {
   const currentGroup = searchParams.get('group') || '';
   const isDeletedView = currentFilter === 'deleted';
 
+  /**
+   * Unlock tokens for full_lock folders, keyed by folder id.
+   *
+   * Immutable state rather than the mutable Map `unlockedFiles` uses: these
+   * tokens feed the listing REQUEST, so the `view` memo below has to recompute
+   * when one arrives. Mutating a Map in place would leave the folder locked
+   * until some unrelated render happened to come along.
+   *
+   * Not persisted. The server token lasts an hour, but keeping it in
+   * sessionStorage would mean a locked folder silently reopens for anyone who
+   * later sits down at the same browser - the opposite of what the lock is for.
+   */
+  const [folderTokens, setFolderTokens] = useState<Record<string, string>>({});
+  const currentFolderToken = currentFolderId ? folderTokens[currentFolderId] ?? null : null;
+
   const view: FilesView | null = useMemo(
     () => (wsId ? {
       workspaceId: wsId,
@@ -348,13 +364,14 @@ export default function FilesPage() {
       sort: sortParam,
       search,
       page: currentPage,
+      unlockToken: currentFolderToken,
     } : null),
-    [wsId, currentFolderId, currentFilter, currentGroup, sortParam, search, currentPage],
+    [wsId, currentFolderId, currentFilter, currentGroup, sortParam, search, currentPage, currentFolderToken],
   );
 
   const {
     folders, files, breadcrumbs, pagination,
-    isLoading: loading, isPlaceholder, error: loadError, refresh: loadFiles,
+    isLoading: loading, isPlaceholder, error: loadError, errorCode: loadErrorCode, refresh: loadFiles,
   } = useFilesListing(view);
 
   const queryClient = useQueryClient();
@@ -366,6 +383,10 @@ export default function FilesPage() {
    */
   const prefetchFolder = useCallback((folderId: string) => {
     if (!view || isDeletedView) return; // trashed folders are not browsable this way
+    // A locked folder would 403 on every hover. Skipping keeps the unlock a
+    // deliberate act instead of a stream of rejected requests, and keeps the
+    // prompt's own request the only thing that can populate this key.
+    if (folders.find((f) => f.id === folderId)?.lock_mode === 'full_lock' && !folderTokens[folderId]) return;
     // Mirror folderNavParams: a group is a flat, folder-spanning view, so
     // entering a folder (even one shown as a group member) always exits the
     // group. Keeping view.group here would prefetch a group_id-qualified key
@@ -377,7 +398,7 @@ export default function FilesPage() {
       // ok:false body can never be cached under this key as if it were data.
       queryFn: () => fetchFilesListing(filesRequestPath(next)),
     });
-  }, [queryClient, view, isDeletedView]);
+  }, [queryClient, view, isDeletedView, folders, folderTokens]);
 
   // Hover-intent delay for the prefetch above. The folders query has no LIMIT,
   // so a busy directory renders every subfolder - firing prefetchFolder
@@ -552,7 +573,22 @@ export default function FilesPage() {
 
   // ── Actions ────────────────────────────────────────────────
 
+  /**
+   * Names of folders we have navigated into, so a locked one can be named in
+   * the unlock prompt. It has to be remembered on the way IN: once the listing
+   * 403s there is no payload left to read the name from - no rows, no
+   * breadcrumbs - and the prompt would only ever say "This folder".
+   *
+   * A ref, not state: it never drives rendering on its own, and it must survive
+   * the failed query that the render below reads it during.
+   */
+  const folderNames = useRef<Record<string, string>>({});
+
   const navigateToFolder = (folderId: string | null) => {
+    if (folderId) {
+      const name = folders.find((f) => f.id === folderId)?.name;
+      if (name) folderNames.current[folderId] = name;
+    }
     clearSelection();
     setSearchParams(folderNavParams(searchParams, folderId));
   };
@@ -1159,7 +1195,17 @@ export default function FilesPage() {
         <div className="flex-1 overflow-y-auto p-5" onClick={() => setSelectedFile(null)}>
           {/* Cloud import progress - collapses to nothing (empty:hidden) when no job is active */}
           <div className="mb-4 empty:hidden"><ImportProgressCard /></div>
-          {loading ? <FileSkeleton view={viewMode} count={lastItemCount.current ?? undefined} /> : loadError ? (
+          {loading ? <FileSkeleton view={viewMode} count={lastItemCount.current ?? undefined} /> : loadErrorCode === 'folder_locked' && currentFolderId ? (
+            /* Not the generic error panel: this is not a failure, it is a gate.
+               Reached by clicking a locked folder, deep-linking into one, or an
+               unlock token expiring after its hour - all three land here. */
+            <FolderLockedPanel
+              folderId={currentFolderId}
+              folderName={folderNames.current[currentFolderId] ?? null}
+              onUnlocked={(token) => setFolderTokens((prev) => ({ ...prev, [currentFolderId]: token }))}
+              onBack={() => navigateToFolder(null)}
+            />
+          ) : loadError ? (
             /* Distinct from the empty state on purpose - "this folder is
                empty" is a lie when the request failed, and without a retry
                the only way out was a full page reload. */
