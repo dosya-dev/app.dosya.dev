@@ -40,7 +40,7 @@ import {
 import { ContextMenu } from '@/components/context-menu';
 import { FileInfoDialog, type InfoTarget } from '@/components/file-info-dialog';
 import { FileDetailPanel } from '@/components/file-detail-panel';
-import { ShareModal } from '@/components/share-modal';
+import { ShareModal, type ShareTarget } from '@/components/share-modal';
 import { FileViewer } from '@/components/file-viewer';
 import { LockModal } from '@/components/lock-modal';
 import { FolderLockedPanel } from '@/components/folder-locked-panel';
@@ -48,7 +48,7 @@ import { HideModal } from '@/components/hide-modal';
 import { FilesSidebar } from '@/components/files-sidebar';
 import { FilePreviewImage } from '@/components/file-preview-image';
 import { OriginBadge } from '@/components/origin-badge';
-import { humanSize, timeAgo, extOf, fileIconSrc, folderIconSrc, colorFor, originLabel, isOfficeFile } from '@/lib/helpers';
+import { humanSize, timeAgo, extOf, fileIconSrc, folderIconSrc, colorFor, originLabel, isOfficeFile, hiddenTitle } from '@/lib/helpers';
 import { serializeSort, parseSort, toggleSort, DEFAULT_SORT, type SortKey, type SortSpec } from '@/lib/list-sort';
 import { toast } from '@/lib/toast';
 import { FolderPickerDialog } from '@/components/folder-picker-dialog';
@@ -134,6 +134,19 @@ function loadSavedView(): ViewMode {
   return saved === 'list' || saved === 'grid' ? saved : 'grid';
 }
 
+/**
+ * Whether a selection can become one share link.
+ *
+ * A link covers exactly one file, one bundle of files, or one folder - the API
+ * has no row shape for "this folder plus these files". Mixed and multi-folder
+ * selections are refused rather than silently sharing the part that fits, which
+ * is what the bulk Share button used to do.
+ */
+function canShareSelection(fileCount: number, folderCount: number): boolean {
+  if (fileCount > 0 && folderCount === 0) return true;
+  return folderCount === 1 && fileCount === 0;
+}
+
 // ── Page ───────────────────────────────────────────────────
 
 export default function FilesPage() {
@@ -202,8 +215,9 @@ export default function FilesPage() {
   // Detail panel
   const [selectedFile, setSelectedFile] = useState<FileItem | null>(null);
 
-  // Share modal
-  const [shareTarget, setShareTarget] = useState<{ ids: string[]; name: string } | null>(null);
+  // Share modal. `target` is what the API will be asked to share; `name` is
+  // only for display.
+  const [shareTarget, setShareTarget] = useState<{ target: ShareTarget; name: string } | null>(null);
 
   // File viewer
   const [viewerFile, setViewerFile] = useState<FileItem | null>(null);
@@ -735,17 +749,46 @@ export default function FilesPage() {
   };
 
   const openShare = (fileId: string, fileName: string) => {
-    setShareTarget({ ids: [fileId], name: fileName });
+    setShareTarget({ target: { kind: 'file', fileIds: [fileId] }, name: fileName });
   };
 
-  /** Share every selected file behind one bundle link. */
+  const openFolderShare = (folderId: string, folderName: string) => {
+    setShareTarget({ target: { kind: 'folder', folderId }, name: folderName });
+  };
+
+  /**
+   * Share the current selection behind one link.
+   *
+   * A link is one folder OR a set of files - never both, because the API has no
+   * row shape for a mixed share. The bulk button is disabled outside those two
+   * cases (see the toolbar), so this only ever sees a valid selection.
+   */
   const openBulkShare = () => {
-    const ids = Array.from(selected);
-    if (ids.length === 0) return;
-    const name = ids.length === 1
-      ? files.find((f) => f.id === ids[0])?.name ?? '1 file'
-      : `${ids.length} files`;
-    setShareTarget({ ids, name });
+    const fileIds = Array.from(selected);
+    const folderIds = Array.from(selectedFolders);
+
+    // Belt-and-braces: the toolbar button is disabled for a mixed selection,
+    // so this is unreachable today, but the function must not depend on that
+    // to stay correct - a second caller (a shortcut, a command palette, a
+    // drop target) must not be able to reopen the silent-partial-share bug.
+    if (fileIds.length > 0 && folderIds.length > 0) return;
+
+    if (fileIds.length === 0 && folderIds.length === 1) {
+      const f = folders.find((x) => x.id === folderIds[0]);
+      openFolderShare(folderIds[0], f?.name ?? 'Folder');
+      return;
+    }
+    if (fileIds.length === 0) return;
+
+    const name = fileIds.length === 1
+      ? files.find((f) => f.id === fileIds[0])?.name ?? '1 file'
+      : `${fileIds.length} files`;
+    setShareTarget({
+      target: fileIds.length === 1
+        ? { kind: 'file', fileIds: [fileIds[0]] }
+        : { kind: 'bundle', fileIds },
+      name,
+    });
   };
 
   const openMoveModal = (id: string, type: 'file' | 'folder') => {
@@ -784,12 +827,20 @@ export default function FilesPage() {
   // for the 140ms it spends shrinking.
   const lastSelectedCount = useRef(0);
   const lastSelectionHadFiles = useRef(false);
+  const lastSelectionCanShare = useRef(false);
   if (totalSelected > 0) {
     lastSelectedCount.current = totalSelected;
     lastSelectionHadFiles.current = selected.size > 0;
+    lastSelectionCanShare.current = canShareSelection(selected.size, selectedFolders.size);
   }
   const shownSelected = totalSelected || lastSelectedCount.current;
   const shownSelectionHasFiles = totalSelected > 0 ? selected.size > 0 : lastSelectionHadFiles.current;
+  // Same reason as the count above: the Share button's verdict has to survive
+  // the collapse, or it flips to disabled and grows a tooltip for the 140ms the
+  // bar spends shrinking.
+  const shownCanShare = totalSelected > 0
+    ? canShareSelection(selected.size, selectedFolders.size)
+    : lastSelectionCanShare.current;
 
   // Bulk delete is confirmation-gated (see the bulk-delete dialog near the
   // single-item one below). Deleting a folder takes everything inside it, and
@@ -1012,6 +1063,7 @@ export default function FilesPage() {
     return [
       { label: 'Open', icon: <FolderOpen />, onClick: () => navigateToFolder(f.id) },
       { label: 'Download', icon: <Download />, onClick: () => handleDownloadFolder(f.id) },
+      { label: 'Share', icon: <Share2 />, onClick: () => openFolderShare(f.id, f.name) },
       { label: 'Get info', icon: <Info />, onClick: () => setInfoTarget({ type: 'folder', item: f }) },
       { label: '', separator: true, onClick: () => {}, icon: null },
       { label: 'Rename', icon: <Pencil />, onClick: () => { setRenameTarget({ id: f.id, name: f.name, type: 'folder' }); setRenameName(f.name); } },
@@ -1202,9 +1254,17 @@ export default function FilesPage() {
           ) : (
             <>
               <Button variant="outline" size="sm" className="h-7 text-xs" disabled={bulkBusy} onClick={bulkDownloadZip}><Download className="size-3 mr-1" /> Download ZIP</Button>
-              {shownSelectionHasFiles && (
-                <Button variant="outline" size="sm" className="h-7 text-xs" disabled={bulkBusy} onClick={openBulkShare}><Share2 className="size-3 mr-1" /> Share</Button>
-              )}
+              {/* Always rendered, unlike its siblings: a folder-only selection
+                  needs to be told WHY it cannot share, not handed an empty gap
+                  where the button was. */}
+              <Button
+                variant="outline" size="sm" className="h-7 text-xs"
+                disabled={bulkBusy || !shownCanShare}
+                title={shownCanShare ? undefined : 'A link covers one folder, or a set of files - not both.'}
+                onClick={openBulkShare}
+              >
+                <Share2 className="size-3 mr-1" /> Share
+              </Button>
               <Button variant="outline" size="sm" className="h-7 text-xs" disabled={bulkBusy} onClick={bulkMove}><Move className="size-3 mr-1" /> Move</Button>
               <Button variant="outline" size="sm" className="h-7 text-xs text-destructive border-destructive/30" disabled={bulkBusy} onClick={() => setBulkDeleteConfirm({ permanent: false })}><Trash2 className="size-3 mr-1" /> Delete</Button>
             </>
@@ -1378,6 +1438,11 @@ export default function FilesPage() {
                                 <span className="text-sm font-medium truncate">{f.name}</span>
                                 <span className="text-xs text-muted-foreground shrink-0">{f.file_count} files</span>
                                 {f.lock_mode !== 'none' && <Lock className="size-3 text-muted-foreground shrink-0" />}
+                                {!!f.is_hidden && (
+                                  <span title={hiddenTitle(f.hidden_mode)} className="shrink-0 inline-flex">
+                                    <EyeOff className="size-3 text-muted-foreground" />
+                                  </span>
+                                )}
                               </div>
                             );
                           }
@@ -1660,8 +1725,8 @@ export default function FilesPage() {
       {/* Share modal */}
       <ShareModal
         open={!!shareTarget}
-        fileIds={shareTarget?.ids ?? []}
-        fileName={shareTarget?.name ?? ''}
+        target={shareTarget?.target ?? null}
+        name={shareTarget?.name ?? ''}
         onClose={() => { setShareTarget(null); loadFiles(); }}
       />
 
@@ -1826,7 +1891,16 @@ function FolderCard({ folder, selected, anySelected, onClick, onSelect, onContex
           <img src={iconSrc} alt="" className="size-6" />
           <OriginBadge origin={folder.origin} />
         </span>
-        {folder.lock_mode !== 'none' && <Lock className="size-3 text-muted-foreground ml-auto" />}
+        {(folder.lock_mode !== 'none' || !!folder.is_hidden) && (
+          <span className="ml-auto flex items-center gap-1">
+            {folder.lock_mode !== 'none' && <Lock className="size-3 text-muted-foreground" />}
+            {!!folder.is_hidden && (
+              <span title={hiddenTitle(folder.hidden_mode)} className="inline-flex">
+                <EyeOff className="size-3 text-muted-foreground" />
+              </span>
+            )}
+          </span>
+        )}
       </div>
       <p className="text-xs font-medium truncate">{folder.name}</p>
       <p className="text-[10px] text-muted-foreground">{folder.file_count} files</p>
@@ -1890,11 +1964,16 @@ function FileCard({ file, view, selected, anySelected, active, highlight, domId,
         />
       )}
 
-      {/* Top-right: lock (if any) + file-format pill */}
+      {/* Top-right: lock (if any) + hidden (if any) + file-format pill */}
       <div className="absolute top-2 right-2 z-10 flex items-center gap-1">
         {file.lock_mode !== 'none' && (
           <span className="flex items-center justify-center size-6 rounded-full bg-black/45 backdrop-blur-sm">
             <Lock className="size-3 text-white" />
+          </span>
+        )}
+        {!!file.is_hidden && (
+          <span title={hiddenTitle(file.hidden_mode)} className="flex items-center justify-center size-6 rounded-full bg-black/45 backdrop-blur-sm">
+            <EyeOff className="size-3 text-white" />
           </span>
         )}
         <span className="px-2 py-0.5 rounded-full bg-black/45 backdrop-blur-sm text-[10px] font-mono font-semibold uppercase tracking-wider text-white">{ext}</span>

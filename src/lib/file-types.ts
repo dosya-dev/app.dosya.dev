@@ -20,6 +20,12 @@ export interface FileItem {
   current_version: number;
   lock_mode: string;
   is_hidden: number;
+  /**
+   * Who `is_hidden` hides this from - "none" | "everyone" | "users" | "roles".
+   * Optional for the same reason `origin` is: surfaces that build their own
+   * FileItem-shaped rows (map pins, file-request uploads) don't select it.
+   */
+  hidden_mode?: string;
   uploaded_by: string;
   uploader_name: string;
   share_count: number;
@@ -44,6 +50,8 @@ export interface FolderItem {
   file_count: number;
   lock_mode: string;
   is_hidden: number;
+  /** Who `is_hidden` hides this from - "none" | "everyone" | "users" | "roles". */
+  hidden_mode?: string;
   is_synced: number;
   total_size_bytes: number;
   content_updated_at: number;

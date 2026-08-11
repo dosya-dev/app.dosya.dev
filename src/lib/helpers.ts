@@ -152,6 +152,16 @@ export function originLabel(origin: string | null | undefined): string {
   return (origin && ORIGIN_LABELS[origin]) || '-';
 }
 
+// "Hidden" is never binary from the viewer's own perspective - if they can
+// see the row at all, they're someone it's NOT hidden from. This names who
+// ELSE it's hidden from, and warns that hidden items drop out of share
+// links - it must never read as "hidden from you".
+export function hiddenTitle(hiddenMode: string | null | undefined): string {
+  return hiddenMode === 'everyone'
+    ? 'Hidden from everyone. Not included in share links.'
+    : 'Hidden from some people. Not included in share links.';
+}
+
 const AVATAR_COLORS = ['#7C3AED', '#059669', '#2563EB', '#EA580C', '#DB2777', '#0891B2', '#D97706'];
 export function avatarColor(userId: string): string {
   let hash = 0;

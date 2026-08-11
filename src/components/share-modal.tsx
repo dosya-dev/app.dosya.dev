@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { api, apiErrorMessage } from '@/api/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,18 +11,25 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Mail, Link2, X, Loader2, Copy, ChevronDown, Files } from 'lucide-react';
+import { Mail, Link2, X, Loader2, Copy, ChevronDown, Files, Folder } from 'lucide-react';
 import { toast } from '@/lib/toast';
+
+/**
+ * What is being shared. A share link is one file, one bundle of files, or one
+ * folder - the API has no shape for "this folder plus these files", which is
+ * why the caller must resolve the selection into exactly one of these before
+ * opening the modal.
+ */
+export type ShareTarget =
+  | { kind: 'file'; fileIds: [string] }
+  | { kind: 'bundle'; fileIds: string[] }
+  | { kind: 'folder'; folderId: string };
 
 interface ShareModalProps {
   open: boolean;
-  /**
-   * Every file being shared. More than one creates a single bundle link
-   * covering all of them - the multi-select Share used to pass just the first
-   * id while the UI said "N files", so N-1 files were silently not shared.
-   */
-  fileIds: string[];
-  fileName: string;
+  target: ShareTarget | null;
+  /** Display name: the file name, "N files", or the folder name. */
+  name: string;
   onClose: () => void;
 }
 
@@ -58,8 +65,10 @@ function defaultCustomExpiry(): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-export function ShareModal({ open, fileIds, fileName, onClose }: ShareModalProps) {
-  const isBundle = fileIds.length > 1;
+export function ShareModal({ open, target, name, onClose }: ShareModalProps) {
+  const isFolder = target?.kind === 'folder';
+  const isBundle = target?.kind === 'bundle';
+  const [excludedCount, setExcludedCount] = useState(0);
   const [tab, setTab] = useState<Tab>('email');
   const [emails, setEmails] = useState<string[]>([]);
   const [emailInput, setEmailInput] = useState('');
@@ -74,6 +83,18 @@ export function ShareModal({ open, fileIds, fileName, onClose }: ShareModalProps
   const [error, setError] = useState('');
   const [resultUrl, setResultUrl] = useState('');
   const emailRef = useRef<HTMLInputElement>(null);
+
+  // What a link for this folder will NOT include. Fetched when the modal opens
+  // so the sharer sees it before committing, rather than discovering a partial
+  // share from a confused recipient later.
+  useEffect(() => {
+    if (!open || target?.kind !== 'folder') { setExcludedCount(0); return; }
+    let cancelled = false;
+    api<{ ok: true; excluded_count: number }>(`/api/folders/${target.folderId}/share`)
+      .then((r) => { if (!cancelled) setExcludedCount(r.excluded_count ?? 0); })
+      .catch(() => { /* the notice is advisory - a failed count must not block sharing */ });
+    return () => { cancelled = true; };
+  }, [open, target]);
 
   const reset = useCallback(() => {
     setTab('email');
@@ -133,7 +154,7 @@ export function ShareModal({ open, fileIds, fileName, onClose }: ShareModalProps
   };
 
   const handleSubmit = async () => {
-    if (fileIds.length === 0) return;
+    if (!target) return;
     setError('');
 
     if (tab === 'email' && emails.length === 0) {
@@ -173,7 +194,7 @@ export function ShareModal({ open, fileIds, fileName, onClose }: ShareModalProps
         // link; both return the same {ok, failed} shape.
         const body: Record<string, unknown> = isBundle
           ? {
-              file_ids: fileIds,
+              file_ids: target.fileIds,
               notify: true,
               recipient_emails: emails,
               message: message.trim(),
@@ -187,7 +208,11 @@ export function ShareModal({ open, fileIds, fileName, onClose }: ShareModalProps
         if (pw) body.password = pw;
         if (expiresAt) body.expires_at = expiresAt;
 
-        const endpoint = isBundle ? '/api/files/share-bundle' : `/api/files/${fileIds[0]}/share-email`;
+        const endpoint = target.kind === 'folder'
+          ? `/api/folders/${target.folderId}/share-email`
+          : target.kind === 'bundle'
+            ? '/api/files/share-bundle'
+            : `/api/files/${target.fileIds[0]}/share-email`;
         const res = await api<{ ok: boolean; error?: string; failed?: string[] }>(endpoint, {
           method: 'POST',
           body: JSON.stringify(body),
@@ -209,11 +234,15 @@ export function ShareModal({ open, fileIds, fileName, onClose }: ShareModalProps
           setSubmitting(false);
         }
       } else {
-        const linkBody: Record<string, unknown> = isBundle ? { file_ids: fileIds } : {};
+        const linkBody: Record<string, unknown> = isBundle ? { file_ids: target.fileIds } : {};
         if (expiresAt) linkBody.expires_at = expiresAt;
         if (pw) linkBody.password = pw;
 
-        const endpoint = isBundle ? '/api/files/share-bundle' : `/api/files/${fileIds[0]}/share`;
+        const endpoint = target.kind === 'folder'
+          ? `/api/folders/${target.folderId}/share`
+          : target.kind === 'bundle'
+            ? '/api/files/share-bundle'
+            : `/api/files/${target.fileIds[0]}/share`;
         const data = await api<{ ok: boolean; link?: { url: string }; error?: string }>(endpoint, {
           method: 'POST',
           body: JSON.stringify(linkBody),
@@ -269,7 +298,9 @@ export function ShareModal({ open, fileIds, fileName, onClose }: ShareModalProps
 
         {/* File info */}
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          {isBundle ? (
+          {isFolder ? (
+            <Folder className="size-3.75 shrink-0" />
+          ) : isBundle ? (
             <Files className="size-3.75 shrink-0" />
           ) : (
             <svg viewBox="0 0 14 14" fill="none" width="15" height="15" className="shrink-0">
@@ -277,7 +308,7 @@ export function ShareModal({ open, fileIds, fileName, onClose }: ShareModalProps
               <path d="M8.5 1v3.5h3.5" stroke="currentColor" strokeWidth="1.1" />
             </svg>
           )}
-          <span className="truncate font-medium text-foreground">{fileName}</span>
+          <span className="truncate font-medium text-foreground">{name}</span>
           {isBundle && <span className="shrink-0">· one link for all of them</span>}
         </div>
 
@@ -329,7 +360,9 @@ export function ShareModal({ open, fileIds, fileName, onClose }: ShareModalProps
 
         {/* Link tab */}
         {tab === 'link' && !resultUrl && (
-          <p className="text-xs text-muted-foreground">Anyone with the link can access this file.</p>
+          <p className="text-xs text-muted-foreground">
+            Anyone with the link can access {isFolder ? 'this folder' : isBundle ? 'these files' : 'this file'}.
+          </p>
         )}
 
         {/* Expiry */}
@@ -434,6 +467,13 @@ export function ShareModal({ open, fileIds, fileName, onClose }: ShareModalProps
           <div className="text-xs text-destructive bg-destructive/10 border border-destructive/20 rounded-md px-3 py-2">
             {error}
           </div>
+        )}
+
+        {isFolder && excludedCount > 0 && (
+          <p className="text-xs text-muted-foreground">
+            {excludedCount} hidden or locked {excludedCount === 1 ? 'item' : 'items'} in this
+            folder or its subfolders will not be shared.
+          </p>
         )}
 
         <DialogFooter>

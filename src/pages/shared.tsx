@@ -15,7 +15,7 @@ import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from '@/components/ui/table';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Search, X, Share2 } from 'lucide-react';
+import { Search, X, Share2, Folder } from 'lucide-react';
 import { CopyCheck } from '@/components/ui/copy-check';
 import { humanSize, timeAgo, colorFor, labelFor } from '@/lib/helpers';
 import { toast } from '@/lib/toast';
@@ -26,8 +26,13 @@ interface ShareLink {
   link_id: string; token: string; url: string;
   expires_at: number | null; view_count: number; download_count: number;
   is_revoked: number; shared_at: number; created_by: string;
-  file_id: string; file_name: string; size_bytes: number;
-  extension: string | null; region: string; sharer_name: string | null;
+  /** NULL for folder shares - use display_name for anything user-facing. */
+  file_id: string | null; file_name: string | null;
+  folder_name: string | null; is_folder: boolean;
+  /** The folder's or file's name, already resolved by the API. Never null. */
+  display_name: string;
+  size_bytes: number | null;
+  extension: string | null; region: string | null; sharer_name: string | null;
   status: string; is_mine: boolean;
 }
 
@@ -84,7 +89,9 @@ export default function SharedPage() {
   // Filtered + searched
   const filtered = links
     .filter((l) => filter === 'all' || l.status === filter)
-    .filter((l) => !search || l.file_name.toLowerCase().includes(search.toLowerCase()) || (l.sharer_name ?? '').toLowerCase().includes(search.toLowerCase()));
+    .filter((l) => !search
+      || l.display_name.toLowerCase().includes(search.toLowerCase())
+      || (l.sharer_name ?? '').toLowerCase().includes(search.toLowerCase()));
 
   // Stats
   const stats = {
@@ -201,8 +208,10 @@ export default function SharedPage() {
             <p className="text-xs text-muted-foreground">None</p>
           ) : expiringSoon.map((l) => (
             <div key={l.link_id} className="flex items-center gap-2 mb-2.5">
-              <div className="w-7 h-7 rounded-md flex items-center justify-center text-[8px] font-bold text-white shrink-0" style={{ background: colorFor(l.file_name) }}>{labelFor(l.file_name)}</div>
-              <span className="text-xs font-medium truncate flex-1">{l.file_name}</span>
+              <div className="w-7 h-7 rounded-md flex items-center justify-center text-[8px] font-bold text-white shrink-0" style={{ background: colorFor(l.display_name) }}>
+                {l.is_folder ? <Folder className="size-3.5" /> : labelFor(l.display_name)}
+              </div>
+              <span className="text-xs font-medium truncate flex-1">{l.display_name}</span>
               <span className="text-[11px] font-semibold text-amber-600">{l.expires_at ? daysLeft(l.expires_at) : '-'}</span>
             </div>
           ))}
@@ -214,7 +223,7 @@ export default function SharedPage() {
         <DialogContent className="max-w-sm text-center">
           <DialogHeader><DialogTitle>Revoke share link</DialogTitle></DialogHeader>
           <p className="text-sm text-muted-foreground">
-            Anyone with the link to <span className="font-semibold text-foreground">{revokeTarget?.file_name}</span> will lose access immediately. This cannot be undone.
+            Anyone with the link to <span className="font-semibold text-foreground">{revokeTarget?.display_name}</span> will lose access immediately. This cannot be undone.
           </p>
           <DialogFooter className="justify-center">
             <Button variant="outline" onClick={() => setRevokeTarget(null)}>Cancel</Button>
@@ -251,20 +260,25 @@ function ShareRow({ link: l, onRevoke }: { link: ShareLink; onRevoke: () => void
     >
       <TableCell className="py-3 pl-0 pr-2">
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg flex items-center justify-center text-[8px] font-bold text-white shrink-0" style={{ background: colorFor(l.file_name) }}>{labelFor(l.file_name)}</div>
+          <div className="w-8 h-8 rounded-lg flex items-center justify-center text-[8px] font-bold text-white shrink-0" style={{ background: colorFor(l.display_name) }}>
+            {l.is_folder ? <Folder className="size-4" /> : labelFor(l.display_name)}
+          </div>
           <div className="min-w-0">
             <Link
               to={`/shared/${l.link_id}`}
               onClick={(e) => e.stopPropagation()}
               className="text-sm font-medium truncate max-w-[200px] block hover:underline underline-offset-2"
             >
-              {l.file_name}
+              {l.display_name}
             </Link>
-            <p className="text-[11px] text-muted-foreground">{humanSize(l.size_bytes)} · Shared {timeAgo(l.shared_at)}</p>
+            {/* size_bytes is NULL for folder shares - the API has no single
+                size to report for a subtree - so the whole clause drops out
+                rather than rendering a humanSize(null). */}
+            <p className="text-[11px] text-muted-foreground">{l.size_bytes != null ? `${humanSize(l.size_bytes)} · ` : ''}Shared {timeAgo(l.shared_at)}</p>
           </div>
         </div>
       </TableCell>
-      <TableCell className="py-3 px-2"><Badge variant="secondary" className="text-[10px]">{l.region}</Badge></TableCell>
+      <TableCell className="py-3 px-2"><Badge variant="secondary" className="text-[10px]">{l.region ?? '-'}</Badge></TableCell>
       <TableCell className="py-3 px-2">
         <p className="text-sm font-medium">{l.view_count}</p>
         <p className="text-[11px] text-muted-foreground">{l.download_count} download{l.download_count === 1 ? '' : 's'}</p>

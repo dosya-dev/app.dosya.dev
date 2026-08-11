@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { humanSize, humanSizeShort, timeAgo, timeUntil, initials, extOf, isImage, isHeic, fileIconSrc, isOfficeFile } from "./helpers";
+import { humanSize, humanSizeShort, timeAgo, timeUntil, initials, extOf, isImage, isHeic, fileIconSrc, isOfficeFile, hiddenTitle } from "./helpers";
 
 describe("humanSize", () => {
   it("formats sizes with the right unit", () => {
@@ -180,5 +180,19 @@ describe('timeUntil', () => {
 
   it.each([0, -1, -86400])('reports an elapsed deadline as Expired (%i)', (delta) => {
     expect(timeUntil(NOW + delta, NOW)).toBe('Expired');
+  });
+});
+
+describe('hiddenTitle', () => {
+  // "Hidden" is never binary from the viewer's own perspective: if they can
+  // see the row at all, they're someone it is NOT hidden from. The copy says
+  // who ELSE it's hidden from, and warns that hidden items drop out of share
+  // links - never "hidden from you".
+  it('names everyone specifically for hidden_mode "everyone"', () => {
+    expect(hiddenTitle('everyone')).toBe('Hidden from everyone. Not included in share links.');
+  });
+
+  it.each(['users', 'roles'])('says "some people" for a targeted hidden_mode (%s)', (mode) => {
+    expect(hiddenTitle(mode)).toBe('Hidden from some people. Not included in share links.');
   });
 });
