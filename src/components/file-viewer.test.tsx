@@ -71,3 +71,79 @@ describe('TextViewer raw-content fetch', () => {
     expect(rawCall![1]).toMatchObject({ credentials: 'include' });
   });
 });
+
+/**
+ * The audio player keeps a live <audio> element and runs a tag read and a
+ * waveform decode keyed on its source URL. rawUrl() stamps Date.now() on every
+ * call and is invoked during render, so an unrelated re-render used to hand
+ * the player a brand new URL - restarting playback and re-downloading the file
+ * every time. The text editor already had a stable URL for exactly this
+ * reason; audio needs the same one.
+ */
+describe('FileViewer audio source stability', () => {
+  function audioFile() {
+    return {
+      id: 'f1', name: 'track.mp3', size_bytes: 512, mime_type: 'audio/mpeg',
+      extension: 'mp3', region: 'weur', created_at: 1, updated_at: 1,
+      current_version: 1, lock_mode: 'none', is_hidden: 0, uploaded_by: 'u1',
+      uploader_name: 'User', share_count: 0, comment_count: 0, is_synced: 0,
+    };
+  }
+
+  it('keeps the same <audio> src across re-renders', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network disabled in test')));
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    const file = audioFile();
+
+    const render = async () => {
+      await act(async () => {
+        root!.render(createElement(FileViewer, {
+          file: file as never,
+          files: [file] as never,
+          workspaceId: 'w1',
+          onClose: () => {},
+          onNavigate: () => {},
+          onRefresh: () => {},
+        }));
+        await flush();
+      });
+    };
+
+    await render();
+    const first = container.querySelector('audio')?.getAttribute('src');
+    expect(first, 'expected the audio player to render an <audio> element').toBeTruthy();
+
+    // Re-render the same file, as any unrelated state change in the viewer does.
+    await render();
+    const second = container.querySelector('audio')?.getAttribute('src');
+
+    expect(second).toBe(first);
+  });
+
+  it('does not cache-bust the audio source with a wall-clock value', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network disabled in test')));
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    const file = audioFile();
+
+    await act(async () => {
+      root!.render(createElement(FileViewer, {
+        file: file as never,
+        files: [file] as never,
+        workspaceId: 'w1',
+        onClose: () => {},
+        onNavigate: () => {},
+        onRefresh: () => {},
+      }));
+      await flush();
+    });
+
+    const src = container.querySelector('audio')?.getAttribute('src') ?? '';
+    const t = new URL(src, 'https://example.test').searchParams.get('_t');
+    // A deterministic token derived from the version is fine; a timestamp is not.
+    if (t !== null) expect(Number(t)).toBeLessThan(1_000_000_000_000);
+  });
+});

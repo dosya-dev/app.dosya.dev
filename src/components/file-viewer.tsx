@@ -161,9 +161,11 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
     return `${API_BASE}/api/files/${file.id}/raw?${params}`;
   }, [file.id, activeVersion, versions]);
 
-  // Stable raw URL for the text editor overlay: identity only changes when the
-  // file/version actually changes, so it doesn't tear down the live EditorView
-  // on unrelated FileViewer re-renders (e.g. keystrokes bubbling from CodeMirror).
+  // Stable raw URL for consumers that hold live state off the source: the text
+  // editor's EditorView, and the audio player's <audio> element plus its tag
+  // read and waveform decode. Identity only changes when the file/version
+  // actually changes, so an unrelated FileViewer re-render doesn't tear the
+  // editor down or restart playback and re-download the track.
   // Cache-bust with a deterministic value derived from state (latest version's
   // created_at, falling back to the file's current_version) instead of
   // Date.now() - calling Date.now() during a useMemo body is flagged as impure
@@ -175,7 +177,7 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
   // import, which is a date from the provider rather than a marker of when
   // these bytes appeared here. The version counter is the direct expression of
   // "different bytes" that this token actually wants.
-  const editorRawUrl = useMemo(() => {
+  const stableRawUrl = useMemo(() => {
     const params = new URLSearchParams();
     if (activeVersion > 0 && versions.length > 0 && activeVersion !== versions[0].version_number) {
       params.set('version', String(activeVersion));
@@ -409,7 +411,7 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
           {/* Audio owns the whole area - it is a surface, not an object sitting
               on one - so it drops the centring and padding every other type wants. */}
           <div className={`flex-1 min-h-0 min-w-0 flex bg-muted/30 ${isAudio(file.name) ? 'overflow-hidden' : 'items-center justify-center overflow-auto p-6'}`}>
-            <FileContent file={file} files={files} rawUrl={rawUrl()} downloadUrl={downloadUrl} version={previewVersion} workspaceId={workspaceId} onSaved={() => { onRefresh(); loadVersions(); }} onNavigate={onNavigate} />
+            <FileContent file={file} files={files} rawUrl={rawUrl()} stableRawUrl={stableRawUrl} downloadUrl={downloadUrl} version={previewVersion} workspaceId={workspaceId} onSaved={() => { onRefresh(); loadVersions(); }} onNavigate={onNavigate} />
           </div>
 
           {/* Version sidebar */}
@@ -515,7 +517,7 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
       {textEditOpen && (
         <TextEditorOverlay
           file={file}
-          rawUrl={editorRawUrl}
+          rawUrl={stableRawUrl}
           workspaceId={workspaceId}
           onClose={closeTextEdit}
           onSaved={() => { onRefresh(); loadVersions(); }}
@@ -527,7 +529,7 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
 
 // ── File content renderer ─────────────────────────────────
 
-function FileContent({ file, files, rawUrl, downloadUrl, version, workspaceId, onSaved, onNavigate }: { file: FileItem; files: FileItem[]; rawUrl: string; downloadUrl: string; version?: number; workspaceId: string; onSaved: () => void; onNavigate: (f: FileItem) => void }) {
+function FileContent({ file, files, rawUrl, stableRawUrl, downloadUrl, version, workspaceId, onSaved, onNavigate }: { file: FileItem; files: FileItem[]; rawUrl: string; stableRawUrl: string; downloadUrl: string; version?: number; workspaceId: string; onSaved: () => void; onNavigate: (f: FileItem) => void }) {
   const ext = extOf(file.name);
 
   if (isVcard(file.name)) {
@@ -557,7 +559,7 @@ function FileContent({ file, files, rawUrl, downloadUrl, version, workspaceId, o
       <AudioPlayer
         file={file}
         files={files}
-        rawUrl={rawUrl}
+        rawUrl={stableRawUrl}
         downloadUrl={downloadUrl}
         version={version}
         onNavigate={onNavigate}

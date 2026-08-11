@@ -31,4 +31,18 @@ describe('web CSP invariants', () => {
     expect(directive('connect-src')).toContain('https://api.dosya.dev');
     expect(directive('frame-src')).toContain('https://api.dosya.dev');
   });
+
+  // Audio and video elements load from the api origin. Without an explicit
+  // media-src they fall back to default-src 'self' and every play is blocked
+  // at the browser with "Loading media from ... violates ... default-src".
+  // Nothing in a build or a jsdom test can see this.
+  it('allows media from the api origin, explicitly', () => {
+    expect(CSP).toContain('media-src');
+    expect(directive('media-src')).toContain('https://api.dosya.dev');
+  });
+
+  it('allows media from blob: and self, for locally produced sources', () => {
+    expect(directive('media-src')).toContain('blob:');
+    expect(directive('media-src')).toContain("'self'");
+  });
 });
