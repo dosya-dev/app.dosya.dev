@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  Phone, Mail, MapPin, Globe, Cake, StickyNote, Building2, Copy, Check,
-  Pencil, Plus, Trash2, Save, X, Search,
+  Phone, Mail, MapPin, Globe, Cake, StickyNote, Building2, Pencil, Plus, Trash2, Save, X, Search,
 } from 'lucide-react';
+import { CopyCheck } from '@/components/ui/copy-check';
 import { api, API_BASE, apiErrorMessage } from '@/api/client';
 import { toast } from '@/lib/toast';
 import { colorFor, initials } from '@/lib/helpers';
@@ -215,7 +215,7 @@ function FieldRow({ icon, type, value, href, external }: { icon: React.ReactNode
           : <p className="text-sm break-all">{value}</p>}
       </div>
       <button onClick={copy} title="Copy" className="opacity-0 group-hover:opacity-100 transition-opacity size-7 rounded-md flex items-center justify-center hover:bg-muted shrink-0">
-        {copied ? <Check className="size-3.5 text-green-600" /> : <Copy className="size-3.5 text-muted-foreground" />}
+        <CopyCheck copied={copied} className="size-3.5 text-muted-foreground" checkClassName="text-green-600" />
       </button>
     </div>
   );

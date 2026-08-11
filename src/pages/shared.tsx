@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { api } from '@/api/client';
 import { useWorkspace } from '@/stores/workspace';
 // card unused for now but may be needed later
@@ -15,7 +15,8 @@ import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from '@/components/ui/table';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Search, Copy, Check, X, Share2 } from 'lucide-react';
+import { Search, X, Share2 } from 'lucide-react';
+import { CopyCheck } from '@/components/ui/copy-check';
 import { humanSize, timeAgo, colorFor, labelFor } from '@/lib/helpers';
 import { toast } from '@/lib/toast';
 
@@ -229,6 +230,7 @@ export default function SharedPage() {
 
 function ShareRow({ link: l, onRevoke }: { link: ShareLink; onRevoke: () => void }) {
   const [copied, setCopied] = useState(false);
+  const navigate = useNavigate();
 
   const copyUrl = async () => {
     await navigator.clipboard.writeText(l.url);
@@ -240,12 +242,24 @@ function ShareRow({ link: l, onRevoke }: { link: ShareLink; onRevoke: () => void
   const isLive = l.status === 'active' || l.status === 'expiring';
 
   return (
-    <TableRow className="group">
+    <TableRow
+      className="group cursor-pointer"
+      // Convenience for the mouse. The real affordance is the link on the
+      // file name below, which is what keyboard and screen-reader users get -
+      // a row-level onClick alone would make this page unreachable for them.
+      onClick={() => navigate(`/shared/${l.link_id}`)}
+    >
       <TableCell className="py-3 pl-0 pr-2">
         <div className="flex items-center gap-2.5">
           <div className="w-8 h-8 rounded-lg flex items-center justify-center text-[8px] font-bold text-white shrink-0" style={{ background: colorFor(l.file_name) }}>{labelFor(l.file_name)}</div>
           <div className="min-w-0">
-            <p className="text-sm font-medium truncate max-w-[200px]">{l.file_name}</p>
+            <Link
+              to={`/shared/${l.link_id}`}
+              onClick={(e) => e.stopPropagation()}
+              className="text-sm font-medium truncate max-w-[200px] block hover:underline underline-offset-2"
+            >
+              {l.file_name}
+            </Link>
             <p className="text-[11px] text-muted-foreground">{humanSize(l.size_bytes)} · Shared {timeAgo(l.shared_at)}</p>
           </div>
         </div>
@@ -266,14 +280,17 @@ function ShareRow({ link: l, onRevoke }: { link: ShareLink; onRevoke: () => void
           {l.status.charAt(0).toUpperCase() + l.status.slice(1)}
         </Badge>
       </TableCell>
-      <TableCell className="py-3 pl-2 pr-0">
-        <div className="flex gap-1 opacity-0 group-hover:opacity-100">
+      {/* Row actions sit inside a clickable row, so they have to swallow the
+          click. Without this, Revoke would open the analytics page behind the
+          confirm dialog and Copy would navigate away from the list. */}
+      <TableCell className="py-3 pl-2 pr-0" onClick={(e) => e.stopPropagation()}>
+        <div className="flex gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100">
           {isLive && (
             <>
-              <Button variant="outline" size="sm" className="h-7 w-7 p-0" onClick={copyUrl}>
-                {copied ? <Check className="size-3 text-green-600" /> : <Copy className="size-3" />}
+              <Button variant="outline" size="sm" className="h-7 w-7 p-0" onClick={copyUrl} aria-label="Copy share link">
+                <CopyCheck copied={copied} className="size-3" checkClassName="text-green-600" />
               </Button>
-              <Button variant="outline" size="sm" className="h-7 w-7 p-0 text-destructive border-destructive/30" onClick={onRevoke}>
+              <Button variant="outline" size="sm" className="h-7 w-7 p-0 text-destructive border-destructive/30" onClick={onRevoke} aria-label="Revoke share link">
                 <X className="size-3" />
               </Button>
             </>

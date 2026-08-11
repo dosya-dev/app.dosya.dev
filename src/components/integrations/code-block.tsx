@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Check, Copy } from 'lucide-react';
+import { CopyCheck } from '@/components/ui/copy-check';
 import { highlightToHtmlThemed } from '@/lib/text-highlight';
 
 // Colorful, read-only code block that follows the app theme. The surface uses
@@ -42,7 +42,7 @@ export function CodeBlock({ code, lang = 'bash', caption }: { code: string; lang
         aria-label="Copy to clipboard"
         className="absolute right-2 top-2 z-10 flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
       >
-        {copied ? <Check className="size-3.5 text-green-600" /> : <Copy className="size-3.5" />}
+        <CopyCheck copied={copied} className="size-3.5" checkClassName="text-green-600" />
       </button>
       {html ? (
         <div

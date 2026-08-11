@@ -33,6 +33,10 @@ export default defineConfig({
       // so a plain `npm ci && tsc -b && vite build` needs nothing outside apps/web.
       '@dosya-dev/e2ee-core': path.resolve(__dirname, './vendor/e2ee-core/index.js'),
       '@dosya-dev/e2ee-client': path.resolve(__dirname, './vendor/e2ee-client/index.js'),
+      // Vendored for the same reason (scripts/vendor-audio-player.mjs), but as
+      // plain source rather than a bundled dist - the package has no build step
+      // and no third-party dependency.
+      '@dosya-dev/audio-player': path.resolve(__dirname, './vendor/audio-player/index.ts'),
     },
   },
   server: {

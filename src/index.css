@@ -37,6 +37,12 @@
   --chart-3: oklch(0.6818 0.1924 45.7782);
   --chart-4: oklch(0.6396 0.2105 300.0543);
   --chart-5: oklch(0.6491 0.2201 19.8586);
+  /* Share-analytics timeline: a restrained pair, not two categorical hues.
+     Opens are the neutral, downloads carry the accent, because a download is
+     the event that matters. Validated for CVD separation against the card
+     surface (deutan dE 11.4, tritan 9.4, normal 18.8, contrast >= 3:1). */
+  --share-opens: oklch(0.6100 0.0240 240);
+  --share-downloads: var(--chart-1);
   --sidebar: oklch(0.9813 0.0100 238.5069);
   --sidebar-foreground: oklch(0.1807 0.0207 239.8394);
   --sidebar-primary: oklch(0.6236 0.1833 147.4139);
@@ -91,6 +97,10 @@
   --chart-3: oklch(0.7309 0.1840 51.3191);
   --chart-4: oklch(0.6928 0.1956 302.0666);
   --chart-5: oklch(0.6899 0.2008 18.6316);
+  /* Dark is chosen, not flipped: both steps are re-picked against the dark
+     card surface (deutan dE 13.1, tritan 12.8, normal 19.5, contrast >= 3:1). */
+  --share-opens: oklch(0.5850 0.0220 240);
+  --share-downloads: oklch(0.6600 0.1750 149);
   /* Dark sidebar harmonized with the theme's own dark palette (the tweakcn
      export shipped default greyscale + blue leftovers here). Mirrors the
      light block's mapping: sidebar = card, sidebar-primary = primary. */
@@ -491,6 +501,15 @@ body {
 .animate-content-in { opacity: 1; transition: opacity 120ms var(--ease-out-strong); }
 @starting-style { .animate-content-in { opacity: 0; } }
 
+/* Same idea one tier up, for the rare success moments (a share link created)
+   where the block is the answer to what the user just asked for. Still only
+   opacity and transform, still under 300ms. */
+.animate-result-in {
+  opacity: 1; transform: translateY(0);
+  transition: opacity 200ms var(--ease-out-strong), transform 200ms var(--ease-out-strong);
+}
+@starting-style { .animate-result-in { opacity: 0; transform: translateY(4px); } }
+
 /* Onboarding step completion - the one place in the app with a delight budget,
    because it is seen once. The overshoot (easeOutBack) is deliberate here and
    would be wrong on anything seen more than a handful of times. Applied only on
@@ -507,6 +526,35 @@ body {
 }
 .animate-step-done { animation: step-done-pop 220ms cubic-bezier(0.34, 1.56, 0.64, 1); }
 .animate-step-check { animation: fade-in-only 140ms var(--ease-out-strong) 60ms both; }
+
+/* Travelling tab underline (line variant). Base UI's Tabs.Indicator publishes
+   the active tab's box as --active-tab-left / --active-tab-width, so the bar is
+   kept 1px wide and scaled to fit: the move and the resize become one composited
+   transform rather than an animated `width`, which would cost layout on every
+   frame. Dividing the length by 1px is what turns it into the unitless factor
+   scaleX() requires. ease-in-out, not ease-out: this is an element moving from
+   A to B on screen, not one arriving. */
+.tabs-indicator-line {
+  position: absolute;
+  bottom: -1px;
+  left: 0;
+  width: 1px;
+  height: 2px;
+  background: var(--foreground);
+  transform-origin: left;
+  transform: translateX(var(--active-tab-left)) scaleX(calc(var(--active-tab-width) / 1px));
+  transition: transform 200ms var(--ease-in-out-strong);
+}
+
+/* Unread badge arriving on the notification bell. State indication, not
+   delight: no overshoot here, because this one can fire several times a day
+   and a bouncing badge would wear out fast. Applied only on the 0 -> n
+   transition, see notification-bell.tsx. */
+@keyframes badge-in {
+  from { transform: scale(0.6); opacity: 0; }
+  to   { transform: scale(1); opacity: 1; }
+}
+.animate-badge-in { animation: badge-in 180ms var(--ease-out-strong); }
 
 /* In-file find highlights (CSS Custom Highlight API) */
 ::highlight(find-match) {
@@ -581,10 +629,15 @@ html[data-theme-sweep]::view-transition-new(root) {
   .animate-mobile-slide-up,
   .animate-panel-slide-in { animation: fade-in-only 140ms var(--ease-out-strong); }
   .animate-slide-down { animation: none; }
+  .animate-result-in { transition: opacity 200ms var(--ease-out-strong); }
+  @starting-style { .animate-result-in { transform: none; } }
   /* Deep-link highlight: the ring pulse is the whole point of the affordance,
      so it stays - it changes no geometry and nothing moves. */
   .animate-step-done { animation: none; }
   .animate-step-check { animation: fade-in-only 140ms var(--ease-out-strong) both; }
+  .animate-badge-in { animation: fade-in-only 180ms var(--ease-out-strong); }
+  /* The underline still lands on the right tab, it just stops travelling. */
+  .tabs-indicator-line { transition: none; }
   html[data-theme-sweep]::view-transition-new(root) { animation: none; }
 }
 

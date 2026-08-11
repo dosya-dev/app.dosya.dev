@@ -8,6 +8,7 @@ export default defineConfig({
       // See vite.config.ts for why these resolve to the in-tree vendored bundle.
       '@dosya-dev/e2ee-core': path.resolve(__dirname, './vendor/e2ee-core/index.js'),
       '@dosya-dev/e2ee-client': path.resolve(__dirname, './vendor/e2ee-client/index.js'),
+      '@dosya-dev/audio-player': path.resolve(__dirname, './vendor/audio-player/index.ts'),
     },
   },
   test: {

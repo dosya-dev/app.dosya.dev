@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Gift, Copy, Check } from 'lucide-react';
+import { Gift } from 'lucide-react';
+import { CopyCheck } from '@/components/ui/copy-check';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -61,7 +62,7 @@ export default function ReferralsPage() {
           <div className="flex items-center gap-2">
             <code className="flex-1 truncate rounded-md border bg-muted/50 px-3 py-2 text-sm">{data.link}</code>
             <Button variant="outline" size="sm" onClick={copy}>
-              {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
+              <CopyCheck copied={copied} className="size-4" />
               {copied ? 'Copied' : 'Copy'}
             </Button>
           </div>

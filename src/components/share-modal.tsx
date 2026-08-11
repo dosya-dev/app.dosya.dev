@@ -413,9 +413,12 @@ export function ShareModal({ open, fileIds, fileName, onClose }: ShareModalProps
           </div>
         )}
 
-        {/* Result */}
+        {/* Result. A rare moment - you create a link, not browse them - so it
+            gets a touch more than the 120ms .animate-content-in fade the list
+            views use: the small rise makes it read as something that arrived
+            rather than something that was always there. */}
         {resultUrl && (
-          <div>
+          <div className="animate-result-in">
             <Label className="text-xs font-medium text-muted-foreground mb-1.5 block">Share link created</Label>
             <div className="flex items-center gap-2 bg-muted/50 border rounded-md px-3 py-2">
               <span className="flex-1 text-[11px] font-mono text-muted-foreground truncate">{resultUrl}</span>

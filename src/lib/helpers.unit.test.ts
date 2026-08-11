@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { humanSize, humanSizeShort, timeAgo, initials, extOf, isImage, isHeic, fileIconSrc, isOfficeFile } from "./helpers";
+import { humanSize, humanSizeShort, timeAgo, timeUntil, initials, extOf, isImage, isHeic, fileIconSrc, isOfficeFile } from "./helpers";
 
 describe("humanSize", () => {
   it("formats sizes with the right unit", () => {
@@ -150,5 +150,35 @@ describe('isOfficeFile', () => {
     for (const ext of extensions) {
       expect(isOfficeFile(`file.${ext}`)).toBe(true);
     }
+  });
+});
+
+describe('timeUntil', () => {
+  const NOW = 1_760_000_000;
+
+  it('counts forward, where timeAgo would say "just now"', () => {
+    // The bug this exists to fix: timeAgo(now + 12d) returns "just now",
+    // because its diff goes negative for anything in the future.
+    expect(timeAgo(NOW + 12 * 86400, NOW)).toBe('just now');
+    expect(timeUntil(NOW + 12 * 86400, NOW)).toBe('in 12 days');
+  });
+
+  it.each([
+    [30, 'in under a minute'],
+    [90, 'in 1m'],
+    [3 * 3600, 'in 3h'],
+    [86400, 'in 1 day'],
+    [3 * 86400, 'in 3 days'],
+    [59 * 86400, 'in 59 days'],
+  ])('formats +%is', (delta, expected) => {
+    expect(timeUntil(NOW + delta, NOW)).toBe(expected);
+  });
+
+  it('falls back to a date beyond two months, so "in 400 days" never ships', () => {
+    expect(timeUntil(NOW + 400 * 86400, NOW)).toMatch(/^[A-Z][a-z]{2} \d+(, \d{4})?$/);
+  });
+
+  it.each([0, -1, -86400])('reports an elapsed deadline as Expired (%i)', (delta) => {
+    expect(timeUntil(NOW + delta, NOW)).toBe('Expired');
   });
 });

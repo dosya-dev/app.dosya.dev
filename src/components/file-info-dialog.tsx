@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Copy, Check, Lock, EyeOff, Share2, MessageSquare } from 'lucide-react';
+import { Lock, EyeOff, Share2, MessageSquare } from 'lucide-react';
+import { CopyCheck } from '@/components/ui/copy-check';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { FilePreviewImage } from '@/components/file-preview-image';
@@ -62,7 +63,10 @@ function CopyableId({ id }: { id: string }) {
       title="Copy ID"
     >
       <span className="break-all">{id}</span>
-      {copied ? <Check className="size-3 text-green-600 shrink-0" /> : <Copy className="size-3 shrink-0 opacity-0 group-hover:opacity-100" />}
+      {/* The hover-reveal moved from the icon to the wrapper: the two icons
+          own opacity now, so a second opacity rule on one of them would fight
+          the cross-fade. */}
+      <CopyCheck copied={copied} className="size-3 opacity-0 transition-opacity group-hover:opacity-100" checkClassName="text-green-600" />
     </button>
   );
 }

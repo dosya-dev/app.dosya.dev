@@ -14,6 +14,7 @@ import { useInFileFind } from '@/lib/use-in-file-find';
 import { TextFindBar } from '@/components/text-find-bar';
 import { TextEditorOverlay } from '@/components/text-editor';
 import { VCardView } from '@/components/vcard-viewer';
+import { AudioPlayer } from '@/components/audio/audio-player';
 import { OfficePreview } from '@/components/office-preview';
 import type { FileItem } from '@/lib/file-types';
 
@@ -405,8 +406,10 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
         {/* Body + version sidebar */}
         <div className="flex-1 flex min-h-0">
           {/* File content */}
-          <div className="flex-1 min-h-0 min-w-0 flex items-center justify-center bg-muted/30 overflow-auto p-6">
-            <FileContent file={file} rawUrl={rawUrl()} downloadUrl={downloadUrl} version={previewVersion} workspaceId={workspaceId} onSaved={() => { onRefresh(); loadVersions(); }} />
+          {/* Audio owns the whole area - it is a surface, not an object sitting
+              on one - so it drops the centring and padding every other type wants. */}
+          <div className={`flex-1 min-h-0 min-w-0 flex bg-muted/30 ${isAudio(file.name) ? 'overflow-hidden' : 'items-center justify-center overflow-auto p-6'}`}>
+            <FileContent file={file} files={files} rawUrl={rawUrl()} downloadUrl={downloadUrl} version={previewVersion} workspaceId={workspaceId} onSaved={() => { onRefresh(); loadVersions(); }} onNavigate={onNavigate} />
           </div>
 
           {/* Version sidebar */}
@@ -524,7 +527,7 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
 
 // ── File content renderer ─────────────────────────────────
 
-function FileContent({ file, rawUrl, downloadUrl, version, workspaceId, onSaved }: { file: FileItem; rawUrl: string; downloadUrl: string; version?: number; workspaceId: string; onSaved: () => void }) {
+function FileContent({ file, files, rawUrl, downloadUrl, version, workspaceId, onSaved, onNavigate }: { file: FileItem; files: FileItem[]; rawUrl: string; downloadUrl: string; version?: number; workspaceId: string; onSaved: () => void; onNavigate: (f: FileItem) => void }) {
   const ext = extOf(file.name);
 
   if (isVcard(file.name)) {
@@ -551,15 +554,14 @@ function FileContent({ file, rawUrl, downloadUrl, version, workspaceId, onSaved 
 
   if (isAudio(file.name)) {
     return (
-      <div className="flex flex-col items-center gap-4 p-10 bg-background rounded-xl border">
-        <svg viewBox="0 0 24 24" fill="none" width="48" height="48" className="text-muted-foreground">
-          <path d="M9 18V5l12-2v13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-          <circle cx="6" cy="18" r="3" stroke="currentColor" strokeWidth="1.5" />
-          <circle cx="18" cy="16" r="3" stroke="currentColor" strokeWidth="1.5" />
-        </svg>
-        <p className="text-sm font-medium break-all text-center">{file.name}</p>
-        <audio src={rawUrl} controls autoPlay className="w-90 max-w-[90vw]" />
-      </div>
+      <AudioPlayer
+        file={file}
+        files={files}
+        rawUrl={rawUrl}
+        downloadUrl={downloadUrl}
+        version={version}
+        onNavigate={onNavigate}
+      />
     );
   }
 

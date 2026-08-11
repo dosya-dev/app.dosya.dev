@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Copy, Check } from 'lucide-react';
+import { CopyCheck } from '@/components/ui/copy-check';
 import { Button } from '@/components/ui/button';
 import { api } from '@/api/client';
 
@@ -83,7 +83,7 @@ export function ReferralStep() {
           onClick={() => { void copy(); }}
           className="h-9 gap-1.5 shrink-0"
         >
-          {copied ? <><Check className="size-3.5" /> Copied</> : <><Copy className="size-3.5" /> Copy</>}
+          <CopyCheck copied={copied} className="size-3.5" /> {copied ? 'Copied' : 'Copy'}
         </Button>
       </div>
     </div>

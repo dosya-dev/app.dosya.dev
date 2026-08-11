@@ -21,6 +21,7 @@ const DuplicatesPage = lazy(() => import('@/pages/duplicates'));
 const CreateWorkspacePage = lazy(() => import('@/pages/create-workspace'));
 const TeamsPage = lazy(() => import('@/pages/teams'));
 const SharedPage = lazy(() => import('@/pages/shared'));
+const ShareAnalyticsPage = lazy(() => import('@/pages/share-analytics'));
 const CommentsPage = lazy(() => import('@/pages/comments'));
 const ActivityPage = lazy(() => import('@/pages/activity'));
 const NotificationsPage = lazy(() => import('@/pages/notifications'));
@@ -111,6 +112,7 @@ export const router = createBrowserRouter([
       { path: '/integrations/webhooks', element: <WebhooksPage /> },
       { path: '/integrations/remote-download', element: <RemoteDownloadPage /> },
       { path: '/shared', element: <SharedPage /> },
+      { path: '/shared/:id', element: <ShareAnalyticsPage /> },
       { path: '/vault', element: <EncryptedPage /> },
       { path: '/comments', element: <CommentsPage /> },
       { path: '/activity', element: <ActivityPage /> },

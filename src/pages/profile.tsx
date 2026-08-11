@@ -15,10 +15,9 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import {
-  User, Lock, Key, Monitor, Bell, Plug, Building2, Trash2,
-  Plus, Copy, Check, Loader2, LogOut, X, Camera, ShieldCheck,
-  Smartphone, Download, RefreshCw, Mail, Palette, ChartColumn, ShieldAlert,
+  User, Lock, Key, Monitor, Bell, Plug, Building2, Trash2, Plus, Check, Loader2, LogOut, X, Camera, ShieldCheck, Smartphone, Download, RefreshCw, Mail, Palette, ChartColumn, ShieldAlert,
 } from 'lucide-react';
+import { CopyCheck } from '@/components/ui/copy-check';
 import { toast } from '@/lib/toast';
 import { timeAgo } from '@/lib/helpers';
 import { gbToBytes, mbToBytes } from '@/lib/usage-units';
@@ -731,7 +730,7 @@ function RecoveryCodes({ codes }: { codes: string[] }) {
       </div>
       <div className="flex gap-2">
         <Button variant="outline" size="sm" className="text-xs flex-1 gap-1" onClick={copyAll}>
-          {copied ? <Check className="size-3" /> : <Copy className="size-3" />} {copied ? 'Copied' : 'Copy all'}
+          <CopyCheck copied={copied} className="size-3" /> {copied ? 'Copied' : 'Copy all'}
         </Button>
         <Button variant="outline" size="sm" className="text-xs flex-1 gap-1" onClick={download}>
           <Download className="size-3" /> Download
@@ -1342,7 +1341,7 @@ function ApiKeysSection({ keys, workspaces, onChanged }: { keys: ApiKey[]; works
           <div className="flex items-center gap-2">
             <code className="flex-1 text-xs bg-muted px-3 py-2 rounded-md break-all">{plainKey}</code>
             <Button variant="outline" size="sm" onClick={copyKey}>
-              {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
+              <CopyCheck copied={copied} className="size-3" />
             </Button>
           </div>
           <DialogFooter><Button onClick={() => setPlainKey(null)}>Done</Button></DialogFooter>
@@ -1381,7 +1380,7 @@ function S3Field({ label, value, copyable }: { label: string; value: string; cop
         <code className="flex-1 text-[11px] bg-muted px-2.5 py-1.5 rounded-md break-all font-mono">{value}</code>
         {copyable && (
           <Button variant="outline" size="sm" className="h-7 w-7 p-0 shrink-0" onClick={copy}>
-            {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
+            <CopyCheck copied={copied} className="size-3" />
           </Button>
         )}
       </div>

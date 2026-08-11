@@ -14,6 +14,28 @@ export function timeAgo(ts: number, now: number = Math.floor(Date.now() / 1000))
   return `${m[d.getMonth()]} ${d.getDate()}${suffix}`;
 }
 
+/**
+ * Forward-looking sibling of timeAgo, for deadlines rather than history.
+ *
+ * timeAgo cannot do this job: it computes `now - ts`, so a future timestamp
+ * yields a negative diff and falls through to "just now" - which is how a link
+ * expiring in twelve days came to render as though it had already lapsed.
+ */
+export function timeUntil(ts: number, now: number = Math.floor(Date.now() / 1000)): string {
+  const diff = ts - now;
+  if (diff <= 0) return 'Expired';
+  if (diff < 60) return 'in under a minute';
+  if (diff < 3600) return `in ${Math.floor(diff / 60)}m`;
+  if (diff < 86400) return `in ${Math.floor(diff / 3600)}h`;
+  const days = Math.ceil(diff / 86400);
+  if (days <= 60) return `in ${days} day${days === 1 ? '' : 's'}`;
+  const d = new Date(ts * 1000);
+  const m = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const year = d.getFullYear();
+  const suffix = year === new Date(now * 1000).getFullYear() ? '' : `, ${year}`;
+  return `${m[d.getMonth()]} ${d.getDate()}${suffix}`;
+}
+
 export function humanSize(b: number): string {
   if (b < 1024) return b + ' B';
   if (b < 1048576) return (b / 1024).toFixed(0) + ' KB';
