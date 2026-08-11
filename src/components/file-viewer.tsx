@@ -164,19 +164,25 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
   // file/version actually changes, so it doesn't tear down the live EditorView
   // on unrelated FileViewer re-renders (e.g. keystrokes bubbling from CodeMirror).
   // Cache-bust with a deterministic value derived from state (latest version's
-  // created_at, falling back to the file's updated_at) instead of Date.now() -
-  // calling Date.now() during a useMemo body is flagged as impure by
-  // react-hooks/purity (unlike the rawUrl useCallback above, whose body only
+  // created_at, falling back to the file's current_version) instead of
+  // Date.now() - calling Date.now() during a useMemo body is flagged as impure
+  // by react-hooks/purity (unlike the rawUrl useCallback above, whose body only
   // runs when invoked, not synchronously during render).
+  //
+  // The fallback is current_version, NOT updated_at: since migration 0105 the
+  // API returns the SOURCE modified date in updated_at for an untouched cloud
+  // import, which is a date from the provider rather than a marker of when
+  // these bytes appeared here. The version counter is the direct expression of
+  // "different bytes" that this token actually wants.
   const editorRawUrl = useMemo(() => {
     const params = new URLSearchParams();
     if (activeVersion > 0 && versions.length > 0 && activeVersion !== versions[0].version_number) {
       params.set('version', String(activeVersion));
     }
-    const cacheBust = versions.length > 0 ? versions[0].created_at : file.updated_at;
+    const cacheBust = versions.length > 0 ? versions[0].created_at : file.current_version;
     params.set('_t', String(cacheBust));
     return `${API_BASE}/api/files/${file.id}/raw?${params}`;
-  }, [file.id, file.updated_at, activeVersion, versions]);
+  }, [file.id, file.current_version, activeVersion, versions]);
 
   const downloadUrl = `${API_BASE}/api/files/${file.id}/download`;
 
