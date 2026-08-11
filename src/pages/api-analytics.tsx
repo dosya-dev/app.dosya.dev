@@ -154,7 +154,10 @@ export default function ApiAnalyticsPage() {
       ) : loading ? (
         <ApiAnalyticsSkeleton />
       ) : (
-        <>
+        <div className="space-y-5 animate-content-in">
+          {/* space-y-5 is repeated from the page root on purpose: these used to
+              be direct children of it, so the fade wrapper would otherwise eat
+              the gaps between the tiles, the chart and the table. */}
           {/* Stat tiles */}
           <div className="grid grid-cols-2 gap-4 max-w-md">
             <Card>
@@ -305,7 +308,7 @@ export default function ApiAnalyticsPage() {
               )}
             </CardContent>
           </Card>
-        </>
+        </div>
       )}
     </div>
   );

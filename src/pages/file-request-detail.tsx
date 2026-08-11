@@ -303,7 +303,7 @@ export default function FileRequestDetailPage() {
           <Skeleton className="h-64 w-full rounded-xl" />
         </div>
       ) : (
-        <>
+        <div className="animate-content-in">
           {/* Header */}
           <div className="flex items-start justify-between gap-4 mb-4">
             <div className="min-w-0">
@@ -472,7 +472,7 @@ export default function FileRequestDetailPage() {
               </>
             )}
           </Card>
-        </>
+        </div>
       )}
 
       {/* File viewer */}

@@ -29,6 +29,12 @@ export default function UploadDock() {
   const resumeIdRef = useRef<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const loadedRegionsWsRef = useRef<string | null>(null);
+  // The dock slides UP into view, so it has to leave through the same edge.
+  // React unmounting the moment the last item is cleared made that impossible,
+  // so `mounted` outlives `items`: it is set on the first item and only cleared
+  // once the exit animation has actually finished.
+  const [mounted, setMounted] = useState(false);
+  const lastItemsRef = useRef(items);
 
   // When the "retry in another region" dialog opens, load only the regions
   // ALLOWED for that upload's workspace (same filter the Uploads page uses).
@@ -52,6 +58,8 @@ export default function UploadDock() {
       })
       .catch(() => { /* leave empty → dialog shows a loading note */ });
   }, [regionTarget]);
+
+  useEffect(() => { if (items.length > 0) setMounted(true); }, [items.length]);
 
   const onPickResume = (id: string) => { resumeIdRef.current = id; fileInputRef.current?.click(); };
   const onResumeFile = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -114,11 +122,16 @@ export default function UploadDock() {
     setCtx({ item, x: e.clientX, y: e.clientY });
   };
 
-  // Auto-hide: nothing to show at all → render nothing (hooks stay above this).
-  if (items.length === 0) return null;
+  // Auto-hide, one animation late (hooks stay above this). While the dock is
+  // leaving there are no items left to render, so the last frame's list is
+  // held and shown for the length of the exit.
+  const closing = items.length === 0;
+  if (!closing) lastItemsRef.current = items;
+  const shown = closing ? lastItemsRef.current : items;
+  if (!mounted || shown.length === 0) return null;
 
-  const summary = uploadSummary(items);
-  const clearable = items.some((i) => i.status === 'complete' || i.status === 'error' || i.status === 'canceled');
+  const summary = uploadSummary(shown);
+  const clearable = shown.some((i) => i.status === 'complete' || i.status === 'error' || i.status === 'canceled');
 
   const attention = summary.failed + summary.interrupted;
   const headline = summary.anyActive
@@ -131,7 +144,11 @@ export default function UploadDock() {
 
   return (
     <>
-      <div className="fixed bottom-4 right-4 z-50 w-80 max-w-[calc(100vw-2rem)] rounded-xl border bg-card shadow-xl overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-200">
+      <div
+        data-closed={closing ? 'true' : undefined}
+        onAnimationEnd={(e) => { if (e.target === e.currentTarget && closing) setMounted(false); }}
+        className="fixed bottom-4 right-4 z-50 w-80 max-w-[calc(100vw-2rem)] rounded-xl border bg-card shadow-xl overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-200 data-closed:animate-out data-closed:fade-out-0 data-closed:slide-out-to-bottom-2 motion-reduce:slide-in-from-bottom-0 motion-reduce:data-closed:slide-out-to-bottom-0"
+      >
         <input ref={fileInputRef} type="file" hidden onChange={onResumeFile} />
 
         {/* Header (always visible): icon + summary + collapse/clear controls.
@@ -190,7 +207,7 @@ export default function UploadDock() {
         {/* Expanded: per-file list (right-click a row for actions) */}
         {expanded && (
           <div className="max-h-72 overflow-y-auto border-t">
-            {items.map((it) => (
+            {shown.map((it) => (
               <DockRow
                 key={it.id}
                 item={it}

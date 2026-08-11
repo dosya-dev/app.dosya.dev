@@ -285,7 +285,7 @@ export default function ActivityPage() {
               {hasFilters && <p className="text-xs text-muted-foreground mt-1">Try adjusting your filters</p>}
             </div>
           ) : (
-            <div className="space-y-0">
+            <div className="space-y-0 animate-content-in">
               {activities.map((a) => (
                 <ActivityRow key={a.id} activity={a} />
               ))}

@@ -64,4 +64,29 @@ describe('OnboardingChecklist', () => {
     render(<OnboardingChecklist purpose="dev" steps={NONE} compact />);
     expect(container!.textContent).not.toContain('One key authenticates');
   });
+
+  // The completion pop is the app's one delight-budget animation, and it is
+  // only charming because it fires once. A step that was ALREADY done when the
+  // list mounted must not celebrate itself again on every visit.
+  const dot = (key: string) =>
+    container!.querySelector(`[data-testid="step-${key}"] span[aria-hidden]`)!;
+
+  it('does not replay the completion pop for steps already done on mount', () => {
+    render(<OnboardingChecklist purpose="team" steps={{ ...NONE, upload: true }} />);
+    expect(dot('upload').className).not.toContain('animate-step-done');
+  });
+
+  it('pops a step only on the transition from not-done to done', () => {
+    render(<OnboardingChecklist purpose="team" steps={NONE} />);
+    expect(dot('upload').className).not.toContain('animate-step-done');
+
+    act(() => {
+      root!.render(
+        <MemoryRouter><OnboardingChecklist purpose="team" steps={{ ...NONE, upload: true }} /></MemoryRouter>
+      );
+    });
+    expect(dot('upload').className).toContain('animate-step-done');
+    // Only the step that changed - the others must stay still.
+    expect(dot('share').className).not.toContain('animate-step-done');
+  });
 });

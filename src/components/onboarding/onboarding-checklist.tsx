@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -25,6 +26,15 @@ export function OnboardingChecklist({ purpose, steps, compact = false }: Onboard
   const active = stepsFor(purpose);
   const { done, total } = completedCount(purpose, steps);
 
+  // Only the false→true transition gets the pop. The previous flags start as
+  // null so nothing animates on mount: a user coming back to a half-finished
+  // checklist should not watch four steps celebrate themselves again, and the
+  // onboarding fetch re-renders this on every visit.
+  const prevSteps = useRef<StepFlags | null>(null);
+  useEffect(() => { prevSteps.current = steps; }, [steps]);
+  const justCompleted = (key: keyof StepFlags) =>
+    prevSteps.current !== null && !prevSteps.current[key] && !!steps[key];
+
   return (
     <div>
       <div className="flex items-center justify-between mb-3">
@@ -35,6 +45,7 @@ export function OnboardingChecklist({ purpose, steps, compact = false }: Onboard
       <ul className="space-y-1.5">
         {active.map((step) => {
           const isDone = steps[step.key];
+          const popped = justCompleted(step.key);
           const external = step.href.startsWith('https://');
           return (
             <li
@@ -47,9 +58,9 @@ export function OnboardingChecklist({ purpose, steps, compact = false }: Onboard
                 aria-hidden
                 className={`mt-0.5 size-4 rounded-full border flex items-center justify-center shrink-0 ${
                   isDone ? 'bg-primary border-primary text-primary-foreground' : 'border-muted-foreground/40'
-                }`}
+                } ${popped ? 'animate-step-done' : ''}`}
               >
-                {isDone && <Check className="size-3" />}
+                {isDone && <Check className={`size-3 ${popped ? 'animate-step-check' : ''}`} />}
               </span>
 
               <div className="flex-1 min-w-0">

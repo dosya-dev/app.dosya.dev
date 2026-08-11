@@ -779,6 +779,17 @@ export default function FilesPage() {
 
   const clearSelection = () => { setSelected(new Set()); setSelectedFolders(new Set()); };
   const totalSelected = selected.size + selectedFolders.size;
+  // The bulk bar collapses instead of unmounting (see its render below), so the
+  // count has to survive the collapse - otherwise the label reads "0 selected"
+  // for the 140ms it spends shrinking.
+  const lastSelectedCount = useRef(0);
+  const lastSelectionHadFiles = useRef(false);
+  if (totalSelected > 0) {
+    lastSelectedCount.current = totalSelected;
+    lastSelectionHadFiles.current = selected.size > 0;
+  }
+  const shownSelected = totalSelected || lastSelectedCount.current;
+  const shownSelectionHasFiles = totalSelected > 0 ? selected.size > 0 : lastSelectionHadFiles.current;
 
   // Bulk delete is confirmation-gated (see the bulk-delete dialog near the
   // single-item one below). Deleting a folder takes everything inside it, and
@@ -1086,16 +1097,23 @@ export default function FilesPage() {
 
       {/* Main content */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden relative" onContextMenu={(e) => onContextMenu(e, 'blank')} onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}>
-        {/* Drop overlay */}
-        {dragging && (
-          <div className="absolute inset-0 z-30 bg-primary/5 border-2 border-dashed border-primary rounded-lg flex items-center justify-center pointer-events-none">
-            <div className="flex flex-col items-center gap-2 text-primary">
-              <Upload className="size-10" />
-              <p className="text-sm font-semibold">Drop files to upload</p>
-              <p className="text-xs opacity-70">{currentFolderId ? `to ${breadcrumbs.at(-1)?.name ?? 'folder'}` : 'to root folder'}</p>
-            </div>
+        {/* Drop overlay. Always mounted and toggled by data-dragging rather than
+            conditionally rendered: unmounting is what made this a hard cut in
+            BOTH directions, and an exit animation is impossible on an element
+            React has already removed. `invisible` keeps it out of the
+            accessibility tree while idle, and transitioning visibility with
+            opacity holds it on screen for the length of the fade out. */}
+        <div
+          data-dragging={dragging ? 'true' : undefined}
+          aria-hidden={!dragging}
+          className="group/drop invisible absolute inset-0 z-30 flex items-center justify-center rounded-lg border-2 border-dashed border-primary bg-primary/5 opacity-0 transition-[opacity,visibility] duration-150 ease-(--ease-out-strong) pointer-events-none data-dragging:visible data-dragging:opacity-100"
+        >
+          <div className="flex scale-[0.97] flex-col items-center gap-2 text-primary transition-transform duration-150 ease-(--ease-out-strong) group-data-dragging/drop:scale-100 motion-reduce:scale-100 motion-reduce:transition-none">
+            <Upload className="size-10" />
+            <p className="text-sm font-semibold">Drop files to upload</p>
+            <p className="text-xs opacity-70">{currentFolderId ? `to ${breadcrumbs.at(-1)?.name ?? 'folder'}` : 'to root folder'}</p>
           </div>
-        )}
+        </div>
       {/* Toolbar */}
       <div className="flex items-center gap-3 px-5 py-3 border-b shrink-0">
         <div className="flex items-center gap-1 text-sm flex-1 min-w-0">
@@ -1162,10 +1180,19 @@ export default function FilesPage() {
         </div>
       )}
 
-      {/* Bulk bar */}
-      {totalSelected > 0 && (
-        <div className="flex items-center gap-2 px-5 py-2 bg-primary/10 border-b shrink-0 flex-wrap">
-          <Badge variant="secondary">{totalSelected} selected</Badge>
+      {/* Bulk bar. Selecting one file used to insert this row instantly and
+          shove the whole grid down by its height; it now collapses on a
+          grid-template-rows track. 140ms is deliberately near the perceptual
+          floor - selection happens dozens of times a session, so this has to
+          read as "the bar was already there", not as an animation. `inert`
+          keeps its buttons out of tab order while it is collapsed. */}
+      <div
+        inert={totalSelected === 0}
+        className={`grid shrink-0 transition-[grid-template-rows] duration-[140ms] ease-(--ease-out-strong) motion-reduce:transition-none ${totalSelected > 0 ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}
+      >
+        <div className="min-h-0 overflow-hidden">
+        <div className="flex items-center gap-2 px-5 py-2 bg-primary/10 border-b flex-wrap">
+          <Badge variant="secondary">{shownSelected} selected</Badge>
           {bulkBusy && <Loader2 className="size-3.5 animate-spin text-muted-foreground" />}
           {isDeletedView ? (
             <>
@@ -1175,7 +1202,7 @@ export default function FilesPage() {
           ) : (
             <>
               <Button variant="outline" size="sm" className="h-7 text-xs" disabled={bulkBusy} onClick={bulkDownloadZip}><Download className="size-3 mr-1" /> Download ZIP</Button>
-              {selected.size > 0 && (
+              {shownSelectionHasFiles && (
                 <Button variant="outline" size="sm" className="h-7 text-xs" disabled={bulkBusy} onClick={openBulkShare}><Share2 className="size-3 mr-1" /> Share</Button>
               )}
               <Button variant="outline" size="sm" className="h-7 text-xs" disabled={bulkBusy} onClick={bulkMove}><Move className="size-3 mr-1" /> Move</Button>
@@ -1187,7 +1214,8 @@ export default function FilesPage() {
             <Button variant="outline" size="sm" className="h-7 text-xs" onClick={clearSelection}>Clear</Button>
           </div>
         </div>
-      )}
+        </div>
+      </div>
 
       {/* Content + Detail Panel */}
       <div className="flex-1 flex min-h-0">
@@ -1252,7 +1280,10 @@ export default function FilesPage() {
               }
             />
           ) : (
-            <>
+            /* animate-content-in: bridges the cut from skeleton blocks to real
+               rows with a 120ms opacity fade. Opacity only - this is data the
+               user is about to read, so nothing slides and nothing staggers. */
+            <div className="animate-content-in">
               {folders.length > 0 && viewMode === 'grid' && (
                 <div className="mb-5">
                   <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">Folders</p>
@@ -1435,7 +1466,7 @@ export default function FilesPage() {
                   <Button variant="outline" size="sm" disabled={currentPage >= pagination.total_pages} onClick={() => { const p = new URLSearchParams(searchParams); p.set('page', String(currentPage + 1)); setSearchParams(p); }}>Next</Button>
                 </div>
               )}
-            </>
+            </div>
           )}
         </div>
 

@@ -427,6 +427,19 @@ body {
   }
 }
 
+/* ── Motion tokens ──────────────────────────────────────────
+   The three curves the app's own animations are built on. Tailwind v4 already
+   owns --ease-out and --ease-in-out (its weaker built-ins, used by every
+   `ease-out` utility in the codebase), so these carry a -strong suffix rather
+   than redefining Tailwind's and silently retargeting animations nobody
+   reviewed. Reach for these in hand-written CSS and in `ease-(--…)` utilities;
+   never hand-roll a curve next to them. */
+:root {
+  --ease-out-strong: cubic-bezier(0.23, 1, 0.32, 1);     /* entrances and exits */
+  --ease-in-out-strong: cubic-bezier(0.77, 0, 0.175, 1); /* movement on screen */
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);         /* iOS-like drawer curve */
+}
+
 /* File viewer animations */
 @keyframes fv-slide-up {
   from { transform: translateY(100%); }
@@ -469,6 +482,31 @@ body {
   100% { transform: translateX(300%); }
 }
 .animate-indeterminate { animation: indeterminate-slide 1.2s ease-in-out infinite; }
+
+/* Skeleton → content bridge. Every list view cuts from grey blocks straight to
+   real data; this fades the arriving content in instead. Opacity only and
+   deliberately short: content the user is waiting to READ must not slide into
+   place or make them wait for it a second time. @starting-style means it needs
+   no mount flag - the class alone is the whole implementation. */
+.animate-content-in { opacity: 1; transition: opacity 120ms var(--ease-out-strong); }
+@starting-style { .animate-content-in { opacity: 0; } }
+
+/* Onboarding step completion - the one place in the app with a delight budget,
+   because it is seen once. The overshoot (easeOutBack) is deliberate here and
+   would be wrong on anything seen more than a handful of times. Applied only on
+   the false→true transition, never on mount: see onboarding-checklist.tsx. */
+@keyframes step-done-pop {
+  from { transform: scale(0.6); }
+  to   { transform: scale(1); }
+}
+/* Plain opacity, shared: the check's own entrance, and the substitute every
+   movement-based animation falls back to under prefers-reduced-motion. */
+@keyframes fade-in-only {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.animate-step-done { animation: step-done-pop 220ms cubic-bezier(0.34, 1.56, 0.64, 1); }
+.animate-step-check { animation: fade-in-only 140ms var(--ease-out-strong) 60ms both; }
 
 /* In-file find highlights (CSS Custom Highlight API) */
 ::highlight(find-match) {
@@ -528,6 +566,26 @@ html[data-theme-sweep]::view-transition-new(root) {
 @keyframes theme-sweep {
   from { clip-path: inset(0 100% 0 0); }
   to { clip-path: inset(0 0 0 0); }
+}
+
+/* ── Reduced motion ─────────────────────────────────────────
+   Fewer and gentler, not zero. Every rule below drops movement (translate,
+   scale, the theme wipe) and keeps the opacity changes, because those are what
+   make a state change legible rather than decorative. Loading indicators - the
+   spinners, the indeterminate bar, the pin shimmer - are left running on
+   purpose: freezing them reads as "the app hung", which is a worse outcome than
+   the motion itself. lib/theme.ts already checks this query in JS for the
+   sweep; this covers the animations that live only in CSS. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-slide-up,
+  .animate-mobile-slide-up,
+  .animate-panel-slide-in { animation: fade-in-only 140ms var(--ease-out-strong); }
+  .animate-slide-down { animation: none; }
+  /* Deep-link highlight: the ring pulse is the whole point of the affordance,
+     so it stays - it changes no geometry and nothing moves. */
+  .animate-step-done { animation: none; }
+  .animate-step-check { animation: fade-in-only 140ms var(--ease-out-strong) both; }
+  html[data-theme-sweep]::view-transition-new(root) { animation: none; }
 }
 
 /* Integration setup code blocks: shiki dual-theme output (defaultColor:false).

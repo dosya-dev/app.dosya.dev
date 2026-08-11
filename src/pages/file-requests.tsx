@@ -153,7 +153,8 @@ export default function FileRequestsPage() {
             />
           )
         ) : (
-          filtered.map((r) => {
+          <div className="animate-content-in">
+          {filtered.map((r) => {
             const revoked = r.is_revoked === 1;
             const expired = !revoked && r.expires_at != null && r.expires_at < now;
             const isActive = !revoked && !expired;
@@ -164,7 +165,8 @@ export default function FileRequestsPage() {
                 onEdit={() => setEditRequest(r)}
               />
             );
-          })
+          })}
+          </div>
         )}
       </Card>
 
