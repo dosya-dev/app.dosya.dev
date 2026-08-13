@@ -38,11 +38,15 @@ describe('stackedSegments', () => {
 });
 
 describe('roleLabel', () => {
-  it('maps known roles and falls back to Member', () => {
+  it('maps the four builtins and calls anything else a custom role', () => {
     expect(roleLabel('role_owner')).toBe('Owner');
     expect(roleLabel('role_admin')).toBe('Admin');
     expect(roleLabel('role_member')).toBe('Member');
     expect(roleLabel('role_viewer')).toBe('Viewer');
-    expect(roleLabel('role_custom_xyz')).toBe('Member');
+    // Deliberately NOT 'Member'. A workspace-defined role has an id like
+    // `role_a1b2c3`, and labelling it "Member" asserted a specific builtin
+    // role the holder does not have - so a workspace running on custom roles
+    // rendered as if everyone were a plain member, everywhere this is used.
+    expect(roleLabel('role_custom_xyz')).toBe('Custom role');
   });
 });

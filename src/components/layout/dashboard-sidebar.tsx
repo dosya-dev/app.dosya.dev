@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { api, API_BASE } from '@/api/client';
 import { useWorkspace } from '@/stores/workspace';
+import { usePermissions } from '@/hooks/use-permissions';
 import { RemoteDownloadIndicator } from '@/components/layout/remote-download-indicator';
 import { CloudImportIndicator } from '@/components/layout/cloud-import-indicator';
 import { formatBytes } from '@/lib/billing/cart-math';
@@ -31,18 +32,24 @@ interface StorageInfo {
   usage: { used_label: string; pct: number };
 }
 
+// `perm` is the page-access permission that reveals the entry. The six
+// access_* keys existed in the role editor since migration 0008 and were read
+// by nothing at all - here or on the server - so a viewer with "Access Upload"
+// switched off still saw Uploads in this list and got a 403 on arrival. Items
+// with no `perm` (Vault, Integrations) are per-user surfaces, not workspace
+// pages, and are not role-gated.
 const navItems = [
-  { title: 'Dashboard', url: '/', icon: LayoutDashboard },
-  { title: 'Files', url: '/files', icon: FolderOpen },
-  { title: 'Uploads', url: '/uploads', icon: Upload },
-  { title: 'Shared', url: '/shared', icon: Share2 },
+  { title: 'Dashboard', url: '/', icon: LayoutDashboard, perm: 'access_dashboard' },
+  { title: 'Files', url: '/files', icon: FolderOpen, perm: 'access_files' },
+  { title: 'Uploads', url: '/uploads', icon: Upload, perm: 'access_upload' },
+  { title: 'Shared', url: '/shared', icon: Share2, perm: 'access_shared' },
   { title: 'Vault', url: '/vault', icon: Lock },
 ];
 
 const workspaceItems = [
-  { title: 'Team', url: '/teams', icon: Users },
+  { title: 'Team', url: '/teams', icon: Users, perm: 'access_team' },
   { title: 'Integrations', url: '/integrations', icon: Plug },
-  { title: 'Settings', url: '/settings', icon: Settings },
+  { title: 'Settings', url: '/settings', icon: Settings, perm: 'access_settings' },
 ];
 
 // Fast labels for the built-in roles so the header doesn't flash before the
@@ -77,6 +84,7 @@ export function DashboardSidebar() {
   const location = useLocation();
   const navigate = useNavigate();
   const { activeId, setActiveId } = useWorkspace();
+  const { can } = usePermissions();
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [storage, setStorage] = useState<StorageInfo | null>(null);
   const [roleName, setRoleName] = useState<string | null>(null);
@@ -273,7 +281,7 @@ export function DashboardSidebar() {
         <SidebarGroup>
           <SidebarGroupContent>
             <SidebarMenu>
-              {navItems.map((item) => (
+              {navItems.filter((item) => !item.perm || can(item.perm)).map((item) => (
                 <SidebarMenuItem key={item.url}>
                   <Link to={item.url} className="w-full">
                     <SidebarMenuButton className={NAV_BTN_CLASS} isActive={location.pathname === item.url || (item.url !== '/' && location.pathname.startsWith(item.url))}>
@@ -292,7 +300,7 @@ export function DashboardSidebar() {
           <SidebarGroupLabel className="px-3 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Workspace</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {workspaceItems.map((item) => (
+              {workspaceItems.filter((item) => !item.perm || can(item.perm)).map((item) => (
                 <SidebarMenuItem key={item.url}>
                   <Link to={item.url} className="w-full">
                     <SidebarMenuButton className={NAV_BTN_CLASS} isActive={location.pathname === item.url || location.pathname.startsWith(item.url + '/')}>

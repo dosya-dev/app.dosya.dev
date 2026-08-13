@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Loader2, LogOut, Plus, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useWorkspace } from '@/stores/workspace';
 import { logoutAndRedirect } from '@/lib/logout';
+import { roleLabel } from '@/lib/workspace-dashboard';
 
 const COLORS = [
   { value: '#22c55e', label: 'Green' },
@@ -145,7 +146,12 @@ export default function CreateWorkspacePage() {
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium truncate">{w.name}</p>
-                        <p className="text-[11px] text-muted-foreground capitalize">{w.role_id === 'owner' ? 'Owner' : 'Member'}</p>
+                        {/* roleLabel, not `role_id === 'owner'`: the ids are
+                            `role_owner`-style, so that comparison was false for
+                            everyone and every workspace read "Member" - even
+                            the ones you own. It also resolves admin, viewer and
+                            custom roles, which the ternary could never do. */}
+                        <p className="text-[11px] text-muted-foreground capitalize">{roleLabel(w.role_id ?? '')}</p>
                       </div>
                       <ChevronRight className="size-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
                     </button>

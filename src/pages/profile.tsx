@@ -27,6 +27,7 @@ import { enableWebPush } from '../lib/web-push';
 import { PROVIDER_LABELS, PROVIDER_ICONS } from '@/lib/cloud-providers';
 import { listProviders, type CloudProvider } from '@/api/cloud-import';
 import { FolderPickerDialog } from '@/components/folder-picker-dialog';
+import { roleLabel } from '@/lib/workspace-dashboard';
 
 // ── Types ──────────────────────────────────────────────────
 
@@ -1704,7 +1705,10 @@ function WorkspacesSection({ workspaces }: { workspaces: Workspace[] }) {
                   <p className="text-sm font-medium truncate">{w.name}</p>
                   <p className="text-[11px] text-muted-foreground">Joined {timeAgo(w.joined_at)}</p>
                 </div>
-                <Badge variant="secondary" className="text-[10px]">{w.role_id === 'owner' ? 'Owner' : 'Member'}</Badge>
+                {/* roleLabel, not `role_id === 'owner'`: ids are `role_owner`-
+                    style, so this always rendered "Member", including on
+                    workspaces you own. */}
+                <Badge variant="secondary" className="text-[10px]">{roleLabel(w.role_id)}</Badge>
               </div>
             ))
           )}

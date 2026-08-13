@@ -114,6 +114,8 @@ export default function TeamsPage() {
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteTab, setInviteTab] = useState<'email' | 'link'>('email');
   const [removeTarget, setRemoveTarget] = useState<{ id: string; name: string } | null>(null);
+  /** membership_id of the row whose role select is mid-flight. */
+  const [changingRoleId, setChangingRoleId] = useState<string | null>(null);
   const [revokeTarget, setRevokeTarget] = useState<{ id: string; email: string } | null>(null);
   const [profileMember, setProfileMember] = useState<TeamMember | null>(null);
 
@@ -187,6 +189,28 @@ export default function TeamsPage() {
     setSavingAnchor(false);
   };
 
+  /**
+   * Move a member to another role.
+   *
+   * There was no way to do this at all: PUT /api/team/members/:id only ever
+   * wrote root_folder_id, and the only statement in the whole API that touched
+   * workspace_members.role_id was ownership transfer. A role was decided by
+   * whoever sent the invite and frozen for good - promoting someone meant
+   * removing them and inviting them again.
+   */
+  const changeRole = async (m: TeamMember, roleId: string) => {
+    if (roleId === m.role_id) return;
+    setChangingRoleId(m.membership_id);
+    try {
+      const res = await api<{ ok: boolean; error?: string }>(`/api/team/members/${m.membership_id}`, {
+        method: 'PUT', body: JSON.stringify({ role_id: roleId }),
+      });
+      if (res.ok) { toast.success('Role updated', `${m.name} is now ${roleName(roleId)}.`); load(); }
+      else toast.error('Update failed', res.error ?? 'The role could not be changed.');
+    } catch (err) { toast.error('Update failed', apiErrorMessage(err, 'The role could not be changed.')); }
+    setChangingRoleId(null);
+  };
+
   const [resendingId, setResendingId] = useState<string | null>(null);
   const resendInvite = async (inv: Invite) => {
     setResendingId(inv.id);
@@ -227,6 +251,13 @@ export default function TeamsPage() {
   // control otherwise would just be a button that always 400s.
   const myRoleId = members.find((m) => m.is_you)?.role_id;
   const canManageRoles = !!myRoleId && (roles.find((r) => r.id === myRoleId)?.permissions?.manage_roles ?? false);
+
+  // Roles a member can be moved INTO. role_owner is excluded because ownership
+  // is transferred, never assigned - the endpoint refuses it outright, so
+  // offering it here would only produce a 400. Same list the invite dialog
+  // uses, and it includes this workspace's custom roles.
+  const assignableRoles = roles.filter((r) => r.id !== 'role_owner');
+  const assignableRoleItems = assignableRoles.map((r) => ({ value: r.id, label: r.name }));
 
   if (loading) return <TeamSkeleton />;
 
@@ -298,7 +329,27 @@ export default function TeamsPage() {
                     </div>
                   </div>
                   <div>
-                    <Badge className={`text-[11px] ${ROLE_COLORS[m.role_id] ?? ROLE_COLORS.role_member}`}>{roleName(m.role_id)}</Badge>
+                    {/* The role is a control, not a label, for anyone who may
+                        manage roles - the owner's row stays a badge because
+                        ownership moves by transfer, and so does your own,
+                        because the endpoint refuses self-changes. */}
+                    {canManageRoles && !m.is_you && m.role_id !== 'role_owner' ? (
+                      <Select
+                        value={m.role_id}
+                        onValueChange={(v) => changeRole(m, v as string)}
+                        items={assignableRoleItems}
+                        disabled={changingRoleId === m.membership_id}
+                      >
+                        <SelectTrigger className="h-6 text-[11px] w-[130px]" aria-label={`Role for ${m.name}`}>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {assignableRoles.map((r) => (<SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <Badge className={`text-[11px] ${ROLE_COLORS[m.role_id] ?? ROLE_COLORS.role_member}`}>{roleName(m.role_id)}</Badge>
+                    )}
                     <p className="text-[10px] text-muted-foreground mt-0.5 truncate max-w-[160px]">
                       {m.root_folder_id ? (m.root_folder_name ?? 'Folder') : 'Whole workspace'}
                     </p>
@@ -311,7 +362,11 @@ export default function TeamsPage() {
                         <Folder className="size-3" />
                       </Button>
                     )}
-                    {!m.is_you && m.role_id !== 'role_owner' && (
+                    {/* Removal needs manage_roles, which the endpoint now
+                        checks instead of comparing role ids. This button was
+                        shown to every member, including viewers, whose only
+                        feedback was the 403. */}
+                    {!m.is_you && m.role_id !== 'role_owner' && canManageRoles && (
                       <Button variant="outline" size="sm" className="h-6 w-6 p-0 text-destructive border-destructive/30" onClick={() => setRemoveTarget({ id: m.membership_id, name: m.name })}>
                         <X className="size-3" />
                       </Button>

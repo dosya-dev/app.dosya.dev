@@ -7,6 +7,7 @@ import { folderNavParams, filterNavParams, groupNavParams } from '@/lib/files-pa
 import { enqueue } from '@/lib/upload-runner';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
 import { useFilesListing, fetchFilesListing } from '@/hooks/use-files-listing';
+import { usePermissions } from '@/hooks/use-permissions';
 import { runBulk } from '@/lib/bulk-run';
 import type { FileItem, FolderItem } from '@/lib/file-types';
 import { filesQueryKey, filesRequestPath, type FilesView } from '@/lib/files-request';
@@ -384,9 +385,23 @@ export default function FilesPage() {
   );
 
   const {
-    folders, files, breadcrumbs, pagination,
+    folders, files, breadcrumbs, pagination, canLock, canHide,
     isLoading: loading, isPlaceholder, error: loadError, errorCode: loadErrorCode, refresh: loadFiles,
   } = useFilesListing(view);
+
+  const { can, userId: currentUserId } = usePermissions();
+
+  /**
+   * Whether Delete should be offered for one file.
+   *
+   * Mirrors what files/[id]/index.ts actually checks: `delete_any_file` covers
+   * everything, otherwise `delete_own_files` covers only what this member
+   * uploaded. Doing this per-file rather than "either permission → show it"
+   * is what keeps a member from being offered Delete on a colleague's upload
+   * that the server will refuse.
+   */
+  const canDeleteFile = (f: FileItem): boolean =>
+    can('delete_any_file') || (can('delete_own_files') && f.uploaded_by === currentUserId);
 
   const queryClient = useQueryClient();
 
@@ -1018,26 +1033,32 @@ export default function FilesPage() {
         { label: 'Delete permanently', icon: <Trash2 />, onClick: () => setDeleteTarget({ id: f.id, name: f.name, type: 'file', permanent: true }), danger: true },
       ];
     }
+    // Every `hidden` below mirrors the permission the matching endpoint
+    // actually checks. This menu used to offer all of it to every role, so a
+    // viewer got Rename, Move, Lock, Hide and Delete and found out what their
+    // role was from a row of 403 toasts. Lock and Hide use the listing's own
+    // can_lock / can_hide, which /api/files has always returned and which no
+    // client had ever read.
     return [
       { label: 'View', icon: <Eye />, onClick: () => openFileWithLockCheck(f, 'view') },
       { label: 'Open in editor', icon: <SquarePen />, hidden: !isOfficeFile(f.name), onClick: () => window.open(`/editor/${f.id}`, '_blank') },
-      { label: 'Download', icon: <Download />, onClick: () => handleDownload(f.id) },
-      { label: 'Share', icon: <Share2 />, onClick: () => openShare(f.id, f.name) },
+      { label: 'Download', icon: <Download />, hidden: !can('download_files'), onClick: () => handleDownload(f.id) },
+      { label: 'Share', icon: <Share2 />, hidden: !can('create_share_links'), onClick: () => openShare(f.id, f.name) },
       { label: 'Comments', icon: <MessageSquare />, onClick: () => navigate(`/comments?file_id=${f.id}&workspace_id=${wsId}&name=${encodeURIComponent(f.name)}`) },
       { label: favourites.has(f.id) ? 'Remove favourite' : 'Add to favourites', icon: <Star />, onClick: () => toggleFavourite(f.id) },
       { label: 'Get info', icon: <Info />, onClick: () => setInfoTarget({ type: 'file', item: f }) },
       { label: '', separator: true, onClick: () => {}, icon: null },
-      { label: 'Rename', icon: <Pencil />, onClick: () => { setRenameTarget({ id: f.id, name: f.name, type: 'file' }); setRenameName(f.name); } },
-      { label: 'Copy', icon: <Copy />, onClick: () => handleCopy(f.id) },
-      { label: 'Move to...', icon: <Move />, onClick: () => openMoveModal(f.id, 'file') },
+      { label: 'Rename', icon: <Pencil />, hidden: !can('rename_files'), onClick: () => { setRenameTarget({ id: f.id, name: f.name, type: 'file' }); setRenameName(f.name); } },
+      { label: 'Copy', icon: <Copy />, hidden: !can('upload_files'), onClick: () => handleCopy(f.id) },
+      { label: 'Move to...', icon: <Move />, hidden: !can('upload_files'), onClick: () => openMoveModal(f.id, 'file') },
       { label: '', separator: true, onClick: () => {}, icon: null },
       { label: 'Add to group', icon: <FolderPlus />, onClick: () => openAddToGroup(f.id, f.name, 'file') },
-      { label: 'Upload new version', icon: <Upload />, onClick: () => setVersionUploadTarget(f.id) },
+      { label: 'Upload new version', icon: <Upload />, hidden: !can('upload_files'), onClick: () => setVersionUploadTarget(f.id) },
       { label: 'Version history', icon: <History />, onClick: () => openFileWithLockCheck(f, 'view') },
-      { label: f.lock_mode !== 'none' ? 'Unlock' : 'Lock', icon: <Lock />, onClick: () => setLockTarget({ id: f.id, name: f.name, type: 'file' }) },
-      { label: f.is_hidden ? 'Unhide' : 'Hide', icon: f.is_hidden ? <Eye /> : <EyeOff />, onClick: () => setHideTarget({ id: f.id, name: f.name, type: 'file' }) },
+      { label: f.lock_mode !== 'none' ? 'Unlock' : 'Lock', icon: <Lock />, hidden: !canLock, onClick: () => setLockTarget({ id: f.id, name: f.name, type: 'file' }) },
+      { label: f.is_hidden ? 'Unhide' : 'Hide', icon: f.is_hidden ? <Eye /> : <EyeOff />, hidden: !canHide, onClick: () => setHideTarget({ id: f.id, name: f.name, type: 'file' }) },
       { label: '', separator: true, onClick: () => {}, icon: null },
-      { label: 'Delete', icon: <Trash2 />, onClick: () => setDeleteTarget({ id: f.id, name: f.name, type: 'file' }), danger: true },
+      { label: 'Delete', icon: <Trash2 />, hidden: !canDeleteFile(f), onClick: () => setDeleteTarget({ id: f.id, name: f.name, type: 'file' }), danger: true },
     ];
   };
 
@@ -1060,20 +1081,24 @@ export default function FilesPage() {
       }
       return items;
     }
+    // Same permission mirroring as fileCtxItems. `Move to...` follows
+    // rename_folders because that is what folders/[id]/move.ts now checks -
+    // that route had no permission check at all, so a viewer could rearrange
+    // the whole tree while being refused a rename.
     return [
       { label: 'Open', icon: <FolderOpen />, onClick: () => navigateToFolder(f.id) },
-      { label: 'Download', icon: <Download />, onClick: () => handleDownloadFolder(f.id) },
-      { label: 'Share', icon: <Share2 />, onClick: () => openFolderShare(f.id, f.name) },
+      { label: 'Download', icon: <Download />, hidden: !can('download_files'), onClick: () => handleDownloadFolder(f.id) },
+      { label: 'Share', icon: <Share2 />, hidden: !can('create_share_links'), onClick: () => openFolderShare(f.id, f.name) },
       { label: 'Get info', icon: <Info />, onClick: () => setInfoTarget({ type: 'folder', item: f }) },
       { label: '', separator: true, onClick: () => {}, icon: null },
-      { label: 'Rename', icon: <Pencil />, onClick: () => { setRenameTarget({ id: f.id, name: f.name, type: 'folder' }); setRenameName(f.name); } },
-      { label: 'Move to...', icon: <Move />, onClick: () => openMoveModal(f.id, 'folder') },
+      { label: 'Rename', icon: <Pencil />, hidden: !can('rename_folders'), onClick: () => { setRenameTarget({ id: f.id, name: f.name, type: 'folder' }); setRenameName(f.name); } },
+      { label: 'Move to...', icon: <Move />, hidden: !can('rename_folders'), onClick: () => openMoveModal(f.id, 'folder') },
       { label: 'Add to group', icon: <FolderPlus />, onClick: () => openAddToGroup(f.id, f.name, 'folder') },
       { label: '', separator: true, onClick: () => {}, icon: null },
-      { label: f.lock_mode !== 'none' ? 'Unlock' : 'Lock', icon: <Lock />, onClick: () => setLockTarget({ id: f.id, name: f.name, type: 'folder' }) },
-      { label: f.is_hidden ? 'Unhide' : 'Hide', icon: f.is_hidden ? <Eye /> : <EyeOff />, onClick: () => setHideTarget({ id: f.id, name: f.name, type: 'folder' }) },
+      { label: f.lock_mode !== 'none' ? 'Unlock' : 'Lock', icon: <Lock />, hidden: !canLock, onClick: () => setLockTarget({ id: f.id, name: f.name, type: 'folder' }) },
+      { label: f.is_hidden ? 'Unhide' : 'Hide', icon: f.is_hidden ? <Eye /> : <EyeOff />, hidden: !canHide, onClick: () => setHideTarget({ id: f.id, name: f.name, type: 'folder' }) },
       { label: '', separator: true, onClick: () => {}, icon: null },
-      { label: 'Delete', icon: <Trash2 />, onClick: () => setDeleteTarget({ id: f.id, name: f.name, type: 'folder' }), danger: true },
+      { label: 'Delete', icon: <Trash2 />, hidden: !can('delete_any_file') && !can('delete_own_files'), onClick: () => setDeleteTarget({ id: f.id, name: f.name, type: 'folder' }), danger: true },
     ];
   };
 
@@ -1082,8 +1107,8 @@ export default function FilesPage() {
     : [
         { label: 'Refresh', icon: <RefreshCw />, onClick: () => loadFiles() },
         { label: '', separator: true, onClick: () => {}, icon: null },
-        { label: 'New folder', icon: <FolderPlus />, onClick: () => setCreateFolderOpen(true) },
-        { label: 'Upload files', icon: <Upload />, onClick: () => navigate(uploadHref) },
+        { label: 'New folder', icon: <FolderPlus />, hidden: !can('create_folders'), onClick: () => setCreateFolderOpen(true) },
+        { label: 'Upload files', icon: <Upload />, hidden: !can('access_upload') || !can('upload_files'), onClick: () => navigate(uploadHref) },
       ];
 
   // Carries the current folder, or the current group, through to the Uploads
@@ -1253,20 +1278,24 @@ export default function FilesPage() {
             </>
           ) : (
             <>
-              <Button variant="outline" size="sm" className="h-7 text-xs" disabled={bulkBusy} onClick={bulkDownloadZip}><Download className="size-3 mr-1" /> Download ZIP</Button>
-              {/* Always rendered, unlike its siblings: a folder-only selection
-                  needs to be told WHY it cannot share, not handed an empty gap
-                  where the button was. */}
-              <Button
-                variant="outline" size="sm" className="h-7 text-xs"
-                disabled={bulkBusy || !shownCanShare}
-                title={shownCanShare ? undefined : 'A link covers one folder, or a set of files - not both.'}
-                onClick={openBulkShare}
-              >
-                <Share2 className="size-3 mr-1" /> Share
-              </Button>
-              <Button variant="outline" size="sm" className="h-7 text-xs" disabled={bulkBusy} onClick={bulkMove}><Move className="size-3 mr-1" /> Move</Button>
-              <Button variant="outline" size="sm" className="h-7 text-xs text-destructive border-destructive/30" disabled={bulkBusy} onClick={() => setBulkDeleteConfirm({ permanent: false })}><Trash2 className="size-3 mr-1" /> Delete</Button>
+              {can('download_files') && <Button variant="outline" size="sm" className="h-7 text-xs" disabled={bulkBusy} onClick={bulkDownloadZip}><Download className="size-3 mr-1" /> Download ZIP</Button>}
+              {/* Rendered whenever the role may share at all, unlike its
+                  siblings: a folder-only selection needs to be told WHY it
+                  cannot share, not handed an empty gap where the button was.
+                  A role WITHOUT create_share_links gets no button, because for
+                  them there is no selection that would make it work. */}
+              {can('create_share_links') && (
+                <Button
+                  variant="outline" size="sm" className="h-7 text-xs"
+                  disabled={bulkBusy || !shownCanShare}
+                  title={shownCanShare ? undefined : 'A link covers one folder, or a set of files - not both.'}
+                  onClick={openBulkShare}
+                >
+                  <Share2 className="size-3 mr-1" /> Share
+                </Button>
+              )}
+              {(can('upload_files') || can('rename_folders')) && <Button variant="outline" size="sm" className="h-7 text-xs" disabled={bulkBusy} onClick={bulkMove}><Move className="size-3 mr-1" /> Move</Button>}
+              {(can('delete_any_file') || can('delete_own_files')) && <Button variant="outline" size="sm" className="h-7 text-xs text-destructive border-destructive/30" disabled={bulkBusy} onClick={() => setBulkDeleteConfirm({ permanent: false })}><Trash2 className="size-3 mr-1" /> Delete</Button>}
             </>
           )}
           <div className="ml-auto flex gap-1.5">

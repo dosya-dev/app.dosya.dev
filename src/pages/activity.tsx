@@ -96,6 +96,7 @@ const CATEGORY_ACTIONS: Record<string, { value: string; label: string }[]> = {
     { value: 'invite_revoked', label: 'Invite revoked' },
     { value: 'ownership_transferred', label: 'Ownership transferred' },
     { value: 'member_anchor_updated', label: 'Folder access changed' },
+    { value: 'member_role_changed', label: 'Member role changed' },
   ],
   workspace: [
     { value: 'workspace_created', label: 'Workspace created' },
@@ -122,6 +123,7 @@ const ACTION_COLORS: Record<string, string> = {
   file_renamed: '#D97706', file_moved: '#D97706', file_locked: '#D97706',
   file_hidden: '#D97706', folder_renamed: '#D97706', folder_moved: '#D97706',
   member_invited: '#D97706', ownership_transferred: '#D97706', member_anchor_updated: '#D97706',
+  member_role_changed: '#D97706',
   workspace_updated: '#D97706', workspace_settings_changed: '#D97706', role_updated: '#D97706',
   file_shared: '#7C3AED', file_shared_email: '#7C3AED', folder_shared: '#7C3AED',
   file_copied: '#706e69',
@@ -150,6 +152,7 @@ const ACTION_LABELS: Record<string, string> = {
   member_invited: 'invited', member_joined: 'joined', member_removed: 'removed',
   member_left: 'left the workspace', invite_revoked: 'revoked invite for',
   ownership_transferred: 'transferred ownership to', member_anchor_updated: 'changed the folder access of',
+  member_role_changed: 'changed the role of',
   workspace_created: 'created workspace', workspace_updated: 'updated workspace',
   workspace_settings_changed: 'changed settings', role_updated: 'updated role', role_deleted: 'deleted role',
   comment_added: 'commented on', comment_deleted: 'deleted comment on',

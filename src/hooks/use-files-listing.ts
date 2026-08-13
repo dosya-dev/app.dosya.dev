@@ -25,6 +25,15 @@ export interface FilesResponse {
   files: FileItem[];
   breadcrumbs: Breadcrumb[];
   pagination?: Pagination;
+  /**
+   * Whether this member's role may lock / hide. /api/files has always sent
+   * both (it computes them to decide what to include in the listing) and no
+   * client had ever read them, so every role was offered Lock and Hide and
+   * only the owner's clicks actually worked - both permissions are seeded to
+   * owner-only, and until migration 0110 no custom role could hold either.
+   */
+  can_lock?: boolean;
+  can_hide?: boolean;
 }
 
 /**
@@ -48,6 +57,11 @@ export interface FilesListing {
   files: FileItem[];
   breadcrumbs: Breadcrumb[];
   pagination: Pagination | null;
+  /** Role may lock files/folders. Absent payload → false (fail closed: the
+   *  endpoint refuses anyway, and showing Lock to someone who cannot is the
+   *  exact defect this replaced). */
+  canLock: boolean;
+  canHide: boolean;
   isLoading: boolean;
   isPlaceholder: boolean;
   error: string | null;
@@ -84,6 +98,8 @@ export function useFilesListing(view: FilesView | null): FilesListing {
     files: query.data?.files ?? EMPTY_FILES,
     breadcrumbs: query.data?.breadcrumbs ?? EMPTY_CRUMBS,
     pagination: query.data?.pagination ?? null,
+    canLock: query.data?.can_lock ?? false,
+    canHide: query.data?.can_hide ?? false,
     isLoading: query.isLoading,
     isPlaceholder: query.isPlaceholderData,
     error: query.isError ? apiErrorMessage(query.error, 'This folder could not be loaded.') : null,

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, Fragment } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { api, apiErrorMessage, ApiError, API_BASE } from '@/api/client';
 import { useWorkspace } from '@/stores/workspace';
@@ -24,6 +24,7 @@ import {
 import { toast } from '@/lib/toast';
 import { humanSize } from '@/lib/helpers';
 import { DeleteWorkspaceDialog } from '@/components/delete-workspace-dialog';
+import { usePermissions } from '@/hooks/use-permissions';
 
 
 // ── Types ──────────────────────────────────────────────────
@@ -62,27 +63,75 @@ interface WsData {
   permissions: Record<string, { [perm: string]: boolean }>;
   /** Shape mirrors /api/team: the row id is `membership_id`; there is no `id`. */
   members?: { membership_id: string; user_id: string; name: string; email: string; role_id: string }[];
-  /** Current user's permission map - used to disable controls up front */
-  my_permissions?: Record<string, boolean>;
 }
 
-/** True when the current user may perform `perm`. Unknown map → optimistic
- *  (controls stay enabled; the API remains the authority). */
-function canPerm(data: WsData, perm: string): boolean {
-  if (!data.my_permissions) return true;
-  return data.my_permissions[perm] ?? false;
-}
+// `my_permissions` used to be derived here, by fetching /api/roles AND
+// /api/team, finding the row flagged `is_you`, and looking its role_id up in
+// the roles list. That was the only way any page could learn what the current
+// user may do, and it cost two extra requests to answer a question the server
+// can answer directly. GET /api/me/permissions exists now, so this page uses
+// the same usePermissions hook as everything else - see the hook for why it
+// deliberately fails OPEN while loading.
 const NO_PERM = (what: string) => `You don't have permission to change ${what}.`;
 
 interface RegionInfo { code: string; city: string; country: string; continent?: string }
 
 const ICON_COLORS = ['#22c55e', '#7C3AED', '#3b82f6', '#f59e0b', '#06b6d4', '#ec4899', '#1a1917'];
-const PERM_LABELS: Record<string, string> = {
-  upload_files: 'Upload files', download_files: 'Download files', delete_own_files: 'Delete own files',
-  delete_any_file: 'Delete any file', share_files: 'Share files', create_folders: 'Create folders',
-  manage_members: 'Manage members', manage_settings: 'Manage settings', manage_roles: 'Manage roles',
-  view_activity: 'View activity', hide_files: 'Hide files',
-};
+/**
+ * The permission matrix on this page.
+ *
+ * It used to list eleven keys, two of which - `share_files` and
+ * `manage_members` - are not permissions at all. No role has ever had a row
+ * for either, so both columns rendered as a dash for every role forever, while
+ * the real keys behind them (`create_share_links`, `invite_members`) were
+ * missing from the table entirely. Twenty-three other real permissions were
+ * absent too, including both file-management keys.
+ *
+ * This is the full registry, in the same order and grouping as
+ * apps/api/src/lib/permissions.ts and the role editor. Rows are grouped so 34
+ * of them stay readable.
+ */
+const PERM_GROUPS: { group: string; perms: [string, string][] }[] = [
+  { group: 'Files', perms: [
+    ['upload_files', 'Upload files'], ['download_files', 'Download files'],
+    ['delete_own_files', 'Delete own files'], ['delete_any_file', 'Delete any file'],
+    ['rename_files', 'Rename files'],
+  ] },
+  { group: 'Folders', perms: [
+    ['create_folders', 'Create folders'], ['rename_folders', 'Rename folders'],
+  ] },
+  { group: 'Sharing', perms: [
+    ['create_share_links', 'Create share links'], ['view_own_shares', 'View own shared links'],
+    ['view_all_shares', 'View all shared links'],
+  ] },
+  { group: 'Team', perms: [
+    ['invite_members', 'Invite members'], ['view_team_members', 'View team members'],
+    ['manage_roles', 'Manage roles'],
+  ] },
+  { group: 'File management', perms: [
+    ['lock_files', 'Lock files & folders'], ['hide_files', 'Hide files & folders'],
+  ] },
+  { group: 'Workspace identity', perms: [
+    ['change_workspace_name', 'Change workspace name'], ['change_workspace_icon', 'Change workspace icon'],
+    ['change_workspace_region', 'Change default region'],
+  ] },
+  { group: 'Workspace limits', perms: [
+    ['change_max_file_size', 'Change max file size'], ['change_storage_per_member', 'Change storage per member'],
+    ['change_total_storage_cap', 'Change total storage cap'], ['change_max_concurrent_uploads', 'Change max simultaneous uploads'],
+    ['change_allowed_file_types', 'Change allowed file types'], ['change_blocked_file_types', 'Change blocked file types'],
+  ] },
+  { group: 'Workspace general', perms: [
+    ['manage_settings', 'Manage settings'], ['view_activity', 'View activity log'],
+  ] },
+  { group: 'Page access', perms: [
+    ['access_dashboard', 'Access Dashboard'], ['access_files', 'Access Files'],
+    ['access_upload', 'Access Upload'], ['access_shared', 'Access Shared'],
+    ['access_team', 'Access Team'], ['access_settings', 'Access Settings'],
+  ] },
+  { group: 'Protocol access', perms: [
+    ['access_webdav', 'Use WebDAV'], ['access_s3', 'Use the S3 gateway'],
+  ] },
+];
 
 const NAV = [
   { id: 'info', label: 'Workspace info', icon: Info, group: 'General' },
@@ -121,9 +170,6 @@ export default function SettingsPage() {
         }
         if (teamRes.ok && teamRes.members) {
           d.members = teamRes.members;
-          // Resolve the current user's permissions so controls can disable up front
-          const me = teamRes.members.find((m) => m.is_you);
-          if (me && d.permissions?.[me.role_id]) d.my_permissions = d.permissions[me.role_id];
         }
         setData(d);
       }
@@ -189,11 +235,12 @@ function WorkspaceInfoSection({ data, wsId, regions, onSaved }: { data: WsData; 
     try { return new Set(JSON.parse(data.settings?.available_regions || '[]')); } catch { return new Set(); }
   });
   const fileRef = useRef<HTMLInputElement>(null);
+  const { can } = usePermissions();
 
-  const canName = canPerm(data, 'change_workspace_name');
-  const canIcon = canPerm(data, 'change_workspace_icon');
-  const canRegion = canPerm(data, 'change_workspace_region');
-  const canManage = canPerm(data, 'manage_settings');
+  const canName = can('change_workspace_name');
+  const canIcon = can('change_workspace_icon');
+  const canRegion = can('change_workspace_region');
+  const canManage = can('manage_settings');
 
   // onSaved() only reloads this page's own copy of the workspace. The sidebar
   // switcher holds a separate list it fetched at mount, so renaming a workspace
@@ -341,6 +388,7 @@ function WorkspaceInfoSection({ data, wsId, regions, onSaved }: { data: WsData; 
 
 function HardLimitsSection({ data, wsId, onSaved }: { data: WsData; wsId: string; onSaved: () => void }) {
   const s = data.settings;
+  const { can } = usePermissions();
   const planCap = data.plan_limits?.storage_gb;
   const alloc = data.allocation;
   const savedCap = s?.max_total_storage_gb ?? null;
@@ -412,7 +460,7 @@ function HardLimitsSection({ data, wsId, onSaved }: { data: WsData; wsId: string
                 {row.showCap && row.field !== 'max_total_storage_gb' && planCap && <Badge variant="outline" className="text-[9px] text-muted-foreground">plan max: {planCap} GB</Badge>}
                 {row.field === 'max_total_storage_gb' && capRemaining !== null && <Badge variant="outline" className="text-[9px] text-muted-foreground">{capRemaining} GB left to allocate</Badge>}
                 <SaveBtn loading={saving === row.field} onClick={() => saveLimit(row.field)}
-                  disabled={!canPerm(data, LIMIT_PERMS[row.field])}
+                  disabled={!can(LIMIT_PERMS[row.field])}
                   disabledReason={NO_PERM(row.label.toLowerCase())} />
               </div>
             </SettingRow>
@@ -436,7 +484,8 @@ const SHARE_EXPIRY_OPTIONS = [
 
 function SecuritySection({ data, wsId, onSaved }: { data: WsData; wsId: string; onSaved: () => void }) {
   const s = data.settings;
-  const canManageSec = canPerm(data, 'manage_settings');
+  const { can } = usePermissions();
+  const canManageSec = can('manage_settings');
   const [toggles, setToggles] = useState({
     disable_share_links: s?.disable_share_links === 1, force_share_password: s?.force_share_password === 1,
     require_2fa: s?.require_2fa === 1, disable_password_login: s?.disable_password_login === 1,
@@ -640,19 +689,28 @@ function RolesSection({ data }: { data: WsData; wsId: string; onSaved: () => voi
               </TableRow>
             </TableHeader>
             <TableBody>
-              {Object.entries(PERM_LABELS).map(([perm, label]) => (
-                <TableRow key={perm}>
-                  <TableCell className="py-2 px-3 text-muted-foreground">{label}</TableCell>
-                  {roles.map((r) => (
-                    <TableCell key={r.id} className="text-center py-2 px-2">
-                      {perms[r.id]?.[perm] ? (
-                        <div className="w-5 h-5 rounded bg-green-100 dark:bg-green-950 flex items-center justify-center mx-auto"><Check className="size-3 text-green-600" /></div>
-                      ) : (
-                        <div className="w-5 h-5 rounded bg-muted flex items-center justify-center mx-auto"><span className="text-muted-foreground text-[10px]">-</span></div>
-                      )}
+              {PERM_GROUPS.map((g) => (
+                <Fragment key={g.group}>
+                  <TableRow>
+                    <TableCell colSpan={roles.length + 1} className="py-1.5 px-3 bg-muted/40 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                      {g.group}
                     </TableCell>
+                  </TableRow>
+                  {g.perms.map(([perm, label]) => (
+                    <TableRow key={perm}>
+                      <TableCell className="py-2 px-3 text-muted-foreground">{label}</TableCell>
+                      {roles.map((r) => (
+                        <TableCell key={r.id} className="text-center py-2 px-2">
+                          {perms[r.id]?.[perm] ? (
+                            <div className="w-5 h-5 rounded bg-green-100 dark:bg-green-950 flex items-center justify-center mx-auto"><Check className="size-3 text-green-600" /></div>
+                          ) : (
+                            <div className="w-5 h-5 rounded bg-muted flex items-center justify-center mx-auto"><span className="text-muted-foreground text-[10px]">-</span></div>
+                          )}
+                        </TableCell>
+                      ))}
+                    </TableRow>
                   ))}
-                </TableRow>
+                </Fragment>
               ))}
             </TableBody>
           </Table>

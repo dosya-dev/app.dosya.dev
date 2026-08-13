@@ -63,6 +63,17 @@ const ROLE_LABELS: Record<string, string> = {
   role_owner: 'Owner', role_admin: 'Admin', role_member: 'Member', role_viewer: 'Viewer',
 };
 
+/**
+ * Human label for a workspace role id.
+ *
+ * The fallback is "Custom role", not "Member". A workspace-defined role has an
+ * id like `role_a1b2c3` that is not in the map above, and calling it "Member"
+ * asserted a specific builtin role the person does not hold - so a workspace
+ * full of custom roles rendered as if everyone were a plain member. The name
+ * of a custom role is not in a workspaces listing payload; where it IS known
+ * (the team page), that page resolves it from /api/roles instead of calling
+ * this.
+ */
 export function roleLabel(roleId: string): string {
-  return ROLE_LABELS[roleId] ?? 'Member';
+  return ROLE_LABELS[roleId] ?? 'Custom role';
 }
