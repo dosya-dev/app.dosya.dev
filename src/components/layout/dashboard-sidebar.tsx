@@ -84,7 +84,7 @@ export function DashboardSidebar() {
   const location = useLocation();
   const navigate = useNavigate();
   const { activeId, setActiveId } = useWorkspace();
-  const { can } = usePermissions();
+  const { can, rootFolderId, rootFolderName } = usePermissions();
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [storage, setStorage] = useState<StorageInfo | null>(null);
   const [roleName, setRoleName] = useState<string | null>(null);
@@ -219,7 +219,16 @@ export function DashboardSidebar() {
                   </div>
                   <div className="min-w-0 flex-1 text-left group-data-[collapsible=icon]:hidden">
                     <p className="truncate text-sm font-medium leading-tight">{activeWs.name}</p>
-                    <p className="text-[11px] leading-tight text-muted-foreground">{roleLabel}</p>
+                    {/* A folder-confined member sees a workspace that looks
+                        half empty - correctly, but with nothing anywhere
+                        saying why. Their listings, search and dashboard are
+                        all scoped to one folder, so name it here rather than
+                        leave them to conclude files went missing. */}
+                    <p className="truncate text-[11px] leading-tight text-muted-foreground">
+                      {rootFolderId
+                        ? `${roleLabel} · ${rootFolderName ?? 'one folder'}`
+                        : roleLabel}
+                    </p>
                   </div>
                   <ChevronsUpDown className="h-3.5 w-3.5 text-muted-foreground shrink-0 group-data-[collapsible=icon]:hidden" />
                 </>

@@ -528,16 +528,22 @@ export default function TeamsPage() {
               stop working - and an owner had no way to know that before
               applying it. Saying so here is what turns a trap into a choice.
               Remove these lines as the routes are covered. */}
+          {/* Written when confinement refused most of the app, and rewritten
+              once every data path was scoped. It is a description of reach
+              now, not a warning about breakage - the earlier copy named
+              Dashboard, Search, Shared and desktop sync as things that would
+              not work, and all four work and are scoped. Stale UI copy about a
+              permission boundary is worse than none: an owner makes a
+              confinement decision on it. */}
           {anchorFolderId && (
-            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2">
-              <p className="text-[11px] font-medium text-amber-700 dark:text-amber-400 mb-1">
-                What a folder-limited member loses
-              </p>
-              <p className="text-[11px] text-amber-700/90 dark:text-amber-400/90">
-                They can browse, upload and manage files inside this folder. The Dashboard,
-                Search, Shared links and desktop sync will not work for them, and WebDAV or
-                the S3 gateway is the better fit for a heavy user. Clear the folder to give
-                the whole workspace back.
+            <div className="rounded-lg border border-border bg-muted/40 px-3 py-2">
+              <p className="text-[11px] font-medium mb-1">What this changes for them</p>
+              <p className="text-[11px] text-muted-foreground">
+                Everywhere they look - the web app, desktop sync, WebDAV and the S3
+                gateway - they see this folder and what is inside it, and nothing else.
+                Their dashboard, search and shared links cover only this folder. Workspace
+                settings, the team page and the activity log stay unavailable to them.
+                Clear the folder to give the whole workspace back.
               </p>
             </div>
           )}

@@ -30,6 +30,8 @@ export interface MyPermissions {
   is_builtin: boolean;
   /** Set when this member is confined to one folder subtree; null otherwise. */
   root_folder_id: string | null;
+  /** The anchor's name, or null if it has been trashed. */
+  root_folder_name: string | null;
   permissions: Record<string, boolean>;
 }
 
@@ -69,5 +71,6 @@ export function usePermissions() {
     isError,
     /** Non-null when the member is confined to a single folder subtree. */
     rootFolderId: data?.root_folder_id ?? null,
+    rootFolderName: data?.root_folder_name ?? null,
   };
 }
