@@ -508,7 +508,7 @@ export default function TeamsPage() {
           <div>
             <p className="text-xs font-medium mb-0.5">Limit to a folder</p>
             <p className="text-[11px] text-muted-foreground mb-2">
-              Optional. This member will only see this folder and everything inside it, everywhere - the web app, WebDAV, and the S3 gateway.
+              Optional. This member will only see this folder and everything inside it, in the web app, WebDAV and the S3 gateway.
             </p>
             {anchorFolderId ? (
               <div className="flex items-center gap-2">
@@ -521,6 +521,26 @@ export default function TeamsPage() {
               </Button>
             )}
           </div>
+
+          {/* Shown only when a folder is actually chosen. Confinement is
+              enforced by REFUSING every route that has not been audited for
+              it, which is the safe default but means real parts of the app
+              stop working - and an owner had no way to know that before
+              applying it. Saying so here is what turns a trap into a choice.
+              Remove these lines as the routes are covered. */}
+          {anchorFolderId && (
+            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2">
+              <p className="text-[11px] font-medium text-amber-700 dark:text-amber-400 mb-1">
+                What a folder-limited member loses
+              </p>
+              <p className="text-[11px] text-amber-700/90 dark:text-amber-400/90">
+                They can browse, upload and manage files inside this folder. The Dashboard,
+                Search, Shared links and desktop sync will not work for them, and WebDAV or
+                the S3 gateway is the better fit for a heavy user. Clear the folder to give
+                the whole workspace back.
+              </p>
+            </div>
+          )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setAnchorTarget(null)}>Cancel</Button>
             <Button onClick={saveAnchor} disabled={savingAnchor}>

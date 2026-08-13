@@ -1,6 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useLocation, Link } from 'react-router-dom';
 import { api, API_BASE, ApiError } from '@/api/client';
+import {
+  CODE_LENGTH, normaliseCode, isCompleteCode, cooldownRemaining,
+  describeBlocker, formatScheduledDate, daysRemaining, classifyDeleteError,
+  type DeletePreview,
+} from '@/lib/account-deletion';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -1721,6 +1726,81 @@ function WorkspacesSection({ workspaces }: { workspaces: Workspace[] }) {
 // ── Delete Account ─────────────────────────────────────────
 
 function DeleteAccountSection() {
+  const [preview, setPreview] = useState<DeletePreview | null>(null);
+  const [step, setStep] = useState<'idle' | 'code'>('idle');
+  const [code, setCode] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [scheduledFor, setScheduledFor] = useState<number | null>(null);
+  const [sentAt, setSentAt] = useState<number | null>(null);
+  const [remaining, setRemaining] = useState(0);
+
+  const load = useCallback(async () => {
+    try {
+      const res = await api<{ ok: boolean } & DeletePreview>('/api/me/delete-preview');
+      if (res.ok) {
+        setPreview(res);
+        setScheduledFor(res.deletion_scheduled_for);
+      }
+    } catch { /* the section still renders; the action will report its own error */ }
+  }, []);
+
+  useEffect(() => { void load(); }, [load]);
+
+  // A live countdown rather than a dead button: the server rejects a resend
+  // inside its cooldown, so the control has to say when it will work.
+  useEffect(() => {
+    if (sentAt == null) return;
+    const update = () => setRemaining(cooldownRemaining(sentAt, Date.now()));
+    update();
+    const id = setInterval(update, 1000);
+    return () => clearInterval(id);
+  }, [sentAt]);
+
+  const blockers = preview?.blockers ?? [];
+  const nowSeconds = Math.floor(Date.now() / 1000);
+
+  const requestCode = async () => {
+    setError(null); setBusy(true);
+    try {
+      await api('/api/me/delete-request', { method: 'POST' });
+      setSentAt(Date.now());
+      setStep('code');
+    } catch (e) { setError(classifyDeleteError(e).message); }
+    finally { setBusy(false); }
+  };
+
+  const confirm = async () => {
+    setError(null); setBusy(true);
+    try {
+      const res = await api<{ ok: boolean; deletion_scheduled_for: number }>('/api/me', {
+        method: 'DELETE',
+        body: JSON.stringify({ code }),
+      });
+      setScheduledFor(res.deletion_scheduled_for);
+      setStep('idle');
+      // Sessions were revoked server-side. Sending the user to the login screen
+      // is honest about that rather than letting the next request 401 at random.
+      toast.success('Deletion scheduled', 'You have been signed out. Sign in again to cancel.');
+      setTimeout(() => { window.location.href = '/login'; }, 2500);
+    } catch (e) {
+      const f = classifyDeleteError(e);
+      if (f.kind === 'code_burned') setCode('');
+      setError(f.message);
+    } finally { setBusy(false); }
+  };
+
+  const cancel = async () => {
+    setError(null); setBusy(true);
+    try {
+      await api('/api/me/delete-cancel', { method: 'POST' });
+      setScheduledFor(null);
+      toast.success('Deletion cancelled', 'Your account will not be deleted.');
+      await load();
+    } catch (e) { setError(classifyDeleteError(e).message); }
+    finally { setBusy(false); }
+  };
+
   return (
     <section id="section-delete">
       <h2 className="text-base font-semibold text-destructive mb-3">Delete account</h2>
@@ -1733,14 +1813,85 @@ function DeleteAccountSection() {
             </div>
             <Button variant="outline" size="sm" className="text-xs" onClick={() => toast.info('Not available yet', 'Data export is not available yet.')}>Request export</Button>
           </div>
-          <div className="flex items-center justify-between py-4">
-            <div>
-              <p className="text-sm font-medium">Delete account</p>
-              <p className="text-xs text-muted-foreground">Permanently deletes your account and all workspaces you own.</p>
-            </div>
-            <Button variant="destructive" size="sm" className="text-xs" onClick={() => toast.error('Not available yet', 'Account deletion is not available yet. Contact support.')}>
-              <Trash2 className="size-3 mr-1.5" /> Delete my account
-            </Button>
+
+          <div className="py-4 space-y-3">
+            {error && (
+              <p className="text-xs text-destructive" data-testid="delete-error">{error}</p>
+            )}
+
+            {scheduledFor != null ? (
+              <div data-testid="delete-scheduled">
+                <p className="text-sm font-medium">Deletion scheduled</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Your account and its files will be deleted on{' '}
+                  <span className="font-medium text-foreground">{formatScheduledDate(scheduledFor)}</span>
+                  {' '}- {daysRemaining(scheduledFor, nowSeconds)} days from now. Nothing has been deleted yet.
+                </p>
+                <Button size="sm" className="text-xs mt-3" onClick={cancel} disabled={busy} data-testid="cancel-deletion">
+                  Cancel deletion
+                </Button>
+              </div>
+            ) : step === 'code' ? (
+              <div data-testid="delete-code-step">
+                <p className="text-sm font-medium">Enter your code</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  We emailed you a {CODE_LENGTH}-digit code. Entering it schedules the deletion.
+                </p>
+                <div className="flex items-center gap-2 mt-3">
+                  <Input
+                    value={code}
+                    onChange={(e) => setCode(normaliseCode(e.target.value))}
+                    placeholder="000000"
+                    inputMode="numeric"
+                    className="w-28 font-mono tracking-[0.3em] text-center"
+                    data-testid="delete-code"
+                  />
+                  <Button
+                    variant="destructive" size="sm" className="text-xs"
+                    onClick={confirm}
+                    disabled={!isCompleteCode(code) || busy}
+                    data-testid="confirm-delete"
+                  >
+                    <Trash2 className="size-3 mr-1.5" /> Delete my account
+                  </Button>
+                  {remaining > 0 ? (
+                    <span className="text-xs text-muted-foreground" data-testid="resend-countdown">
+                      Resend in {remaining}s
+                    </span>
+                  ) : (
+                    <button className="text-xs underline text-muted-foreground hover:text-foreground" onClick={requestCode} data-testid="resend">
+                      Resend code
+                    </button>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium">Delete account</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Scheduled for {preview?.window_days ?? 30} days later, so you can cancel. Deletes{' '}
+                    {preview?.workspaces.length ?? 0} workspace{(preview?.workspaces.length ?? 0) === 1 ? '' : 's'}
+                    {' '}and {preview?.file_count ?? 0} file{(preview?.file_count ?? 0) === 1 ? '' : 's'}.
+                  </p>
+                  {blockers.length > 0 && (
+                    <ul className="mt-2 space-y-1" data-testid="delete-blockers">
+                      {blockers.map((b) => (
+                        <li key={b.workspace_id} className="text-xs text-muted-foreground">{describeBlocker(b)}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+                <Button
+                  variant="destructive" size="sm" className="text-xs shrink-0"
+                  onClick={requestCode}
+                  disabled={blockers.length > 0 || busy}
+                  data-testid="start-delete"
+                >
+                  <Trash2 className="size-3 mr-1.5" /> Delete my account
+                </Button>
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>

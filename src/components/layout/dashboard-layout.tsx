@@ -3,6 +3,7 @@ import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { SidebarProvider, SidebarInset } from '@/components/ui/sidebar';
 import { DashboardSidebar } from './dashboard-sidebar';
 import { DashboardTopbar } from './dashboard-topbar';
+import { DeletionBanner } from '@/components/deletion-banner';
 import { api, API_BASE } from '@/api/client';
 import { useWorkspace } from '@/stores/workspace';
 import UploadDock from '@/components/uploads/upload-dock';
@@ -79,6 +80,9 @@ export function DashboardLayout() {
       <SidebarInset className="min-h-0 overflow-hidden">
         <NotificationPoller />
         <DashboardTopbar />
+        {/* Above the scroll container on purpose: a pending deletion must stay
+            visible while the user scrolls, not scroll away with the page. */}
+        <DeletionBanner />
         {/* key={pathname} remounts the content area on navigation so the
             fade/rise animation replays - the page's skeleton fades in first,
             then its data pops in. Remount also resets scroll to the top. */}
