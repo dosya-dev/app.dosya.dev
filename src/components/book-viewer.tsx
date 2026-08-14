@@ -9,7 +9,7 @@ import {
   SAVE_DEBOUNCE_MS, type Bookmark, type ReadingState,
 } from '@/lib/reader/readingState';
 import {
-  clampFont, FONT_MAX, FONT_MIN, FONT_STEP, loadPrefs, READER_THEMES, savePrefs, themeById,
+  clampFont, FONT_MAX, FONT_MIN, FONT_STEP, loadPrefs, READER_THEMES, resolveTheme, savePrefs, themeById,
 } from '@/lib/reader/readerThemes';
 
 interface TocItem {
@@ -64,7 +64,9 @@ export function BookViewer({
   const [hits, setHits] = useState<SearchHit[]>([]);
   const [searching, setSearching] = useState(false);
 
-  const theme = useMemo(() => themeById(prefs.themeId), [prefs.themeId]);
+  // Resolved, not looked up: the `app` theme has no colours of its own and
+  // takes them from whatever the site is currently wearing.
+  const theme = useMemo(() => resolveTheme(prefs.themeId), [prefs.themeId]);
 
   const page = useCallback((): Record<string, any> | null => {
     const win = frameRef.current?.contentWindow as unknown as Record<string, any> | undefined;
@@ -385,7 +387,7 @@ export function BookViewer({
                     className={`mb-1 flex w-full items-center gap-2 rounded-lg border px-2 py-1.5 text-xs ${prefs.themeId === t.id ? "border-primary" : ""}`}
                     
                   >
-                    <span className="h-4 w-4 rounded border" style={{ background: t.bg }} />
+                    <span className="h-4 w-4 rounded border" style={{ background: t.bg || resolveTheme("app").bg }} />
                     <span>{t.label}</span>
                   </button>
                 ))}

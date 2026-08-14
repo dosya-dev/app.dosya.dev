@@ -1,20 +1,22 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import {
   DEFAULT_PREFS, FONT_MAX, FONT_MIN, READER_THEMES, clampFont, isKnownThemeId,
-  loadPrefs, savePrefs, themeById,
+  loadPrefs, resolveTheme, savePrefs, themeById,
 } from './readerThemes';
 
 beforeEach(() => localStorage.clear());
 
 describe('reader themes', () => {
-  it('offers exactly the three apps/mobile does', () => {
-    // Parity is the point: a book should look the same whichever client opens
-    // it, so this pins the ids rather than merely counting them.
-    expect(READER_THEMES.map((t) => t.id)).toEqual(['light', 'sepia', 'dark']);
+  it("keeps mobile's three palettes, and adds the app-matching one", () => {
+    // The three fixed palettes still have to match apps/mobile exactly - a book
+    // in Sepia should look the same whichever client opens it. `app` is
+    // deliberately extra and web/desktop-only: a phone reader has no
+    // surrounding app chrome to match, and mobile has its own theme sheet.
+    expect(READER_THEMES.map((t) => t.id)).toEqual(['app', 'light', 'sepia', 'dark']);
   });
 
-  it('falls back to the first theme for an unknown id', () => {
-    expect(themeById('chartreuse').id).toBe('light');
+  it('falls back to the default theme for an unknown id', () => {
+    expect(themeById('chartreuse').id).toBe('app');
   });
 
   it('knows which ids are real', () => {
@@ -24,6 +26,25 @@ describe('reader themes', () => {
 
   it("uses mobile's sepia paper colour, not an approximation of it", () => {
     expect(themeById('sepia').bg).toBe('#f4ecd8');
+  });
+});
+
+describe('resolveTheme', () => {
+  it('returns a fixed palette verbatim', () => {
+    expect(resolveTheme('sepia')).toEqual({ bg: '#f4ecd8', fg: '#5b4636' });
+  });
+
+  it('resolves `app` to real colours rather than the empty strings it stores', () => {
+    // The stored entry carries no colours on purpose; they come from the DOM.
+    const resolved = resolveTheme('app');
+    expect(resolved.bg).not.toBe('');
+    expect(resolved.fg).not.toBe('');
+  });
+
+  it('never hands the reader a transparent background', () => {
+    // jsdom resolves no theme variables, which is exactly the degenerate case:
+    // painting a book on transparent would make it unreadable.
+    expect(resolveTheme('app').bg).not.toBe('rgba(0, 0, 0, 0)');
   });
 });
 
@@ -54,7 +75,7 @@ describe('prefs', () => {
     // Prefs outlive releases; a theme removed in a later version must not leave
     // the reader with no colours at all.
     localStorage.setItem('dosya.reader.prefs', JSON.stringify({ fontSizePct: 100, themeId: 'chartreuse' }));
-    expect(loadPrefs().themeId).toBe('light');
+    expect(loadPrefs().themeId).toBe('app');
   });
 
   it('clamps a stored font size that is out of range', () => {
