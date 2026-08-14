@@ -5,10 +5,11 @@ import {
   X, Download, ChevronLeft, ChevronRight, Pencil, Clock, SquarePen,
 
 } from 'lucide-react';
-import { humanSize, extOf, isImage, isVideo, isAudio, fileIconSrc, isOfficeFile } from '@/lib/helpers';
+import { humanSize, extOf, isImage, isVideo, isAudio, fileIconSrc, isOfficeFile, isBook } from '@/lib/helpers';
 import { FilePreviewImage } from '@/components/file-preview-image';
 import { toast } from '@/lib/toast';
 import { isTextReadable, langFromExtension, looksBinary } from '@/lib/text-detect';
+import { BookViewer } from '@/components/book-viewer';
 import { highlightToHtml } from '@/lib/text-highlight';
 import { useInFileFind } from '@/lib/use-in-file-find';
 import { TextFindBar } from '@/components/text-find-bar';
@@ -571,6 +572,12 @@ function FileContent({ file, files, rawUrl, stableRawUrl, downloadUrl, version, 
     return (
       <iframe src={`${rawUrl}#toolbar=1`} className="w-full h-full border-none rounded-md bg-white" title={`PDF: ${file.name}`} />
     );
+  }
+
+  // Before the text check: an .epub is a zip so isTextReadable could not claim
+  // it, but a .fb2 is XML and would otherwise render as markup instead of a book.
+  if (isBook(file.name)) {
+    return <BookViewer file={file} />;
   }
 
   if (isTextReadable(file.name, file.mime_type)) {

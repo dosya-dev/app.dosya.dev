@@ -1446,40 +1446,24 @@ function SessionsSection({ sessions, onChanged }: { sessions: Session[]; onChang
 
 // ── Notifications ──────────────────────────────────────────
 
-const NOTIF_GROUPS: { name: string; items: { key: string; label: string; desc: string }[] }[] = [
-  { name: 'Security & Account', items: [
-    { key: 'security_new_login', label: 'New login from unknown device', desc: 'Get alerted when someone signs in from a new device or location.' },
-    { key: 'security_failed_attempts', label: 'Failed login attempts', desc: 'Receive a warning when multiple failed login attempts are detected.' },
-    { key: 'security_password_changed', label: 'Password changed', desc: 'Confirmation email when your password is updated.' },
-  ] },
-  { name: 'Files & Sharing', items: [
-    { key: 'files_uploaded', label: 'File uploaded to workspace', desc: 'Get notified when a new file is uploaded to your workspace.' },
-    { key: 'files_downloaded', label: 'Shared file downloaded', desc: 'Know when someone downloads a file you shared.' },
-    { key: 'files_share_expiring', label: 'Share link expiring soon', desc: 'Reminder before your share links expire.' },
-  ] },
-  { name: 'File Requests', items: [
-    { key: 'requests_new_upload', label: 'New upload to your request', desc: 'Get notified when someone uploads files to your request.' },
-    { key: 'requests_expiring', label: 'File request expiring', desc: 'Reminder before your file requests reach their deadline.' },
-  ] },
-  { name: 'Collaboration', items: [
-    { key: 'collab_new_comment', label: 'New comment on your file', desc: 'Someone commented on a file you uploaded.' },
-    { key: 'collab_comment_reply', label: 'Reply to your comment', desc: 'Someone replied to a comment you posted.' },
-    { key: 'collab_member_joined', label: 'New member joined workspace', desc: 'Someone accepted an invitation and joined your workspace.' },
-  ] },
-  { name: 'Billing & Storage', items: [
-    { key: 'billing_payment_failed', label: 'Payment failed', desc: 'Alert when a subscription payment fails.' },
-    { key: 'billing_storage_warning', label: 'Storage limit warning', desc: 'Get warned when your workspace is running low on storage.' },
-    { key: 'billing_renewal', label: 'Subscription renewal reminder', desc: 'Heads-up before your next billing date.' },
-  ] },
-  { name: 'Google Drive', items: [
-    { key: 'drive_import_completed', label: 'Import completed', desc: 'Summary when your Google Drive import finishes successfully.' },
-    { key: 'drive_import_failed', label: 'Import failed', desc: 'Get alerted if a Google Drive import encounters errors.' },
-  ] },
-  { name: 'Product & Updates', items: [
-    { key: 'marketing_product_updates', label: 'Product updates & announcements', desc: 'New features, improvements, and important changes.' },
-    { key: 'marketing_tips', label: 'Tips & feature highlights', desc: 'Helpful tips to get the most out of dosya.dev.' },
-  ] },
-];
+/**
+ * The switch list is NOT declared here.
+ *
+ * It used to be - 18 hard-coded legacy type keys, of which the server had
+ * stopped storing a single one. Desktop and mobile each carried their own copy
+ * of the same list, and they disagreed: mobile showed three toggles this file
+ * had never heard of. The list now comes from GET /api/me/notifications, which
+ * is the only place that knows what the delivery gate actually reads.
+ */
+interface NotifGroup {
+  key: string;
+  label: string;
+  description: string;
+  enabled: boolean;
+  alwaysOn: 'all' | 'some' | 'none';
+  note: string | null;
+  options: { key: string; label: string; description: string; enabled: boolean }[];
+}
 
 const CHANNELS = [
   ['in_app', 'In-app'],
@@ -1487,27 +1471,37 @@ const CHANNELS = [
   ['push', 'Browser push'],
 ] as const;
 
-function NotificationsSection() {
-  const [prefs, setPrefs] = useState<Record<string, boolean> | null>(null);
+export function NotificationsSection() {
+  const [groups, setGroups] = useState<NotifGroup[] | null>(null);
   const [channels, setChannels] = useState<Record<string, boolean>>({ in_app: true, email: true, push: true });
 
   useEffect(() => {
     (async () => {
-      const res = await req<{ ok: boolean; preferences?: Record<string, boolean>; channels?: Record<string, boolean> }>('/api/me/notifications');
-      if (res.ok && res.preferences) setPrefs(res.preferences);
-      else setPrefs({});
+      const res = await req<{ ok: boolean; groups?: NotifGroup[]; channels?: Record<string, boolean> }>('/api/me/notifications');
+      setGroups(res.ok && res.groups ? res.groups : []);
       const loadedChannels = res.ok ? res.channels : undefined;
       if (loadedChannels) setChannels((c) => ({ ...c, ...loadedChannels }));
     })();
   }, []);
 
+  /** Moves one switch, optimistically, and puts it back if the server refuses. */
+  const setValue = (key: string, value: boolean) =>
+    setGroups((gs) => (gs ?? []).map((g) => (
+      g.key === key
+        ? { ...g, enabled: value }
+        : { ...g, options: g.options.map((o) => (o.key === key ? { ...o, enabled: value } : o)) }
+    )));
+
+  // ONE key per PUT, never the whole map. A whole-map write is a stale-map
+  // race between two open sessions: whatever the other one changed comes back
+  // at the value this page loaded with.
   const toggle = async (key: string, next: boolean) => {
-    setPrefs((p) => ({ ...(p ?? {}), [key]: next }));
+    setValue(key, next);
     const res = await req('/api/me/notifications', {
       method: 'PUT', body: JSON.stringify({ preferences: { [key]: next } }),
     });
     if (!res.ok) {
-      setPrefs((p) => ({ ...(p ?? {}), [key]: !next }));
+      setValue(key, !next);
       toast.error('Couldn\'t save', res.error ?? 'Your notification preference could not be saved.');
     }
   };
@@ -1530,7 +1524,7 @@ function NotificationsSection() {
     else toast.error('Not supported', "This browser can't receive web push");
   };
 
-  const loading = prefs === null;
+  const loading = groups === null;
 
   return (
     <section id="section-notifications">
@@ -1556,28 +1550,46 @@ function NotificationsSection() {
               Enable browser notifications
             </button>
           </div>
-          {NOTIF_GROUPS.map((g) => (
-            <details key={g.name} className="group border-b last:border-b-0" open>
-              <summary className="flex items-center justify-between py-3 cursor-pointer select-none text-[11px] font-semibold text-muted-foreground uppercase tracking-wider hover:text-foreground">
-                {g.name}
-                <span className="text-[10px] transition-transform group-open:rotate-180">▼</span>
-              </summary>
-              <div className="pb-2">
-                {g.items.map((item) => (
-                  <div key={item.key} className="flex items-center justify-between py-2 gap-4">
-                    <div className="min-w-0">
-                      <p className="text-xs font-medium">{item.label}</p>
-                      <p className="text-[11px] text-muted-foreground">{item.desc}</p>
-                    </div>
-                    <Toggle
-                      checked={prefs?.[item.key] ?? true}
-                      disabled={loading}
-                      onChange={(v) => toggle(item.key, v)}
-                    />
-                  </div>
-                ))}
+          {(groups ?? []).map((g) => (
+            <div key={g.key} className="flex flex-col gap-2 py-3 border-b last:border-b-0" data-testid={`notif-group-${g.key}`}>
+              <div className="flex items-center justify-between gap-4">
+                <div className="min-w-0">
+                  <p className="text-xs font-medium">{g.label}</p>
+                  <p className="text-[11px] text-muted-foreground">{g.description}</p>
+                  {/* Some of these send regardless of the switch. Say so here
+                      rather than let the switch imply otherwise. */}
+                  {g.note && <p className="text-[11px] text-muted-foreground italic mt-0.5">{g.note}</p>}
+                </div>
+                {g.alwaysOn === 'all' ? (
+                  <span className="text-[11px] text-muted-foreground shrink-0">Always on</span>
+                ) : (
+                  <Toggle
+                    checked={g.enabled}
+                    disabled={loading}
+                    onChange={(v) => toggle(g.key, v)}
+                  />
+                )}
               </div>
-            </details>
+              {g.options.length > 0 && (
+                <div className="pl-4 border-l ml-1">
+                  {g.options.map((o) => (
+                    <div key={o.key} className="flex items-center justify-between gap-4 py-1.5">
+                      <div className="min-w-0">
+                        <p className="text-[11px] font-medium">{o.label}</p>
+                        <p className="text-[11px] text-muted-foreground">{o.description}</p>
+                      </div>
+                      <Toggle
+                        checked={o.enabled}
+                        // A sub-switch under a group that is off can only lie:
+                        // the group gate runs first.
+                        disabled={loading || !g.enabled}
+                        onChange={(v) => toggle(o.key, v)}
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           ))}
         </CardContent>
       </Card>

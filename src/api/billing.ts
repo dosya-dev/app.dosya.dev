@@ -51,3 +51,23 @@ export const previewSubscription = (cart: CartPayload) =>
     api<{ ok: true; amount_due: number; currency: string }>("/api/billing/preview", { method: "POST", body: JSON.stringify(cart) });
 export const validateCoupon = (code: string) =>
     api<{ ok: true } & CouponInfo>("/api/billing/coupon/validate", { method: "POST", body: JSON.stringify({ code }) });
+
+export interface CancelResult {
+    ok: boolean;
+    cancel_at_period_end: boolean;
+    current_period_end: number | null;
+}
+
+/**
+ * Schedule cancellation at the end of the paid period.
+ *
+ * Not the Stripe Customer Portal: this keeps the decision (and the "you keep
+ * access until X" wording) inside the product, and it is reversible from the
+ * same screen.
+ */
+export const cancelSubscription = () =>
+    api<CancelResult>("/api/billing/cancel", { method: "POST", body: JSON.stringify({}) });
+
+/** Undo a scheduled cancellation. */
+export const resumeSubscription = () =>
+    api<CancelResult>("/api/billing/cancel", { method: "POST", body: JSON.stringify({ resume: true }) });

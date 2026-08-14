@@ -115,6 +115,20 @@ export function isOfficeFile(name: string): boolean {
 }
 
 const AUDIO_EXTS = new Set(['mp3', 'wav', 'ogg', 'flac', 'aac', 'm4a', 'wma']);
+/**
+ * Formats the ebook reader can open. foliate-js also handles mobi/azw3/fb2/cbz
+ * and they are vendored, so they are listed rather than falling through to a
+ * Download button that pretends the app cannot read them.
+ *
+ * .pdf is deliberately absent: foliate's PDF path wants a pdfjs build that is
+ * not vendored, and this app renders PDFs natively.
+ */
+const BOOK_EXTS = new Set(['epub', 'mobi', 'azw3', 'fb2', 'cbz']);
+
+export function isBook(name: string): boolean {
+  return BOOK_EXTS.has(extOf(name));
+}
+
 export function isAudio(name: string): boolean {
   return AUDIO_EXTS.has(extOf(name));
 }

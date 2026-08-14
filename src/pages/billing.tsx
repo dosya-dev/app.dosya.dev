@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
-import { getBillingStatus, syncBilling, createPortalSession, type BillingStatus } from '@/api/billing';
+import { getBillingStatus, syncBilling, createPortalSession, type BillingStatus, resumeSubscription } from '@/api/billing';
 import { apiErrorMessage } from '@/api/client';
 import { formatBytes, formatCents } from '@/lib/billing/cart-math';
 import { PlanChooser } from '@/components/billing/plan-chooser';
 import { Button } from '@/components/ui/button';
+import { CancelSubscriptionDialog } from '@/components/billing/cancel-dialog';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
@@ -26,8 +27,25 @@ export default function BillingPage() {
   );
   const [portalOpening, setPortalOpening] = useState(false);
   const [portalError, setPortalError] = useState<string | null>(null);
+  const [showCancel, setShowCancel] = useState(false);
+  const [resuming, setResuming] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
 
   const reload = () => getBillingStatus().then((d) => setData(d)).catch(() => {});
+  // Resume is a plain call rather than a dialog: undoing a cancellation needs no
+  // warning, and making someone confirm it would be friction for the safe
+  // direction.
+  const onResume = async () => {
+    setResuming(true);
+    setCancelError(null);
+    try {
+      await resumeSubscription();
+      await reload();
+    } catch (err) {
+      setCancelError(apiErrorMessage(err, 'Could not resume the subscription.'));
+    }
+    setResuming(false);
+  };
 
   useEffect(() => {
     getBillingStatus()
@@ -249,6 +267,41 @@ export default function BillingPage() {
           ))
         )}
       </Card>
+
+      {/* Cancel / resume - actions only. The "Cancels {date}" line already
+          renders in the header card above, so it is deliberately not repeated. */}
+      {data.subscription.has_subscription && (
+        <Card className="gap-0 py-0 p-5 mt-5">
+          <h2 className="text-sm font-semibold">
+            {data.subscription.cancel_at_period_end ? 'Cancellation scheduled' : 'Cancel subscription'}
+          </h2>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {data.subscription.cancel_at_period_end
+              ? 'Your subscription will not renew. You can resume it any time before the end date.'
+              : 'Ends your plan and every add-on at the end of the current billing period. Your files are never deleted.'}
+          </p>
+          <div className="mt-3">
+            {data.subscription.cancel_at_period_end ? (
+              <Button size="sm" variant="outline" onClick={onResume} disabled={resuming}>
+                {resuming ? 'Resuming…' : 'Resume subscription'}
+              </Button>
+            ) : (
+              <Button size="sm" variant="destructive" onClick={() => setShowCancel(true)}>
+                Cancel subscription
+              </Button>
+            )}
+          </div>
+          {cancelError && <p className="mt-2 text-xs text-red-600">{cancelError}</p>}
+        </Card>
+      )}
+
+      {showCancel && (
+        <CancelSubscriptionDialog
+          data={data}
+          onClose={() => setShowCancel(false)}
+          onCancelled={reload}
+        />
+      )}
 
     </div>
   );
