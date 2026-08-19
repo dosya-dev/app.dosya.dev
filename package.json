@@ -46,6 +46,7 @@
     "libheif-js": "^1.19.8",
     "lucide-react": "^1.11.0",
     "maplibre-gl": "^5.24.0",
+    "pdfjs-dist": "^6.2.108",
     "pmtiles": "^4.4.1",
     "protomaps-themes-base": "^4.5.0",
     "qrcode": "^1.5.4",

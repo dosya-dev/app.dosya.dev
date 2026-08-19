@@ -10,6 +10,19 @@ vi.mock('@/api/client', async (importOriginal) => {
   return { ...actual, api: (...args: unknown[]) => apiMock(...args) };
 });
 
+// The PDF branch must NOT pull real pdf.js into this test - the stub records
+// the props the branch hands over.
+vi.mock('@/components/pdf-viewer/pdf-viewer', () => {
+  const PdfViewer = (props: { fileName: string; rawUrl: string; downloadUrl: string }) =>
+    createElement('div', {
+      'data-testid': 'pdf-viewer-stub',
+      'data-file-name': props.fileName,
+      'data-raw': props.rawUrl,
+      'data-download': props.downloadUrl,
+    });
+  return { PdfViewer, default: PdfViewer };
+});
+
 const { FileViewer } = await import('./file-viewer');
 
 beforeAll(() => {
@@ -145,5 +158,60 @@ describe('FileViewer audio source stability', () => {
     const t = new URL(src, 'https://example.test').searchParams.get('_t');
     // A deterministic token derived from the version is fine; a timestamp is not.
     if (t !== null) expect(Number(t)).toBeLessThan(1_000_000_000_000);
+  });
+});
+
+describe('FileViewer - PDF branch', () => {
+  function pdfFile() {
+    return {
+      id: 'pdf1', name: 'İnceleme.pdf', size_bytes: 4096, mime_type: 'application/pdf',
+      extension: 'pdf', region: 'weur', created_at: 1, updated_at: 1,
+      current_version: 1, lock_mode: 'none', is_hidden: 0, uploaded_by: 'u1',
+      uploader_name: 'User', share_count: 0, comment_count: 0, is_synced: 0,
+    };
+  }
+
+  async function mountPdf() {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network disabled in test')));
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    const file = pdfFile();
+    await act(async () => {
+      root!.render(createElement(FileViewer, {
+        file: file as never,
+        files: [file] as never,
+        workspaceId: 'w1',
+        onClose: () => {},
+        onNavigate: () => {},
+        onRefresh: () => {},
+      }));
+      await flush();
+    });
+  }
+
+  it('renders the custom PdfViewer instead of a browser iframe', async () => {
+    await mountPdf();
+    expect(container!.querySelector('[data-testid="pdf-viewer-stub"]')).toBeTruthy();
+    expect(container!.querySelector('iframe')).toBeFalsy();
+  });
+
+  it('hands the file name, stable raw URL, and download URL to the PdfViewer', async () => {
+    await mountPdf();
+    const stub = container!.querySelector<HTMLElement>('[data-testid="pdf-viewer-stub"]')!;
+    expect(stub.dataset.fileName).toBe('İnceleme.pdf');
+    expect(stub.dataset.raw).toContain('/api/files/pdf1/raw');
+    // The stable URL, not the Date.now()-stamped one - pdf.js refetches when
+    // its source URL changes, so a per-render URL would re-download the file.
+    const t = new URL(stub.dataset.raw!, 'https://example.test').searchParams.get('_t');
+    if (t !== null) expect(Number(t)).toBeLessThan(1_000_000_000_000);
+    expect(stub.dataset.download).toContain('/api/files/pdf1/download');
+  });
+
+  it('gives the PDF viewer the full-bleed content area, not the padded centered one', async () => {
+    await mountPdf();
+    const wrapper = container!.querySelector<HTMLElement>('[data-testid="pdf-viewer-stub"]')!.parentElement!;
+    expect(wrapper.className).toContain('overflow-hidden');
+    expect(wrapper.className).not.toContain('p-6');
   });
 });

@@ -1,8 +1,8 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense } from 'react';
 import { api, API_BASE } from '@/api/client';
 import { Badge } from '@/components/ui/badge';
 import {
-  X, Download, ChevronLeft, ChevronRight, Pencil, Clock, SquarePen,
+  X, Download, ChevronLeft, ChevronRight, Pencil, Clock, SquarePen, Loader2,
 
 } from 'lucide-react';
 import { humanSize, extOf, isImage, isVideo, isAudio, fileIconSrc, isOfficeFile, isBook } from '@/lib/helpers';
@@ -18,6 +18,9 @@ import { VCardView } from '@/components/vcard-viewer';
 import { AudioPlayer } from '@/components/audio/audio-player';
 import { OfficePreview } from '@/components/office-preview';
 import type { FileItem } from '@/lib/file-types';
+
+// pdf.js is ~350KB gzipped plus a worker - loaded only when a PDF is opened.
+const PdfViewer = lazy(() => import('@/components/pdf-viewer/pdf-viewer'));
 
 
 // ── Types ─────────────────────────────────────────────────
@@ -411,7 +414,9 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
           {/* File content */}
           {/* Audio owns the whole area - it is a surface, not an object sitting
               on one - so it drops the centring and padding every other type wants. */}
-          <div className={`flex-1 min-h-0 min-w-0 flex bg-muted/30 ${isAudio(file.name) ? 'overflow-hidden' : 'items-center justify-center overflow-auto p-6'}`}>
+          {/* PDF joins audio here: its viewer brings its own toolbar, scroller,
+              and background, so the centring and padding would just inset it. */}
+          <div className={`flex-1 min-h-0 min-w-0 flex bg-muted/30 ${isAudio(file.name) || isPdf(file.name) ? 'overflow-hidden' : 'items-center justify-center overflow-auto p-6'}`}>
             <FileContent file={file} files={files} rawUrl={rawUrl()} stableRawUrl={stableRawUrl} downloadUrl={downloadUrl} version={previewVersion} workspaceId={workspaceId} onSaved={() => { onRefresh(); loadVersions(); }} onNavigate={onNavigate} />
           </div>
 
@@ -570,7 +575,17 @@ function FileContent({ file, files, rawUrl, stableRawUrl, downloadUrl, version, 
 
   if (isPdf(file.name)) {
     return (
-      <iframe src={`${rawUrl}#toolbar=1`} className="w-full h-full border-none rounded-md bg-white" title={`PDF: ${file.name}`} />
+      <Suspense
+        fallback={
+          <div className="w-full h-full flex items-center justify-center">
+            <Loader2 className="size-6 animate-spin text-muted-foreground" />
+          </div>
+        }
+      >
+        {/* Keyed on the URL: switching file or version remounts the viewer
+            with fresh page/zoom/document state. */}
+        <PdfViewer key={stableRawUrl} fileName={file.name} rawUrl={stableRawUrl} downloadUrl={downloadUrl} />
+      </Suspense>
     );
   }
 

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useSearchParams, useNavigate, useLocation } from 'react-router-dom';
 import { api } from '@/api/client';
 import { fileIconSrc } from '@/lib/helpers';
 import { FilePreviewImage } from '@/components/file-preview-image';
@@ -49,7 +49,17 @@ export function FilesSidebar({ onFilterChange, onFavouriteClick, onGroupClick }:
   const wsId = useWorkspace((s: { activeId: string }) => s.activeId);
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const currentFilter = (searchParams.get('filter') || 'all') as Filter;
+  // This sidebar renders on /files, /file-requests and /map. The filter rows
+  // are views of /files, so they only light while standing there - otherwise
+  // "All" (the ?filter= default) claims to be where you are from every page.
+  const onFilesPage = location.pathname === '/files';
+  const onRequestsPage = location.pathname.startsWith('/file-requests');
+  const onMapPage = location.pathname === '/map';
+
+  const ROW_ACTIVE = 'bg-muted font-semibold text-foreground';
+  const ROW_IDLE = 'text-muted-foreground hover:bg-muted/50 hover:text-foreground';
 
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem('dosya_fs_sidebar_collapsed') === '1');
   const [favourites, setFavourites] = useState<FavFile[]>([]);
@@ -176,7 +186,7 @@ export function FilesSidebar({ onFilterChange, onFavouriteClick, onGroupClick }:
               key={item.value}
               onClick={() => onFilterChange(item.value === 'all' ? '' : item.value)}
               className={`w-full flex items-center rounded-md text-xs transition-colors ${collapsed ? 'justify-center py-2' : 'gap-2.5 px-2.5 py-1.5'} ${
-                currentFilter === item.value ? 'bg-muted font-semibold text-foreground' : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
+                onFilesPage && currentFilter === item.value ? ROW_ACTIVE : ROW_IDLE
               }`}
               title={collapsed ? item.label : undefined}
             >
@@ -187,7 +197,7 @@ export function FilesSidebar({ onFilterChange, onFavouriteClick, onGroupClick }:
 
           <button
             onClick={() => navigate('/file-requests')}
-            className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-xs text-muted-foreground hover:bg-muted/50 hover:text-foreground transition-colors"
+            className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-xs transition-colors ${onRequestsPage ? ROW_ACTIVE : ROW_IDLE}`}
             title={collapsed ? 'File requests' : undefined}
           >
             <FileInput className="size-4" />
@@ -203,7 +213,7 @@ export function FilesSidebar({ onFilterChange, onFavouriteClick, onGroupClick }:
 
           <button
             onClick={() => navigate('/map')}
-            className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-xs text-muted-foreground hover:bg-muted/50 hover:text-foreground transition-colors"
+            className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-xs transition-colors ${onMapPage ? ROW_ACTIVE : ROW_IDLE}`}
             title={collapsed ? 'Map' : undefined}
           >
             <MapPin className="size-4" />
