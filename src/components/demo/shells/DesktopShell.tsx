@@ -8,7 +8,7 @@ import { ThemeSwitcher } from '../core/ThemeSwitcher';
 // as children.
 export function DesktopShell({ children }: { children: ReactNode }) {
   return (
-    <div className="overflow-hidden rounded-xl border border-(--demo-border) bg-(--demo-card) shadow-2xl">
+    <div className="overflow-hidden rounded-xl border border-(--demo-border) bg-(--demo-card)">
       <div className="flex h-10 items-center justify-between border-b border-(--demo-border) bg-(--demo-sidebar) px-4">
         <div className="flex flex-1 items-center gap-1.5">
           <span className="size-3 rounded-full bg-red-400" />
