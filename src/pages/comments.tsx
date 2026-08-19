@@ -380,6 +380,32 @@ export default function CommentsPage() {
 
 // ── Chat messages ─────────────────────────────────────────
 
+// user_avatar is an R2 object key, not a URL - treat it as a "has photo" flag
+// and load the image through the API (cookie-authenticated), falling back to
+// initials if it's missing or fails to load. Same rule as the dashboard's
+// activity rows.
+function CommentAvatar({ comment, displayName, bgColor }: { comment: Comment; displayName: string; bgColor: string }) {
+  const [failed, setFailed] = useState(false);
+  return (
+    <div
+      className="size-8 rounded-full flex items-center justify-center text-[10px] font-bold text-white"
+      style={{ background: bgColor }}
+    >
+      {comment.user_avatar && !failed ? (
+        <img
+          src={`${API_BASE}/api/users/${comment.user_id}/avatar`}
+          alt=""
+          crossOrigin="use-credentials"
+          className="w-full h-full rounded-full object-cover"
+          onError={() => setFailed(true)}
+        />
+      ) : (
+        initials(displayName)
+      )}
+    </div>
+  );
+}
+
 function ChatMessages({ comments, allComments, currentUser, editId, editBody, onReply, onStartEdit, onCancelEdit, onSaveEdit, onEditBodyChange, onDelete }: {
   comments: Comment[];
   allComments: Comment[];
@@ -442,16 +468,7 @@ function ChatMessages({ comments, allComments, currentUser, editId, editBody, on
               {/* Avatar */}
               <div className="w-8 shrink-0 flex items-end">
                 {showAvatar && (
-                  <div
-                    className="size-8 rounded-full flex items-center justify-center text-[10px] font-bold text-white"
-                    style={{ background: bgColor }}
-                  >
-                    {c.user_avatar ? (
-                      <img src={c.user_avatar} alt="" className="w-full h-full rounded-full object-cover" />
-                    ) : (
-                      initials(displayName)
-                    )}
-                  </div>
+                  <CommentAvatar comment={c} displayName={displayName} bgColor={bgColor} />
                 )}
               </div>
 
