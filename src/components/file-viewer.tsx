@@ -499,7 +499,16 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
                 <Share2 className="size-4 text-muted-foreground" />
               </button>
             )}
-            {(isEditable(file.name) || canTextEdit) && (
+            {/* One labeled Edit in one place for every editable type: office
+                opens the ONLYOFFICE editor, text the in-viewer editor, and
+                image/video the media editor. The old layout only surfaced
+                office editing through a chip floating on the preview itself. */}
+            {isOfficeFile(file.name) ? (
+              <a href={`/editor/${file.id}`} target="_blank" rel="noreferrer"
+                className="h-7 px-2.5 rounded-md border flex items-center gap-1.5 text-xs font-medium hover:bg-muted whitespace-nowrap">
+                <SquarePen className="size-3 text-muted-foreground" /> Edit
+              </a>
+            ) : (isEditable(file.name) || canTextEdit) && (
               <button className="h-7 px-2.5 rounded-md border flex items-center gap-1.5 text-xs font-medium hover:bg-muted"
                 onClick={() => (canTextEdit ? setTextEditOpen(true) : openEditor())}>
                 <Pencil className="size-3 text-muted-foreground" /> Edit

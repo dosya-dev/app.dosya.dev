@@ -413,6 +413,24 @@ describe('FileViewer actions', () => {
   });
 });
 
+describe('FileViewer edit entry points', () => {
+  it('office files get a labeled Edit control in the header linking to the editor', async () => {
+    apiMock.mockImplementation(() => Promise.resolve(versionRows()));
+    const file = { ...imageFile(), name: 'report.docx', mime_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', extension: 'docx' };
+    await mountViewer({ file });
+    const edit = [...container!.querySelectorAll<HTMLAnchorElement>('a')].find((a) => a.textContent?.trim() === 'Edit');
+    expect(edit, 'expected a header Edit link for office files').toBeTruthy();
+    expect(edit!.getAttribute('href')).toBe('/editor/f1');
+  });
+
+  it('images keep the Edit button that opens the media editor', async () => {
+    apiMock.mockImplementation(() => Promise.resolve(versionRows()));
+    await mountViewer();
+    const edit = [...container!.querySelectorAll<HTMLElement>('button')].find((b) => b.textContent?.trim() === 'Edit');
+    expect(edit, 'expected the header Edit button for images').toBeTruthy();
+  });
+});
+
 describe('FileViewer stage navigation', () => {
   it('floating next arrow navigates to the next file and prev is disabled on the first', async () => {
     apiMock.mockImplementation(() => Promise.resolve(versionRows()));
