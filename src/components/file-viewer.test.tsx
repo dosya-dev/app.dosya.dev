@@ -13,12 +13,18 @@ vi.mock('@/api/client', async (importOriginal) => {
 // The PDF branch must NOT pull real pdf.js into this test - the stub records
 // the props the branch hands over.
 vi.mock('@/components/pdf-viewer/pdf-viewer', () => {
-  const PdfViewer = (props: { fileName: string; rawUrl: string; downloadUrl: string }) =>
+  const PdfViewer = (props: {
+    fileName: string;
+    rawUrl: string;
+    downloadUrl: string;
+    toolbarSlots?: { left: HTMLElement | null; center: HTMLElement | null };
+  }) =>
     createElement('div', {
       'data-testid': 'pdf-viewer-stub',
       'data-file-name': props.fileName,
       'data-raw': props.rawUrl,
       'data-download': props.downloadUrl,
+      'data-has-slots': props.toolbarSlots && props.toolbarSlots.left && props.toolbarSlots.center ? 'yes' : 'no',
     });
   return { PdfViewer, default: PdfViewer };
 });
@@ -213,5 +219,38 @@ describe('FileViewer - PDF branch', () => {
     const wrapper = container!.querySelector<HTMLElement>('[data-testid="pdf-viewer-stub"]')!.parentElement!;
     expect(wrapper.className).toContain('overflow-hidden');
     expect(wrapper.className).not.toContain('p-6');
+  });
+
+  it('mounts header toolbar slots and hands them to the PdfViewer, sidebar slot before the title', async () => {
+    await mountPdf();
+    const left = container!.querySelector<HTMLElement>('[data-pdf-slot="left"]');
+    const center = container!.querySelector<HTMLElement>('[data-pdf-slot="center"]');
+    expect(left).toBeTruthy();
+    expect(center).toBeTruthy();
+    const title = [...container!.querySelectorAll('span')].find((s) => s.textContent === 'İnceleme.pdf');
+    expect(title).toBeTruthy();
+    // The sidebar slot must precede the title in the header's reading order.
+    expect(left!.compareDocumentPosition(title!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(container!.querySelector<HTMLElement>('[data-testid="pdf-viewer-stub"]')!.dataset.hasSlots).toBe('yes');
+  });
+
+  it('mounts no PDF toolbar slots for non-PDF files', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network disabled in test')));
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    const file = { ...pdfFile(), name: 'track.mp3', mime_type: 'audio/mpeg', extension: 'mp3' };
+    await act(async () => {
+      root!.render(createElement(FileViewer, {
+        file: file as never,
+        files: [file] as never,
+        workspaceId: 'w1',
+        onClose: () => {},
+        onNavigate: () => {},
+        onRefresh: () => {},
+      }));
+      await flush();
+    });
+    expect(container.querySelector('[data-pdf-slot]')).toBeFalsy();
   });
 });

@@ -3,7 +3,7 @@ import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist';
 import type { PDFDocumentProxy, RenderTask } from 'pdfjs-dist';
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { Download, Loader2, X, ChevronUp, ChevronDown } from 'lucide-react';
-import { PdfToolbar, type PdfZoom } from './pdf-toolbar';
+import { PdfToolbar, type PdfZoom, type PdfToolbarSlots } from './pdf-toolbar';
 import { PdfThumbnails } from './pdf-thumbnails';
 import { usePdfFind, type PdfFind } from '@/lib/use-pdf-find';
 
@@ -23,9 +23,14 @@ interface PdfViewerProps {
   fileName: string;
   rawUrl: string;
   downloadUrl: string;
+  // When given, the toolbar merges into the caller's header: the sidebar
+  // toggle portals into `left`, the controls into `center`, and no toolbar
+  // row of our own renders (elements may be null for a beat while the header
+  // commits - render no toolbar rather than flashing the standalone row).
+  toolbarSlots?: { left: HTMLElement | null; center: HTMLElement | null };
 }
 
-export function PdfViewer({ fileName, rawUrl, downloadUrl }: PdfViewerProps) {
+export function PdfViewer({ fileName, rawUrl, downloadUrl, toolbarSlots }: PdfViewerProps) {
   const [doc, setDoc] = useState<PDFDocumentProxy | null>(null);
   const [error, setError] = useState(false);
   const [page, setPage] = useState(1);
@@ -147,24 +152,35 @@ export function PdfViewer({ fileName, rawUrl, downloadUrl }: PdfViewerProps) {
   const pageWidth = Math.round(base.width * CSS_UNITS * effectiveScale);
   const pageHeight = Math.round(base.height * CSS_UNITS * effectiveScale);
 
+  const slots: PdfToolbarSlots | undefined =
+    toolbarSlots && toolbarSlots.left && toolbarSlots.center
+      ? { left: toolbarSlots.left, center: toolbarSlots.center }
+      : undefined;
+  const merged = toolbarSlots !== undefined;
+
+  const toolbar = (
+    <PdfToolbar
+      fileName={fileName}
+      page={page}
+      numPages={numPages}
+      zoomLabel={`${Math.round(effectiveScale * 100)}%`}
+      downloadUrl={downloadUrl}
+      sidebarOpen={sidebarOpen}
+      printing={printing}
+      slots={slots}
+      onToggleSidebar={toggleSidebar}
+      onZoomIn={zoomIn}
+      onZoomOut={zoomOut}
+      onZoom={setZoom}
+      onJump={jumpTo}
+      onToggleFind={() => (find.open ? find.hide() : find.show())}
+      onPrint={handlePrint}
+    />
+  );
+
   return (
     <div className="w-full h-full flex flex-col bg-background relative">
-      <PdfToolbar
-        fileName={fileName}
-        page={page}
-        numPages={numPages}
-        zoomLabel={`${Math.round(effectiveScale * 100)}%`}
-        downloadUrl={downloadUrl}
-        sidebarOpen={sidebarOpen}
-        printing={printing}
-        onToggleSidebar={toggleSidebar}
-        onZoomIn={zoomIn}
-        onZoomOut={zoomOut}
-        onZoom={setZoom}
-        onJump={jumpTo}
-        onToggleFind={() => (find.open ? find.hide() : find.show())}
-        onPrint={handlePrint}
-      />
+      {merged ? (slots ? toolbar : null) : toolbar}
       <div className="flex-1 flex min-h-0">
         {sidebarOpen && doc && (
           <PdfThumbnails doc={doc} numPages={numPages} current={page} baseSize={baseSize} onSelect={jumpTo} />
@@ -210,7 +226,7 @@ export function PdfViewer({ fileName, rawUrl, downloadUrl }: PdfViewerProps) {
           )}
         </div>
       </div>
-      {find.open && <PdfFindBar find={find} onClose={find.hide} />}
+      {find.open && <PdfFindBar find={find} onClose={find.hide} merged={merged} />}
     </div>
   );
 }
@@ -257,7 +273,7 @@ function PdfPageCanvas({ doc, pageNum, scale }: { doc: PDFDocumentProxy; pageNum
   return <canvas ref={canvasRef} className="w-full h-full" />;
 }
 
-function PdfFindBar({ find, onClose }: { find: PdfFind; onClose: () => void }) {
+function PdfFindBar({ find, onClose, merged }: { find: PdfFind; onClose: () => void; merged: boolean }) {
   const inputRef = useRef<HTMLInputElement>(null);
   useEffect(() => { inputRef.current?.focus(); }, []);
 
@@ -269,7 +285,9 @@ function PdfFindBar({ find, onClose }: { find: PdfFind; onClose: () => void }) {
   return (
     <div
       role="search"
-      className="absolute top-14 right-3 z-20 flex items-center gap-1 rounded-md border bg-background/95 shadow-md px-2 py-1"
+      // In merged-header mode there is no toolbar row of our own, so the bar
+      // hangs directly under the overlay header instead of under the row.
+      className={`absolute ${merged ? 'top-3' : 'top-14'} right-3 z-20 flex items-center gap-1 rounded-md border bg-background/95 shadow-md px-2 py-1`}
       onKeyDown={onKeyDown}
     >
       <input

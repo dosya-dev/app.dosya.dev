@@ -1,20 +1,24 @@
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { PanelLeft, Minus, Plus, ChevronDown, Search, Printer, Download } from 'lucide-react';
 
 export type PdfZoom = number | 'fit-width' | 'fit-page';
 
+// Both slot elements live in the FileViewer overlay header: the toggle goes
+// left of the title, the controls into the header's center.
+export interface PdfToolbarSlots {
+  left: HTMLElement;
+  center: HTMLElement;
+}
+
 const iconBtn = 'size-8 rounded-md flex items-center justify-center hover:bg-muted disabled:opacity-40 disabled:pointer-events-none';
 const menuItem = 'block w-full px-3 py-1.5 text-left text-sm hover:bg-muted whitespace-nowrap';
 
-interface PdfToolbarProps {
-  fileName: string;
+interface PdfControlProps {
   page: number;
   numPages: number;
   zoomLabel: string;
-  downloadUrl: string;
-  sidebarOpen: boolean;
   printing: boolean;
-  onToggleSidebar: () => void;
   onZoomIn: () => void;
   onZoomOut: () => void;
   onZoom: (zoom: PdfZoom) => void;
@@ -23,12 +27,65 @@ interface PdfToolbarProps {
   onPrint: () => void;
 }
 
-export function PdfToolbar({
-  fileName, page, numPages, zoomLabel, downloadUrl, sidebarOpen, printing,
-  onToggleSidebar, onZoomIn, onZoomOut, onZoom, onJump, onToggleFind, onPrint,
-}: PdfToolbarProps) {
-  const [menuOpen, setMenuOpen] = useState(false);
+interface PdfToolbarProps extends PdfControlProps {
+  fileName: string;
+  downloadUrl: string;
+  sidebarOpen: boolean;
+  onToggleSidebar: () => void;
+  slots?: PdfToolbarSlots;
+}
 
+export function PdfToolbar(props: PdfToolbarProps) {
+  const { fileName, downloadUrl, sidebarOpen, onToggleSidebar, slots, ...controls } = props;
+  const disabled = controls.numPages === 0;
+
+  const toggle = (
+    <button className={iconBtn} title="Toggle sidebar" aria-pressed={sidebarOpen} disabled={disabled} onClick={onToggleSidebar}>
+      <PanelLeft className="size-4 text-muted-foreground" />
+    </button>
+  );
+
+  // Merged-header mode: the overlay header owns filename and download, so
+  // only the toggle and the control cluster render, each into its slot. The
+  // slots are hidden below sm (the header can't fit them), so a plain control
+  // row - no filename, no download - stays behind for small screens.
+  if (slots) {
+    return (
+      <>
+        {createPortal(toggle, slots.left)}
+        {createPortal(
+          <div className="flex items-center gap-1">
+            <CenterControls {...controls} />
+          </div>,
+          slots.center,
+        )}
+        <div className="sm:hidden flex items-center justify-center h-12 px-2 gap-1 border-b bg-background shrink-0 overflow-x-auto">
+          {toggle}
+          <CenterControls {...controls} />
+        </div>
+      </>
+    );
+  }
+
+  return (
+    <div className="flex items-center h-12 px-2 gap-1 border-b bg-background shrink-0">
+      {toggle}
+      <span className="text-sm font-medium truncate max-w-64 px-1">{fileName}</span>
+      <div className="flex-1" />
+      <CenterControls {...controls} />
+      <div className="flex-1" />
+      <a className={iconBtn} title="Download" href={downloadUrl} download>
+        <Download className="size-4 text-muted-foreground" />
+      </a>
+    </div>
+  );
+}
+
+function CenterControls({
+  page, numPages, zoomLabel, printing,
+  onZoomIn, onZoomOut, onZoom, onJump, onToggleFind, onPrint,
+}: PdfControlProps) {
+  const [menuOpen, setMenuOpen] = useState(false);
   const disabled = numPages === 0;
 
   // The input is uncontrolled and keyed on `page`: a jump from anywhere
@@ -43,14 +100,7 @@ export function PdfToolbar({
   };
 
   return (
-    <div className="flex items-center h-12 px-2 gap-1 border-b bg-background shrink-0">
-      <button className={iconBtn} title="Toggle sidebar" aria-pressed={sidebarOpen} disabled={disabled} onClick={onToggleSidebar}>
-        <PanelLeft className="size-4 text-muted-foreground" />
-      </button>
-      <span className="text-sm font-medium truncate max-w-64 px-1">{fileName}</span>
-
-      <div className="flex-1" />
-
+    <>
       <button className={iconBtn} title="Zoom out" disabled={disabled} onClick={onZoomOut}>
         <Minus className="size-4 text-muted-foreground" />
       </button>
@@ -102,15 +152,9 @@ export function PdfToolbar({
       <button className={iconBtn} title="Search" disabled={disabled} onClick={onToggleFind}>
         <Search className="size-4 text-muted-foreground" />
       </button>
-
-      <div className="flex-1" />
-
       <button className={iconBtn} title="Print" disabled={disabled || printing} onClick={onPrint}>
         <Printer className="size-4 text-muted-foreground" />
       </button>
-      <a className={iconBtn} title="Download" href={downloadUrl} download>
-        <Download className="size-4 text-muted-foreground" />
-      </a>
-    </div>
+    </>
   );
 }

@@ -135,6 +135,12 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
   const hasNext = idx >= 0 && idx < files.length - 1;
   const counter = idx >= 0 ? `${idx + 1} / ${files.length}` : '';
 
+  // Header slot elements the PDF viewer portals its controls into. Callback
+  // refs are stable and identity-guarded so header re-renders don't loop state.
+  const [pdfSlots, setPdfSlots] = useState<{ left: HTMLDivElement | null; center: HTMLDivElement | null }>({ left: null, center: null });
+  const setPdfSlotLeft = useCallback((el: HTMLDivElement | null) => setPdfSlots((s) => (s.left === el ? s : { ...s, left: el })), []);
+  const setPdfSlotCenter = useCallback((el: HTMLDivElement | null) => setPdfSlots((s) => (s.center === el ? s : { ...s, center: el })), []);
+
   // Load versions
   const loadVersions = useCallback(async () => {
     try {
@@ -373,9 +379,11 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
         className={`fixed inset-0 z-[300] bg-background flex flex-col ${closing ? 'animate-slide-down' : 'animate-slide-up'}`}
         style={{ fontFamily: 'inherit' }}
       >
-        {/* Header */}
+        {/* Header. For PDFs the viewer's controls portal into the two slot
+            divs, so the file gets one merged header instead of two rows. */}
         <div className="flex items-center justify-between px-4 py-2.5 border-b shrink-0">
           <div className="flex items-center gap-2 min-w-0 flex-1">
+            {isPdf(file.name) && <div data-pdf-slot="left" ref={setPdfSlotLeft} className="hidden sm:flex items-center shrink-0 -ml-1" />}
             <svg viewBox="0 0 14 14" fill="none" width="14" height="14" className="shrink-0 text-muted-foreground">
               <path d="M1 7s2.5-4.5 6-4.5S13 7 13 7s-2.5 4.5-6 4.5S1 7 1 7z" stroke="currentColor" strokeWidth="1.1" />
               <circle cx="7" cy="7" r="2" stroke="currentColor" strokeWidth="1.1" />
@@ -383,6 +391,7 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
             <span className="text-sm font-semibold truncate">{file.name}</span>
             <span className="text-xs text-muted-foreground shrink-0">{counter}</span>
           </div>
+          {isPdf(file.name) && <div data-pdf-slot="center" ref={setPdfSlotCenter} className="hidden sm:flex items-center gap-1 shrink-0 mx-2" />}
           <div className="flex items-center gap-1 shrink-0">
             {hasPrev && (
               <button className="size-8 rounded-md flex items-center justify-center hover:bg-muted" onClick={() => onNavigate(files[idx - 1])} title="Previous (←)">
@@ -417,7 +426,7 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
           {/* PDF joins audio here: its viewer brings its own toolbar, scroller,
               and background, so the centring and padding would just inset it. */}
           <div className={`flex-1 min-h-0 min-w-0 flex bg-muted/30 ${isAudio(file.name) || isPdf(file.name) ? 'overflow-hidden' : 'items-center justify-center overflow-auto p-6'}`}>
-            <FileContent file={file} files={files} rawUrl={rawUrl()} stableRawUrl={stableRawUrl} downloadUrl={downloadUrl} version={previewVersion} workspaceId={workspaceId} onSaved={() => { onRefresh(); loadVersions(); }} onNavigate={onNavigate} />
+            <FileContent file={file} files={files} rawUrl={rawUrl()} stableRawUrl={stableRawUrl} downloadUrl={downloadUrl} version={previewVersion} workspaceId={workspaceId} pdfToolbarSlots={pdfSlots} onSaved={() => { onRefresh(); loadVersions(); }} onNavigate={onNavigate} />
           </div>
 
           {/* Version sidebar */}
@@ -535,7 +544,7 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
 
 // ── File content renderer ─────────────────────────────────
 
-function FileContent({ file, files, rawUrl, stableRawUrl, downloadUrl, version, workspaceId, onSaved, onNavigate }: { file: FileItem; files: FileItem[]; rawUrl: string; stableRawUrl: string; downloadUrl: string; version?: number; workspaceId: string; onSaved: () => void; onNavigate: (f: FileItem) => void }) {
+function FileContent({ file, files, rawUrl, stableRawUrl, downloadUrl, version, workspaceId, pdfToolbarSlots, onSaved, onNavigate }: { file: FileItem; files: FileItem[]; rawUrl: string; stableRawUrl: string; downloadUrl: string; version?: number; workspaceId: string; pdfToolbarSlots: { left: HTMLElement | null; center: HTMLElement | null }; onSaved: () => void; onNavigate: (f: FileItem) => void }) {
   const ext = extOf(file.name);
 
   if (isVcard(file.name)) {
@@ -584,7 +593,7 @@ function FileContent({ file, files, rawUrl, stableRawUrl, downloadUrl, version, 
       >
         {/* Keyed on the URL: switching file or version remounts the viewer
             with fresh page/zoom/document state. */}
-        <PdfViewer key={stableRawUrl} fileName={file.name} rawUrl={stableRawUrl} downloadUrl={downloadUrl} />
+        <PdfViewer key={stableRawUrl} fileName={file.name} rawUrl={stableRawUrl} downloadUrl={downloadUrl} toolbarSlots={pdfToolbarSlots} />
       </Suspense>
     );
   }

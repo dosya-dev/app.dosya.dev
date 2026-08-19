@@ -253,6 +253,84 @@ describe('PdfViewer - thumbnail sidebar', () => {
   });
 });
 
+describe('PdfViewer - merged header slots', () => {
+  const extraEls: HTMLElement[] = [];
+  afterEach(() => {
+    for (const el of extraEls.splice(0)) el.remove();
+  });
+
+  function makeSlots() {
+    const left = document.createElement('div');
+    const center = document.createElement('div');
+    document.body.appendChild(left);
+    document.body.appendChild(center);
+    extraEls.push(left, center);
+    return { left, center };
+  }
+
+  async function mountSlotted() {
+    const slots = makeSlots();
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    await act(async () => {
+      root!.render(createElement(PdfViewer, {
+        fileName: 'İnceleme.pdf',
+        rawUrl: 'https://api.test/api/files/f1/raw?_t=1',
+        downloadUrl: 'https://api.test/api/files/f1/download',
+        toolbarSlots: slots,
+      }));
+      await flush();
+    });
+    return slots;
+  }
+
+  it('portals the sidebar toggle into the left slot and the controls into the center slot', async () => {
+    const slots = await mountSlotted();
+    expect(slots.left.querySelector('button[title="Toggle sidebar"]')).toBeTruthy();
+    expect(slots.center.querySelector('input[aria-label="Page number"]')).toBeTruthy();
+    expect(slots.center.querySelector('button[aria-label="Zoom options"]')).toBeTruthy();
+    expect(slots.center.querySelector('button[title="Search"]')).toBeTruthy();
+    expect(slots.center.querySelector('button[title="Print"]')).toBeTruthy();
+  });
+
+  it('renders no filename or download of its own; only a small-screen fallback row remains inside', async () => {
+    const slots = await mountSlotted();
+    expect(container!.textContent).not.toContain('İnceleme.pdf');
+    expect(container!.querySelector('a[title="Download"]')).toBeFalsy();
+    expect(slots.left.querySelector('a[title="Download"]')).toBeFalsy();
+    expect(slots.center.querySelector('a[title="Download"]')).toBeFalsy();
+    // The header slots are hidden below sm, so a fallback control row stays in
+    // the viewer - but it must be the sm:hidden one, never a visible duplicate.
+    const fallbackInput = container!.querySelector('input[aria-label="Page number"]');
+    expect(fallbackInput).toBeTruthy();
+    expect(fallbackInput!.closest('div[class*="sm:hidden"]')).toBeTruthy();
+  });
+
+  it('slotted sidebar toggle still opens the thumbnail rail', async () => {
+    const slots = await mountSlotted();
+    await act(async () => {
+      slots.left.querySelector<HTMLButtonElement>('button[title="Toggle sidebar"]')!.click();
+      await flush();
+    });
+    expect(container!.querySelector('[data-testid="pdf-thumbs"]')).toBeTruthy();
+  });
+
+  it('slotted page input still jumps the canvas window', async () => {
+    const slots = await mountSlotted();
+    const input = slots.center.querySelector<HTMLInputElement>('input[aria-label="Page number"]')!;
+    await act(async () => {
+      const proto = Object.getPrototypeOf(input) as { value?: unknown };
+      Object.getOwnPropertyDescriptor(proto, 'value')!.set!.call(input, '5');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      await flush();
+    });
+    expect(container!.querySelector('[data-page="5"] canvas')).toBeTruthy();
+    expect(container!.querySelector('[data-page="1"] canvas')).toBeFalsy();
+  });
+});
+
 describe('PdfViewer - search', () => {
   async function openFind(query: string) {
     await act(async () => {
