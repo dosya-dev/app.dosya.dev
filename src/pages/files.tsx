@@ -403,6 +403,15 @@ export default function FilesPage() {
   const canDeleteFile = (f: FileItem): boolean =>
     can('delete_any_file') || (can('delete_own_files') && f.uploaded_by === currentUserId);
 
+  // Keep an open viewer honest against the refreshed listing: a rename from
+  // the viewer's own menu updates its header, a delete closes it. Without
+  // this the viewer holds the stale row it was opened with. State adjusts
+  // during render on the listing change (the React-documented pattern).
+  if (viewerFile) {
+    const fresh = files.find((f) => f.id === viewerFile.id);
+    if (fresh !== viewerFile) setViewerFile(fresh ?? null);
+  }
+
   const queryClient = useQueryClient();
 
   /**
@@ -1892,6 +1901,18 @@ export default function FilesPage() {
             setViewerFile(next);
           }}
           onRefresh={loadFiles}
+          // Each callback is passed only when the role can perform it - the
+          // viewer hides the control when the callback is absent, mirroring
+          // the context menu's `hidden` flags. Nothing mutating in the trash.
+          actions={isDeletedView ? undefined : {
+            isFavourite: favourites.has(viewerFile.id),
+            onToggleFavourite: (f) => toggleFavourite(f.id),
+            onShare: can('create_share_links') ? (f) => openShare(f.id, f.name) : undefined,
+            onRename: can('rename_files') ? (f) => { setRenameTarget({ id: f.id, name: f.name, type: 'file' }); setRenameName(f.name); } : undefined,
+            onMove: can('upload_files') ? (f) => openMoveModal(f.id, 'file') : undefined,
+            onLock: canLock ? (f) => setLockTarget({ id: f.id, name: f.name, type: 'file' }) : undefined,
+            onDelete: canDeleteFile(viewerFile) ? (f) => setDeleteTarget({ id: f.id, name: f.name, type: 'file' }) : undefined,
+          }}
         />
       )}
       </div>{/* end main content */}

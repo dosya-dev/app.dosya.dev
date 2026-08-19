@@ -254,3 +254,186 @@ describe('FileViewer - PDF branch', () => {
     expect(container.querySelector('[data-pdf-slot]')).toBeFalsy();
   });
 });
+
+// ── Stage + inspector redesign ────────────────────────────────────
+
+function imageFile() {
+  return {
+    id: 'f1', name: 'photo.jpg', size_bytes: 2048, mime_type: 'image/jpeg',
+    extension: 'jpg', region: 'ap-southeast-2', created_at: 1700000000, updated_at: 1700000100,
+    current_version: 2, lock_mode: 'none', is_hidden: 0, uploaded_by: 'u1',
+    uploader_name: 'Deniz Aksoy', share_count: 2, comment_count: 3, is_synced: 1,
+    origin: 'web',
+  };
+}
+
+type MountOpts = {
+  file?: ReturnType<typeof imageFile>;
+  files?: ReturnType<typeof imageFile>[];
+  actions?: Record<string, unknown>;
+  onNavigate?: (f: unknown) => void;
+};
+
+async function mountViewer(opts: MountOpts = {}) {
+  vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network disabled in test')));
+  container = document.createElement('div');
+  document.body.appendChild(container);
+  root = createRoot(container);
+  const file = opts.file ?? imageFile();
+  await act(async () => {
+    root!.render(createElement(FileViewer, {
+      file: file as never,
+      files: (opts.files ?? [file]) as never,
+      workspaceId: 'w1',
+      onClose: () => {},
+      onNavigate: opts.onNavigate ?? (() => {}),
+      onRefresh: () => {},
+      actions: opts.actions as never,
+    }));
+    await flush();
+  });
+  return file;
+}
+
+function byLabel(label: string) {
+  return container!.querySelector<HTMLElement>(`[aria-label="${label}"]`);
+}
+
+async function click(el: HTMLElement | null) {
+  expect(el, 'expected element to click').toBeTruthy();
+  await act(async () => { el!.click(); await flush(); });
+}
+
+function versionRows() {
+  return {
+    ok: true,
+    current_version: 2,
+    versions: [
+      { version_number: 2, size_bytes: 2048, created_at: 1700000100, uploader_name: 'Deniz Aksoy' },
+      { version_number: 1, size_bytes: 4096, created_at: 1700000000, uploader_name: 'Firat Kaya' },
+    ],
+  };
+}
+
+describe('FileViewer inspector', () => {
+  it('shows the file details (size, region, uploader, origin) in the Details tab', async () => {
+    apiMock.mockImplementation(() => Promise.resolve(versionRows()));
+    await mountViewer();
+    const inspector = container!.querySelector('[data-testid="viewer-inspector"]');
+    expect(inspector, 'expected the inspector rail').toBeTruthy();
+    const text = inspector!.textContent!;
+    expect(text).toContain('2 KB');
+    expect(text).toContain('Sydney');
+    expect(text).toContain('Deniz Aksoy');
+    expect(text).toContain('Web');
+    expect(text).toContain('Share links');
+  });
+
+  it('switches to the Versions tab and lists versions with a Latest badge', async () => {
+    apiMock.mockImplementation(() => Promise.resolve(versionRows()));
+    await mountViewer();
+    const tab = [...container!.querySelectorAll<HTMLElement>('[role="tab"]')].find((t) => t.textContent?.includes('Versions'));
+    await click(tab ?? null);
+    const panel = container!.querySelector('[data-testid="viewer-inspector"]')!;
+    expect(panel.textContent).toContain('v2');
+    expect(panel.textContent).toContain('v1');
+    expect(panel.textContent).toContain('Latest');
+  });
+
+  it('restores an older version through the restore endpoint', async () => {
+    apiMock.mockImplementation((path: string) =>
+      Promise.resolve(String(path).endsWith('/versions') ? versionRows() : { ok: true }));
+    await mountViewer();
+    const tab = [...container!.querySelectorAll<HTMLElement>('[role="tab"]')].find((t) => t.textContent?.includes('Versions'));
+    await click(tab ?? null);
+    const restore = [...container!.querySelectorAll<HTMLElement>('button')].find((b) => b.textContent === 'Restore');
+    await click(restore ?? null);
+    const call = apiMock.mock.calls.find(([p]) => String(p).includes('/versions/restore'));
+    expect(call, 'expected a POST to the restore endpoint').toBeDefined();
+    expect(call![1]).toMatchObject({ method: 'POST' });
+    expect(JSON.parse((call![1] as { body: string }).body)).toEqual({ version_number: 1 });
+  });
+
+  it('shows an empty state when the file has no version history', async () => {
+    apiMock.mockImplementation(() => Promise.resolve({ ok: true, current_version: 1, versions: [] }));
+    await mountViewer();
+    const tab = [...container!.querySelectorAll<HTMLElement>('[role="tab"]')].find((t) => t.textContent?.includes('Versions'));
+    await click(tab ?? null);
+    expect(container!.querySelector('[data-testid="viewer-inspector"]')!.textContent).toContain('No version history');
+  });
+
+  it('hides and shows the inspector with the i key', async () => {
+    apiMock.mockImplementation(() => Promise.resolve(versionRows()));
+    await mountViewer();
+    expect(container!.querySelector('[data-testid="viewer-inspector"]')).toBeTruthy();
+    await act(async () => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'i', bubbles: true }));
+      await flush();
+    });
+    expect(container!.querySelector('[data-testid="viewer-inspector"]')).toBeFalsy();
+    await act(async () => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'i', bubbles: true }));
+      await flush();
+    });
+    expect(container!.querySelector('[data-testid="viewer-inspector"]')).toBeTruthy();
+  });
+});
+
+describe('FileViewer actions', () => {
+  it('favourite star reflects state and calls onToggleFavourite with the file', async () => {
+    apiMock.mockImplementation(() => Promise.resolve(versionRows()));
+    const onToggleFavourite = vi.fn();
+    const file = await mountViewer({ actions: { isFavourite: true, onToggleFavourite } });
+    const star = byLabel('Remove from favourites');
+    await click(star);
+    expect(onToggleFavourite).toHaveBeenCalledWith(expect.objectContaining({ id: file.id }));
+  });
+
+  it('offers Rename and Delete in the more menu, wired to the callbacks', async () => {
+    apiMock.mockImplementation(() => Promise.resolve(versionRows()));
+    const onRename = vi.fn();
+    const onDelete = vi.fn();
+    const file = await mountViewer({ actions: { onRename, onDelete } });
+    await click(byLabel('More actions'));
+    const rename = [...container!.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((b) => b.textContent?.includes('Rename'));
+    await click(rename ?? null);
+    expect(onRename).toHaveBeenCalledWith(expect.objectContaining({ id: file.id }));
+    await click(byLabel('More actions'));
+    const del = [...container!.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((b) => b.textContent?.includes('trash'));
+    await click(del ?? null);
+    expect(onDelete).toHaveBeenCalledWith(expect.objectContaining({ id: file.id }));
+  });
+
+  it('renders no action controls when no actions prop is passed', async () => {
+    apiMock.mockImplementation(() => Promise.resolve(versionRows()));
+    await mountViewer();
+    expect(byLabel('Add to favourites')).toBeFalsy();
+    expect(byLabel('Remove from favourites')).toBeFalsy();
+    expect(byLabel('More actions')).toBeFalsy();
+  });
+});
+
+describe('FileViewer stage navigation', () => {
+  it('floating next arrow navigates to the next file and prev is disabled on the first', async () => {
+    apiMock.mockImplementation(() => Promise.resolve(versionRows()));
+    const onNavigate = vi.fn();
+    const a = imageFile();
+    const b = { ...imageFile(), id: 'f2', name: 'second.jpg' };
+    await mountViewer({ file: a, files: [a, b], onNavigate });
+    const prev = byLabel('Previous file');
+    const next = byLabel('Next file');
+    expect(prev, 'expected a floating previous arrow').toBeTruthy();
+    expect((prev as HTMLButtonElement).disabled).toBe(true);
+    await click(next);
+    expect(onNavigate).toHaveBeenCalledWith(expect.objectContaining({ id: 'f2' }));
+  });
+
+  it('zoom controls appear for images and step the zoom level', async () => {
+    apiMock.mockImplementation(() => Promise.resolve(versionRows()));
+    await mountViewer();
+    const zoomIn = byLabel('Zoom in');
+    expect(zoomIn, 'expected image zoom controls').toBeTruthy();
+    await click(zoomIn);
+    expect(container!.textContent).toContain('125%');
+  });
+});

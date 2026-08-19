@@ -1,11 +1,11 @@
-import { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense, type ReactNode } from 'react';
 import { api, API_BASE } from '@/api/client';
-import { Badge } from '@/components/ui/badge';
 import {
-  X, Download, ChevronLeft, ChevronRight, Pencil, Clock, SquarePen, Loader2,
-
+  X, Download, ChevronLeft, ChevronRight, ChevronDown, Pencil, Clock, SquarePen, Loader2,
+  Star, Share2, MoreHorizontal, PanelRight, Trash2, Move, Lock, LockOpen,
+  Minus, Plus, Maximize, Check, Link2, MessageSquare,
 } from 'lucide-react';
-import { humanSize, extOf, isImage, isVideo, isAudio, fileIconSrc, isOfficeFile, isBook } from '@/lib/helpers';
+import { humanSize, extOf, isImage, isVideo, isAudio, fileIconSrc, isOfficeFile, isBook, colorFor, regionLabel, originLabel, timeAgo } from '@/lib/helpers';
 import { FilePreviewImage } from '@/components/file-preview-image';
 import { toast } from '@/lib/toast';
 import { isTextReadable, langFromExtension, looksBinary } from '@/lib/text-detect';
@@ -35,6 +35,22 @@ interface Version {
   uploader_name: string | null;
 }
 
+/**
+ * Optional per-file actions supplied by the hosting page. The files page wires
+ * these to its existing dialogs and permission checks (a callback is passed
+ * only when the role can perform it); hosts that feed the viewer their own
+ * rows (map pins, file-request uploads) pass nothing and the controls hide.
+ */
+export interface FileViewerActions {
+  isFavourite?: boolean;
+  onToggleFavourite?: (file: FileItem) => void;
+  onShare?: (file: FileItem) => void;
+  onRename?: (file: FileItem) => void;
+  onMove?: (file: FileItem) => void;
+  onLock?: (file: FileItem) => void;
+  onDelete?: (file: FileItem) => void;
+}
+
 interface FileViewerProps {
   file: FileItem;
   files: FileItem[];
@@ -42,6 +58,7 @@ interface FileViewerProps {
   onClose: () => void;
   onNavigate: (file: FileItem) => void;
   onRefresh: () => void;
+  actions?: FileViewerActions;
 }
 
 // ── Helpers ───────────────────────────────────────────────
@@ -117,11 +134,21 @@ function applyEditorTheme(container: HTMLElement, attempt = 0): void {
 
 // ── Component ─────────────────────────────────────────────
 
-export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRefresh }: FileViewerProps) {
+export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRefresh, actions }: FileViewerProps) {
   const [versions, setVersions] = useState<Version[]>([]);
   const [activeVersion, setActiveVersion] = useState(-1);
   const [closing, setClosing] = useState(false);
   const [editingOpen, setEditingOpen] = useState(false);
+  // Rail on desktop, bottom sheet on mobile - one state, CSS decides which.
+  // Starts open on desktop, closed on small screens (jsdom has no matchMedia).
+  const [inspectorOpen, setInspectorOpen] = useState(
+    () => typeof window.matchMedia !== 'function' || window.matchMedia('(min-width: 768px)').matches,
+  );
+  const [inspectorTab, setInspectorTab] = useState<'details' | 'versions'>('details');
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [stripCollapsed, setStripCollapsed] = useState(false);
+  const [zoom, setZoom] = useState(100);
+  const [restoringVer, setRestoringVer] = useState<number | null>(null);
   const editorContainerRef = useRef<HTMLDivElement>(null);
   const editorInstanceRef = useRef<any>(null);
   const [textEditOpen, setTextEditOpen] = useState(false);
@@ -160,6 +187,45 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
   }, [file.id]);
 
   useEffect(() => { loadVersions(); }, [loadVersions]);
+
+  // A new file starts at fit zoom with the more-menu closed. State is
+  // adjusted during render on the prop change (the React-documented pattern)
+  // rather than in an effect, so there is no extra commit.
+  const [prevFileId, setPrevFileId] = useState(file.id);
+  if (prevFileId !== file.id) {
+    setPrevFileId(file.id);
+    setZoom(100);
+    setMenuOpen(false);
+  }
+
+  // Close the more-menu on any outside click while it is open.
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onDocClick = () => setMenuOpen(false);
+    document.addEventListener('click', onDocClick);
+    return () => document.removeEventListener('click', onDocClick);
+  }, [menuOpen]);
+
+  const restoreVersion = useCallback(async (versionNumber: number) => {
+    setRestoringVer(versionNumber);
+    try {
+      const res = await api<{ ok: boolean; error?: string }>(`/api/files/${file.id}/versions/restore`, {
+        method: 'POST',
+        body: JSON.stringify({ version_number: versionNumber }),
+      });
+      if (res.ok) {
+        toast.success('Restored', `Restored to v${versionNumber}.`);
+        loadVersions();
+        onRefresh();
+      } else {
+        toast.error('Restore failed', res.error ?? 'Restore failed');
+      }
+    } catch {
+      toast.error('Restore failed', 'Restore failed.');
+    } finally {
+      setRestoringVer(null);
+    }
+  }, [file.id, loadVersions, onRefresh]);
 
   // Build raw URL for active version
   const rawUrl = useCallback(() => {
@@ -219,11 +285,16 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (editingOpen || textEditOpen) return;
+      // The PDF toolbar portals a page-number input into the header; typing
+      // there (or in any future field) must not drive the viewer.
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
       if (e.key === 'Escape') { handleClose(); return; }
       if (e.key === 'ArrowLeft' && hasPrev) onNavigate(files[idx - 1]);
       if (e.key === 'ArrowRight' && hasNext) onNavigate(files[idx + 1]);
       if (e.key === 'ArrowUp') { e.preventDefault(); navigateVersion(-1); }
       if (e.key === 'ArrowDown') { e.preventDefault(); navigateVersion(1); }
+      if (e.key === 'i' || e.key === 'I') setInspectorOpen((o) => !o);
     };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
@@ -379,28 +450,53 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
         className={`fixed inset-0 z-[300] bg-background flex flex-col ${closing ? 'animate-slide-down' : 'animate-slide-up'}`}
         style={{ fontFamily: 'inherit' }}
       >
-        {/* Header. For PDFs the viewer's controls portal into the two slot
-            divs, so the file gets one merged header instead of two rows. */}
-        <div className="flex items-center justify-between px-4 py-2.5 border-b shrink-0">
-          <div className="flex items-center gap-2 min-w-0 flex-1">
+        {/* Header: identity left, type-specific controls dead center (the PDF
+            toolbar portals into the center slot; images get the zoom cluster),
+            actions right. */}
+        <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 pl-3 pr-2 py-2 border-b shrink-0 relative z-30 bg-background">
+          <div className="flex items-center gap-2 min-w-0">
             {isPdf(file.name) && <div data-pdf-slot="left" ref={setPdfSlotLeft} className="hidden sm:flex items-center shrink-0 -ml-1" />}
-            <svg viewBox="0 0 14 14" fill="none" width="14" height="14" className="shrink-0 text-muted-foreground">
-              <path d="M1 7s2.5-4.5 6-4.5S13 7 13 7s-2.5 4.5-6 4.5S1 7 1 7z" stroke="currentColor" strokeWidth="1.1" />
-              <circle cx="7" cy="7" r="2" stroke="currentColor" strokeWidth="1.1" />
-            </svg>
+            <span
+              className="size-[22px] rounded-md shrink-0 flex items-center justify-center text-[8px] font-bold tracking-wide text-white"
+              style={{ backgroundColor: colorFor(file.name) }}
+              aria-hidden="true"
+            >
+              {(extOf(file.name) || 'file').toUpperCase().slice(0, 4)}
+            </span>
             <span className="text-sm font-semibold truncate">{file.name}</span>
-            <span className="text-xs text-muted-foreground shrink-0">{counter}</span>
+            <span className="text-xs text-muted-foreground shrink-0 font-mono">{counter}</span>
           </div>
-          {isPdf(file.name) && <div data-pdf-slot="center" ref={setPdfSlotCenter} className="hidden sm:flex items-center gap-1 shrink-0 mx-2" />}
-          <div className="flex items-center gap-1 shrink-0">
-            {hasPrev && (
-              <button className="size-8 rounded-md flex items-center justify-center hover:bg-muted" onClick={() => onNavigate(files[idx - 1])} title="Previous (←)">
-                <ChevronLeft className="size-4 text-muted-foreground" />
+          <div className="flex items-center justify-center">
+            {isPdf(file.name) && <div data-pdf-slot="center" ref={setPdfSlotCenter} className="hidden sm:flex items-center gap-1 shrink-0" />}
+            {isImage(file.name) && (
+              <div className="hidden sm:flex items-center gap-0.5 p-0.5 border rounded-lg bg-muted/40" role="group" aria-label="Zoom">
+                <button className="size-6.5 rounded-md flex items-center justify-center hover:bg-muted text-muted-foreground hover:text-foreground" aria-label="Zoom out" onClick={() => setZoom((z) => Math.max(25, z - 25))}>
+                  <Minus className="size-3.5" />
+                </button>
+                <span className="text-[11px] font-mono text-muted-foreground min-w-11 text-center">{zoom}%</span>
+                <button className="size-6.5 rounded-md flex items-center justify-center hover:bg-muted text-muted-foreground hover:text-foreground" aria-label="Zoom in" onClick={() => setZoom((z) => Math.min(300, z + 25))}>
+                  <Plus className="size-3.5" />
+                </button>
+                <button className="size-6.5 rounded-md flex items-center justify-center hover:bg-muted text-muted-foreground hover:text-foreground" aria-label="Fit to screen" onClick={() => setZoom(100)}>
+                  <Maximize className="size-3.5" />
+                </button>
+              </div>
+            )}
+          </div>
+          <div className="flex items-center gap-0.5 justify-end">
+            {actions?.onToggleFavourite && (
+              <button
+                className="size-8 rounded-md flex items-center justify-center hover:bg-muted"
+                aria-label={actions.isFavourite ? 'Remove from favourites' : 'Add to favourites'}
+                aria-pressed={!!actions.isFavourite}
+                onClick={() => actions.onToggleFavourite!(file)}
+              >
+                <Star className={`size-4 ${actions.isFavourite ? 'text-orange-400 fill-orange-400' : 'text-muted-foreground'}`} />
               </button>
             )}
-            {hasNext && (
-              <button className="size-8 rounded-md flex items-center justify-center hover:bg-muted" onClick={() => onNavigate(files[idx + 1])} title="Next (→)">
-                <ChevronRight className="size-4 text-muted-foreground" />
+            {actions?.onShare && (
+              <button className="size-8 rounded-md flex items-center justify-center hover:bg-muted" aria-label="Share" onClick={() => actions.onShare!(file)}>
+                <Share2 className="size-4 text-muted-foreground" />
               </button>
             )}
             {(isEditable(file.name) || canTextEdit) && (
@@ -412,71 +508,259 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
             <a href={downloadUrl} download className="size-8 rounded-md flex items-center justify-center hover:bg-muted" title="Download">
               <Download className="size-4 text-muted-foreground" />
             </a>
-            <button className="size-8 rounded-md flex items-center justify-center hover:bg-muted ml-1" onClick={handleClose} title="Close (Esc)">
+            {actions && (actions.onRename || actions.onMove || actions.onLock || actions.onDelete) && (
+              <div className="relative">
+                <button
+                  className="size-8 rounded-md flex items-center justify-center hover:bg-muted"
+                  aria-label="More actions"
+                  aria-haspopup="menu"
+                  aria-expanded={menuOpen}
+                  onClick={(e) => { e.stopPropagation(); setMenuOpen((o) => !o); }}
+                >
+                  <MoreHorizontal className="size-4 text-muted-foreground" />
+                </button>
+                {menuOpen && (
+                  <div role="menu" aria-label="More actions" className="absolute right-0 top-full mt-1.5 w-48 rounded-xl border bg-popover text-popover-foreground shadow-lg p-1 z-50">
+                    {actions.onRename && (
+                      <button role="menuitem" className="flex items-center gap-2.5 w-full px-2.5 py-1.5 rounded-lg text-[13px] font-medium hover:bg-muted text-left" onClick={() => { setMenuOpen(false); actions.onRename!(file); }}>
+                        <Pencil className="size-3.5 text-muted-foreground" /> Rename
+                      </button>
+                    )}
+                    {actions.onMove && (
+                      <button role="menuitem" className="flex items-center gap-2.5 w-full px-2.5 py-1.5 rounded-lg text-[13px] font-medium hover:bg-muted text-left" onClick={() => { setMenuOpen(false); actions.onMove!(file); }}>
+                        <Move className="size-3.5 text-muted-foreground" /> Move to folder
+                      </button>
+                    )}
+                    {actions.onLock && (
+                      <button role="menuitem" className="flex items-center gap-2.5 w-full px-2.5 py-1.5 rounded-lg text-[13px] font-medium hover:bg-muted text-left" onClick={() => { setMenuOpen(false); actions.onLock!(file); }}>
+                        {file.lock_mode !== 'none' ? <LockOpen className="size-3.5 text-muted-foreground" /> : <Lock className="size-3.5 text-muted-foreground" />}
+                        {file.lock_mode !== 'none' ? 'Unlock' : 'Lock'}
+                      </button>
+                    )}
+                    {actions.onDelete && (
+                      <>
+                        <div className="h-px bg-border my-1" role="separator" />
+                        <button role="menuitem" className="flex items-center gap-2.5 w-full px-2.5 py-1.5 rounded-lg text-[13px] font-medium hover:bg-muted text-left text-destructive" onClick={() => { setMenuOpen(false); actions.onDelete!(file); }}>
+                          <Trash2 className="size-3.5" /> Move to trash
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+            <div className="w-px h-5 bg-border mx-1" aria-hidden="true" />
+            <button
+              className={`size-8 rounded-md flex items-center justify-center hover:bg-muted ${inspectorOpen ? 'bg-muted' : ''}`}
+              aria-label="Toggle inspector"
+              aria-pressed={inspectorOpen}
+              title="Inspector (i)"
+              onClick={() => setInspectorOpen((o) => !o)}
+            >
+              <PanelRight className="size-4 text-muted-foreground" />
+            </button>
+            <button className="size-8 rounded-md flex items-center justify-center hover:bg-muted" onClick={handleClose} title="Close (Esc)">
               <X className="size-4 text-muted-foreground" />
             </button>
           </div>
         </div>
 
-        {/* Body + version sidebar */}
+        {/* Body: stage + inspector */}
         <div className="flex-1 flex min-h-0">
-          {/* File content */}
-          {/* Audio owns the whole area - it is a surface, not an object sitting
-              on one - so it drops the centring and padding every other type wants. */}
-          {/* PDF joins audio here: its viewer brings its own toolbar, scroller,
-              and background, so the centring and padding would just inset it. */}
-          <div className={`flex-1 min-h-0 min-w-0 flex bg-muted/30 ${isAudio(file.name) || isPdf(file.name) ? 'overflow-hidden' : 'items-center justify-center overflow-auto p-6'}`}>
-            <FileContent file={file} files={files} rawUrl={rawUrl()} stableRawUrl={stableRawUrl} downloadUrl={downloadUrl} version={previewVersion} workspaceId={workspaceId} pdfToolbarSlots={pdfSlots} onSaved={() => { onRefresh(); loadVersions(); }} onNavigate={onNavigate} />
+          {/* Stage. Its own closed dark scale in both themes - a media stage
+              stays dark in a light OS theme the way every other media viewer
+              does (the share viewer records the same decision in share.css). */}
+          <div className="flex-1 min-h-0 min-w-0 relative bg-[oklch(0.135_0.018_238.9)]">
+            {/* Audio owns the whole area - it is a surface, not an object sitting
+                on one - so it drops the centring and padding every other type wants. */}
+            {/* PDF joins audio here: its viewer brings its own toolbar, scroller,
+                and background, so the centring and padding would just inset it. */}
+            <div className={`absolute inset-0 flex ${isAudio(file.name) || isPdf(file.name) ? 'overflow-hidden' : 'items-center justify-center overflow-auto p-6'}`}>
+              <FileContent file={file} files={files} rawUrl={rawUrl()} stableRawUrl={stableRawUrl} downloadUrl={downloadUrl} version={previewVersion} workspaceId={workspaceId} pdfToolbarSlots={pdfSlots} zoom={zoom} onSaved={() => { onRefresh(); loadVersions(); }} onNavigate={onNavigate} />
+            </div>
+            <button
+              className="absolute left-4 top-1/2 -translate-y-1/2 size-10 rounded-full bg-white/10 backdrop-blur-sm flex items-center justify-center text-[oklch(0.93_0.008_238.5)] hover:bg-white/20 disabled:opacity-30 disabled:pointer-events-none transition-colors z-10"
+              aria-label="Previous file"
+              title="Previous (←)"
+              disabled={!hasPrev}
+              onClick={() => onNavigate(files[idx - 1])}
+            >
+              <ChevronLeft className="size-4" />
+            </button>
+            <button
+              className="absolute right-4 top-1/2 -translate-y-1/2 size-10 rounded-full bg-white/10 backdrop-blur-sm flex items-center justify-center text-[oklch(0.93_0.008_238.5)] hover:bg-white/20 disabled:opacity-30 disabled:pointer-events-none transition-colors z-10"
+              aria-label="Next file"
+              title="Next (→)"
+              disabled={!hasNext}
+              onClick={() => onNavigate(files[idx + 1])}
+            >
+              <ChevronRight className="size-4" />
+            </button>
           </div>
 
-          {/* Version sidebar */}
-          <aside className="w-52 shrink-0 border-l bg-background flex-col hidden md:flex">
-            <div className="flex items-center gap-1.5 px-3.5 py-2.5 text-xs font-semibold border-b shrink-0">
-              <Clock className="size-3 text-muted-foreground" />
-              Versions
-              <div className="flex items-center gap-0.5 ml-auto">
-                <kbd className="inline-flex items-center justify-center min-w-5 h-5 px-1 border rounded text-[10px] text-muted-foreground bg-muted/50">↑</kbd>
-                <kbd className="inline-flex items-center justify-center min-w-5 h-5 px-1 border rounded text-[10px] text-muted-foreground bg-muted/50">↓</kbd>
-              </div>
-            </div>
-            <div className="flex-1 overflow-y-auto p-1.5">
-              {versions.length === 0 ? (
-                <p className="text-xs text-muted-foreground text-center py-5">No version history</p>
-              ) : (
-                versions.map((v) => {
-                  const isActive = v.version_number === activeVersion;
-                  const isLatest = v.version_number === versions[0].version_number;
-                  const d = new Date(v.created_at * 1000);
-                  const dateStr = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-                  const timeStr = d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-                  return (
-                    <button
-                      key={v.version_number}
-                      className={`block w-full text-left px-2.5 py-2 rounded-md mb-0.5 transition-colors ${isActive ? 'bg-muted shadow-[inset_2px_0_0_hsl(var(--foreground))]' : 'hover:bg-muted/50'}`}
-                      onClick={() => setActiveVersion(v.version_number)}
+          {/* Inspector: 316px rail on desktop, bottom sheet on small screens. */}
+          {inspectorOpen && (
+            <>
+              <div className="md:hidden fixed inset-0 z-40 bg-black/40" onClick={() => setInspectorOpen(false)} aria-hidden="true" />
+              <aside
+                data-testid="viewer-inspector"
+                aria-label="File inspector"
+                className="flex flex-col min-h-0 bg-background md:w-[316px] md:shrink-0 md:border-l max-md:fixed max-md:inset-x-0 max-md:bottom-0 max-md:z-50 max-md:max-h-[72dvh] max-md:rounded-t-2xl max-md:border-t max-md:shadow-2xl"
+              >
+                <div className="px-4 pt-4 shrink-0 max-md:pt-2">
+                  <div className="md:hidden w-9 h-1 rounded-full bg-border mx-auto mb-3" aria-hidden="true" />
+                  <div className="flex items-start gap-3">
+                    <span
+                      className="size-9 rounded-[10px] shrink-0 flex items-center justify-center text-[10px] font-bold tracking-wide text-white"
+                      style={{ backgroundColor: colorFor(file.name) }}
+                      aria-hidden="true"
                     >
-                      <div className="flex items-center gap-1.5 text-xs font-semibold">
-                        v{v.version_number}
-                        {isLatest && (
-                          <Badge variant="secondary" className="h-auto rounded px-1.5 py-px text-[9px] font-semibold uppercase tracking-wide text-white bg-green-500">Latest</Badge>
+                      {(extOf(file.name) || 'file').toUpperCase().slice(0, 4)}
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-[15px] font-semibold leading-snug break-all">{file.name}</p>
+                      <p className="text-[11px] text-muted-foreground mt-0.5">
+                        <span className="font-mono">{humanSize(file.size_bytes)}</span> &middot; {file.mime_type} &middot; v{versions[0]?.version_number ?? file.current_version}
+                      </p>
+                    </div>
+                  </div>
+                  <div role="tablist" aria-label="Inspector sections" className="flex gap-0.5 mt-4 p-0.5 bg-muted rounded-lg">
+                    <button
+                      role="tab"
+                      aria-selected={inspectorTab === 'details'}
+                      className={`flex-1 h-7 rounded-md text-xs font-medium transition-colors ${inspectorTab === 'details' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                      onClick={() => setInspectorTab('details')}
+                    >
+                      Details
+                    </button>
+                    <button
+                      role="tab"
+                      aria-selected={inspectorTab === 'versions'}
+                      className={`flex-1 h-7 rounded-md text-xs font-medium transition-colors flex items-center justify-center gap-1.5 ${inspectorTab === 'versions' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                      onClick={() => setInspectorTab('versions')}
+                    >
+                      Versions
+                      <span className="font-mono text-[10px] text-muted-foreground">{versions.length}</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex-1 overflow-y-auto px-4 py-4 min-h-0">
+                  {inspectorTab === 'details' ? (
+                    <>
+                      <dl>
+                        <PropRow label="Size"><span className="font-mono font-normal">{humanSize(file.size_bytes)}</span></PropRow>
+                        <PropRow label="Type">{file.mime_type}</PropRow>
+                        <PropRow label="Region">{regionLabel(file.region)}</PropRow>
+                        <PropRow label="Uploaded by">{file.uploader_name ?? 'Unknown'}</PropRow>
+                        <PropRow label="Created">{timeAgo(file.created_at)}</PropRow>
+                        <PropRow label="Modified">{timeAgo(file.updated_at)}</PropRow>
+                        {file.origin && (
+                          <PropRow label="Origin">
+                            <span className="inline-flex items-center text-[10px] font-semibold uppercase tracking-[0.07em] text-muted-foreground border rounded-full px-2 py-px">
+                              {originLabel(file.origin)}
+                            </span>
+                          </PropRow>
+                        )}
+                        {file.is_synced === 1 && (
+                          <PropRow label="Synced">
+                            <span className="inline-flex items-center gap-1 text-primary font-semibold">
+                              <Check className="size-3.5" /> Yes
+                            </span>
+                          </PropRow>
+                        )}
+                      </dl>
+                      <div className="mt-5 border rounded-xl p-3.5">
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.07em] text-muted-foreground">Sharing</p>
+                        <div className="flex items-center gap-2 text-xs mt-2.5">
+                          <Link2 className="size-3.5 text-muted-foreground" />
+                          <span>Share links</span>
+                          <span className="font-mono text-muted-foreground ml-auto">{file.share_count > 0 ? `${file.share_count} active` : 'None'}</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-xs mt-2.5">
+                          <MessageSquare className="size-3.5 text-muted-foreground" />
+                          <span>Comments</span>
+                          <span className="font-mono text-muted-foreground ml-auto">{file.comment_count}</span>
+                        </div>
+                        {actions?.onShare && (
+                          <button
+                            className="mt-3.5 w-full h-8 rounded-lg bg-primary text-primary-foreground text-[13px] font-medium flex items-center justify-center gap-1.5 hover:opacity-90 transition-opacity whitespace-nowrap"
+                            onClick={() => actions.onShare!(file)}
+                          >
+                            <Share2 className="size-3.5" /> Share
+                          </button>
                         )}
                       </div>
-                      <div className="text-[11px] text-muted-foreground mt-0.5">
-                        {humanSize(v.size_bytes)} &middot; {dateStr} {timeStr}
-                      </div>
-                      {v.uploader_name && (
-                        <div className="text-[11px] text-muted-foreground">{v.uploader_name}</div>
+                    </>
+                  ) : versions.length === 0 ? (
+                    <div className="text-center py-7">
+                      <Clock className="size-5 text-muted-foreground/60 mx-auto mb-2.5" />
+                      <p className="text-xs text-muted-foreground leading-relaxed">
+                        No version history yet.<br />New uploads with the same name will appear here.
+                      </p>
+                    </div>
+                  ) : (
+                    <>
+                      {versions.length > 1 && (
+                        <div className="flex items-center justify-end gap-1 mb-2">
+                          <span className="text-[11px] text-muted-foreground mr-0.5">Switch</span>
+                          <kbd className="inline-flex items-center justify-center min-w-5 h-5 px-1 border rounded text-[10px] text-muted-foreground bg-muted/50">↑</kbd>
+                          <kbd className="inline-flex items-center justify-center min-w-5 h-5 px-1 border rounded text-[10px] text-muted-foreground bg-muted/50">↓</kbd>
+                        </div>
                       )}
-                    </button>
-                  );
-                })
-              )}
-            </div>
-          </aside>
+                      {versions.map((v) => {
+                        const isActive = v.version_number === activeVersion;
+                        const isLatest = v.version_number === versions[0].version_number;
+                        const d = new Date(v.created_at * 1000);
+                        const dateStr = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+                        const timeStr = d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+                        return (
+                          <div
+                            key={v.version_number}
+                            role="button"
+                            tabIndex={0}
+                            className={`w-full text-left px-2.5 py-2 rounded-lg mb-0.5 border transition-colors cursor-pointer ${isActive ? 'bg-muted border-border' : 'border-transparent hover:bg-muted/50'}`}
+                            onClick={() => setActiveVersion(v.version_number)}
+                            onKeyDown={(e) => { if (e.key === 'Enter') setActiveVersion(v.version_number); }}
+                          >
+                            <div className="flex items-center gap-1.5 text-xs font-semibold">
+                              v{v.version_number}
+                              {isLatest ? (
+                                <span className="text-[9px] font-semibold uppercase tracking-wide text-primary border border-primary/45 rounded-full px-1.5 py-px">Latest</span>
+                              ) : (
+                                <button
+                                  className="ml-auto text-[11px] font-medium text-muted-foreground hover:text-foreground border rounded-md px-2 py-0.5 disabled:opacity-40"
+                                  disabled={restoringVer !== null}
+                                  onClick={(e) => { e.stopPropagation(); restoreVersion(v.version_number); }}
+                                >
+                                  Restore
+                                </button>
+                              )}
+                            </div>
+                            <div className="text-[11px] text-muted-foreground mt-0.5">
+                              <span className="font-mono">{humanSize(v.size_bytes)}</span> &middot; {dateStr} {timeStr}
+                            </div>
+                            {v.uploader_name && (
+                              <div className="text-[11px] text-muted-foreground">{v.uploader_name}</div>
+                            )}
+                          </div>
+                        );
+                      })}
+                      <p className="text-[11px] text-muted-foreground leading-relaxed mt-3 pt-3 border-t">
+                        Uploading a file with the same name creates a new version.
+                      </p>
+                    </>
+                  )}
+                </div>
+              </aside>
+            </>
+          )}
         </div>
 
         {/* Thumbnail strip footer */}
-        <div className="flex items-center justify-center gap-2 px-3 py-2 border-t shrink-0">
+        <div className={`flex items-center gap-2 px-3 border-t shrink-0 ${stripCollapsed ? 'py-0.5 justify-end' : 'py-2 justify-center'}`}>
+          {!stripCollapsed && (
+          <>
           <div className="flex items-center gap-0.5">
             <kbd className="inline-flex items-center justify-center min-w-5 h-5 px-1 border rounded text-[10px] text-muted-foreground bg-muted/50">←</kbd>
           </div>
@@ -510,6 +794,15 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
           <div className="flex items-center gap-0.5">
             <kbd className="inline-flex items-center justify-center min-w-5 h-5 px-1 border rounded text-[10px] text-muted-foreground bg-muted/50">→</kbd>
           </div>
+          </>
+          )}
+          <button
+            className="size-6.5 rounded-md flex items-center justify-center hover:bg-muted text-muted-foreground shrink-0"
+            aria-label={stripCollapsed ? 'Expand filmstrip' : 'Collapse filmstrip'}
+            onClick={() => setStripCollapsed((c) => !c)}
+          >
+            <ChevronDown className={`size-3.5 transition-transform ${stripCollapsed ? 'rotate-180' : ''}`} />
+          </button>
         </div>
       </div>
 
@@ -544,7 +837,17 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
 
 // ── File content renderer ─────────────────────────────────
 
-function FileContent({ file, files, rawUrl, stableRawUrl, downloadUrl, version, workspaceId, pdfToolbarSlots, onSaved, onNavigate }: { file: FileItem; files: FileItem[]; rawUrl: string; stableRawUrl: string; downloadUrl: string; version?: number; workspaceId: string; pdfToolbarSlots: { left: HTMLElement | null; center: HTMLElement | null }; onSaved: () => void; onNavigate: (f: FileItem) => void }) {
+/** Label/value row for the inspector's Details tab. */
+function PropRow({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3 py-1.5 border-b last:border-b-0">
+      <dt className="text-xs text-muted-foreground shrink-0">{label}</dt>
+      <dd className="text-xs font-medium text-right truncate">{children}</dd>
+    </div>
+  );
+}
+
+function FileContent({ file, files, rawUrl, stableRawUrl, downloadUrl, version, workspaceId, pdfToolbarSlots, zoom, onSaved, onNavigate }: { file: FileItem; files: FileItem[]; rawUrl: string; stableRawUrl: string; downloadUrl: string; version?: number; workspaceId: string; pdfToolbarSlots: { left: HTMLElement | null; center: HTMLElement | null }; zoom?: number; onSaved: () => void; onNavigate: (f: FileItem) => void }) {
   const ext = extOf(file.name);
 
   if (isVcard(file.name)) {
@@ -553,15 +856,20 @@ function FileContent({ file, files, rawUrl, stableRawUrl, downloadUrl, version, 
 
   if (isImage(file.name)) {
     return (
-      <FilePreviewImage
-        fileId={file.id}
-        fileName={file.name}
-        version={version}
-        size={1600}
-        className="max-w-full max-h-full object-contain rounded-md"
-        alt={file.name}
-        fallback={<img src={fileIconSrc(file.name)} alt={file.name} className="size-24" />}
-      />
+      <div
+        className="max-w-full max-h-full flex items-center justify-center transition-transform duration-150"
+        style={zoom && zoom !== 100 ? { transform: `scale(${zoom / 100})` } : undefined}
+      >
+        <FilePreviewImage
+          fileId={file.id}
+          fileName={file.name}
+          version={version}
+          size={1600}
+          className="max-w-full max-h-full object-contain rounded-md"
+          alt={file.name}
+          fallback={<img src={fileIconSrc(file.name)} alt={file.name} className="size-24" />}
+        />
+      </div>
     );
   }
 
