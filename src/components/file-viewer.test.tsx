@@ -413,6 +413,26 @@ describe('FileViewer actions', () => {
   });
 });
 
+describe('FileViewer stage surface', () => {
+  it('audio keeps the theme surface - its player is theme-token styled, not stage-dark', async () => {
+    apiMock.mockImplementation(() => Promise.resolve(versionRows()));
+    const file = { ...imageFile(), name: 'track.mp3', mime_type: 'audio/mpeg', extension: 'mp3' };
+    await mountViewer({ file });
+    const stage = container!.querySelector<HTMLElement>('[data-testid="viewer-stage"]');
+    expect(stage, 'expected the stage element').toBeTruthy();
+    expect(stage!.className).toContain('bg-background');
+    expect(stage!.className).not.toContain('oklch(0.135');
+  });
+
+  it('images sit on the closed dark stage in every theme', async () => {
+    apiMock.mockImplementation(() => Promise.resolve(versionRows()));
+    await mountViewer();
+    const stage = container!.querySelector<HTMLElement>('[data-testid="viewer-stage"]');
+    expect(stage, 'expected the stage element').toBeTruthy();
+    expect(stage!.className).toContain('oklch(0.135');
+  });
+});
+
 describe('FileViewer edit entry points', () => {
   it('office files get a labeled Edit control in the header linking to the editor', async () => {
     apiMock.mockImplementation(() => Promise.resolve(versionRows()));

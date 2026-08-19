@@ -578,8 +578,11 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
         <div className="flex-1 flex min-h-0">
           {/* Stage. Its own closed dark scale in both themes - a media stage
               stays dark in a light OS theme the way every other media viewer
-              does (the share viewer records the same decision in share.css). */}
-          <div className="flex-1 min-h-0 min-w-0 relative bg-[oklch(0.135_0.018_238.9)]">
+              does (the share viewer records the same decision in share.css).
+              Audio is the exception: its player is a theme-token surface
+              (title, waveform, chips all read theme colors), so it keeps the
+              theme background - dark-on-dark otherwise in light themes. */}
+          <div data-testid="viewer-stage" className={`flex-1 min-h-0 min-w-0 relative ${isAudio(file.name) ? 'bg-background' : 'bg-[oklch(0.135_0.018_238.9)]'}`}>
             {/* Audio owns the whole area - it is a surface, not an object sitting
                 on one - so it drops the centring and padding every other type wants. */}
             {/* PDF joins audio here: its viewer brings its own toolbar, scroller,
@@ -588,7 +591,7 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
               <FileContent file={file} files={files} rawUrl={rawUrl()} stableRawUrl={stableRawUrl} downloadUrl={downloadUrl} version={previewVersion} workspaceId={workspaceId} pdfToolbarSlots={pdfSlots} zoom={zoom} onSaved={() => { onRefresh(); loadVersions(); }} onNavigate={onNavigate} />
             </div>
             <button
-              className="absolute left-4 top-1/2 -translate-y-1/2 size-10 rounded-full bg-white/10 backdrop-blur-sm flex items-center justify-center text-[oklch(0.93_0.008_238.5)] hover:bg-white/20 disabled:opacity-30 disabled:pointer-events-none transition-colors z-10"
+              className={`absolute left-4 top-1/2 -translate-y-1/2 size-10 rounded-full backdrop-blur-sm flex items-center justify-center disabled:opacity-30 disabled:pointer-events-none transition-colors z-10 ${isAudio(file.name) ? 'bg-foreground/10 text-foreground hover:bg-foreground/15' : 'bg-white/10 text-[oklch(0.93_0.008_238.5)] hover:bg-white/20'}`}
               aria-label="Previous file"
               title="Previous (←)"
               disabled={!hasPrev}
@@ -597,7 +600,7 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
               <ChevronLeft className="size-4" />
             </button>
             <button
-              className="absolute right-4 top-1/2 -translate-y-1/2 size-10 rounded-full bg-white/10 backdrop-blur-sm flex items-center justify-center text-[oklch(0.93_0.008_238.5)] hover:bg-white/20 disabled:opacity-30 disabled:pointer-events-none transition-colors z-10"
+              className={`absolute right-4 top-1/2 -translate-y-1/2 size-10 rounded-full backdrop-blur-sm flex items-center justify-center disabled:opacity-30 disabled:pointer-events-none transition-colors z-10 ${isAudio(file.name) ? 'bg-foreground/10 text-foreground hover:bg-foreground/15' : 'bg-white/10 text-[oklch(0.93_0.008_238.5)] hover:bg-white/20'}`}
               aria-label="Next file"
               title="Next (→)"
               disabled={!hasNext}
