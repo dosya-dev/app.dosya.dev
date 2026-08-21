@@ -119,6 +119,7 @@ const PERM_GROUPS: { group: string; perms: [string, string][] }[] = [
     ['change_max_file_size', 'Change max file size'], ['change_storage_per_member', 'Change storage per member'],
     ['change_total_storage_cap', 'Change total storage cap'], ['change_max_concurrent_uploads', 'Change max simultaneous uploads'],
     ['change_allowed_file_types', 'Change allowed file types'], ['change_blocked_file_types', 'Change blocked file types'],
+    ['change_duplicate_scan', 'Change duplicate scanning'],
   ] },
   { group: 'Workspace general', perms: [
     ['manage_settings', 'Manage settings'], ['view_activity', 'View activity log'],

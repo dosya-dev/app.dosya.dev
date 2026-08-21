@@ -63,6 +63,7 @@ const PERM_INFO: PermInfo[] = [
   { key: 'change_max_concurrent_uploads', label: 'Change max simultaneous uploads', hint: 'Limit concurrent uploads per member.', category: 'Workspace limits' },
   { key: 'change_allowed_file_types', label: 'Change allowed file types', hint: 'Restrict which file extensions can be uploaded.', category: 'Workspace limits' },
   { key: 'change_blocked_file_types', label: 'Change blocked file types', hint: 'Block specific file extensions from being uploaded.', category: 'Workspace limits' },
+  { key: 'change_duplicate_scan', label: 'Change duplicate scanning', hint: 'Turn the duplicate finder on or off. Scanning reads every file to fingerprint it, so it stays off until someone enables it.', category: 'Workspace limits' },
   { key: 'manage_settings', label: 'Manage settings', hint: 'Edit workspace security settings and access controls.', category: 'Workspace general' },
   { key: 'view_activity', label: 'View activity log', hint: 'See the full activity history of the workspace.', category: 'Workspace general' },
   { key: 'lock_files', label: 'Lock files & folders', hint: 'Lock files or folders to prevent edits by other members.', category: 'File management' },
