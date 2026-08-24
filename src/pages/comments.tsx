@@ -14,6 +14,14 @@ import {
   avatarColor, initials,
 } from '@/lib/helpers';
 import { toast } from '@/lib/toast';
+import { LIMITS, validateCommentBody } from '@/lib/validation-policy.generated';
+
+/**
+ * Show the character counter only once the body is within 10% of the cap.
+ * A counter that is always visible on a one-line comment is noise; a cap you
+ * only learn about from a rejected 6000-character paste is worse.
+ */
+const COMMENT_COUNTER_FROM = Math.floor(LIMITS.COMMENT_BODY_MAX * 0.9);
 
 
 // ── Types ─────────────────────────────────────────────────
@@ -91,6 +99,7 @@ export default function CommentsPage() {
 
   const [body, setBody] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const overCommentLimit = body.length > LIMITS.COMMENT_BODY_MAX;
   const [replyTo, setReplyTo] = useState<Comment | null>(null);
   const [editId, setEditId] = useState<string | null>(null);
   const [editBody, setEditBody] = useState('');
@@ -139,6 +148,10 @@ export default function CommentsPage() {
   // Submit comment
   const handleSubmit = async () => {
     if (!body.trim() || !fileId) return;
+    // A pasted essay used to be uploaded in full and then refused at 5000. The
+    // counter below the field warns first; this is the stop.
+    const bodyError = validateCommentBody(body);
+    if (bodyError) { toast.error('Comment failed', bodyError); return; }
     setSubmitting(true);
     try {
       const payload: Record<string, unknown> = {
@@ -164,6 +177,8 @@ export default function CommentsPage() {
 
   const handleEdit = async (id: string) => {
     if (!editBody.trim()) return;
+    const editError = validateCommentBody(editBody);
+    if (editError) { toast.error('Edit failed', editError); return; }
     try {
       await api(`/api/comments/${id}`, {
         method: 'PUT',
@@ -284,26 +299,40 @@ export default function CommentsPage() {
                 {currentUser ? initials(currentUser.name) : '?'}
               </div>
               {/* Input */}
-              <Textarea
-                ref={inputRef}
-                value={body}
-                onChange={(e) => setBody(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-                    e.preventDefault();
-                    handleSubmit();
-                  }
-                }}
-                placeholder="Write a message..."
-                className="flex-1 min-h-10 max-h-32 rounded-lg px-3 py-2.5 text-sm bg-background resize-none"
-                rows={1}
-              />
+              <div className="flex-1 min-w-0">
+                <Textarea
+                  ref={inputRef}
+                  value={body}
+                  onChange={(e) => setBody(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                      e.preventDefault();
+                      handleSubmit();
+                    }
+                  }}
+                  placeholder="Write a message..."
+                  className="w-full min-h-10 max-h-32 rounded-lg px-3 py-2.5 text-sm bg-background resize-none"
+                  rows={1}
+                  aria-describedby={body.length > COMMENT_COUNTER_FROM ? 'comment-length' : undefined}
+                />
+                {/* Silent until the cap is close, so it is information rather
+                    than pressure. Turns destructive once it is actually over. */}
+                {body.length > COMMENT_COUNTER_FROM && (
+                  <p
+                    id="comment-length"
+                    aria-live="polite"
+                    className={`mt-1 text-xs tabular-nums ${overCommentLimit ? 'text-destructive' : 'text-muted-foreground'}`}
+                  >
+                    {body.length.toLocaleString()} / {LIMITS.COMMENT_BODY_MAX.toLocaleString()}
+                  </p>
+                )}
+              </div>
               {/* Send */}
               <Button
                 size="sm"
                 className="size-10 p-0 shrink-0 rounded-full"
                 onClick={handleSubmit}
-                disabled={submitting || !body.trim()}
+                disabled={submitting || !body.trim() || overCommentLimit}
               >
                 {submitting ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
               </Button>

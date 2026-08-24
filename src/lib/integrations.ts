@@ -153,10 +153,16 @@ export const rcloneExamples = [
 ].join('\n');
 
 // ---- WebDAV ----
-// The first path segment doubles as Finder's volume name, so prefer the
-// human-readable workspace name; the API also accepts slug and ws_ id.
+// Finder names the volume after the LAST path segment and ignores DAV
+// displayname, so the workspace id identifies the mount and a trailing copy
+// of the name supplies the caption. Emitted for everyone, not only when a
+// name collides: a collision-conditional URL would break a mount that
+// already worked the moment someone is added to a second workspace of the
+// same name. The trailing segment is display-only, so renaming a workspace
+// no longer breaks the mount either.
 export function webdavUrl(ctx: IntegrationCtx): string {
-  return `${API_HOST}/webdav/${encodeURIComponent(ctx.workspaceName || ctx.workspaceId)}/`;
+  const label = ctx.workspaceName || ctx.workspaceId;
+  return `${API_HOST}/webdav/mount/${ctx.workspaceId}/${encodeURIComponent(label)}/`;
 }
 
 export function webdavLinuxMount(ctx: IntegrationCtx): string {

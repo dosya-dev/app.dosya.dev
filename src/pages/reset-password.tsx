@@ -7,7 +7,7 @@ import { Loader2, Eye, EyeOff } from 'lucide-react';
 import { API_BASE } from '@/api/client';
 import { PublicNav } from '@/components/public-nav';
 import { PasswordStrengthMeter } from '@/components/password-strength-meter';
-import { MIN_PASSWORD_LENGTH } from '@/lib/password-strength';
+import { validatePassword } from '@/lib/validation-policy.generated';
 import { TurnstileWidget, type TurnstileHandle } from '@/components/turnstile-widget';
 
 /**
@@ -48,7 +48,11 @@ export default function ResetPasswordPage() {
     e.preventDefault();
     setError('');
     if (newPw !== confirm) { setError('Passwords do not match.'); return; }
-    if (newPw.length < MIN_PASSWORD_LENGTH) { setError(`Password must be at least ${MIN_PASSWORD_LENGTH} characters.`); return; }
+    // All four clauses, not just length - the API applies the same function, so
+    // a password rejected here would have been rejected there with this exact
+    // sentence.
+    const passwordError = validatePassword(newPw);
+    if (passwordError) { setError(passwordError); return; }
     setLoading(true);
     try {
       const res = await fetch(`${API_BASE}/api/auth/reset-password`, {

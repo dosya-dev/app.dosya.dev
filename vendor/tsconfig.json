@@ -1,0 +1,16 @@
+{
+  /* Vite's oxc transform loads a tsconfig for every .ts file it compiles, walking
+     up from the file until it finds one that configures it. ../tsconfig.json is a
+     solution stub (files: [] + references) and tsconfig.app.json includes only
+     "src", so without this file the walk leaves apps/web and lands on the repo-root
+     tsconfig - which extends "astro/tsconfigs/strict" and so needs the ROOT
+     node_modules. CI's web job installs apps/web's deps and nothing else, so that
+     extends was unresolvable and every suite importing @dosya-dev/audio-player
+     failed with "[TSCONFIG_ERROR] ... Tsconfig not found" while dev machines, which
+     have the root deps, stayed green. This keeps the lookup inside apps/web and
+     compiles vendored sources with the same options as the app's own.
+
+     src/lib/vendor-tsconfig.test.ts guards the invariant. */
+  "extends": "../tsconfig.app.json",
+  "include": ["**/*"]
+}

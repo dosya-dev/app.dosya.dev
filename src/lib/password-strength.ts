@@ -1,13 +1,21 @@
 /**
  * Client-side password strength feedback for sign-up and password reset.
  *
- * Deliberately small and dependency-free: this is guidance shown while typing,
- * not an authorization decision. The server still enforces its own rules, and
- * nothing here blocks a submit beyond the shared minimum length - a user who
- * insists on a weak password after being warned is making an informed choice.
+ * Deliberately small: this is guidance shown while typing, not an authorization
+ * decision. The server still enforces its own rules, and nothing here blocks a
+ * submit - the submit gate calls validatePassword() from the shared policy, and
+ * a user who insists on a weak-but-valid password after being warned is making
+ * an informed choice.
  */
+import { LIMITS } from '@/lib/validation-policy.generated';
 
-export const MIN_PASSWORD_LENGTH = 8;
+/**
+ * Re-exported from the shared validation policy rather than declared here: the
+ * meter said "Use at least 8 characters" from its own constant while the submit
+ * gate enforced the server's, and two numbers that must agree should not be two
+ * numbers. See lib/validation-policy.generated.ts.
+ */
+export const MIN_PASSWORD_LENGTH = LIMITS.PASSWORD_MIN;
 
 export type StrengthLabel = 'Weak' | 'Fair' | 'Good' | 'Strong';
 

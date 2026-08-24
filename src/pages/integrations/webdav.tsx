@@ -17,6 +17,17 @@ export default function WebdavSetup() {
           Sign in with <strong>HTTP Basic auth</strong> - username is your account email
           (<code>{ctx.email}</code>) and the password is your <code>dos_…</code> API key.
         </p>
+        <p>
+          Your workspace appears twice on purpose. Finder and Explorer name the mounted
+          drive after the last part of the URL, so the ID identifies the workspace and the
+          name after it is just the caption you will see on your desktop. That is what lets
+          you mount two workspaces that share a name - your own and one you were invited to
+          - at the same time, with both still reading correctly.
+        </p>
+        <p>
+          Because that last part is only a label, renaming this workspace will not break a
+          drive you have already mounted, and you can edit it to any caption you prefer.
+        </p>
       </Step>
       <Step n={2} title="macOS (Finder)">
         <p>Finder → Go → <em>Connect to Server…</em>, paste the URL, then enter your email and API key.</p>

@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { CopyCheck } from '@/components/ui/copy-check';
 import { toast } from '@/lib/toast';
+import { LIMITS, validateApiKeyName } from '@/lib/validation-policy.generated';
 import { timeAgo } from '@/lib/helpers';
 import { gbToBytes, mbToBytes } from '@/lib/usage-units';
 import { THEMES, type Mode } from '@/lib/themes';
@@ -1012,6 +1013,9 @@ function ApiKeysSection({ keys, workspaces, onChanged }: { keys: ApiKey[]; works
 
   const createKey = async () => {
     if (!keyName.trim()) return;
+    // 64 characters. Server-only until now, so a long name was sent and refused.
+    const nameError = validateApiKeyName(keyName);
+    if (nameError) { toast.error('Could not create key', nameError); return; }
     setCreating(true);
     const hasWorkspace = keyWorkspaceId !== WHOLE_ACCOUNT;
     // Usage limits (migration 0098) - computed once here (not inline in the
@@ -1166,7 +1170,7 @@ function ApiKeysSection({ keys, workspaces, onChanged }: { keys: ApiKey[]; works
         <DialogContent className="max-w-sm">
           <DialogHeader><DialogTitle>Create API key</DialogTitle></DialogHeader>
           <div className="space-y-3 max-h-[65vh] overflow-y-auto pr-1">
-            <Input placeholder="Key name" value={keyName} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setKeyName(e.target.value)} className="h-9 text-sm" />
+            <Input placeholder="Key name" value={keyName} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setKeyName(e.target.value)} maxLength={LIMITS.API_KEY_NAME_MAX} className="h-9 text-sm" />
             <Select value={keyScope} onValueChange={(v) => setKeyScope(v as string)} items={SCOPE_LABELS}>
               <SelectTrigger className="w-full h-9 text-sm"><SelectValue /></SelectTrigger>
               <SelectContent>

@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Upload, Cloud, Link2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { enqueue } from '@/lib/upload-runner';
+import { uploadFromDrop, uploadFromPicker } from '@/lib/upload-drop';
 import { useWorkspace } from '@/stores/workspace';
 import { useOnboarding } from '@/stores/onboarding';
 import { PurposePicker } from './purpose-picker';
@@ -19,9 +19,10 @@ interface FirstRunHomeProps {
  * new, which means this also rescues every account that signed up months ago
  * and never uploaded anything.
  *
- * The dropzone deliberately calls the same enqueue() the Files page uses, so
- * a user's first upload takes the identical code path as every upload after
- * it. There is no separate "onboarding upload" to drift out of sync.
+ * The dropzone deliberately calls the same upload path the Files page uses, so
+ * a user's first upload - a loose file or a whole folder - takes the identical
+ * code path as every upload after it. There is no separate "onboarding upload"
+ * to drift out of sync.
  */
 export function FirstRunHome({ userName }: FirstRunHomeProps) {
   const wsId = useWorkspace((s: { activeId: string }) => s.activeId);
@@ -36,10 +37,8 @@ export function FirstRunHome({ userName }: FirstRunHomeProps) {
   const showPicker = purpose === null && !skipped;
 
   const send = (files: FileList | File[] | null) => {
-    if (!files || !wsId) return;
-    const list = Array.from(files);
-    if (list.length === 0) return;
-    enqueue(list, { workspace_id: wsId, folder_id: null });
+    if (!files || !wsId || Array.from(files).length === 0) return;
+    void uploadFromPicker(files, { workspace_id: wsId, folder_id: null });
   };
 
   return (
@@ -55,14 +54,18 @@ export function FirstRunHome({ userName }: FirstRunHomeProps) {
         data-testid="first-run-dropzone"
         onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
         onDragLeave={() => setDragging(false)}
-        onDrop={(e) => { e.preventDefault(); setDragging(false); send(e.dataTransfer?.files ?? null); }}
+        onDrop={(e) => {
+          e.preventDefault(); setDragging(false);
+          // Called synchronously so the dropped folder's entries are still readable.
+          if (e.dataTransfer && wsId) void uploadFromDrop(e.dataTransfer, { workspace_id: wsId, folder_id: null });
+        }}
         onClick={() => inputRef.current?.click()}
         className={`rounded-xl border-2 border-dashed p-12 text-center cursor-pointer transition-colors ${
           dragging ? 'border-primary bg-primary/5' : 'hover:border-foreground/20 hover:bg-muted/30'
         }`}
       >
         <Upload className="size-8 text-muted-foreground/40 mx-auto mb-3" />
-        <p className="text-sm font-medium">Drop files here to upload</p>
+        <p className="text-sm font-medium">Drop files or folders here to upload</p>
         <p className="text-xs text-muted-foreground mt-1">or click to browse your computer</p>
         <input
           ref={inputRef}

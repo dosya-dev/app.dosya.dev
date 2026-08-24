@@ -17,6 +17,7 @@ import {
 import { CATEGORY_OPTIONS, CATEGORY_LABELS, StatusBadge } from '@/components/support/ticket-meta';
 import { AttachImages } from '@/components/support/attach-images';
 import { toast } from '@/lib/toast';
+import { LIMITS, validateTicketSubject, validateTicketBody } from '@/lib/validation-policy.generated';
 import { timeAgo } from '@/lib/helpers';
 import { useDocumentTitle } from '@/lib/page-title';
 import { Plus, ExternalLink, MessageSquare } from 'lucide-react';
@@ -59,6 +60,12 @@ export default function SupportPage() {
 
   const submit = async () => {
     if (!subject.trim() || !body.trim() || submitting) return;
+    // 200 and 10,000. Both were server-only, so a long paste was uploaded in
+    // full and refused. The counters below warn before this fires.
+    const subjectError = validateTicketSubject(subject);
+    if (subjectError) { toast.error('Could not create ticket', subjectError); return; }
+    const bodyError = validateTicketBody(body);
+    if (bodyError) { toast.error('Could not create ticket', bodyError); return; }
     setSubmitting(true);
     try {
       const res = await createTicket({
@@ -176,7 +183,7 @@ export default function SupportPage() {
                 value={subject}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSubject(e.target.value)}
                 placeholder="Subject"
-                maxLength={200}
+                maxLength={LIMITS.TICKET_SUBJECT_MAX}
                 autoFocus
               />
               <Select value={category} onValueChange={(v) => setCategory(v as TicketCategory)} items={CATEGORY_OPTIONS}>
@@ -192,8 +199,16 @@ export default function SupportPage() {
                 onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setBody(e.target.value)}
                 placeholder="Describe the problem - what did you expect, what happened instead?"
                 rows={5}
-                maxLength={10000}
+                maxLength={LIMITS.TICKET_BODY_MAX}
               />
+              {/* maxLength stops typing at the cap but says nothing on the way
+                  there, so a long paste silently loses its tail. Same last-10%
+                  rule as the comment composer. */}
+              {body.length > LIMITS.TICKET_BODY_MAX * 0.9 && (
+                <p className="text-xs text-muted-foreground tabular-nums" aria-live="polite">
+                  {body.length.toLocaleString()} / {LIMITS.TICKET_BODY_MAX.toLocaleString()}
+                </p>
+              )}
               <AttachImages files={files} onChange={setFiles} disabled={submitting} />
             </div>
             <DialogFooter>

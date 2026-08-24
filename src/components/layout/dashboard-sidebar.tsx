@@ -3,6 +3,7 @@ import { useLocation, useNavigate, Link } from 'react-router-dom';
 import {
   Sidebar, SidebarContent, SidebarGroup, SidebarGroupLabel, SidebarGroupContent,
   SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarHeader, SidebarFooter,
+  useSidebar,
 } from '@/components/ui/sidebar';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Progress } from '@/components/ui/progress';
@@ -63,22 +64,17 @@ const ROLE_LABELS: Record<string, string> = {
 
 // Match the profile-page nav treatment: xs muted text, active = accent pill
 // (accent-foreground text over a green pill). The pill background itself is a
-// single absolutely-positioned div that slides between items on navigation -
-// so the active button's own background stays transparent while the sidebar is
-// expanded. In icon-collapsed mode the pill is hidden and the button paints
-// its own bg-accent instead. Pressed (active:) overrides keep the shadcn base
-// from flashing bg-sidebar-accent (saturated green in this theme) on click.
+// single absolutely-positioned div that slides between items on navigation, so
+// the active button's own background always stays transparent - in both the
+// expanded sidebar and the icon rail. Pressed (active:) overrides keep the
+// shadcn base from flashing bg-sidebar-accent (saturated green in this theme)
+// on click.
 const NAV_BTN_CLASS =
   'gap-2.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground ' +
   'active:bg-muted/50 active:text-foreground ' +
   'data-active:bg-transparent data-active:font-medium data-active:text-accent-foreground ' +
   'data-active:hover:bg-transparent data-active:hover:text-accent-foreground ' +
-  'data-active:active:bg-transparent data-active:active:text-accent-foreground ' +
-  // Icon-collapsed mode has no pill, so the active button must paint its own
-  // accent - important so the hover/pressed transparent overrides above can't
-  // wipe it (they'd otherwise win on specificity).
-  'group-data-[collapsible=icon]:data-active:bg-accent! ' +
-  'group-data-[collapsible=icon]:data-active:text-accent-foreground!';
+  'data-active:active:bg-transparent data-active:active:text-accent-foreground';
 
 export function DashboardSidebar() {
   const location = useLocation();
@@ -90,24 +86,51 @@ export function DashboardSidebar() {
   const [roleName, setRoleName] = useState<string | null>(null);
 
   // Sliding active pill: measure the active menu button and glide one shared
-  // indicator to it whenever the route changes.
+  // indicator to it whenever the route changes. It runs in the icon rail too -
+  // a collapsed menu button is exactly as wide as the pill's left-2/right-2
+  // inset, so the same element fits both widths.
+  const { state: sidebarState } = useSidebar();
   const contentRef = useRef<HTMLDivElement>(null);
   const [pill, setPill] = useState<{ top: number; height: number } | null>(null);
+  // True while the rail itself is opening/closing. See the tracking effect.
+  const [settling, setSettling] = useState(false);
+
+  const measure = useCallback(() => {
+    const c = contentRef.current;
+    if (!c) return;
+    const el = c.querySelector<HTMLElement>('[data-active]');
+    if (!el) { setPill(null); return; }
+    const cRect = c.getBoundingClientRect();
+    const r = el.getBoundingClientRect();
+    const next = { top: r.top - cRect.top + c.scrollTop, height: r.height };
+    setPill((p) => (p && p.top === next.top && p.height === next.height ? p : next));
+  }, []);
 
   useLayoutEffect(() => {
-    const measure = () => {
-      const c = contentRef.current;
-      if (!c) return;
-      const el = c.querySelector<HTMLElement>('[data-active]');
-      if (!el) { setPill(null); return; }
-      const cRect = c.getBoundingClientRect();
-      const r = el.getBoundingClientRect();
-      setPill({ top: r.top - cRect.top + c.scrollTop, height: r.height });
-    };
     measure();
     window.addEventListener('resize', measure);
     return () => window.removeEventListener('resize', measure);
-  }, [location.pathname]);
+  }, [location.pathname, measure]);
+
+  // Collapsing the rail moves the items under the pill: the "Workspace" group
+  // label animates to -mt-8 over the same 200ms the sidebar takes to narrow, so
+  // everything below it slides up. Measuring once at the start would leave the
+  // pill parked at the old row until the next navigation. Re-measure every
+  // frame for that window instead, with the pill's own transition switched off
+  // so it rides the layout exactly rather than chasing 200ms behind it.
+  useLayoutEffect(() => {
+    setSettling(true);
+    let raf = requestAnimationFrame(function tick() {
+      measure();
+      raf = requestAnimationFrame(tick);
+    });
+    const done = window.setTimeout(() => {
+      cancelAnimationFrame(raf);
+      measure();
+      setSettling(false);
+    }, 260);
+    return () => { cancelAnimationFrame(raf); clearTimeout(done); };
+  }, [sidebarState, measure]);
 
   const activeWs = workspaces.find((w) => w.id === activeId);
   const roleLabel = activeWs
@@ -277,12 +300,15 @@ export function DashboardSidebar() {
       </SidebarHeader>
 
       <SidebarContent ref={contentRef} className="relative">
-        {/* Sliding active-item pill (hidden in icon-collapsed mode; the button
-            paints its own bg-accent there instead) */}
+        {/* Sliding active-item pill - the sidebar's only navigation motion, in
+            both the expanded panel and the icon rail. */}
         {pill && (
           <div
             aria-hidden
-            className="absolute left-2 right-2 rounded-md bg-accent transition-[top,height] duration-200 ease-out group-data-[collapsible=icon]:hidden"
+            data-slot="sidebar-active-pill"
+            className={`absolute left-2 right-2 rounded-md bg-accent ${
+              settling ? '' : 'transition-[top,height] duration-200 ease-out'
+            }`}
             style={{ top: pill.top, height: pill.height }}
           />
         )}

@@ -13,6 +13,9 @@ const fixturePath = path.join(
 describe('decodeHeicToRgba', () => {
   it(
     'decodes a real HEIC file into non-blank RGBA pixel data',
+    // Options go SECOND in Vitest 4; the trailing-options form this used was
+    // removed in that major.
+    { timeout: 30000 },
     async () => {
       const bytes = readFileSync(fixturePath);
 
@@ -44,7 +47,6 @@ describe('decodeHeicToRgba', () => {
       expect(nonBlankPixels).toBe(pixelCount);
       expect(opaquePixels).toBe(pixelCount);
     },
-    { timeout: 30000 }
   );
 
   it('throws a clear error when there are no images to decode', async () => {

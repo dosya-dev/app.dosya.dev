@@ -9,6 +9,8 @@ import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { toast } from '@/lib/toast';
+import { readDroppedEntries } from '@/lib/dropped-entries';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
@@ -140,11 +142,26 @@ export function EncryptedBrowser() {
     e.preventDefault(); e.stopPropagation();
     if (e.currentTarget === e.target) setDragging(false);
   };
+  // The vault encrypts each file against its space key and has no folder-tree
+  // import path yet, so a dropped folder is expanded only far enough to upload
+  // the loose files alongside it and say plainly what was left out. Passing
+  // dataTransfer.files straight through (as this did) handed the encryptor an
+  // unreadable directory handle, which failed as an opaque error.
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault(); e.stopPropagation(); setDragging(false);
     if (!activeWorkspaceId) return;
-    const dropped = e.dataTransfer.files;
-    if (dropped.length > 0) uploadFiles(dropped, currentFolderId);
+    void readDroppedEntries(e.dataTransfer).then((tree) => {
+      const loose = tree.entries.filter((entry) => entry.path === '').map((entry) => entry.file);
+      if (loose.length > 0) uploadFiles(loose, currentFolderId);
+      if (tree.hadDirectory) {
+        toast.info(
+          'Folders are not supported in the Vault yet',
+          loose.length > 0
+            ? `Uploaded ${loose.length} loose file${loose.length === 1 ? '' : 's'}; drop the folder's files directly to encrypt them.`
+            : "Drop the folder's files directly to encrypt them.",
+        );
+      }
+    });
   };
 
   return (

@@ -8,7 +8,7 @@ import { Loader2, Eye, EyeOff } from 'lucide-react';
 import { API_BASE } from '@/api/client';
 import { PublicNav } from '@/components/public-nav';
 import { PasswordStrengthMeter } from '@/components/password-strength-meter';
-import { MIN_PASSWORD_LENGTH } from '@/lib/password-strength';
+import { validateEmail, validatePassword } from '@/lib/validation-policy.generated';
 import { TurnstileWidget, type TurnstileHandle } from '@/components/turnstile-widget';
 import { LegalLinks, LegalNotice } from '@/components/legal-notice';
 
@@ -38,12 +38,16 @@ export default function SignUpPage() {
     e.preventDefault();
     setError('');
     if (!terms) { setError('Please accept the Terms of Service to continue.'); return; }
-    // The reset-password page has always enforced this; sign-up sent anything
-    // to the server, so "12345678" only failed once it round-tripped.
-    if (password.length < MIN_PASSWORD_LENGTH) {
-      setError(`Password must be at least ${MIN_PASSWORD_LENGTH} characters.`);
-      return;
-    }
+    // The shared policy, not a hand-written subset of it. This page used to
+    // check the length clause only and let the other three round-trip, so
+    // "12345678" was caught locally but "password123" was not - and the type=
+    // "email" attribute is looser than the server's regex and disappears
+    // entirely under a scripted POST. Both now fail here with the sentence the
+    // API would have returned.
+    const emailError = validateEmail(email.trim());
+    if (emailError) { setError(emailError); return; }
+    const passwordError = validatePassword(password);
+    if (passwordError) { setError(passwordError); return; }
     setLoading(true);
     try {
       const ref = searchParams.get('ref') ?? sessionStorage.getItem('dosya_ref') ?? undefined;

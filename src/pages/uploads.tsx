@@ -5,7 +5,8 @@ import { useWorkspace } from '@/stores/workspace';
 import { useUploads } from '@/stores/uploads';
 import { useShallow } from 'zustand/react/shallow';
 import type { UploadItem } from '@/lib/upload-types';
-import { enqueue, setWorkspaceCap } from '@/lib/upload-runner';
+import { setWorkspaceCap } from '@/lib/upload-runner';
+import { uploadFromDrop, uploadFromPicker } from '@/lib/upload-drop';
 import {
   getUserConcurrency, setUserConcurrency, MAX_USER_CONCURRENCY,
 } from '@/lib/upload-concurrency';
@@ -39,11 +40,21 @@ export default function UploadsPage() {
   const [concurrency, setConcurrency] = useState(getUserConcurrency());
   const [wsMaxUploads, setWsMaxUploads] = useState<number>(0); // 0 = unlimited
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
 
   // This workspace's queue, from the global store. useShallow keeps the
   // filtered array reference stable across renders (zustand v5 has no built-in
   // selector memoization, so returning a fresh array here would loop forever).
   const queue = useUploads(useShallow((s) => s.items.filter((i) => i.workspace_id === wsId)));
+
+  // Turns the second hidden input into a folder picker. Set as an attribute
+  // because React's input types have no webkitdirectory prop.
+  useEffect(() => {
+    const el = folderInputRef.current;
+    if (!el) return;
+    el.setAttribute('webkitdirectory', '');
+    el.setAttribute('directory', '');
+  }, []);
 
   // Load regions + folders + workspace concurrency cap
   useEffect(() => {
@@ -81,14 +92,24 @@ export default function UploadsPage() {
     })();
   }, [wsId, groupId]);
 
-  function addFiles(files: FileList | File[]) {
-    if (!wsId) return;
-    enqueue(files, { workspace_id: wsId, folder_id: folderId, region: selectedRegion, group_id: groupId });
-  }
+  const uploadInput = () => ({
+    workspace_id: wsId, folder_id: folderId, region: selectedRegion, group_id: groupId,
+  });
 
   const onConcurrencyChange = (n: number) => { setConcurrency(n); setUserConcurrency(n); };
-  const onDrop = (e: DragEvent) => { e.preventDefault(); setDragging(false); if (e.dataTransfer?.files.length) addFiles(e.dataTransfer.files); };
-  const onFileChange = (e: ChangeEvent<HTMLInputElement>) => { if (e.target.files?.length) { addFiles(e.target.files); e.target.value = ''; } };
+  // Synchronous by necessity: uploadFromDrop reads dataTransfer.items - the only
+  // way to see inside a dropped folder - and that list dies with this handler.
+  const onDrop = (e: DragEvent) => {
+    e.preventDefault(); setDragging(false);
+    if (!wsId || !e.dataTransfer) return;
+    void uploadFromDrop(e.dataTransfer, uploadInput());
+  };
+  // Files from the folder picker carry webkitRelativePath, so the same tree is
+  // rebuilt server-side as for a drop.
+  const onFileChange = (e: ChangeEvent<HTMLInputElement>) => {
+    if (wsId && e.target.files?.length) void uploadFromPicker(e.target.files, uploadInput());
+    e.target.value = '';
+  };
 
   const totalBytes = queue.reduce((s, e) => s + e.fileSize, 0);
   const doneCount = queue.filter((e) => e.status === 'complete').length;
@@ -129,11 +150,17 @@ export default function UploadsPage() {
             onDrop={onDrop}
           >
             <input ref={fileInputRef} type="file" multiple hidden onChange={onFileChange} />
+            {/* webkitdirectory is set on the element rather than written as a JSX
+                prop: React types do not carry it, and setAttribute works the same
+                in every engine that supports folder picking. */}
+            <input ref={folderInputRef} type="file" multiple hidden onChange={onFileChange} />
             <Upload className="size-10 text-muted-foreground mx-auto mb-4" />
-            <p className="font-semibold text-sm mb-1">Drop files here to upload</p>
+            <p className="font-semibold text-sm mb-1">Drop files or folders here to upload</p>
             <p className="text-xs text-muted-foreground mb-4">
-              Drag and drop anything, or{' '}
-              <button className="font-semibold text-foreground underline" onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}>browse your computer</button>. No file size limit on Pro.
+              Drag and drop anything - folders keep their structure. Or{' '}
+              <button className="font-semibold text-foreground underline" onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}>browse for files</button>
+              {' '}or{' '}
+              <button className="font-semibold text-foreground underline" onClick={(e) => { e.stopPropagation(); folderInputRef.current?.click(); }}>pick a folder</button>. No file size limit on Pro.
             </p>
             <div className="flex gap-2 justify-center flex-wrap">
               {['Video', 'Images', 'Documents', 'Archives', 'Any format'].map((t) => <Badge key={t} variant="secondary" className="text-[10px]">{t}</Badge>)}

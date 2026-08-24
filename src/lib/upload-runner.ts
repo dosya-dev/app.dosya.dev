@@ -405,14 +405,25 @@ const scheduler = createScheduler({
   runOne,
 });
 
-export function enqueue(files: File[] | FileList, input: UploadInput): void {
-  const items: UploadItem[] = Array.from(files).map((file, i) => {
+/**
+ * Queue rows for a batch, each with its OWN destination folder.
+ *
+ * Split out from enqueue() and exported so the folder-upload path - where every
+ * file in one batch can land somewhere different - is testable without waking
+ * the scheduler. Ids are assigned across the whole batch, so two files from
+ * different folders can never collide on one.
+ */
+export function buildQueueItems(
+  files: { file: File; folder_id: string | null }[],
+  input: UploadInput,
+): UploadItem[] {
+  return files.map(({ file, folder_id }, i) => {
     const id = newId(i);
     fileMap.set(id, file);
     return {
       id, session_id: null, fileName: file.name, fileSize: file.size,
       mimeType: file.type || 'application/octet-stream',
-      workspace_id: input.workspace_id, folder_id: input.folder_id,
+      workspace_id: input.workspace_id, folder_id,
       // '' means "no explicit choice" - initSession omits it so the server
       // falls back to the workspace default. Call sites without a region
       // picker (Files drag-and-drop, version upload) rely on this.
@@ -423,9 +434,36 @@ export function enqueue(files: File[] | FileList, input: UploadInput): void {
       part_size: null, total_parts: null, uploaded_parts: [],
     };
   });
+}
+
+function start(items: UploadItem[]): void {
+  if (items.length === 0) return;
   store().addItems(items);
   updateUnloadGuard();
   scheduler.wake();
+}
+
+export function enqueue(files: File[] | FileList, input: UploadInput): void {
+  start(buildQueueItems(
+    Array.from(files).map((file) => ({ file, folder_id: input.folder_id })),
+    input,
+  ));
+}
+
+/**
+ * Queue a folder tree: one bucket of files per destination folder, as produced
+ * by groupByFolder(). `input.folder_id` still applies to the root bucket.
+ */
+export function enqueueByFolder(
+  groups: Map<string | null, File[]>,
+  input: UploadInput,
+): number {
+  const flat: { file: File; folder_id: string | null }[] = [];
+  for (const [folder_id, files] of groups) {
+    for (const file of files) flat.push({ file, folder_id });
+  }
+  start(buildQueueItems(flat, input));
+  return flat.length;
 }
 
 export function cancel(id: string): void {

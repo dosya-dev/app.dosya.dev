@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { missingPartNumbers, bytesForParts, PartBytes, runPool } from './upload-runner';
+import { missingPartNumbers, bytesForParts, PartBytes, runPool, buildQueueItems } from './upload-runner';
 
 describe('missingPartNumbers', () => {
   it('returns all parts when none uploaded', () => {
@@ -177,5 +177,43 @@ describe('runPool', () => {
     await expect(
       runPool([1, 2, 3], 1, async () => { await defer(); cancel = true; }, () => cancel),
     ).resolves.toBeUndefined();
+  });
+});
+
+describe('buildQueueItems', () => {
+  const input = { workspace_id: 'ws_1', folder_id: 'fld_root' };
+  const f = (name: string) => new File(['abc'], name, { type: 'text/plain' });
+
+  it('keeps each file pointed at its own folder', () => {
+    const items = buildQueueItems([
+      { file: f('a.txt'), folder_id: 'fld_photos' },
+      { file: f('b.txt'), folder_id: null },
+      { file: f('c.txt'), folder_id: 'fld_2024' },
+    ], input);
+    expect(items.map((i) => [i.fileName, i.folder_id])).toEqual([
+      ['a.txt', 'fld_photos'],
+      ['b.txt', null],
+      ['c.txt', 'fld_2024'],
+    ]);
+  });
+
+  // Ids index into the batch, so a folder tree queued as one batch cannot
+  // produce two rows that share an id and overwrite each other in the store.
+  it('gives every file in a batch a distinct id', () => {
+    const items = buildQueueItems(
+      Array.from({ length: 50 }, (_, i) => ({ file: f(`f${i}.txt`), folder_id: `fld_${i % 3}` })),
+      input,
+    );
+    expect(new Set(items.map((i) => i.id)).size).toBe(50);
+  });
+
+  it('carries region, group and status defaults onto every row', () => {
+    const [item] = buildQueueItems([{ file: f('a.txt'), folder_id: 'fld_x' }], {
+      ...input, region: 'ap-southeast-2', group_id: 'grp_1',
+    });
+    expect(item).toMatchObject({
+      region: 'ap-southeast-2', group_id: 'grp_1', status: 'queued',
+      progress: 0, bytesUploaded: 0, mimeType: 'text/plain', fileSize: 3,
+    });
   });
 });

@@ -13,6 +13,7 @@ import { Label } from '@/components/ui/label';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Mail, Link2, X, Loader2, Copy, ChevronDown, Files, Folder } from 'lucide-react';
 import { toast } from '@/lib/toast';
+import { validateSharePassword, validateShareExpiryAt, validateShareBundle } from '@/lib/validation-policy.generated';
 
 /**
  * What is being shared. A share link is one file, one bundle of files, or one
@@ -163,12 +164,23 @@ export function ShareModal({ open, target, name, onClose }: ShareModalProps) {
       return;
     }
 
-    const pw = password.trim();
-    if (pw && pw.length < 8) {
-      setError('Password must be at least 8 characters.');
-      return;
+    // 1..100 files behind one link. The validator existed in the policy from
+    // the start and nothing called it, so a 101-file selection was assembled,
+    // sent, and refused.
+    if (target.kind === 'bundle') {
+      const bundleError = validateShareBundle(target.fileIds.length);
+      if (bundleError) { setError(bundleError); return; }
     }
 
+    // The shared rule rather than a local copy of its length clause. This page
+    // was the ONLY client checking the 8-character floor at all; the same
+    // function now runs on desktop, mobile and the CLI, and it is the function
+    // lib/share/create.ts applies on the server.
+    const pw = password.trim();
+    const pwError = validateSharePassword(pw);
+    if (pwError) { setError(pwError); return; }
+
+    const nowSeconds = Math.floor(Date.now() / 1000);
     let expiresAt: number | null = null;
     if (expiry === 'custom') {
       expiresAt = localInputToUnix(customExpiry);
@@ -176,12 +188,15 @@ export function ShareModal({ open, target, name, onClose }: ShareModalProps) {
         setError('Pick a valid expiry date.');
         return;
       }
-      if (expiresAt < Math.floor(Date.now() / 1000) + 60) {
-        setError('Expiry must be in the future.');
-        return;
-      }
+      // Covers "in the future" AND the 3650-day ceiling, which nothing on the
+      // client knew about - a date picked past it was accepted here and refused
+      // by the API. NB the workspace's own share_max_expiry_days clamps silently
+      // on the server and is deliberately invisible here: there is no refusal to
+      // pre-empt, only a value quietly lowered.
+      const expiryError = validateShareExpiryAt(expiresAt, nowSeconds + 60);
+      if (expiryError) { setError(expiryError); return; }
     } else if (expiry !== 'never') {
-      expiresAt = Math.floor(Date.now() / 1000) + Number(expiry);
+      expiresAt = nowSeconds + Number(expiry);
     }
 
     setSubmitting(true);

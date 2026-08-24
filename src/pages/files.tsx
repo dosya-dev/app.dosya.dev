@@ -5,6 +5,7 @@ import { api, API_BASE, ApiError, apiErrorMessage, responseErrorMessage } from '
 import { useDocumentTitle } from '@/lib/page-title';
 import { folderNavParams, filterNavParams, groupNavParams } from '@/lib/files-params';
 import { enqueue } from '@/lib/upload-runner';
+import { uploadFromDrop } from '@/lib/upload-drop';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
 import { useFilesListing, fetchFilesListing } from '@/hooks/use-files-listing';
 import { usePermissions } from '@/hooks/use-permissions';
@@ -52,6 +53,7 @@ import { OriginBadge } from '@/components/origin-badge';
 import { humanSize, timeAgo, extOf, fileIconSrc, folderIconSrc, colorFor, originLabel, isOfficeFile, hiddenTitle } from '@/lib/helpers';
 import { serializeSort, parseSort, toggleSort, DEFAULT_SORT, type SortKey, type SortSpec } from '@/lib/list-sort';
 import { toast } from '@/lib/toast';
+import { validateFolderPath, validateFileName, validateFolderName } from '@/lib/validation-policy.generated';
 import { FolderPickerDialog } from '@/components/folder-picker-dialog';
 import { ImportProgressCard } from '@/components/cloud-import/import-progress-card';
 
@@ -633,6 +635,13 @@ export default function FilesPage() {
 
   const handleCreateFolder = async () => {
     if (!newFolderName.trim()) return;
+    // The field accepts a path ("Projects/Q2/Designs"), so this is the path
+    // validator, not the single-name one: it applies the 500-character total,
+    // the 100-character segment cap, and the single-segment character policy to
+    // every part - the same three the route applies, in the same order, naming
+    // the same offending segment.
+    const folderError = validateFolderPath(newFolderName);
+    if (folderError) { toast.error('Folder could not be created', folderError); return; }
     setCreatingFolder(true);
     try {
       const res = await api<{ ok: boolean; error?: string; folder?: { id: string } }>('/api/folders', {
@@ -728,11 +737,22 @@ export default function FilesPage() {
 
   const handleRename = async () => {
     if (!renameTarget || !renameName.trim()) return;
+    // Files cap at 255, folders at 100, and both must be a single path segment.
+    // Checked here so a name with a slash in it fails instantly with the reason
+    // rather than round-tripping into a generic "could not be renamed" - the
+    // dialog stays open holding the attempted name, which is what makes the
+    // message actionable.
+    const nameError = renameTarget.type === 'file'
+      ? validateFileName(renameName)
+      : validateFolderName(renameName);
+    if (nameError) { toast.error('Rename failed', nameError); return; }
     try {
       const ep = renameTarget.type === 'file' ? `/api/files/${renameTarget.id}/rename` : `/api/folders/${renameTarget.id}/rename`;
       await api(ep, { method: 'PUT', body: JSON.stringify({ name: renameName.trim() }) });
-      toast.success('Renamed', 'The file has been renamed.'); setRenameTarget(null); loadFiles();
-    } catch { toast.error('Rename failed', 'The file could not be renamed.'); }
+      toast.success('Renamed', `The ${renameTarget.type} has been renamed.`); setRenameTarget(null); loadFiles();
+    } catch (err) {
+      toast.error('Rename failed', apiErrorMessage(err, `The ${renameTarget.type} could not be renamed.`));
+    }
   };
 
   const handleDownload = (fileId: string) => { window.open(`${API_BASE}/api/files/${fileId}/download`, '_blank'); };
@@ -971,21 +991,26 @@ export default function FilesPage() {
   // surfaces per-file progress/retry in the dock. The previous inline loop
   // uploaded sequentially with a single credential-less PUT and swallowed
   // every failure, so a rejected upload looked identical to a successful one.
+  //
+  // uploadFromDrop must be called SYNCHRONOUSLY here: it reads dataTransfer.items
+  // (the only API that can see inside a dropped folder) before its first await,
+  // and that list is dead the moment this handler returns.
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault(); e.stopPropagation(); setDragging(false);
-    if (isDeletedView) return;
-    const droppedFiles = e.dataTransfer.files;
-    if (!droppedFiles.length || !wsId) return;
+    if (isDeletedView || !wsId) return;
     // In a group view there is no current folder, so the file lands at the
     // workspace root - passing the group makes the runner enrol it once the
     // upload finishes, so it appears where it was dropped.
-    enqueue(droppedFiles, { workspace_id: wsId, folder_id: currentFolderId, group_id: currentGroup || null });
-    toast.info(
-      `Uploading ${droppedFiles.length} file${droppedFiles.length > 1 ? 's' : ''}`,
-      currentGroup
-        ? 'Progress is shown in the upload dock. Files will be added to this group.'
-        : 'Progress is shown in the upload dock.',
-    );
+    void uploadFromDrop(
+      e.dataTransfer,
+      { workspace_id: wsId, folder_id: currentFolderId, group_id: currentGroup || null },
+      currentGroup ? { note: 'Files will be added to this group.' } : {},
+    ).then((res) => {
+      // Folders exist server-side before their files finish uploading, so the
+      // listing has to be refetched or the tree the user just dropped is
+      // invisible until they navigate away and back.
+      if (res.folders > 0) loadFiles();
+    });
   };
 
   // ── Keyboard shortcuts ────────────────────────────────────
@@ -1196,7 +1221,7 @@ export default function FilesPage() {
         >
           <div className="flex scale-[0.97] flex-col items-center gap-2 text-primary transition-transform duration-150 ease-(--ease-out-strong) group-data-dragging/drop:scale-100 motion-reduce:scale-100 motion-reduce:transition-none">
             <Upload className="size-10" />
-            <p className="text-sm font-semibold">Drop files to upload</p>
+            <p className="text-sm font-semibold">Drop files or folders to upload</p>
             <p className="text-xs opacity-70">{currentFolderId ? `to ${breadcrumbs.at(-1)?.name ?? 'folder'}` : 'to root folder'}</p>
           </div>
         </div>
@@ -1357,7 +1382,7 @@ export default function FilesPage() {
                 currentGroup && !search
                   ? 'Right-click any file or folder and choose "Add to group" to collect items here.'
                   : (!isDeletedView && !search && !currentGroup && !filterEmptyLabel)
-                    ? 'Drop files anywhere on this page to upload them.'
+                    ? 'Drop files or whole folders anywhere on this page to upload them.'
                     : undefined
               }
               actions={
