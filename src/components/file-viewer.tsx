@@ -9,6 +9,8 @@ import { humanSize, extOf, isImage, isVideo, isAudio, fileIconSrc, isOfficeFile,
 import { FilePreviewImage } from '@/components/file-preview-image';
 import { toast } from '@/lib/toast';
 import { isTextReadable, langFromExtension, looksBinary } from '@/lib/text-detect';
+import { parseCsvTable } from '@/lib/csv-table';
+import { parseMarkdown, type InlineToken, type MdBlock } from '@/lib/markdown';
 import { BookViewer } from '@/components/book-viewer';
 import { highlightToHtml } from '@/lib/text-highlight';
 import { useInFileFind } from '@/lib/use-in-file-find';
@@ -886,7 +888,9 @@ function FileContent({ file, files, rawUrl, stableRawUrl, downloadUrl, version, 
   }
 
   if (isVideo(file.name)) {
-    return <video src={rawUrl} controls autoPlay className="max-w-full max-h-full rounded-md bg-black" />;
+    // Keyed on the url so a decode failure on one file does not follow the
+    // user to the next one in the strip.
+    return <VideoPlayer key={rawUrl} file={file} rawUrl={rawUrl} downloadUrl={downloadUrl} />;
   }
 
   if (isAudio(file.name)) {
@@ -922,6 +926,16 @@ function FileContent({ file, files, rawUrl, stableRawUrl, downloadUrl, version, 
   // it, but a .fb2 is XML and would otherwise render as markup instead of a book.
   if (isBook(file.name)) {
     return <BookViewer file={file} />;
+  }
+
+  // Ahead of the text check: these are text with a better shape available
+  // (same split the mobile viewer makes). Both fall back to the plain text
+  // viewer for degenerate content, so the split costs nothing when wrong.
+  if (ext === 'md' || ext === 'markdown') {
+    return <MarkdownViewer file={file} rawUrl={rawUrl} downloadUrl={downloadUrl} />;
+  }
+  if (ext === 'csv' || ext === 'tsv') {
+    return <CsvViewer file={file} rawUrl={rawUrl} downloadUrl={downloadUrl} />;
   }
 
   if (isTextReadable(file.name, file.mime_type)) {
@@ -1045,5 +1059,222 @@ function OversizeFallback({ file, downloadUrl, note }: { file: FileItem; downloa
         <Download className="size-4" /> Download
       </a>
     </div>
+  );
+}
+
+// ── Video with an honest failure card ─────────────────────
+
+/**
+ * The <video> element fails silently: an AVI or WMV - or an MKV whose codec
+ * this browser lacks - used to render as a dead black player that never
+ * starts, indistinguishable from a slow connection. The mobile viewer
+ * routes these to libVLC; a browser cannot bundle one, so the honest offer
+ * is the file, a name for the problem, and the player that will open it.
+ */
+function VideoPlayer({ file, rawUrl, downloadUrl }: { file: FileItem; rawUrl: string; downloadUrl: string }) {
+  const [failed, setFailed] = useState(false);
+  const ext = extOf(file.name);
+
+  if (failed) {
+    return (
+      <div className="bg-background border rounded-xl p-10 text-center min-w-70">
+        <p className="text-4xl font-bold text-muted-foreground/30 tracking-wider mb-3">{ext.toUpperCase() || 'VIDEO'}</p>
+        <p className="text-sm text-muted-foreground mb-2 break-all">{file.name}</p>
+        <p className="text-xs text-muted-foreground mb-5">
+          This browser can't decode this video. Download it and open it in a player like VLC, which decodes everything.
+        </p>
+        <a href={downloadUrl} download className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-foreground text-background text-sm font-semibold hover:opacity-90">
+          <Download className="size-4" /> Download
+        </a>
+      </div>
+    );
+  }
+
+  return <video src={rawUrl} controls autoPlay className="max-w-full max-h-full rounded-md bg-black" onError={() => setFailed(true)} />;
+}
+
+// ── CSV / Markdown ────────────────────────────────────────
+
+/**
+ * The fetch half of TextViewer, for the stages that render the body as
+ * something other than highlighted source. Same caps, same binary sniff.
+ * Results are tagged with the url they came from, so a stale response is
+ * simply not-yet-loaded rather than the previous file's body - and no state
+ * is written synchronously inside the effect.
+ */
+function useTextBody(file: FileItem, rawUrl: string): { text: string | null; state: 'loading' | 'ok' | 'toobig' | 'binary' | 'error' } {
+  const toobig = file.size_bytes > TEXT_PREVIEW_MAX;
+  const [fetched, setFetched] = useState<{ url: string; state: 'ok' | 'binary' | 'error'; text: string | null } | null>(null);
+
+  useEffect(() => {
+    if (toobig) return;
+    let cancelled = false;
+    fetch(rawUrl, { credentials: 'include' })
+      .then((r) => (r.ok ? r.text() : Promise.reject()))
+      .then((body) => {
+        if (cancelled) return;
+        if (looksBinary(body.slice(0, 8192))) setFetched({ url: rawUrl, state: 'binary', text: null });
+        else setFetched({ url: rawUrl, state: 'ok', text: body });
+      })
+      .catch(() => { if (!cancelled) setFetched({ url: rawUrl, state: 'error', text: null }); });
+    return () => { cancelled = true; };
+  }, [rawUrl, toobig]);
+
+  if (toobig) return { text: null, state: 'toobig' };
+  if (!fetched || fetched.url !== rawUrl) return { text: null, state: 'loading' };
+  return { text: fetched.text, state: fetched.state };
+}
+
+/**
+ * A CSV as the table it is, instead of a wall of commas. Same split the
+ * mobile viewer makes; anything the parser deems not-really-a-table falls
+ * back to the highlighted text view, which renders degenerate shapes fine.
+ */
+function CsvViewer({ file, rawUrl, downloadUrl }: { file: FileItem; rawUrl: string; downloadUrl: string }) {
+  const { text, state } = useTextBody(file, rawUrl);
+  const table = useMemo(() => (text == null ? null : parseCsvTable(text)), [text]);
+
+  if (state === 'toobig') return <OversizeFallback file={file} downloadUrl={downloadUrl} />;
+  if (state === 'binary' || state === 'error') {
+    return <OversizeFallback file={file} downloadUrl={downloadUrl} note={state === 'binary' ? 'This file is not text-previewable.' : 'Failed to load file content.'} />;
+  }
+  if (state === 'loading') {
+    return <div className="w-full h-full flex items-center justify-center"><Loader2 className="size-6 animate-spin text-muted-foreground" /></div>;
+  }
+  if (!table) return <TextViewer file={file} rawUrl={rawUrl} downloadUrl={downloadUrl} />;
+
+  const totalRows = table.rows.length + table.truncatedRows;
+  return (
+    <div className="relative w-full h-full rounded-lg border bg-background overflow-hidden self-stretch flex flex-col">
+      <div className="sticky top-0 flex items-baseline gap-3 px-4 py-2 border-b text-xs font-mono text-muted-foreground z-10">
+        <span className="uppercase">{extOf(file.name) || 'csv'}</span>
+        <span className="ml-auto">{totalRows} {totalRows === 1 ? 'row' : 'rows'} &times; {table.columns} cols</span>
+      </div>
+      <div className="flex-1 overflow-auto">
+        <table className="w-max min-w-full border-collapse font-mono text-xs">
+          <thead className="sticky top-0 bg-muted">
+            <tr>
+              {table.header.map((cell, c) => (
+                <th key={c} className="text-left font-semibold px-3 py-2 border-b whitespace-nowrap max-w-105 overflow-hidden text-ellipsis">{cell}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {table.rows.map((row, r) => (
+              <tr key={r} className="border-b last:border-b-0 hover:bg-muted/50">
+                {row.map((cell, c) => (
+                  <td key={c} className="px-3 py-1.5 whitespace-nowrap max-w-105 overflow-hidden text-ellipsis">{cell}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {table.truncatedRows > 0 && (
+          <p className="px-3 py-2.5 text-xs font-mono text-muted-foreground">
+            + {table.truncatedRows} more {table.truncatedRows === 1 ? 'row' : 'rows'} - download the file for all of it
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Markdown rendered as the document it is, with the source one click away -
+ * on a desktop screen the person reading a README and the person checking
+ * its syntax are often the same person a minute apart.
+ */
+function MarkdownViewer({ file, rawUrl, downloadUrl }: { file: FileItem; rawUrl: string; downloadUrl: string }) {
+  const { text, state } = useTextBody(file, rawUrl);
+  const [mode, setMode] = useState<'rendered' | 'source'>('rendered');
+  const blocks = useMemo(() => (text == null || mode !== 'rendered' ? null : parseMarkdown(text)), [text, mode]);
+
+  if (state === 'toobig') return <OversizeFallback file={file} downloadUrl={downloadUrl} />;
+  if (state === 'binary' || state === 'error') {
+    return <OversizeFallback file={file} downloadUrl={downloadUrl} note={state === 'binary' ? 'This file is not text-previewable.' : 'Failed to load file content.'} />;
+  }
+  if (state === 'loading') {
+    return <div className="w-full h-full flex items-center justify-center"><Loader2 className="size-6 animate-spin text-muted-foreground" /></div>;
+  }
+
+  return (
+    <div className="relative w-full h-full rounded-lg border bg-background overflow-hidden self-stretch flex flex-col">
+      <div className="sticky top-0 flex items-center gap-3 px-4 py-2 border-b z-10">
+        <span className="text-xs font-mono text-muted-foreground uppercase">Markdown</span>
+        <div role="tablist" aria-label="Markdown view" className="ml-auto flex gap-0.5 p-0.5 bg-muted rounded-lg">
+          {(['rendered', 'source'] as const).map((m) => (
+            <button
+              key={m}
+              role="tab"
+              aria-selected={mode === m}
+              className={`h-6 px-2.5 rounded-md text-xs font-medium capitalize transition-colors ${mode === m ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+              onClick={() => setMode(m)}
+            >
+              {m}
+            </button>
+          ))}
+        </div>
+      </div>
+      {mode === 'source' ? (
+        <pre className="flex-1 overflow-auto m-0 px-4 py-4 font-mono text-xs leading-relaxed whitespace-pre-wrap break-words">{text}</pre>
+      ) : (
+        <div className="flex-1 overflow-auto">
+          <div className="max-w-3xl mx-auto px-8 py-6">
+            {blocks?.map((block, i) => <MdBlockView key={i} block={block} />)}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const MD_HEADING_CLASS: Record<1 | 2 | 3, string> = {
+  1: 'text-2xl font-bold mt-6 first:mt-0',
+  2: 'text-xl font-bold mt-5 first:mt-0',
+  3: 'text-base font-bold mt-4 first:mt-0',
+};
+
+function MdBlockView({ block }: { block: MdBlock }) {
+  if (block.kind === 'heading') {
+    const H = (`h${block.level}`) as 'h1' | 'h2' | 'h3';
+    return <H className={MD_HEADING_CLASS[block.level]}><MdInline tokens={block.inline} /></H>;
+  }
+  if (block.kind === 'code') {
+    return (
+      <pre className="mt-3 rounded-lg bg-muted p-3 overflow-x-auto font-mono text-xs leading-relaxed">{block.text}</pre>
+    );
+  }
+  if (block.kind === 'quote') {
+    return (
+      <blockquote className="mt-3 border-l-2 pl-3 text-sm leading-relaxed text-muted-foreground italic">
+        <MdInline tokens={block.inline} />
+      </blockquote>
+    );
+  }
+  if (block.kind === 'list') {
+    const L = block.ordered ? 'ol' : 'ul';
+    return (
+      <L className={`mt-3 pl-5 text-sm leading-relaxed space-y-1 ${block.ordered ? 'list-decimal' : 'list-disc'}`}>
+        {block.items.map((item, i) => <li key={i}><MdInline tokens={item} /></li>)}
+      </L>
+    );
+  }
+  if (block.kind === 'hr') return <hr className="mt-4 border-t" />;
+  return <p className="mt-3 first:mt-0 text-sm leading-relaxed"><MdInline tokens={block.inline} /></p>;
+}
+
+function MdInline({ tokens }: { tokens: InlineToken[] }) {
+  return (
+    <>
+      {tokens.map((t, i) => {
+        if (t.kind === 'bold') return <strong key={i}>{t.text}</strong>;
+        if (t.kind === 'italic') return <em key={i}>{t.text}</em>;
+        if (t.kind === 'code') return <code key={i} className="rounded bg-muted px-1 py-0.5 font-mono text-xs">{t.text}</code>;
+        if (t.kind === 'link') {
+          return <a key={i} href={t.url} target="_blank" rel="noreferrer" className="text-primary underline">{t.text}</a>;
+        }
+        return <span key={i}>{t.text}</span>;
+      })}
+    </>
   );
 }

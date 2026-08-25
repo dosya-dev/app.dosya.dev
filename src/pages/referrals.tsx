@@ -95,7 +95,7 @@ export default function ReferralsPage() {
             <div key={i} className="flex items-center justify-between px-5 py-3 border-b last:border-b-0">
               <span className="text-sm">{f.email_masked}</span>
               <Badge variant={f.status === 'credited' ? 'default' : 'secondary'}>
-                {f.status === 'credited' ? 'Joined' : 'Pending'}
+                {f.status === 'credited' ? 'Joined' : f.status === 'blocked' ? 'Not eligible' : 'Pending'}
               </Badge>
             </div>
           ))

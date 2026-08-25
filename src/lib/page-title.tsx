@@ -6,6 +6,7 @@ import {
   Building2, Bell, MapPin, Plug, RefreshCw, HardDrive, Server, Cloud, Monitor,
   Terminal, Code2, FolderInput, Gift, LayoutGrid, BarChart3, CopyX, FileText, type LucideIcon,
 } from 'lucide-react';
+import { useUploads, uploadSummary, type UploadSummary } from '@/stores/uploads';
 
 // Single source of truth for each route's browser tab title AND in-app header icon.
 // Browser title format: "<Page> · dosya.dev" (or just "dosya.dev" for unknown routes).
@@ -112,21 +113,46 @@ function isSelfManaged(pathname: string): boolean {
   return pathname === '/files' || pathname.startsWith('/file-requests/') || pathname.startsWith('/editor/');
 }
 
+/** Tab title while a file/folder upload is active, e.g. "73% · Uploading 3 files · dosya.dev". */
+export function formatUploadTitle(summary: UploadSummary): string | null {
+  if (!summary.anyActive) return null;
+  const word = summary.active === 1 ? 'file' : 'files';
+  return `${summary.overallPct}% · Uploading ${summary.active} ${word} · ${SUFFIX}`;
+}
+
+// Reactive so RouteTitle/useDocumentTitle's effects re-run (and fall back to
+// the normal title) the moment the last upload finishes, even with no route
+// change to trigger them otherwise.
+function useUploadTitleOverride(): string | null {
+  const items = useUploads((s) => s.items);
+  return formatUploadTitle(uploadSummary(items));
+}
+
 /** Renders nothing; keeps document.title in sync with the route. Mount once at the router root. */
 export function RouteTitle() {
   const { pathname } = useLocation();
+  const uploadTitle = useUploadTitleOverride();
   useEffect(() => {
+    if (uploadTitle) {
+      document.title = uploadTitle;
+      return;
+    }
     if (isSelfManaged(pathname)) return;
     const t = titleForPath(pathname);
     document.title = t ? `${t} · ${SUFFIX}` : SUFFIX;
-  }, [pathname]);
+  }, [pathname, uploadTitle]);
   return null;
 }
 
 /** For pages that derive their title from loaded data. Pass a falsy value to skip. */
 export function useDocumentTitle(title: string | null | undefined) {
+  const uploadTitle = useUploadTitleOverride();
   useEffect(() => {
+    if (uploadTitle) {
+      document.title = uploadTitle;
+      return;
+    }
     if (!title) return;
     document.title = `${title} · ${SUFFIX}`;
-  }, [title]);
+  }, [title, uploadTitle]);
 }

@@ -78,7 +78,10 @@ export function labelFor(name: string): string {
   return e ? e.toUpperCase() : 'FILE';
 }
 
-const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'ico', 'heic', 'heif']);
+// avif is browser-native everywhere this app supports. tiff/dng are NOT here
+// on purpose: no browser decodes them and the server thumbnailer only knows
+// heic/png/jpeg, so the honest download card is the right rendering.
+const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'avif', 'bmp', 'svg', 'ico', 'heic', 'heif']);
 export function isImage(name: string): boolean {
   return IMAGE_EXTS.has(extOf(name));
 }
@@ -114,7 +117,10 @@ export function isOfficeFile(name: string): boolean {
   return OFFICE_EXTS.has(extOf(name));
 }
 
-const AUDIO_EXTS = new Set(['mp3', 'wav', 'ogg', 'flac', 'aac', 'm4a', 'wma']);
+// opus/oga play natively in Chromium and Firefox; mka rides Chromium's
+// Matroska demuxer. wma plays NOWHERE - it stays listed so the player's
+// decode-failure card claims the file rather than the generic fallback.
+const AUDIO_EXTS = new Set(['mp3', 'wav', 'ogg', 'oga', 'opus', 'flac', 'aac', 'm4a', 'mka', 'wma']);
 /**
  * Formats the ebook reader can open. foliate-js also handles mobi/azw3/fb2/cbz
  * and they are vendored, so they are listed rather than falling through to a
