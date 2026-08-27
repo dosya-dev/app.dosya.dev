@@ -7,7 +7,10 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { router } from './router';
 import { queryClient } from '@/lib/query-client';
 import { recoverFromChunkErrorInBrowser } from '@/lib/chunk-reload';
+import { logConsoleGreeting } from '@/lib/console-greeting';
 import './index.css';
+
+logConsoleGreeting();
 
 // Vite fires this when a lazy chunk's preload fails, which after a deploy means
 // the tab is asking for hashed filenames that no longer exist. Catching it here
