@@ -1,5 +1,20 @@
-/** `now` (unix seconds) is injectable so the formatting is testable. */
-export function timeAgo(ts: number, now: number = Math.floor(Date.now() / 1000)): string {
+import { actionPhrase } from "@/lib/activity-catalog.generated";
+
+/**
+ * `now` (unix seconds) is injectable so the formatting is testable.
+ *
+ * `utc` reads the calendar date in UTC instead of the viewer's zone. It exists
+ * for values that are NOT real instants: an EXIF capture date is a wall clock
+ * with no zone, stored and grouped as though it were UTC, so reading it
+ * locally moves a 23:00 photo onto the next day - and made this label disagree
+ * with the very tooltip above it. The relative labels below the cutoff are
+ * durations and have no zone to get wrong.
+ */
+export function timeAgo(
+  ts: number,
+  now: number = Math.floor(Date.now() / 1000),
+  opts: { utc?: boolean } = {},
+): string {
   const diff = now - ts;
   if (diff < 60) return 'just now';
   if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
@@ -9,9 +24,13 @@ export function timeAgo(ts: number, now: number = Math.floor(Date.now() / 1000))
   const m = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   // A bare "Jul 23" can't tell a 2024 upload from a 2026 one. The year is only
   // added when it differs from the current one, so the common case stays short.
-  const year = d.getFullYear();
-  const suffix = year === new Date(now * 1000).getFullYear() ? '' : `, ${year}`;
-  return `${m[d.getMonth()]} ${d.getDate()}${suffix}`;
+  const year = opts.utc ? d.getUTCFullYear() : d.getFullYear();
+  const nowDate = new Date(now * 1000);
+  const thisYear = opts.utc ? nowDate.getUTCFullYear() : nowDate.getFullYear();
+  const suffix = year === thisYear ? '' : `, ${year}`;
+  const month = opts.utc ? d.getUTCMonth() : d.getMonth();
+  const day = opts.utc ? d.getUTCDate() : d.getDate();
+  return `${m[month]} ${day}${suffix}`;
 }
 
 /**
@@ -135,6 +154,14 @@ export function isBook(name: string): boolean {
   return BOOK_EXTS.has(extOf(name));
 }
 
+// Deliberately narrow. `.cbz` and `.epub` are zips too, but both already route
+// to the book reader, and claiming them here would take a working experience
+// away and replace it with a file tree.
+const ARCHIVE_EXTS = new Set(['zip']);
+export function isArchive(name: string): boolean {
+  return ARCHIVE_EXTS.has(extOf(name));
+}
+
 export function isAudio(name: string): boolean {
   return AUDIO_EXTS.has(extOf(name));
 }
@@ -223,40 +250,14 @@ export function regionLabel(code: string): string {
   return REGION_LABELS[code] ?? code;
 }
 
-// Full action → human label map (superset of the activity page's list) so
-// every feed that renders raw audit actions gets a readable sentence.
-const ACTION_LABELS: Record<string, string> = {
-  file_uploaded: 'uploaded', file_version_uploaded: 'uploaded a new version of',
-  file_downloaded: 'downloaded', file_deleted: 'deleted', file_permanently_deleted: 'permanently deleted',
-  file_restored: 'restored', file_renamed: 'renamed', file_moved: 'moved', file_copied: 'copied',
-  file_locked: 'locked', file_unlocked: 'unlocked', file_hidden: 'changed visibility of', file_unhidden: 'changed visibility of',
-  files_batch_deleted: 'deleted multiple files',
-  folder_created: 'created folder', folder_renamed: 'renamed folder', folder_moved: 'moved folder', folder_deleted: 'deleted folder',
-  folder_locked: 'locked folder', folder_unlocked: 'unlocked folder',
-  folder_hidden: 'changed visibility of folder', folder_unhidden: 'changed visibility of folder',
-  file_shared: 'shared', file_shared_email: 'shared via email', folder_shared: 'shared folder',
-  link_revoked: 'revoked link for', share_link_unlocked: 'unlocked share link',
-  file_request_created: 'created file request',
-  file_request_uploaded: 'uploaded to request', file_request_revoked: 'revoked file request',
-  member_invited: 'invited', member_joined: 'joined', member_removed: 'removed',
-  member_left: 'left the workspace', invite_revoked: 'revoked invite for',
-  member_anchor_updated: 'changed the folder access of',
-  ownership_transferred: 'transferred ownership to',
-  workspace_created: 'created workspace', workspace_updated: 'updated workspace',
-  workspace_settings_changed: 'changed settings', settings_updated: 'updated settings',
-  role_created: 'created role', role_updated: 'updated role', role_deleted: 'deleted role',
-  role_changed: 'changed role of',
-  comment_added: 'commented on', comment_edited: 'edited comment on', comment_deleted: 'deleted comment on',
-  favourite_added: 'favourited', favourite_removed: 'unfavourited',
-  group_created: 'created group', group_updated: 'updated group', group_deleted: 'deleted group',
-  group_item_added: 'added to group', group_item_removed: 'removed from group',
-  dmca_reported: 'reported (DMCA)',
-  sync_session_started: 'started a sync', sync_session_completed: 'completed a sync', sync_session_failed: 'sync failed',
-  profile_updated: 'updated profile', plan_changed: 'changed plan',
-};
-
+/**
+ * The verb phrase for an audit action. The table it reads is generated from
+ * packages/shared/src/activity/catalog.ts - it used to be hand-written here
+ * AND on the activity page AND in mobile AND (as bare names) in the endpoint,
+ * so a new action code had to be added four times.
+ */
 export function actionLabel(action: string): string {
-  return ACTION_LABELS[action] ?? action;
+  return actionPhrase(action);
 }
 
 // Actions whose target no longer exists - linking to it would be a dead click.

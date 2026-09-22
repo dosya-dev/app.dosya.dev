@@ -1,13 +1,50 @@
-import { describe, it, expect, afterEach, beforeAll, vi } from 'vitest';
+import { describe, it, expect, afterEach, beforeAll, beforeEach, vi } from 'vitest';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
+
+const bootDashboard = vi.hoisted(() => vi.fn());
+const api = vi.fn();
+// PublicNav probes /api/me on mount; keep it off the ordered mock above.
+const meApi = vi.fn();
 
 const navigate = vi.fn();
 vi.mock('react-router-dom', async (importOriginal) => {
   const actual = await importOriginal<typeof import('react-router-dom')>();
   return { ...actual, useNavigate: () => navigate };
 });
+
+vi.mock('@/api/client', async (importOriginal) => ({
+  // shouldRetryQuery does `error instanceof ApiError` on every retry, and a retry
+  // can outlive the test that started it - a mock without it throws and fails the run.
+  ApiError: (await importOriginal<typeof import('@/api/client')>()).ApiError,
+  API_BASE: '',
+  api: (...args: unknown[]) => (args[0] === '/api/me' ? meApi(...args) : api(...args)),
+}));
+
+vi.mock('@/lib/boot', () => ({
+  bootDashboard: (...args: unknown[]) => bootDashboard(...args),
+}));
+
+vi.mock('@/components/layout/dashboard-sidebar', () => ({
+  DashboardSidebar: () => <aside>Sidebar</aside>,
+}));
+vi.mock('@/components/layout/dashboard-topbar', () => ({
+  DashboardTopbar: () => <header>Topbar</header>,
+}));
+vi.mock('@/components/ui/sidebar', () => ({
+  SidebarProvider: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  SidebarInset: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+}));
+vi.mock('@/components/deletion-banner', () => ({
+  DeletionBanner: () => null,
+}));
+vi.mock('@/components/uploads/upload-dock', () => ({
+  default: () => null,
+}));
+vi.mock('@/components/notifications/notification-poller', () => ({
+  NotificationPoller: () => null,
+}));
 
 // Turnstile injects a Cloudflare script and renders an iframe; irrelevant here
 // and unavailable in jsdom. The handle must still expose the methods the pages
@@ -18,9 +55,13 @@ vi.mock('@/components/turnstile-widget', () => ({
 
 import LoginPage from './login';
 import SignUpPage from './sign-up';
+import VerifyPage from './verify';
+import Login2faPage from './login-2fa';
+import { DashboardLayout } from '@/components/layout/dashboard-layout';
 
 const TERMS_URL = 'https://dosya.dev/terms-of-service';
 const PRIVACY_URL = 'https://dosya.dev/privacy-policy';
+const VALID_CLAIM = 'Abcdefghijklmnopqrstuvwxyz0123456789_-ABCD';
 
 beforeAll(() => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -30,22 +71,30 @@ describe('auth pages - legal notices', () => {
   let root: Root | null = null;
   let container: HTMLDivElement | null = null;
 
+  beforeEach(() => {
+    meApi.mockRejectedValue(new Error('Not authenticated'));
+  });
+
   afterEach(() => {
     if (root) act(() => root!.unmount());
     container?.remove();
     root = null;
     container = null;
     navigate.mockClear();
+    api.mockReset();
+    meApi.mockReset();
+    bootDashboard.mockReset();
+    sessionStorage.clear();
     vi.unstubAllGlobals();
   });
 
-  async function render(Page: () => React.ReactNode) {
+  async function render(Page: () => React.ReactNode, entry = '/') {
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
     await act(async () => {
       root!.render(
-        <MemoryRouter>
+        <MemoryRouter initialEntries={[entry]}>
           <Page />
         </MemoryRouter>,
       );
@@ -55,6 +104,25 @@ describe('auth pages - legal notices', () => {
 
   function links() {
     return [...container!.querySelectorAll('a')].map((a) => a.getAttribute('href'));
+  }
+
+  function setInput(selector: string, value: string) {
+    const el = container!.querySelector<HTMLInputElement>(selector)!;
+    const setter = Object.getOwnPropertyDescriptor(
+      window.HTMLInputElement.prototype,
+      'value',
+    )!.set!;
+    act(() => {
+      setter.call(el, value);
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+  }
+
+  async function submitForm() {
+    await act(async () => {
+      container!.querySelector<HTMLFormElement>('form')!.requestSubmit();
+      await Promise.resolve();
+    });
   }
 
   it('sign-up links BOTH the Terms of Service and the Privacy Policy', async () => {
@@ -138,5 +206,134 @@ describe('auth pages - legal notices', () => {
     // The server rejects a signup without this field, so a client that never
     // sends it cannot create an account at all.
     expect(JSON.parse(init.body as string)).toMatchObject({ terms: true });
+  });
+
+  it('login success prefers a pending Gumroad redemption over the API redirect', async () => {
+    sessionStorage.setItem('dosya_redemption_claim', VALID_CLAIM);
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ ok: true, redirect: '/files' }),
+    })));
+    await render(LoginPage);
+
+    setInput('#email', 'buyer@example.test');
+    setInput('#password', 'Correct-Horse-99');
+    await submitForm();
+
+    expect(navigate).toHaveBeenCalledWith('/redeem');
+  });
+
+  it('sign-up success preserves the pending Gumroad claim but still sends the buyer to email verification', async () => {
+    sessionStorage.setItem('dosya_redemption_claim', VALID_CLAIM);
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ ok: true, redirect: '/verify' }),
+    })));
+    await render(SignUpPage);
+
+    setInput('#name', 'Ada Lovelace');
+    setInput('#email', 'ada@example.com');
+    setInput('#password', 'Correct-Horse-99');
+    act(() => {
+      container!.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click();
+    });
+    await submitForm();
+
+    expect(navigate).toHaveBeenCalledWith('/verify');
+    expect(sessionStorage.getItem('dosya_redemption_claim')).toBe(VALID_CLAIM);
+  });
+
+  it('email verification success resumes a pending Gumroad redemption', async () => {
+    sessionStorage.setItem('dosya_redemption_claim', 'R'.repeat(40));
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ ok: true, redirect: '/create-workspace' }),
+    })));
+    await render(VerifyPage, '/verify?email=buyer%40example.test');
+
+    setInput('input[inputmode="numeric"]', '123456');
+    await submitForm();
+
+    expect(navigate).toHaveBeenCalledWith('/redeem');
+  });
+
+  it('2FA success resumes a pending Gumroad redemption', async () => {
+    sessionStorage.setItem('dosya_redemption_claim', VALID_CLAIM);
+    api.mockResolvedValueOnce({ ok: true, redirect: '/files' });
+    await render(Login2faPage);
+
+    setInput('input[inputmode="numeric"]', '123456');
+    const button = [...container!.querySelectorAll('button')].find((el) => el.textContent?.includes('Verify'))!;
+    await act(async () => {
+      button.click();
+      await Promise.resolve();
+    });
+
+    expect(navigate).toHaveBeenCalledWith('/redeem');
+  });
+
+  async function renderDashboard(entry = '/') {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    await act(async () => {
+      root!.render(
+        <MemoryRouter initialEntries={[entry]}>
+          <Routes>
+            <Route element={<DashboardLayout />}>
+              <Route path="/" element={<div>Dashboard page</div>} />
+              <Route path="/files" element={<div>Files page</div>} />
+            </Route>
+          </Routes>
+        </MemoryRouter>,
+      );
+      await Promise.resolve();
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+  }
+
+  it('continues an authenticated root landing with a pending Gumroad claim', async () => {
+    sessionStorage.setItem('dosya_redemption_claim', 'R'.repeat(40));
+    bootDashboard.mockResolvedValueOnce({
+      authed: true,
+      redirect: null,
+      themePref: null,
+      activeWorkspaceId: 'ws_1',
+    });
+
+    await renderDashboard('/');
+
+    expect(navigate).toHaveBeenCalledWith('/redeem', { replace: true });
+  });
+
+  it('does not continue an unauthenticated root landing with a pending Gumroad claim', async () => {
+    sessionStorage.setItem('dosya_redemption_claim', VALID_CLAIM);
+    bootDashboard.mockResolvedValueOnce({
+      authed: false,
+      redirect: '/login',
+      themePref: null,
+      activeWorkspaceId: null,
+    });
+
+    await renderDashboard('/');
+
+    expect(navigate).toHaveBeenCalledWith('/login', { replace: true });
+    expect(navigate).not.toHaveBeenCalledWith('/redeem', { replace: true });
+  });
+
+  it('does not continue authenticated non-root pages with a pending Gumroad claim', async () => {
+    sessionStorage.setItem('dosya_redemption_claim', VALID_CLAIM);
+    bootDashboard.mockResolvedValueOnce({
+      authed: true,
+      redirect: null,
+      themePref: null,
+      activeWorkspaceId: 'ws_1',
+    });
+
+    await renderDashboard('/files');
+
+    expect(navigate).not.toHaveBeenCalledWith('/redeem', { replace: true });
   });
 });

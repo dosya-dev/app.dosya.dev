@@ -14,6 +14,17 @@ export function formatCents(cents: number): string {
     return d % 1 === 0 ? `$${d.toFixed(0)}` : `$${d.toFixed(2)}`;
 }
 
+/**
+ * Storage in gigabytes, thousands separated: "2,048 GB" rather than "2 TB".
+ * A terabyte figure reads as a small number, and these pages are about how much
+ * space someone has. Under a gigabyte it falls back to formatBytes so a 500 MB
+ * figure is not written as "0 GB".
+ */
+export function formatGigabytes(bytes: number): string {
+    if (bytes < GB) return formatBytes(bytes);
+    return `${Math.round(bytes / GB).toLocaleString('en-US')} GB`;
+}
+
 export function formatBytes(bytes: number): string {
     if (bytes >= TB) return `${(bytes / TB).toFixed(bytes % TB === 0 ? 0 : 1)} TB`;
     if (bytes >= GB) return `${(bytes / GB).toFixed(0)} GB`;

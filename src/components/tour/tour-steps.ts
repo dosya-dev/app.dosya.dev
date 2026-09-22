@@ -48,7 +48,7 @@ export const TOUR_STEPS: TourStep[] = [
     heading: 'Your files, on your terms',
     points: [
       { title: 'Encrypted at rest', body: 'Files are encrypted where they are stored.' },
-      { title: 'Choose your region', body: 'Decide where each file physically lives.' },
+      { title: 'Choose your location', body: 'Pick where a workspace stores its files when you create it.' },
       { title: 'See every action', body: 'A tamper-evident audit trail records what happened and when.' },
       { title: 'Lock your account', body: 'Two-factor authentication with an app or by email.' },
     ],
@@ -68,7 +68,7 @@ export const TOUR_STEPS: TourStep[] = [
     heading: 'You are ready to go',
     points: [
       { title: 'Free forever', body: 'Your plan includes 5 GB, with no time limit.' },
-      { title: 'Earn more space', body: 'Every friend who joins adds 5 GB, up to 25 GB.' },
+      { title: 'Earn more space', body: 'Every friend who starts using dosya adds 5 GB, up to 25 GB.' },
       { title: 'Start anywhere', body: 'The web app, the desktop app, the CLI or a mounted drive.' },
     ],
   },

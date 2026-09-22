@@ -66,7 +66,7 @@ describe('TextViewer raw-content fetch', () => {
   it('sends the session cookie (credentials: include) so cross-origin preview works', async () => {
     // Over HIGHLIGHT_MAX so the highlighter (real shiki) never loads in the test.
     const body = 'a'.repeat(300 * 1024 + 10);
-    const fetchMock = vi.fn().mockResolvedValue({ ok: true, text: async () => body });
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, arrayBuffer: async () => new TextEncoder().encode(body).buffer });
     vi.stubGlobal('fetch', fetchMock);
 
     container = document.createElement('div');
@@ -85,6 +85,111 @@ describe('TextViewer raw-content fetch', () => {
       await flush();
     });
 
+    const rawCall = fetchMock.mock.calls.find(([u]) => String(u).includes('/api/files/f1/raw'));
+    expect(rawCall, 'expected a fetch of the /raw endpoint').toBeDefined();
+    expect(rawCall![1]).toMatchObject({ credentials: 'include' });
+  });
+});
+
+// ── Text decoding + open-as-text flows ────────────────────────────
+
+function txtFile() {
+  return {
+    id: 'f1', name: 'notes.txt', size_bytes: 512, mime_type: 'text/plain',
+    extension: 'txt', region: 'weur', created_at: 1, updated_at: 1,
+    current_version: 1, lock_mode: 'none', is_hidden: 0, uploaded_by: 'u1',
+    uploader_name: 'User', share_count: 0, comment_count: 0, is_synced: 0,
+  };
+}
+
+function binFile() {
+  return { ...txtFile(), name: 'data.bin', mime_type: 'application/octet-stream', extension: 'bin' };
+}
+
+function bytesResponse(buf: ArrayBuffer) {
+  return { ok: true, arrayBuffer: async () => buf };
+}
+
+/** UTF-16LE bytes with BOM, the encoding Windows Notepad's "Unicode" writes. */
+function utf16leBytes(s: string): ArrayBuffer {
+  const buf = new Uint8Array(2 + s.length * 2);
+  buf[0] = 0xff; buf[1] = 0xfe;
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    buf[2 + i * 2] = c & 0xff;
+    buf[3 + i * 2] = c >> 8;
+  }
+  return buf.buffer;
+}
+
+async function mountFile(file: ReturnType<typeof txtFile>) {
+  container = document.createElement('div');
+  document.body.appendChild(container);
+  root = createRoot(container);
+  await act(async () => {
+    root!.render(createElement(FileViewer, {
+      file: file as never,
+      files: [file] as never,
+      workspaceId: 'w1',
+      onClose: () => {},
+      onNavigate: () => {},
+      onRefresh: () => {},
+    }));
+    await flush();
+  });
+}
+
+function findButton(label: string) {
+  return [...container!.querySelectorAll<HTMLElement>('button')].find((b) => b.textContent?.includes(label)) ?? null;
+}
+
+describe('TextViewer decoding of the raw body', () => {
+  it('renders a UTF-16LE (BOM) text file instead of calling it binary', async () => {
+    // Padded over HIGHLIGHT_MAX so the highlighter (real shiki) never loads.
+    const body = 'merhaba dünya\n' + 'x'.repeat(310_000);
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(bytesResponse(utf16leBytes(body))));
+    await mountFile(txtFile());
+    expect(container!.textContent).toContain('merhaba dünya');
+    expect(findButton('Open as text')).toBeFalsy();
+  });
+});
+
+describe('TextViewer binary-content accept flow', () => {
+  it('shows a warning card with an Open as text button instead of the content', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
+      bytesResponse(new TextEncoder().encode('ab\0cd').buffer as ArrayBuffer)));
+    await mountFile(txtFile());
+    expect(container!.textContent).toContain("doesn't look like text");
+    expect(findButton('Open as text'), 'expected an Open as text button on the warning card').toBeTruthy();
+    expect(container!.textContent).not.toContain('abcd');
+  });
+
+  it('renders the content with NUL bytes stripped once the user accepts', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
+      bytesResponse(new TextEncoder().encode('ab\0cd').buffer as ArrayBuffer)));
+    await mountFile(txtFile());
+    await click(findButton('Open as text'));
+    expect(container!.textContent).toContain('abcd');
+  });
+});
+
+describe('FileViewer unknown-type fallback', () => {
+  it('offers Open as text on the unsupported-type card without fetching up front', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      bytesResponse(new TextEncoder().encode('plain payload').buffer as ArrayBuffer));
+    vi.stubGlobal('fetch', fetchMock);
+    await mountFile(binFile());
+    expect(findButton('Open as text'), 'expected an Open as text button on the fallback card').toBeTruthy();
+    expect(fetchMock.mock.calls.find(([u]) => String(u).includes('/raw'))).toBeUndefined();
+  });
+
+  it('loads and shows the file as text once the user accepts', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      bytesResponse(new TextEncoder().encode('plain payload').buffer as ArrayBuffer));
+    vi.stubGlobal('fetch', fetchMock);
+    await mountFile(binFile());
+    await click(findButton('Open as text'));
+    expect(container!.textContent).toContain('plain payload');
     const rawCall = fetchMock.mock.calls.find(([u]) => String(u).includes('/api/files/f1/raw'));
     expect(rawCall, 'expected a fetch of the /raw endpoint').toBeDefined();
     expect(rawCall![1]).toMatchObject({ credentials: 'include' });

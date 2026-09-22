@@ -2,14 +2,19 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const enqueue = vi.fn();
 const enqueueByFolder = vi.fn<(groups: Map<string | null, File[]>, input: unknown) => number>();
+const enqueueRejected = vi.fn<(rejected: { file: File; reason: string }[], input: unknown) => void>();
 const apiMock = vi.fn<(path: string, init: RequestInit) => Promise<unknown>>();
 const toasts: { kind: string; title: string; body?: string }[] = [];
 
 vi.mock('@/lib/upload-runner', () => ({
   enqueue: (...a: unknown[]) => enqueue(...a),
   enqueueByFolder: (...a: [Map<string | null, File[]>, unknown]) => enqueueByFolder(...a),
+  enqueueRejected: (...a: [{ file: File; reason: string }[], unknown]) => enqueueRejected(...a),
 }));
-vi.mock('@/api/client', () => ({
+vi.mock('@/api/client', async (importOriginal) => ({
+  // shouldRetryQuery does `error instanceof ApiError` on every retry, and a retry
+  // can outlive the test that started it - a mock without it throws and fails the run.
+  ApiError: (await importOriginal<typeof import('@/api/client')>()).ApiError,
   api: (path: string, init: RequestInit) => apiMock(path, init),
   apiErrorMessage: (err: unknown, fallback: string) =>
     (err instanceof Error ? err.message : fallback),
@@ -54,6 +59,7 @@ const limitsCalls = () =>
 beforeEach(() => {
   enqueue.mockClear();
   enqueueByFolder.mockReset();
+  enqueueRejected.mockReset();
   apiMock.mockReset();
   toasts.length = 0;
   // getUploadLimits memoises per workspace for 60s, so without this the first
@@ -182,5 +188,39 @@ describe('uploadTree', () => {
     expect(res).toMatchObject({ queued: 0, folders: 0 });
     expect(apiMock).not.toHaveBeenCalled();
     expect(toasts).toEqual([]);
+  });
+});
+
+// F3 (field report): a file the pre-screen refuses used to vanish behind a
+// toast. It now lands in the queue as an error row carrying the reason, so it
+// can be seen, retried, or removed like any other failure.
+describe('uploadTree - pre-screen rejections become error rows', () => {
+  it('hands each rejected file and its reason to the runner', async () => {
+    apiMock.mockImplementation(async (path: string) => (
+      path.endsWith('/upload-limits')
+        ? { ok: true, allowed_extensions: null, blocked_extensions: '.exe', max_file_size_gb: null, storage_remaining_bytes: null }
+        : { ok: true, folder: { id: 'fld_x' } }
+    ));
+    await uploadTree(tree([['a.exe', 'a.exe'], ['b.txt', 'b.txt']], []), input);
+    expect(enqueueRejected).toHaveBeenCalledTimes(1);
+    const [rejected, passedInput] = enqueueRejected.mock.calls[0];
+    expect(rejected.map((r) => [r.file.name, r.reason])).toEqual([
+      ['a.exe', 'File type .exe is not allowed in this workspace'],
+    ]);
+    expect(passedInput).toEqual(input);
+    // The accepted file still goes through the normal queue.
+    expect(enqueue).toHaveBeenCalledTimes(1);
+  });
+
+  it('still records error rows when nothing at all was accepted', async () => {
+    apiMock.mockImplementation(async (path: string) => (
+      path.endsWith('/upload-limits')
+        ? { ok: true, allowed_extensions: null, blocked_extensions: '.exe', max_file_size_gb: null, storage_remaining_bytes: null }
+        : { ok: true, folder: { id: 'fld_x' } }
+    ));
+    const r = await uploadTree(tree([['a.exe', 'a.exe']], []), input);
+    expect(r.skipped).toBe(1);
+    expect(enqueueRejected).toHaveBeenCalledTimes(1);
+    expect(enqueue).not.toHaveBeenCalled();
   });
 });

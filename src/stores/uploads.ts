@@ -48,6 +48,15 @@ interface UploadsState {
   reset: () => void;
   /** After /api/me resolves: discard items persisted by a different account. */
   pruneForOwner: (userId: string) => void;
+  /**
+   * Re-queue every `error` row the caller says is retryable, and park the rest
+   * as `interrupted` WITH their reason intact - a row whose File this tab no
+   * longer holds (after a reload) can never be retried, and clearing its
+   * message threw away the only record of why it failed. The runner supplies
+   * the predicate (upload-runner.ts `retryAllFailed`) and wakes the scheduler;
+   * the store only moves the state.
+   */
+  retryAllFailed: (isRetryable?: (id: string) => boolean) => { requeued: string[]; parked: string[] };
 }
 
 export const useUploads = create<UploadsState>((set, get) => ({
@@ -89,5 +98,23 @@ export const useUploads = create<UploadsState>((set, get) => ({
   },
   pruneForOwner: (userId) => {
     set({ items: claimOwner(userId) });
+  },
+  retryAllFailed: (isRetryable = () => true) => {
+    const failed = get().items.filter((i) => i.status === 'error');
+    const requeued = failed.filter((i) => isRetryable(i.id)).map((i) => i.id);
+    const parked = failed.filter((i) => !isRetryable(i.id)).map((i) => i.id);
+    if (failed.length === 0) return { requeued, parked };
+    const requeuedSet = new Set(requeued);
+    const parkedSet = new Set(parked);
+    const next = get().items.map((i) => {
+      if (requeuedSet.has(i.id)) return { ...i, status: 'queued' as const, error: undefined };
+      // Parked, not cleared: `interrupted` is the state whose row action is
+      // "Resume" via a file re-pick, and the reason still explains the row.
+      if (parkedSet.has(i.id)) return { ...i, status: 'interrupted' as const };
+      return i;
+    });
+    set({ items: next });
+    saveItems(next);
+    return { requeued, parked };
   },
 }));

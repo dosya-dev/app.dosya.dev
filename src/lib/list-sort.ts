@@ -3,15 +3,18 @@
 // (whitelisted server-side in apps/api/src/lib/list-sort.ts).
 
 export type SortKey =
-  | 'name' | 'size' | 'created' | 'modified' | 'type' | 'extension'
+  | 'name' | 'size' | 'created' | 'modified' | 'taken' | 'type' | 'extension'
   | 'version' | 'uploader' | 'region' | 'origin' | 'shares' | 'comments';
 export type SortDir = 'asc' | 'desc';
 export interface SortSpec { key: SortKey; dir: SortDir }
 
 export const DEFAULT_SORT: SortSpec = { key: 'created', dir: 'desc' };
 
+// `taken` (Contract 5) orders by COALESCE(captured_at, source_created_at,
+// created_at) server-side - the date a photo was taken, falling back to the
+// file's own date and then the upload.
 const SORT_KEYS: SortKey[] = [
-  'name', 'size', 'created', 'modified', 'type', 'extension',
+  'name', 'size', 'created', 'modified', 'taken', 'type', 'extension',
   'version', 'uploader', 'region', 'origin', 'shares', 'comments',
 ];
 
@@ -47,7 +50,7 @@ export function parseSort(value: string): SortSpec {
 // dates and counters are most useful biggest/newest first.
 const FIRST_CLICK_DIR: Record<SortKey, SortDir> = {
   name: 'asc', type: 'asc', extension: 'asc', uploader: 'asc', region: 'asc', origin: 'asc',
-  size: 'desc', created: 'desc', modified: 'desc', version: 'desc', shares: 'desc', comments: 'desc',
+  size: 'desc', created: 'desc', modified: 'desc', taken: 'desc', version: 'desc', shares: 'desc', comments: 'desc',
 };
 
 export function toggleSort(current: SortSpec, key: SortKey): SortSpec {

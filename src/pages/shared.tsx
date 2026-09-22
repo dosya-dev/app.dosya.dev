@@ -15,7 +15,7 @@ import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from '@/components/ui/table';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Search, X, Share2, Folder } from 'lucide-react';
+import { Search, X, Share2, Folder, Lock, Users, Eye, Mail } from 'lucide-react';
 import { CopyCheck } from '@/components/ui/copy-check';
 import { humanSize, timeAgo, colorFor, labelFor } from '@/lib/helpers';
 import { toast } from '@/lib/toast';
@@ -34,9 +34,34 @@ interface ShareLink {
   size_bytes: number | null;
   extension: string | null; region: string | null; sharer_name: string | null;
   status: string; is_mine: boolean;
+  /* Returned by /api/shares since migration 0086 and never rendered here, so a
+     password-protected, invite-only or view-only link looked exactly like a
+     bearer link anyone could open. */
+  is_password_protected: number;
+  lock_mode: string;
+  access_mode: string;
+  recipient_count: number;
 }
 
 type Filter = 'all' | 'active' | 'expiring' | 'expired' | 'revoked';
+type Tab = 'by-me' | 'with-me';
+
+/**
+ * A private link somebody sent to YOU, from GET /api/shares/with-me.
+ *
+ * Deliberately a different shape from ShareLink: a recipient gets no view or
+ * download counts, because those are the sender's analytics about everyone
+ * they shared with.
+ */
+interface SharedWithMe {
+  link_id: string; url: string; display_name: string;
+  is_folder: boolean; is_bundle: boolean;
+  size_bytes: number | null; extension: string | null;
+  is_password_protected: number; lock_mode: string;
+  expires_at: number | null; revoked_at: number | null;
+  status: string; shared_at: number; invited_at: number;
+  verified_at: number | null; sender_name: string | null;
+}
 
 const STATUS_COLORS: Record<string, string> = {
   active: 'bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-400',
@@ -62,6 +87,11 @@ export default function SharedPage() {
   const [filter, setFilter] = useState<Filter>('all');
   const [search, setSearch] = useState('');
   const [revokeTarget, setRevokeTarget] = useState<ShareLink | null>(null);
+  const [tab, setTab] = useState<Tab>('by-me');
+  const [withMe, setWithMe] = useState<SharedWithMe[]>([]);
+  const [withMeLoading, setWithMeLoading] = useState(true);
+  /** False means the account's address is unverified, so the list is empty BY RULE. */
+  const [emailVerified, setEmailVerified] = useState(true);
 
   const load = useCallback(async () => {
     if (!wsId) return;
@@ -73,6 +103,21 @@ export default function SharedPage() {
   }, [wsId]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Loaded once on mount rather than on tab switch: the count sits in the tab
+  // itself, so it has to be known before anyone clicks it.
+  useEffect(() => {
+    let cancelled = false;
+    api<{ ok: boolean; links: SharedWithMe[]; email_verified: boolean }>('/api/shares/with-me')
+      .then((r) => {
+        if (cancelled || !r.ok) return;
+        setWithMe(r.links ?? []);
+        setEmailVerified(r.email_verified !== false);
+      })
+      .catch(() => { /* the tab shows its own empty state; this must not break the page */ })
+      .finally(() => { if (!cancelled) setWithMeLoading(false); });
+    return () => { cancelled = true; };
+  }, []);
 
   const handleRevoke = async () => {
     if (!revokeTarget) return;
@@ -117,18 +162,22 @@ export default function SharedPage() {
         {/* Header */}
         <div className="px-8 pt-7 shrink-0">
           <h1 className="text-xl font-bold tracking-tight mb-4">Shared</h1>
-          <Tabs value="by-me">
+          <Tabs value={tab} onValueChange={(v) => setTab((v ?? 'by-me') as Tab)}>
             <TabsList variant="line" className="w-full justify-start gap-0 border-b p-0 group-data-horizontal/tabs:h-auto">
               <TabsTrigger value="by-me" className="flex-none gap-0 rounded-none px-4 py-2.5 text-sm group-data-horizontal/tabs:after:-bottom-px">
                 By me <Badge variant="default" className="ml-1.5 text-[10px]">{links.filter((l) => l.is_mine).length}</Badge>
               </TabsTrigger>
               <TabsTrigger value="with-me" className="flex-none gap-0 rounded-none px-4 py-2.5 text-sm group-data-horizontal/tabs:after:-bottom-px">
-                With me <Badge variant="secondary" className="ml-1.5 text-[10px]">-</Badge>
+                With me <Badge variant="secondary" className="ml-1.5 text-[10px]">{withMeLoading ? '-' : withMe.length}</Badge>
               </TabsTrigger>
             </TabsList>
           </Tabs>
         </div>
 
+        {tab === 'with-me' ? (
+          <WithMePanel rows={withMe} loading={withMeLoading} emailVerified={emailVerified} />
+        ) : (
+        <>
         {/* Toolbar */}
         <div className="flex items-center gap-2 px-8 py-3 border-b shrink-0">
           {filters.map((f) => (
@@ -179,10 +228,12 @@ export default function SharedPage() {
             </Table>
           )}
         </div>
+        </>
+        )}
       </div>
 
       {/* Right panel */}
-      <div className="w-64 shrink-0 border-l overflow-y-auto hidden lg:block">
+      <div className={`w-64 shrink-0 border-l overflow-y-auto hidden ${tab === 'by-me' ? 'lg:block' : ''}`}>
         {/* Overview */}
         <div className="p-5 border-b">
           <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-4">Overview</p>
@@ -276,6 +327,18 @@ function ShareRow({ link: l, onRevoke }: { link: ShareLink; onRevoke: () => void
                 rather than rendering a humanSize(null). */}
             <p className="text-[11px] text-muted-foreground">{l.size_bytes != null ? `${humanSize(l.size_bytes)} · ` : ''}Shared {timeAgo(l.shared_at)}</p>
           </div>
+          {/* How protected this link is, at a glance. Ordered strongest-signal
+              first so a narrow column keeps the one that matters most. */}
+          <div className="flex items-center gap-1.5 text-muted-foreground shrink-0">
+            {l.access_mode === 'restricted' && (
+              <span className="inline-flex items-center gap-0.5" title={`Only ${l.recipient_count} invited ${l.recipient_count === 1 ? 'person' : 'people'} can open this link`}>
+                <Users className="size-3" />
+                <span className="text-[10px]">{l.recipient_count}</span>
+              </span>
+            )}
+            {!!l.is_password_protected && <Lock className="size-3" aria-label="Password required" />}
+            {l.lock_mode === 'view_only' && <Eye className="size-3" aria-label="View only, no downloads" />}
+          </div>
         </div>
       </TableCell>
       <TableCell className="py-3 px-2"><Badge variant="secondary" className="text-[10px]">{l.region ?? '-'}</Badge></TableCell>
@@ -312,5 +375,108 @@ function ShareRow({ link: l, onRevoke }: { link: ShareLink; onRevoke: () => void
         </div>
       </TableCell>
     </TableRow>
+  );
+}
+
+// ── Shared with me ─────────────────────────────────────────
+
+/**
+ * Private links other people sent to this account.
+ *
+ * A separate table from ShareRow rather than a mode of it: the columns are
+ * genuinely different. There is no Views column because a recipient does not
+ * get the sender's counters, and no Revoke because it is not their link. What a
+ * recipient wants to know is who sent it, whether they have opened it, and how
+ * long it lasts.
+ */
+function WithMePanel({ rows, loading, emailVerified }: {
+  rows: SharedWithMe[];
+  loading: boolean;
+  emailVerified: boolean;
+}) {
+  if (loading) {
+    return <div className="px-8 pt-4 space-y-2">{[1,2,3].map((i) => <Skeleton key={i} className="h-14 w-full" />)}</div>;
+  }
+  if (!emailVerified) {
+    return (
+      <div className="flex-1 px-8">
+        <EmptyState
+          icon={Mail}
+          title="Verify your email to see these"
+          description="Private links are matched to your address, so we only list them once that address is confirmed. Check your inbox for the verification email."
+        />
+      </div>
+    );
+  }
+  if (rows.length === 0) {
+    return (
+      <div className="flex-1 px-8">
+        <EmptyState
+          icon={Users}
+          title="Nothing shared with you"
+          description="When someone sends you a private link - one limited to specific email addresses - it appears here."
+        />
+      </div>
+    );
+  }
+  return (
+    <div className="flex-1 overflow-y-auto px-8 pb-6">
+      <Table className="mt-1">
+        <TableHeader>
+          <TableRow className="hover:bg-transparent">
+            {['File', 'From', 'Received', 'Expiry', 'Status'].map((h, i) => (
+              <TableHead key={h} className={`h-auto text-[10px] font-semibold text-muted-foreground uppercase tracking-wider py-2.5 px-2 ${i === 0 ? 'pl-0' : ''}`}>{h}</TableHead>
+            ))}
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {rows.map((l) => {
+            const live = l.status === 'active' || l.status === 'expiring';
+            return (
+              <TableRow key={l.link_id} className="hover:bg-muted/50">
+                <TableCell className="py-3 pl-0 pr-2">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg flex items-center justify-center text-[8px] font-bold text-white shrink-0" style={{ background: colorFor(l.display_name) }}>
+                      {l.is_folder ? <Folder className="size-4" /> : labelFor(l.display_name)}
+                    </div>
+                    <div className="min-w-0">
+                      {live ? (
+                        <a href={l.url} target="_blank" rel="noreferrer" className="text-sm font-medium truncate max-w-[220px] block hover:underline underline-offset-2">
+                          {l.display_name}
+                        </a>
+                      ) : (
+                        <span className="text-sm font-medium truncate max-w-[220px] block text-muted-foreground">{l.display_name}</span>
+                      )}
+                      <p className="text-[11px] text-muted-foreground flex items-center gap-1.5">
+                        {l.size_bytes != null ? humanSize(l.size_bytes) : (l.is_folder ? 'Folder' : '')}
+                        {!!l.is_password_protected && <Lock className="size-3" aria-label="Password required" />}
+                        {l.lock_mode === 'view_only' && <Eye className="size-3" aria-label="View only, no downloads" />}
+                      </p>
+                    </div>
+                  </div>
+                </TableCell>
+                <TableCell className="py-3 px-2 text-sm">{l.sender_name ?? '-'}</TableCell>
+                <TableCell className="py-3 px-2">
+                  <p className="text-[13px]">{timeAgo(l.invited_at)}</p>
+                  {/* Your own fact, not the sender's analytics. */}
+                  <p className="text-[11px] text-muted-foreground">{l.verified_at ? 'Opened' : 'Not opened yet'}</p>
+                </TableCell>
+                <TableCell className="py-3 px-2">
+                  <span className={`text-xs font-medium ${l.status === 'expiring' ? 'text-amber-600' : !live ? 'text-muted-foreground' : ''}`}>
+                    {l.status === 'revoked' ? 'Revoked' : l.expires_at ? (l.status === 'expired' ? 'Expired' : daysLeft(l.expires_at)) : 'Never'}
+                  </span>
+                </TableCell>
+                <TableCell className="py-3 px-2">
+                  <Badge className={`text-[10px] gap-1 ${STATUS_COLORS[l.status] ?? ''}`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${DOT_COLORS[l.status] ?? ''}`} />
+                    {l.status.charAt(0).toUpperCase() + l.status.slice(1)}
+                  </Badge>
+                </TableCell>
+              </TableRow>
+            );
+          })}
+        </TableBody>
+      </Table>
+    </div>
   );
 }

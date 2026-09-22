@@ -3,9 +3,9 @@ import { bootDashboard, TOUR_DONE_KEY } from './boot';
 
 type MeBody = Record<string, unknown>;
 
-const okRes = (body: MeBody) => ({ ok: true, json: async () => body });
-const unauthorizedRes = () => ({ ok: false, json: async () => ({ error: 'Not authenticated' }) });
-const nonJsonRes = () => ({ ok: true, json: async () => { throw new SyntaxError('not json'); } });
+const okRes = (body: MeBody) => ({ ok: true, status: 200, json: async () => body });
+const unauthorizedRes = () => ({ ok: false, status: 401, json: async () => ({ error: 'Not authenticated' }) });
+const nonJsonRes = () => ({ ok: true, status: 200, json: async () => { throw new SyntaxError('not json'); } });
 
 const workspaces = (ids: string[]) => async () => ({ ok: true, workspaces: ids.map((id) => ({ id })) });
 
@@ -36,7 +36,7 @@ describe('bootDashboard', () => {
       fetchWorkspaces: () => Promise.reject(new Error('401')),
       currentActiveId: '',
     });
-    expect(result).toEqual({ authed: false, redirect: '/login', themePref: null, activeWorkspaceId: null });
+    expect(result).toEqual({ authed: false, redirect: '/login', themePref: null, activeWorkspaceId: null, maintenance: null });
   });
 
   test('network failure on /api/me is treated as logged out', async () => {
@@ -125,6 +125,29 @@ describe('bootDashboard', () => {
     expect(result.authed).toBe(true);
     expect(result.redirect).toBeNull();
     expect(result.activeWorkspaceId).toBeNull();
+  });
+});
+
+describe('bootDashboard - maintenance', () => {
+  test('a 503 with code surface_disabled becomes a maintenance boot, not logged-out', async () => {
+    const res = await bootDashboard({
+      fetchMe: async () => ({ ok: false, status: 503, json: async () => ({ ok: false, code: 'surface_disabled', surface: 'web', message: 'brb' }) }),
+      fetchWorkspaces: async () => ({ ok: true, workspaces: [] }),
+      currentActiveId: '',
+    });
+    expect(res.authed).toBe(false);
+    expect(res.redirect).toBeNull();
+    expect(res.maintenance).toEqual({ surface: 'web', message: 'brb' });
+  });
+
+  test('a plain 503 is still logged-out', async () => {
+    const res = await bootDashboard({
+      fetchMe: async () => ({ ok: false, status: 503, json: async () => ({ ok: false }) }),
+      fetchWorkspaces: async () => ({ ok: true, workspaces: [] }),
+      currentActiveId: '',
+    });
+    expect(res.redirect).toBe('/login');
+    expect(res.maintenance).toBeNull();
   });
 });
 

@@ -34,6 +34,23 @@
  * happens before any key material touches attacker-controlled bytes.
  */
 import { type ChunkParams } from "./chunker.js";
+/**
+ * THE BYTE RANGE OF ONE UPLOADED CIPHERTEXT CHUNK, as the API enforces it.
+ *
+ * The server signs each chunk's upload URL for the exact length the client
+ * declares, and refuses a declaration outside this range, so a member cannot
+ * park arbitrary bytes under random chunk ids. The range is what encryptFile /
+ * computeDelta actually produce with the default chunker: the largest chunk is
+ * a hard cut at CHUNK_MAX_PLAINTEXT_BYTES plus its tag, the smallest is a
+ * 1-byte tail plus its tag (an empty file has no chunks at all, so a 0-byte
+ * plaintext chunk is never sealed).
+ *
+ * apps/api/src/lib/e2ee/chunk-size.ts pins the same numbers - that app is
+ * synced to its own repository and cannot import this package - so a change
+ * here is a change there, shipped together (test/chunk-bounds.test.ts).
+ */
+export declare const CHUNK_MAX_CIPHERTEXT_BYTES: number;
+export declare const CHUNK_MIN_CIPHERTEXT_BYTES: number;
 export type ChunkRef = {
     chunkId: Uint8Array;
     nonce: Uint8Array;

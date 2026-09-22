@@ -1,6 +1,8 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { api, API_BASE, apiErrorMessage } from '@/api/client';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { API_BASE, apiErrorMessage } from '@/api/client';
+import { dashboardQueryKey, dashboardQueryOptions, type DashboardActivity } from '@/lib/dashboard-query';
 import { useWorkspace } from '@/stores/workspace';
 import { useOnboarding } from '@/stores/onboarding';
 import { FirstRunHome } from '@/components/onboarding/first-run-home';
@@ -18,44 +20,6 @@ import {
 } from '@/lib/helpers';
 import { parseUA } from '@/lib/ua';
 
-interface DashboardActivity {
-  id: string;
-  action: string;
-  entity_type: string | null;
-  entity_id: string | null;
-  created_at: number;
-  user_id: string | null;
-  user_name: string | null;
-  user_avatar: string | null;
-  // Forensic fields - nulled server-side (shapeActivityRow) for
-  // non-privileged viewers looking at another member's row.
-  source_ip?: string | null;
-  user_agent?: string | null;
-  outcome?: string | null;
-  source?: string | null;
-  resource_name?: string | null;
-  meta?: ({ geo?: { country?: string | null; city?: string | null } | null } & Record<string, any>) | null;
-}
-
-interface DashboardData {
-  user_name: string;
-  workspace_name: string | null;
-  stats: {
-    total_files: number;
-    files_this_week: number;
-    shared_externally: number;
-    total_bytes: number;
-    trash_bytes: number;
-    storage_cap_bytes: number | null;
-    plan: string;
-  };
-  storage_breakdown: { name: string; bytes: number; color: string }[];
-  region_breakdown: { region: string; bytes: number; file_count: number; color: string }[];
-  recent_files: { id: string; name: string; size_bytes: number; created_at: number }[];
-  team_stats: { user_id: string; name: string; email: string; avatar_url: string | null; file_count: number; total_bytes: number }[];
-  activity: DashboardActivity[];
-}
-
 const PLAN_LABELS: Record<string, string> = { free: 'Free', starter: 'Starter', plus: 'Plus', pro: 'Pro', business: 'Business' };
 const MEMBER_COLORS = ['#22c55e', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#14b8a6'];
 
@@ -63,49 +27,42 @@ export default function DashboardPage() {
   const wsId = useWorkspace((s: { activeId: string }) => s.activeId);
   const onbDismissed = useOnboarding((s) => s.dismissed);
   const refreshOnboarding = useOnboarding((s) => s.refresh);
-  const [data, setData] = useState<DashboardData | null>(null);
-  const [loading, setLoading] = useState(true);
-  /** Reason the last load failed - shown with a retry instead of a dead end. */
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  // The layout may already have this in flight from boot (prefetchDashboard):
+  // mounting here joins that request rather than starting another, and a
+  // revisit inside staleTime paints from cache with no request at all.
+  const { data, isPending, error, refetch } = useQuery({
+    ...dashboardQueryOptions(wsId),
+    enabled: !!wsId,
+  });
 
-  const load = useCallback(async () => {
-    if (!wsId) return;
-    setLoading(true);
-    setLoadError(null);
-    try {
-      const d = await api<{ ok: boolean } & DashboardData>(`/api/dashboard?workspace_id=${wsId}`);
-      if (d.ok) setData(d);
-      else setLoadError('The dashboard could not be loaded.');
-    } catch (err) {
-      // The old dead-end read "Failed to load dashboard" with no reason and no
-      // way forward but a manual reload.
-      setLoadError(apiErrorMessage(err, 'The dashboard could not be loaded.'));
-    }
-    setLoading(false);
-  }, [wsId]);
-
-  useEffect(() => { load(); void refreshOnboarding(wsId); }, [load, refreshOnboarding, wsId]);
+  useEffect(() => { void refreshOnboarding(wsId); }, [refreshOnboarding, wsId]);
 
   // Uploads finishing elsewhere change the numbers on this page. The first
   // upload is also what flips this page from first-run to dashboard, so both
   // fetches have to refresh on it.
   useEffect(() => {
-    const onUploaded = () => { load(); void refreshOnboarding(wsId); };
+    const onUploaded = () => {
+      void queryClient.invalidateQueries({ queryKey: dashboardQueryKey(wsId) });
+      void refreshOnboarding(wsId);
+    };
     window.addEventListener('dosya:upload-complete', onUploaded);
     return () => window.removeEventListener('dosya:upload-complete', onUploaded);
-  }, [load, refreshOnboarding, wsId]);
+  }, [queryClient, refreshOnboarding, wsId]);
 
-  if (loading) return <DashboardSkeleton />;
+  if (isPending) return <DashboardSkeleton />;
   if (!data) {
     return (
       <div className="flex flex-col items-center justify-center py-24 px-6 text-center">
         <AlertCircle className="size-10 text-destructive/40 mb-3" />
         <p className="text-sm font-medium text-foreground mb-1">Could not load your dashboard</p>
         <p className="text-xs text-muted-foreground max-w-80 mb-4">
-          {loadError ?? 'The dashboard could not be loaded.'}
+          {/* The old dead-end read "Failed to load dashboard" with no reason
+              and no way forward but a manual reload. */}
+          {apiErrorMessage(error, 'The dashboard could not be loaded.')}
         </p>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" className="h-8 text-xs" onClick={load}>
+          <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => void refetch()}>
             <RefreshCw className="size-3 mr-1" /> Try again
           </Button>
           <Link to="/support">

@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { api } from '@/api/client';
 import { useWorkspace } from '@/stores/workspace';
+import { rememberActiveJobs } from '@/lib/job-activity';
 
 export interface RemoteDownloadJob {
   id: string;
@@ -37,6 +38,9 @@ export const useRemoteDownloads = create<RemoteDownloadsState>((set, get) => ({
       );
       set({ jobs: data.jobs });
       const hasActive = data.jobs.some((j) => ACTIVE_REMOTE_STATUSES.has(j.status));
+      // The sidebar indicator only lists jobs on mount when this says yes -
+      // see lib/job-activity.ts.
+      rememberActiveJobs('remote', hasActive);
       if (hasActive && !timer) timer = setInterval(() => get().refresh(), POLL_MS);
       if (!hasActive && timer) {
         clearInterval(timer);

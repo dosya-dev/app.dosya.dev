@@ -5,6 +5,7 @@ export const API_BASE = import.meta.env.VITE_API_URL
   || (typeof window !== 'undefined' && window.location.hostname === 'localhost' ? '' : 'https://api.dosya.dev');
 
 import { humanizeApiError } from './error-copy';
+import { notifyMaintenance } from '@/lib/maintenance-signal';
 
 export class ApiError extends Error {
   status: number;
@@ -83,6 +84,20 @@ export async function api<T>(
 
   if (!res.ok) {
     const text = await res.text().catch(() => '');
+    // A switched-off surface answers every gated call (not just /api/me) with
+    // this shape. Surface it through the session store so any page's request
+    // can trip the full-screen maintenance view, not just the boot gate.
+    if (res.status === 503) {
+      try {
+        const body = JSON.parse(text) as { code?: unknown; surface?: unknown; message?: unknown };
+        if (body?.code === 'surface_disabled') {
+          notifyMaintenance({
+            surface: typeof body.surface === 'string' ? body.surface : 'web',
+            message: typeof body.message === 'string' ? body.message : null,
+          });
+        }
+      } catch { /* non-JSON body */ }
+    }
     throw new ApiError(res.status, text || res.statusText);
   }
 

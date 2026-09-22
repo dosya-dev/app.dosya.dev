@@ -1,6 +1,6 @@
 // Types mirror GET /api/workspace-dashboard (apps/api/src/lib/workspace-dashboard.ts).
 export interface DashboardSource {
-  kind: 'plan' | 'package' | 'custom' | 'referral';
+  kind: 'plan' | 'package' | 'custom' | 'license' | 'referral';
   label: string;
   bytes: number;
   meta: Record<string, unknown>;

@@ -9,6 +9,7 @@ import {
 } from "@/api/billing";
 import { apiErrorMessage } from "@/api/client";
 import { computeCart, formatCents, formatBytes, addonAvailableAt, type CartState } from "@/lib/billing/cart-math";
+import { rememberPlanChange, rememberStorageBeforePurchase } from "@/lib/checkout-return";
 import { PlanSelector } from "./plan-selector";
 import { AddonRow } from "./addon-row";
 
@@ -17,10 +18,16 @@ import { AddonRow } from "./addon-row";
  * used, but rendered as a Card directly on the billing page instead of a dialog.
  * Mounted only while open, so it initializes fresh from `initial` each time.
  */
-export function PlanChooser({ hasSubscription, initial, usedBytes, onUpdated, onClose }: {
+export function PlanChooser({ hasSubscription, initial, usedBytes, limitBytes, currentPlanId, mode = "plan", onUpdated, onClose }: {
     hasSubscription: boolean;
     initial: { interval: "month" | "year"; planId: string; addonQty: Record<string, number> };
     usedBytes: number;
+    /** Storage limit right now, so the thank-you page can show what the purchase adds. */
+    limitBytes?: number;
+    /** The plan the account is on, so a smaller pick can be named as a replacement. */
+    currentPlanId?: string;
+    /** "addons" hides the plan cards: the entry point was Add storage, not Change plan. */
+    mode?: "plan" | "addons";
     onUpdated: () => void;
     onClose: () => void;
 }) {
@@ -30,6 +37,7 @@ export function PlanChooser({ hasSubscription, initial, usedBytes, onUpdated, on
     const [couponError, setCouponError] = useState<string | null>(null);
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [confirmedDowngrade, setConfirmedDowngrade] = useState(false);
 
     useEffect(() => {
         getCatalog().then(setCatalog).catch(() => setError("Failed to load plans"));
@@ -41,11 +49,20 @@ export function PlanChooser({ hasSubscription, initial, usedBytes, onUpdated, on
     const planAvailableAtInterval = !selectedPlan || selectedPlan.price_monthly === 0
         || (state.interval === "year" ? selectedPlan.has_yearly : selectedPlan.has_monthly);
     const cart = catalog ? computeCart(state, catalog) : null;
+    const currentPlan = catalog?.plans.find((p) => p.id === currentPlanId);
+    // A downgrade is about the PLAN, not the cart total: keeping a 100 GB add-on
+    // does not make swapping Plus for Starter a smaller loss. The plan cards are
+    // labelled by size and sit next to a 100 GB add-on, so "add 100 GB" and
+    // "replace my plan with the 100 GB one" are one click apart.
+    const isDowngrade = !!currentPlan && !!selectedPlan && selectedPlan.storage_bytes < currentPlan.storage_bytes;
     const downgradeWarning = cart ? cart.effectiveBytes < usedBytes : false;
     // Selected add-ons the chosen interval doesn't sell - dropped from the cart, warn about them.
     const droppedAddons = catalog
         ? catalog.addons.filter((a) => (state.addonQty[a.id] ?? 0) > 0 && !addonAvailableAt(a, state.interval))
         : [];
+
+    // A fresh pick has to be confirmed again.
+    useEffect(() => { setConfirmedDowngrade(false); }, [state.planId]);
 
     const setInterval = (interval: "month" | "year") => setState((s) => ({ ...s, interval }));
     const setPlan = (planId: string) => setState((s) => ({ ...s, planId }));
@@ -93,8 +110,12 @@ export function PlanChooser({ hasSubscription, initial, usedBytes, onUpdated, on
         if (!catalog) return;
         setSubmitting(true); setError(null);
         const payload = buildPayload(catalog);
+        if (limitBytes !== undefined) rememberStorageBeforePurchase(limitBytes);
         try {
-            if (hasSubscription) { await updateSubscription(payload); onUpdated(); onClose(); }
+            if (hasSubscription) {
+                await updateSubscription(isDowngrade ? { ...payload, confirm_downgrade: confirmedDowngrade } : payload);
+                rememberPlanChange(); onUpdated(); onClose();
+            }
             else { const { url } = await startCheckout(payload); window.location.href = url; }
         } catch (e) { setError(apiErrorMessage(e)); setSubmitting(false); }
     };
@@ -122,7 +143,17 @@ export function PlanChooser({ hasSubscription, initial, usedBytes, onUpdated, on
                         ))}
                     </div>
 
-                    <PlanSelector plans={catalog.plans} interval={state.interval} selectedId={state.planId} onSelect={setPlan} />
+                    {mode === "plan" ? (
+                        <div>
+                            <p className="mb-1 text-xs font-medium text-muted-foreground">Your plan</p>
+                            <PlanSelector plans={catalog.plans} interval={state.interval} selectedId={state.planId} onSelect={setPlan} />
+                            <p className="mt-1 text-[11px] text-muted-foreground">
+                                Picking a plan replaces your current one. To keep it and buy more space, use the add-ons below.
+                            </p>
+                        </div>
+                    ) : (
+                        <p className="text-sm font-medium">Add storage to your {currentPlan?.name ?? "current"} plan</p>
+                    )}
 
                     {/* Add-ons */}
                     <div>
@@ -180,6 +211,27 @@ export function PlanChooser({ hasSubscription, initial, usedBytes, onUpdated, on
                         </div>
                     )}
 
+                    {isDowngrade && currentPlan && selectedPlan && (
+                        <div className="rounded-lg border border-amber-500/40 bg-amber-50/70 p-3 dark:bg-amber-500/[0.07]">
+                            <p className="text-sm font-semibold text-amber-700 dark:text-amber-400">
+                                This replaces your {currentPlan.name} plan
+                            </p>
+                            <p className="mt-1 text-xs text-muted-foreground">
+                                {currentPlan.name} gives {formatBytes(currentPlan.storage_bytes)}; {selectedPlan.name} gives {formatBytes(selectedPlan.storage_bytes)}.
+                                Add-ons and redeemed packages stay. Your files are never deleted.
+                            </p>
+                            <label htmlFor="confirm-downgrade" className="mt-2 flex items-center gap-2 text-xs font-medium">
+                                <input
+                                    id="confirm-downgrade"
+                                    type="checkbox"
+                                    checked={confirmedDowngrade}
+                                    onChange={(e) => setConfirmedDowngrade(e.target.checked)}
+                                />
+                                Yes, move me to {selectedPlan.name}
+                            </label>
+                        </div>
+                    )}
+
                     {downgradeWarning && (
                         <div className="flex items-start gap-1.5 text-xs text-amber-600">
                             <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
@@ -194,9 +246,10 @@ export function PlanChooser({ hasSubscription, initial, usedBytes, onUpdated, on
                     )}
                     {error && <p className="text-xs text-red-600">{error}</p>}
 
-                    <div className="flex justify-end gap-2 pt-1">
+                    <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
+                        <p className="mr-auto text-xs text-muted-foreground">14-day money-back guarantee on every plan.</p>
                         <Button variant="ghost" size="sm" onClick={onClose}>Cancel</Button>
-                        <Button size="sm" onClick={submit} disabled={submitting || isPaid <= 0 || !planAvailableAtInterval}>
+                        <Button size="sm" onClick={submit} disabled={submitting || isPaid <= 0 || !planAvailableAtInterval || (isDowngrade && !confirmedDowngrade)}>
                             {hasSubscription ? "Update subscription" : "Continue to payment"}
                         </Button>
                     </div>

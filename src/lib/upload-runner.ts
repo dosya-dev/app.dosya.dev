@@ -202,11 +202,22 @@ function reportBytes(id: string, bytes: number, total: number): void {
   });
 }
 
+// The original file's mtime, declared so the server can show "Modified" as
+// when the file really changed rather than when it was uploaded (the server
+// stores it in files.source_modified_at, new files only). Browsers expose no
+// creation time, so only the mtime header ever leaves here. lastModified 0 is
+// the "no real mtime" fallback - omit the header rather than ship epoch zero.
+export function sourceTimeHeaders(lastModifiedMs: number): Record<string, string> {
+  const sec = Math.floor((lastModifiedMs ?? 0) / 1000);
+  return sec > 0 ? { 'X-Dosya-Source-Mtime': String(sec) } : {};
+}
+
 // PUT with progress + abort. `onLoaded` gets the bytes sent so far for THIS
 // request only - aggregating across parallel parts is the caller's job.
 function xhrPut(
   id: string, url: string, body: Blob, contentType: string,
   onLoaded: (loaded: number) => void,
+  headers: Record<string, string> = {},
 ): Promise<any> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
@@ -214,6 +225,7 @@ function xhrPut(
     xhr.open('PUT', url);
     xhr.withCredentials = true;
     xhr.setRequestHeader('Content-Type', contentType);
+    for (const [k, v] of Object.entries(headers)) xhr.setRequestHeader(k, v);
     let lastTick = 0;
     xhr.upload.onprogress = (e) => {
       if (!e.lengthComputable) return;
@@ -244,9 +256,9 @@ async function initSession(item: UploadItem): Promise<any> {
       workspace_id: item.workspace_id, folder_id: item.folder_id,
       file_name: item.fileName, file_size: item.fileSize,
       mime_type: item.mimeType,
-      // Sending '' would be validated against the workspace's available_regions
-      // and rejected - omit it entirely so the server picks the default.
-      ...(item.region ? { region: item.region } : {}),
+      // No region: a workspace's files all live in the workspace's own
+      // location, so there is nothing here for a client to choose. The door
+      // ignores a region even if one is sent.
       // Only present for version uploads; the server treats a null file_id as
       // "create a new file", which is the normal path.
       file_id: item.file_id ?? null,
@@ -297,6 +309,7 @@ async function uploadParts(
   if (bailIfCanceled(id)) return;
   const res = await fetch(`${API_BASE}/api/upload/${sessionId}/complete`, {
     method: 'POST', credentials: 'include',
+    headers: sourceTimeHeaders(file.lastModified),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok || !data.ok) throw new Error(data.error ?? `Complete failed (HTTP ${res.status})`);
@@ -368,7 +381,8 @@ async function runOne(id: string): Promise<void> {
       } else {
         const putRes = await xhrPut(id, `${API_BASE}${init.upload_url}`, file,
           file.type || 'application/octet-stream',
-          (loaded) => reportBytes(id, loaded, file.size));
+          (loaded) => reportBytes(id, loaded, file.size),
+          sourceTimeHeaders(file.lastModified));
         if (bailIfCanceled(id)) return;
         markComplete(id, { bytesUploaded: file.size, fileId: putRes?.file?.id });
       }
@@ -424,10 +438,6 @@ export function buildQueueItems(
       id, session_id: null, fileName: file.name, fileSize: file.size,
       mimeType: file.type || 'application/octet-stream',
       workspace_id: input.workspace_id, folder_id,
-      // '' means "no explicit choice" - initSession omits it so the server
-      // falls back to the workspace default. Call sites without a region
-      // picker (Files drag-and-drop, version upload) rely on this.
-      region: input.region ?? '',
       file_id: input.file_id ?? null,
       group_id: input.group_id ?? null,
       status: 'queued', progress: 0, bytesUploaded: 0,
@@ -466,6 +476,24 @@ export function enqueueByFolder(
   return flat.length;
 }
 
+/**
+ * Queue files the pre-screen refused as error rows carrying the reason, so a
+ * refusal is visible in the dock and on the Uploads page next to everything
+ * else, and can be retried (the File stays in memory) or removed. Nothing is
+ * started: the scheduler only ever picks up `queued` rows.
+ */
+export function enqueueRejected(
+  rejected: { file: File; reason: string }[],
+  input: UploadInput,
+): void {
+  if (rejected.length === 0) return;
+  const items = buildQueueItems(
+    rejected.map(({ file }) => ({ file, folder_id: input.folder_id })),
+    input,
+  ).map((item, i) => ({ ...item, status: 'error' as const, error: rejected[i].reason }));
+  store().addItems(items);
+}
+
 export function cancel(id: string): void {
   canceledIds.add(id);
   heldIds.delete(id);
@@ -495,27 +523,30 @@ export function retry(id: string): void {
   scheduler.wake();
 }
 
-/** Retry a failed upload in a different region - starts a fresh session. */
-export function retryInRegion(id: string, region: string): void {
-  const item = getItem(id);
-  if (!item || !fileMap.has(id)) return;
-  canceledIds.delete(id);
-  concurrencyRetries.delete(id);
-  speedSamples.delete(id);
-  store().patchItem(id, {
-    region,
-    status: 'queued',
-    error: undefined,
-    session_id: null,
-    part_size: null,
-    total_parts: null,
-    uploaded_parts: [],
-    bytesUploaded: 0,
-    progress: 0,
-    speedBps: 0,
-  });
+/**
+ * Whether this tab still holds the file's bytes, and so whether a retry can do
+ * anything at all. False after a reload: the queue is persisted, the File
+ * objects are not. The UI asks so it can disable a control rather than
+ * silently ignore the click.
+ */
+export function canRetry(id: string): boolean {
+  return fileMap.has(id);
+}
+
+/**
+ * Retry every failed row at once. Rows whose File is still in memory go back
+ * to the queue; a failure that survived a reload has no bytes to send, so the
+ * store parks it as `interrupted` - the state whose row action is "Resume" via
+ * a file re-pick - keeping the reason it failed.
+ */
+export function retryAllFailed(): void {
+  const { requeued } = store().retryAllFailed(canRetry);
+  for (const id of requeued) {
+    canceledIds.delete(id);
+    concurrencyRetries.delete(id);
+  }
   updateUnloadGuard();
-  scheduler.wake();
+  if (requeued.length > 0) scheduler.wake();
 }
 
 /** Resume an interrupted item by re-selecting the same file. */

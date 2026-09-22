@@ -12,7 +12,8 @@
  */
 import { api } from '@/api/client';
 import {
-  checkUploadFile, checkBatchFitsQuota, summariseRejections, type UploadLimits,
+  checkUploadFile as checkUploadRules, checkBatchFitsQuota, summariseRejections, validateFileName,
+  sanitizeIngestName, type UploadLimits,
 } from '@/lib/validation-policy.generated';
 
 // Re-exported so callers have one import for the whole screening story, and so
@@ -68,10 +69,34 @@ export async function getUploadLimits(workspaceId: string): Promise<UploadLimits
   return req;
 }
 
+/**
+ * Would this file be refused? The shared policy's `checkUploadFile` covers the
+ * workspace rules (size, allowed and blocked types); the ingest routes also
+ * refuse a name over the 255-character cap, which the shared function does
+ * not check. Both are asked here so the pre-screen refuses exactly what the
+ * server would, with the server's own sentence.
+ *
+ * The name is SANITISED first, in the same order the server does it
+ * (`sanitizeIngestName` at the top of upload/init.ts, before any validation):
+ * a backslash, a control character or a "../" is rewritten there, not
+ * rejected. Screening the raw name refused files the server would have
+ * accepted - a stricter client than server is still a wrong client.
+ */
+export function checkUploadFile(
+  file: { name: string; size: number },
+  limits: UploadLimits,
+): string | null {
+  const nameError = validateFileName(sanitizeIngestName(file.name));
+  if (nameError) return nameError;
+  return checkUploadRules(file, limits);
+}
+
 export interface Screened<T> {
   accepted: T[];
   /** One entry per rejected file, carrying the server's own sentence. */
   rejected: { name: string; reason: string }[];
+  /** The same rejections with the original item, for callers that queue them as error rows. */
+  rejectedItems: { item: T; reason: string }[];
   /** Set when the batch would overrun the remaining space. A warning only. */
   quotaWarning: string | null;
 }
@@ -88,12 +113,17 @@ export function screenBatch<T>(
 ): Screened<T> {
   const accepted: T[] = [];
   const rejected: { name: string; reason: string }[] = [];
+  const rejectedItems: { item: T; reason: string }[] = [];
 
   for (const item of items) {
     const name = nameOf(item);
     const reason = checkUploadFile({ name, size: sizeOf(item) }, limits);
-    if (reason) rejected.push({ name, reason });
-    else accepted.push(item);
+    if (reason) {
+      rejected.push({ name, reason });
+      rejectedItems.push({ item, reason });
+    } else {
+      accepted.push(item);
+    }
   }
 
   // Only what will actually be sent counts toward the quota warning.
@@ -104,7 +134,7 @@ export function screenBatch<T>(
     : `This upload is about ${formatBytes(fit.over)} larger than the space left in this workspace. `
       + 'Some files may be refused.';
 
-  return { accepted, rejected, quotaWarning };
+  return { accepted, rejected, rejectedItems, quotaWarning };
 }
 
 function formatBytes(bytes: number): string {

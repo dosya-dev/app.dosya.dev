@@ -15,6 +15,7 @@ vi.mock('@/api/cloud-import', () => ({
 const { CloudImportIndicator } = await import('./cloud-import-indicator');
 const { useCloudImports } = await import('@/stores/cloud-imports');
 const { TooltipProvider } = await import('@/components/ui/tooltip');
+const { rememberActiveJobs } = await import('@/lib/job-activity');
 
 beforeAll(() => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -70,6 +71,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   listJobsMock.mockResolvedValue([]);
   useCloudImports.setState({ jobs: [] });
+  localStorage.clear();
 });
 
 afterEach(async () => {
@@ -83,6 +85,31 @@ afterEach(async () => {
 });
 
 describe('CloudImportIndicator', () => {
+  // Every load of the app mounts this in the sidebar. Listing jobs each time,
+  // for every user, bought a ring almost nobody had anything to show in.
+  it('does not list jobs on mount unless the last refresh saw one running', async () => {
+    await render();
+    expect(listJobsMock).not.toHaveBeenCalled();
+  });
+
+  it('lists jobs on mount when the last refresh in this browser saw one running', async () => {
+    rememberActiveJobs('cloud', true);
+    await render();
+    expect(listJobsMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('forgets the running job once a refresh sees none, so the next mount is free again', async () => {
+    rememberActiveJobs('cloud', true);
+    listJobsMock.mockResolvedValue([job({ status: 'complete' })]);
+    await act(async () => {
+      await useCloudImports.getState().refresh();
+      await flush();
+    });
+    listJobsMock.mockClear();
+    await render();
+    expect(listJobsMock).not.toHaveBeenCalled();
+  });
+
   it('renders nothing while no import is active', async () => {
     await render();
     await setJobs([job({ status: 'complete' })]);

@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useE2ee, type E2eeEngine, type EncryptedEntry, type KnownWorkspace } from './e2ee';
 import { useWorkspace } from '@/stores/workspace';
+import { ApiError } from '@/api/client';
 
 // jsdom (this vitest env, v25.0.1) implements Blob/File storage but not the
 // async read methods (`arrayBuffer`/`text`) real browsers have long shipped -
@@ -35,6 +36,8 @@ function makeFakeEngine(overrides: Partial<E2eeEngine> = {}): E2eeEngine {
     inviteMember: async () => {},
     revokeMember: async () => {},
     listMyWorkspaces: async () => [],
+    unlockWithRecoveryKey: async () => {},
+    destroyIdentity: async () => {},
     ...overrides,
   };
 }
@@ -480,6 +483,99 @@ describe('useE2ee: uploadFiles', () => {
   });
 });
 
+describe('useE2ee: uploadFiles attaches an unscoped Space and retries once', () => {
+  const scopeRequired = () => new Error('e2ee: chunk-upload-url request failed (412)');
+
+  it('on a 412, attaches the open Space to the active global workspace and uploads again', async () => {
+    const scopeCalls: [string, string][] = [];
+    let attempts = 0;
+    useE2ee.getState().__setEngine(
+      makeFakeEngine({
+        uploadFile: async () => {
+          attempts++;
+          if (scopeCalls.length === 0) throw scopeRequired();
+        },
+        setWorkspaceScope: async (spaceId, gw) => {
+          scopeCalls.push([spaceId, gw]);
+        },
+        listFolder: async () => [{ id: '1', name: 'a.txt', kind: 'file' }],
+      }),
+    );
+    useWorkspace.setState({ activeId: 'ws_active' });
+    useE2ee.setState({
+      activeWorkspaceId: 'sp_legacy',
+      workspaces: [{ id: 'sp_legacy', name: 'Legacy', selfFounded: true, shared: false, globalWorkspaceId: null }],
+    });
+
+    await useE2ee.getState().uploadFiles([new File(['hello'], 'a.txt', { type: 'text/plain' })]);
+
+    expect(scopeCalls).toEqual([['sp_legacy', 'ws_active']]);
+    expect(attempts).toBe(2);
+    expect(useE2ee.getState().error).toBeNull();
+    expect(useE2ee.getState().entries).toHaveLength(1);
+    // The local record follows, so the Space now lists under ws_active.
+    expect(useE2ee.getState().workspaces[0].globalWorkspaceId).toBe('ws_active');
+  });
+
+  it('retries at most once - a 412 that survives the attach is reported, not looped', async () => {
+    let attempts = 0;
+    let scopeCalls = 0;
+    useE2ee.getState().__setEngine(
+      makeFakeEngine({
+        uploadFile: async () => {
+          attempts++;
+          throw scopeRequired();
+        },
+        setWorkspaceScope: async () => {
+          scopeCalls++;
+        },
+      }),
+    );
+    useWorkspace.setState({ activeId: 'ws_active' });
+    useE2ee.setState({ activeWorkspaceId: 'sp_1' });
+
+    await useE2ee.getState().uploadFiles([new File(['hello'], 'a.txt', { type: 'text/plain' })]);
+
+    expect(attempts).toBe(2);
+    expect(scopeCalls).toBe(1);
+    expect(useE2ee.getState().error).not.toBeNull();
+    expect(useE2ee.getState().busy).toBe(false);
+  });
+
+  it('does not attach anything for an ordinary failure, or when no global workspace is active', async () => {
+    let scopeCalls = 0;
+    useE2ee.getState().__setEngine(
+      makeFakeEngine({
+        uploadFile: async () => {
+          throw new Error('e2ee: commit request failed (500)');
+        },
+        setWorkspaceScope: async () => {
+          scopeCalls++;
+        },
+      }),
+    );
+    useWorkspace.setState({ activeId: 'ws_active' });
+    useE2ee.setState({ activeWorkspaceId: 'sp_1' });
+    await useE2ee.getState().uploadFiles([new File(['x'], 'x.txt')]);
+    expect(scopeCalls).toBe(0);
+
+    useE2ee.getState().__setEngine(
+      makeFakeEngine({
+        uploadFile: async () => {
+          throw scopeRequired();
+        },
+        setWorkspaceScope: async () => {
+          scopeCalls++;
+        },
+      }),
+    );
+    useWorkspace.setState({ activeId: '' });
+    await useE2ee.getState().uploadFiles([new File(['x'], 'x.txt')]);
+    expect(scopeCalls).toBe(0);
+    expect(useE2ee.getState().error).not.toBeNull();
+  });
+});
+
 describe('useE2ee: downloadEntry', () => {
   it('downloads bytes via the engine and hands them to the injected saver', async () => {
     const fakeBytes = new TextEncoder().encode('secret content');
@@ -531,5 +627,68 @@ describe('useE2ee: persistence', () => {
     expect(persisted).not.toHaveProperty('recoveryKeyOnce');
     expect(persisted).not.toHaveProperty('members');
     expect(persisted.workspaces).toEqual(knownWorkspaces);
+  });
+});
+
+// F8 (field report, Contract 6): the recovery key shown once at setup is
+// actually usable, and a Vault whose passphrase AND key are both gone can be
+// destroyed and set up again instead of being a permanent dead end.
+describe('useE2ee: unlockWithRecoveryKey', () => {
+  it('hands the NORMALISED key to the engine and unlocks', async () => {
+    const seen: string[] = [];
+    useE2ee.getState().__setEngine(makeFakeEngine({ unlockWithRecoveryKey: async (k) => { seen.push(k); } }));
+    await useE2ee.getState().unlockWithRecoveryKey('ab12-cd34 ef56\n');
+    // Whitespace and dashes are the paste's, not the key's (Contract 6).
+    expect(seen).toEqual(['ab12cd34ef56']);
+    expect(useE2ee.getState().status).toBe('unlocked');
+    expect(useE2ee.getState().hasIdentity).toBe(true);
+  });
+
+  it('failure stays locked with a generic message that never echoes the engine', async () => {
+    useE2ee.getState().__setEngine(makeFakeEngine({ unlockWithRecoveryKey: async () => { throw new Error('e2ee: unlock failed'); } }));
+    await useE2ee.getState().unlockWithRecoveryKey('nope');
+    expect(useE2ee.getState().status).toBe('locked');
+    expect(useE2ee.getState().error).toBe('That recovery key did not unlock your Vault.');
+    expect(useE2ee.getState().error).not.toContain('unlock failed');
+  });
+});
+
+describe('useE2ee: destroyIdentity', () => {
+  it('passes password and code to the engine, then returns the user to setup', async () => {
+    const calls: [string, string | undefined][] = [];
+    useE2ee.getState().__setEngine(makeFakeEngine({ destroyIdentity: async (pw, code) => { calls.push([pw, code]); } }));
+    useE2ee.setState({ hasIdentity: true, status: 'locked', workspaces: [{ id: 'w', name: 'S', selfFounded: true, shared: false, globalWorkspaceId: null }] });
+    const ok = await useE2ee.getState().destroyIdentity('hunter22', '123456');
+    expect(ok).toBe(true);
+    expect(calls).toEqual([['hunter22', '123456']]);
+    expect(useE2ee.getState().hasIdentity).toBe(false);
+    expect(useE2ee.getState().status).toBe('locked');
+    // The Spaces list described keys that no longer exist.
+    expect(useE2ee.getState().workspaces).toEqual([]);
+    expect(useE2ee.getState().error).toBeNull();
+  });
+
+  // Fix round 1, MINOR (c): the API answers 400 {"error":"2fa_required"},
+  // a CODE. Rendering it verbatim showed the user the literal string
+  // "2fa_required"; the code is the contract, the sentence is presentation
+  // (see api/error-copy.ts).
+  it('turns the 2fa_required code into a sentence a person can act on', async () => {
+    useE2ee.getState().__setEngine(makeFakeEngine({
+      destroyIdentity: async () => { throw new ApiError(400, JSON.stringify({ error: '2fa_required' })); },
+    }));
+    useE2ee.setState({ hasIdentity: true });
+    const ok = await useE2ee.getState().destroyIdentity('hunter22');
+    expect(ok).toBe(false);
+    expect(useE2ee.getState().error).not.toContain('2fa_required');
+    expect(useE2ee.getState().error).toMatch(/two-factor/i);
+  });
+
+  it('surfaces the server\'s refusal and keeps the identity', async () => {
+    useE2ee.getState().__setEngine(makeFakeEngine({ destroyIdentity: async () => { throw new Error('Incorrect password'); } }));
+    useE2ee.setState({ hasIdentity: true });
+    const ok = await useE2ee.getState().destroyIdentity('wrong');
+    expect(ok).toBe(false);
+    expect(useE2ee.getState().hasIdentity).toBe(true);
+    expect(useE2ee.getState().error).toBe('Incorrect password');
   });
 });

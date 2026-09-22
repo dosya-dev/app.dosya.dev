@@ -10,7 +10,10 @@ vi.mock('@/lib/upload-runner', () => ({
   enqueue: (...a: unknown[]) => enqueue(...a),
   enqueueByFolder: (groups: Map<string | null, File[]>, input: unknown) => enqueueByFolder(groups, input),
 }));
-vi.mock('@/api/client', () => ({
+vi.mock('@/api/client', async (importOriginal) => ({
+  // shouldRetryQuery does `error instanceof ApiError` on every retry, and a retry
+  // can outlive the test that started it - a mock without it throws and fails the run.
+  ApiError: (await importOriginal<typeof import('@/api/client')>()).ApiError,
   api: (path: string, init: RequestInit) => api(path, init),
   apiErrorMessage: (_e: unknown, fallback: string) => fallback,
 }));

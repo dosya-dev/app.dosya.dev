@@ -12,19 +12,13 @@ import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { api, API_BASE } from '@/api/client';
 import { readCache, writeCache, applyThemeAnimated, subscribeThemeChange } from '@/lib/theme';
 import { useWorkspace } from '@/stores/workspace';
+import { useSession } from '@/stores/session';
 import { useUploads } from '@/stores/uploads';
 import { logoutAndRedirect } from '@/lib/logout';
 import { humanSize, colorFor, labelFor, initials } from '@/lib/helpers';
 import { titleForPath, iconForPath } from '@/lib/page-title';
 import { NotificationBell } from '../notifications/notification-bell';
 import { SetupPill } from '@/components/onboarding/setup-pill';
-
-interface UserInfo {
-  id: string;
-  name: string;
-  email: string;
-  avatar_url: string | null;
-}
 
 interface SearchResult {
   files: { id: string; name: string; size_bytes: number; extension: string; folder_id: string | null; uploader_name: string }[];
@@ -39,7 +33,9 @@ export function DashboardTopbar() {
   const location = useLocation();
   const PageIcon = iconForPath(location.pathname);
   const pageLabel = titleForPath(location.pathname);
-  const [user, setUser] = useState<UserInfo | null>(null);
+  // Fetched once by the boot gate (dashboard-layout.tsx); this used to be a
+  // second GET /api/me of its own on every mount.
+  const user = useSession((s) => s.user);
   const [dark, setDark] = useState(() => document.documentElement.classList.contains('dark'));
   // Keep the sun/moon icon in sync when the theme is applied elsewhere
   // (e.g. account reconcile on load, or the Appearance picker).
@@ -54,18 +50,11 @@ export function DashboardTopbar() {
   const inputRef = useRef<HTMLInputElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
-  // Load user info
+  // Drop another account's persisted upload rows once we know who this is.
+  const userId = user?.id;
   useEffect(() => {
-    (async () => {
-      try {
-        const data = await api<{ ok: boolean; user: UserInfo }>('/api/me');
-        if (data.ok) {
-          setUser(data.user);
-          useUploads.getState().pruneForOwner(data.user.id);
-        }
-      } catch { /* */ }
-    })();
-  }, []);
+    if (userId) useUploads.getState().pruneForOwner(userId);
+  }, [userId]);
 
   // Theme toggle - flips light/dark for the current theme and saves to the account.
   const toggleTheme = () => {

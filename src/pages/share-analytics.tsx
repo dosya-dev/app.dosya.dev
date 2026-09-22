@@ -45,7 +45,15 @@ interface Recipient { email: string; verified_at: number | null; invited_at: num
 interface LogRow {
   id: string; visitor: string; event: 'view' | 'download';
   device: 'desktop' | 'mobile' | 'tablet' | 'unknown';
-  device_label: string; viewed_at: number;
+  device_label: string;
+  /**
+   * ISO 3166-1 alpha-2 from the edge, or null for a row written before the
+   * endpoint read the column and for a request Cloudflare could not place.
+   * Null is "we do not know where this one came from", NOT "we do not record
+   * this" - the difference the sidebar used to get wrong.
+   */
+  country: string | null;
+  viewed_at: number;
 }
 interface Analytics {
   ok: boolean;
@@ -55,10 +63,22 @@ interface Analytics {
   reach: { visitors: number; truncated: boolean; devices: Ranked[]; browsers: Ranked[] };
   recipients: Recipient[] | null;
   log: { total: number; offset: number; limit: number; rows: LogRow[] };
-  gaps: { country: string; repeat_visits: string; per_recipient: string | null };
+  gaps: { repeat_visits: string; per_recipient: string | null };
 }
 
 const DEVICE_ICON = { desktop: Monitor, mobile: Smartphone, tablet: Tablet, unknown: Monitor };
+
+/** The bucket for rows the edge could not place, and for rows older than the column. */
+const UNKNOWN_COUNTRY = 'Unknown';
+
+/** "TR" -> "Türkiye" where the runtime carries the data; the code otherwise. */
+function countryName(code: string): string {
+  try {
+    return new Intl.DisplayNames(undefined, { type: 'region' }).of(code.toUpperCase()) ?? code.toUpperCase();
+  } catch {
+    return code.toUpperCase();
+  }
+}
 
 /* Not exported: this page is the only consumer, and exporting a non-component
    from a route module breaks react-refresh. Invalidation elsewhere targets the
@@ -125,6 +145,25 @@ export default function ShareAnalyticsPage() {
   const restricted = link.access_mode === 'restricted';
   const hasTraffic = link.view_count > 0 || link.download_count > 0;
   const logRows = log.rows.filter((r) => evFilter === 'all' || r.event === evFilter);
+
+  // Counted from the loaded rows, not from `reach`: the reach rollup upstream
+  // tallies devices and browsers only, and the country lives on the access-log
+  // rows. The caption below says so rather than implying this covers every
+  // visitor. Unplaceable rows get their own bucket instead of being dropped
+  // (which would inflate the others) or suppressed (which is what the old
+  // "not tracked" copy amounted to).
+  const countryTally = new Map<string, number>();
+  for (const r of log.rows) {
+    const key = r.country ? r.country.toUpperCase() : UNKNOWN_COUNTRY;
+    countryTally.set(key, (countryTally.get(key) ?? 0) + 1);
+  }
+  const countryRows: Ranked[] = countryTally.size > 0 && [...countryTally.keys()].some((k) => k !== UNKNOWN_COUNTRY)
+    ? [...countryTally]
+        .map(([label, count]) => ({ label, count }))
+        // Unknown last however big it is: it is the absence of an answer, not
+        // the most popular one.
+        .sort((a, b) => (a.label === UNKNOWN_COUNTRY ? 1 : b.label === UNKNOWN_COUNTRY ? -1 : b.count - a.count))
+    : [];
 
   return (
     <div className="px-8 pt-7 pb-14 max-w-[1400px]">
@@ -293,10 +332,10 @@ export default function ShareAnalyticsPage() {
             ) : (
               <>
                 <div className="overflow-x-auto">
-                  <Table className="min-w-[560px]">
+                  <Table className="min-w-[640px]">
                     <TableHeader>
                       <TableRow className="hover:bg-transparent">
-                        {['When', 'Event', 'Visitor', 'Device'].map((h) => (
+                        {['When', 'Event', 'Visitor', 'Country', 'Device'].map((h) => (
                           <TableHead
                             key={h}
                             className="h-auto text-[10px] font-bold uppercase tracking-wider text-muted-foreground py-2.5 px-4 bg-muted/40 border-t"
@@ -323,6 +362,17 @@ export default function ShareAnalyticsPage() {
                               </span>
                             </TableCell>
                             <TableCell className="py-2.5 px-4 font-mono text-xs whitespace-nowrap">{r.visitor}</TableCell>
+                            {/* A dash, not "not tracked": the row simply has no
+                                country, which happens for an event older than
+                                the column and for a request the edge could not
+                                place. */}
+                            <TableCell
+                              data-testid="log-country"
+                              className="py-2.5 px-4 font-mono text-xs text-muted-foreground whitespace-nowrap"
+                              title={r.country ? countryName(r.country) : 'Not known for this event'}
+                            >
+                              {r.country ? r.country.toUpperCase() : '-'}
+                            </TableCell>
                             <TableCell className="py-2.5 px-4 text-xs text-muted-foreground whitespace-nowrap">
                               <span className="inline-flex items-center gap-2">
                                 <Icon className="size-3.5 shrink-0" />{r.device_label}
@@ -408,23 +458,22 @@ export default function ShareAnalyticsPage() {
                 </p>
               )}
               {/*
-                Country is a decision, not a backlog item: this product leads on
-                not tracking people, and a share-link visitor never agreed to
-                anything. The panel says what is missing and what it would cost,
-                and stops there.
+                Country IS recorded now (share_views.country, written at the
+                edge and returned per access-log row), so the panel shows it.
+                The count comes from the loaded events rather than the visitor
+                rollup, which carries no country - said plainly below instead of
+                letting a partial figure read as a total.
               */}
-              <p className="flex items-center gap-1.5 text-[11px] font-semibold text-muted-foreground mt-5 pt-4 border-t border-dashed">
-                Country
-                <span className="inline-flex items-center gap-1 border border-dashed rounded-full px-2 py-px text-[10px] font-semibold normal-case">
-                  <CircleDashed className="size-2.5" />not tracked
-                </span>
-              </p>
-              <p className="text-[11px] text-muted-foreground leading-relaxed mt-2">
-                Not recorded, and not a foregone conclusion. Cloudflare hands the worker a two-letter
-                country on every request, so the cost is one column on <code className="bg-muted rounded px-1">share_views</code>.
-                Whether to take it is a separate question: dosya.dev leads on not tracking people, and a
-                visitor to a share link never agreed to anything.
-              </p>
+              {countryRows.length > 0 && (
+                <div className="mt-5 pt-4 border-t border-dashed">
+                  <BarList caption="Country" rows={countryRows} total={log.rows.length} />
+                  <p className="text-[11px] text-muted-foreground leading-relaxed -mt-2">
+                    From the {log.rows.length} event{log.rows.length === 1 ? '' : 's'} loaded below, placed at
+                    the edge. "{UNKNOWN_COUNTRY}" is an event the edge could not place, or one recorded
+                    before this was kept.
+                  </p>
+                </div>
+              )}
             </section>
           )}
         </aside>

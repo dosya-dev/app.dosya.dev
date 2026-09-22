@@ -4,7 +4,7 @@
  */
 import { api, apiErrorMessage } from '@/api/client';
 import { toast } from '@/lib/toast';
-import { enqueue, enqueueByFolder } from '@/lib/upload-runner';
+import { enqueue, enqueueByFolder, enqueueRejected } from '@/lib/upload-runner';
 import type { UploadInput } from '@/lib/upload-types';
 import {
   readDroppedEntries, entriesFromPickedFiles, MAX_DROPPED_FILES,
@@ -74,6 +74,12 @@ export async function uploadTree(
           ? `${plural(screened.rejected.length, 'file')} left out`
           : 'Nothing could be uploaded',
         summariseRejections(screened.rejected),
+      );
+      // The toast is a summary that disappears; the rows stay. Each refused
+      // file is listed as a failure with its reason, retryable and removable.
+      enqueueRejected(
+        screened.rejectedItems.map((r) => ({ file: r.item.file, reason: r.reason })),
+        input,
       );
       tree = { ...tree, entries: screened.accepted };
       if (screened.accepted.length === 0) {

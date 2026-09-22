@@ -53,3 +53,18 @@ describe('toggleSort', () => {
     expect(toggleSort({ key: 'size', dir: 'desc' }, 'name')).toEqual({ key: 'name', dir: 'asc' });
   });
 });
+
+// F2 (field report, Contract 5): the folder listing can sort by the date a
+// photo was taken. The wire form is the generic `<key>_<dir>` the API
+// whitelists; a first click reads newest-first like the other date columns.
+describe('taken sort', () => {
+  it('serializes and parses taken in both directions', () => {
+    expect(serializeSort({ key: 'taken', dir: 'desc' })).toBe('taken_desc');
+    expect(parseSort('taken_desc')).toEqual({ key: 'taken', dir: 'desc' });
+    expect(parseSort('taken_asc')).toEqual({ key: 'taken', dir: 'asc' });
+  });
+
+  it('first header click on Date taken sorts newest first', () => {
+    expect(toggleSort(DEFAULT_SORT, 'taken')).toEqual({ key: 'taken', dir: 'desc' });
+  });
+});

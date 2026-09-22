@@ -6,7 +6,7 @@ import type { UploadItem } from '@/lib/upload-types';
 function item(over: Partial<UploadItem>): UploadItem {
   return {
     id: 'a', session_id: null, fileName: 'f', fileSize: 100, mimeType: 't',
-    workspace_id: 'ws', folder_id: null, region: 'r', status: 'queued',
+    workspace_id: 'ws', folder_id: null, status: 'queued',
     progress: 0, bytesUploaded: 0, part_size: null, total_parts: null,
     uploaded_parts: [], ...over,
   };
@@ -104,5 +104,49 @@ describe('owner-scoped persistence', () => {
     claimOwner('user-1');
     useUploads.getState().pruneForOwner('user-2');
     expect(useUploads.getState().items).toHaveLength(0);
+  });
+});
+
+// F3 (field report): a batch with several failures is retried in one action.
+describe('useUploads.retryAllFailed', () => {
+  beforeEach(() => { localStorage.clear(); useUploads.setState({ items: [] }); });
+
+  it('re-queues every error row, clears its message, and reports the ids', () => {
+    useUploads.setState({ items: [
+      item({ id: 'e1', status: 'error', error: 'boom' }),
+      item({ id: 'ok', status: 'complete' }),
+      item({ id: 'e2', status: 'error', error: 'nope' }),
+      item({ id: 'up', status: 'uploading' }),
+    ] });
+    const { requeued, parked } = useUploads.getState().retryAllFailed();
+    expect(requeued).toEqual(['e1', 'e2']);
+    expect(parked).toEqual([]);
+    const byId = Object.fromEntries(useUploads.getState().items.map((i) => [i.id, i]));
+    expect(byId.e1.status).toBe('queued');
+    expect(byId.e1.error).toBeUndefined();
+    expect(byId.e2.status).toBe('queued');
+    expect(byId.ok.status).toBe('complete');
+    expect(byId.up.status).toBe('uploading');
+  });
+
+  // Fix round 1, MINOR (a): a row whose File is gone (this tab reloaded) can
+  // never be retried, and clearing its message threw away the only record of
+  // WHY it failed. It is parked for a re-pick with the reason intact.
+  it('parks a row it cannot retry as interrupted, keeping its reason', () => {
+    useUploads.setState({ items: [
+      item({ id: 'live', status: 'error', error: 'boom' }),
+      item({ id: 'ghost', status: 'error', error: 'File type .exe is not allowed in this workspace' }),
+    ] });
+    const { requeued, parked } = useUploads.getState().retryAllFailed((id) => id === 'live');
+    expect(requeued).toEqual(['live']);
+    expect(parked).toEqual(['ghost']);
+    const byId = Object.fromEntries(useUploads.getState().items.map((i) => [i.id, i]));
+    expect(byId.ghost.status).toBe('interrupted');
+    expect(byId.ghost.error).toBe('File type .exe is not allowed in this workspace');
+  });
+
+  it('is a no-op with nothing failed', () => {
+    useUploads.setState({ items: [item({ id: 'ok', status: 'complete' })] });
+    expect(useUploads.getState().retryAllFailed()).toEqual({ requeued: [], parked: [] });
   });
 });

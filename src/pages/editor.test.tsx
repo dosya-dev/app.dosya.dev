@@ -114,3 +114,115 @@ describe('EditorPage', () => {
     expect(secondScript).not.toBe(firstScript);
   });
 });
+
+// F9 (field report): ONLYOFFICE reports failures through the DocEditor
+// `events` hooks, not by throwing - a document server that loads its script
+// and then refuses the file used to leave a blank frame under "Loading
+// editor...". The config now carries onError/onWarning, and onError renders
+// the same error card with a way to still get at the document.
+describe('EditorPage ONLYOFFICE error surface', () => {
+  let captured: { events?: { onError?: (e: unknown) => void; onWarning?: (e: unknown) => void } } | null = null;
+
+  afterEach(() => {
+    captured = null;
+    delete (window as { DocsAPI?: unknown }).DocsAPI;
+  });
+
+  it('passes events.onError/onWarning and onError renders the error card with preview and download links', async () => {
+    (window as { DocsAPI?: unknown }).DocsAPI = {
+      DocEditor: class { constructor(_id: string, config: unknown) { captured = config as typeof captured; } destroyEditor() {} },
+    };
+    apiMock.mockResolvedValue(okConfig);
+    mount();
+    await act(async () => {});
+
+    expect(typeof captured?.events?.onError).toBe('function');
+    expect(typeof captured?.events?.onWarning).toBe('function');
+
+    act(() => { captured!.events!.onError!({ data: { errorCode: -4, errorDescription: 'Download failed' } }); });
+    await act(async () => {});
+
+    expect(container!.textContent).toContain('could not be loaded');
+    const links = [...container!.querySelectorAll('a')];
+    const preview = links.find((a) => a.textContent?.includes('Open preview'));
+    expect(preview?.getAttribute('href')).toBe('/files?view=file_1');
+    const download = links.find((a) => a.textContent?.includes('Download'));
+    expect(download?.getAttribute('href')).toMatch(/\/api\/files\/file_1\/download$/);
+    // A fatal error DOES take the surface: there is nothing behind it to use.
+    expect(container!.querySelector('[data-testid="editor-error-overlay"]')).not.toBeNull();
+  });
+
+  // Fix round 1, MINOR (g): the error card is `absolute inset-0`, so it
+  // swallows every click meant for the editor underneath. A recoverable
+  // onError (an unrecognised code) must not make a working editor unusable.
+  it('shows a non-fatal error as a dismissible notice that leaves the editor usable', async () => {
+    (window as { DocsAPI?: unknown }).DocsAPI = {
+      DocEditor: class { constructor(_id: string, config: unknown) { captured = config as typeof captured; } destroyEditor() {} },
+    };
+    apiMock.mockResolvedValue(okConfig);
+    mount();
+    await act(async () => {});
+
+    act(() => { captured!.events!.onError!({ data: { errorCode: -777, errorDescription: 'something odd' } }); });
+    await act(async () => {});
+
+    expect(container!.querySelector('[data-testid="editor-error-overlay"]')).toBeNull();
+    const notice = container!.querySelector('[data-testid="editor-error-notice"]');
+    expect(notice).not.toBeNull();
+    // The editor IS loaded and on screen behind it, so the notice must not
+    // borrow the fatal card's sentence.
+    expect(notice!.textContent).not.toContain('could not be loaded');
+    expect(notice!.textContent).toContain('reported a problem');
+    expect(container!.querySelector('#oo-editor')).toBeTruthy();
+
+    const dismiss = [...container!.querySelectorAll('button')].find((b) => b.getAttribute('aria-label') === 'Dismiss');
+    expect(dismiss).toBeTruthy();
+    act(() => { dismiss!.click(); });
+    expect(container!.querySelector('[data-testid="editor-error-notice"]')).toBeNull();
+  });
+
+  // Fix round 2, MINOR 3: an unknown code may in fact be fatal, leaving a
+  // dismissible notice floating over a blank editor. The notice carries the
+  // same escapes the fatal card does, so an unrecognised failure is never a
+  // dead end.
+  it('offers Try again, preview and download from the non-fatal notice', async () => {
+    (window as { DocsAPI?: unknown }).DocsAPI = {
+      DocEditor: class { constructor(_id: string, config: unknown) { captured = config as typeof captured; } destroyEditor() {} },
+    };
+    apiMock.mockResolvedValue(okConfig);
+    mount();
+    await act(async () => {});
+    expect(apiMock).toHaveBeenCalledTimes(1);
+
+    act(() => { captured!.events!.onError!({ data: { errorCode: -777 } }); });
+    await act(async () => {});
+
+    const notice = container!.querySelector('[data-testid="editor-error-notice"]')!;
+    const links = [...notice.querySelectorAll('a')];
+    expect(links.find((a) => a.textContent?.includes('Open preview'))?.getAttribute('href')).toBe('/files?view=file_1');
+    expect(links.find((a) => a.textContent?.includes('Download'))?.getAttribute('href')).toMatch(/\/api\/files\/file_1\/download$/);
+
+    const tryAgain = [...notice.querySelectorAll('button')].find((b) => b.textContent?.includes('Try again'));
+    expect(tryAgain).toBeTruthy();
+    await act(async () => { tryAgain!.click(); });
+    // A real reload of the editor, not just a hidden notice.
+    expect(apiMock).toHaveBeenCalledTimes(2);
+    expect(container!.querySelector('[data-testid="editor-error-notice"]')).toBeNull();
+  });
+
+  it('never turns a warning into an error card', async () => {
+    (window as { DocsAPI?: unknown }).DocsAPI = {
+      DocEditor: class { constructor(_id: string, config: unknown) { captured = config as typeof captured; } destroyEditor() {} },
+    };
+    apiMock.mockResolvedValue(okConfig);
+    mount();
+    await act(async () => {});
+
+    act(() => { captured!.events!.onWarning!({ data: { warningCode: 1, warningDescription: 'co-editing' } }); });
+    await act(async () => {});
+
+    expect(container!.textContent).not.toContain('could not be loaded');
+    expect(container!.querySelector('[data-testid="editor-error-overlay"]')).toBeNull();
+    expect(container!.querySelector('[data-testid="editor-error-notice"]')).toBeNull();
+  });
+});

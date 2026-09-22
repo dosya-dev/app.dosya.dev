@@ -5,7 +5,7 @@ import { useWorkspace } from '@/stores/workspace';
 import { useUploads } from '@/stores/uploads';
 import { useShallow } from 'zustand/react/shallow';
 import type { UploadItem } from '@/lib/upload-types';
-import { setWorkspaceCap } from '@/lib/upload-runner';
+import { setWorkspaceCap, retry, retryAllFailed, canRetry } from '@/lib/upload-runner';
 import { uploadFromDrop, uploadFromPicker } from '@/lib/upload-drop';
 import {
   getUserConcurrency, setUserConcurrency, MAX_USER_CONCURRENCY,
@@ -14,13 +14,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
-import { Upload, Globe, Info, Check, AlertCircle, Loader2, Home, FolderOpen, Layers, Search } from 'lucide-react';
+import { Upload, Info, Check, AlertCircle, Loader2, Home, FolderOpen, Layers, RotateCw } from 'lucide-react';
 import { humanSize, folderIconSrc } from '@/lib/helpers';
 import { toast } from '@/lib/toast';
 import { FolderPickerDialog } from '@/components/folder-picker-dialog';
-
-interface RegionInfo { code: string; city: string; country: string }
-
 
 export default function UploadsPage() {
   const wsId = useWorkspace((s: { activeId: string }) => s.activeId);
@@ -32,9 +29,6 @@ export default function UploadsPage() {
   // upload runner enrols it into the group once it completes.
   const groupId = searchParams.get('group');
   const [groupName, setGroupName] = useState('');
-  const [selectedRegion, setSelectedRegion] = useState('ap-southeast-2');
-  const [regions, setRegions] = useState<RegionInfo[]>([]);
-  const [regionQuery, setRegionQuery] = useState('');
   const [dragging, setDragging] = useState(false);
   const [selectFolderOpen, setSelectFolderOpen] = useState(false);
   const [concurrency, setConcurrency] = useState(getUserConcurrency());
@@ -56,23 +50,13 @@ export default function UploadsPage() {
     el.setAttribute('directory', '');
   }, []);
 
-  // Load regions + folders + workspace concurrency cap
+  // Load the workspace's concurrency cap. Nothing here asks about locations any
+  // more: every file in a workspace lives in the workspace's own location.
   useEffect(() => {
     if (!wsId) return;
     (async () => {
       try {
-        const [regRes, wsRes] = await Promise.all([
-          api<{ ok: boolean; regions: RegionInfo[] }>('/api/regions'),
-          api<{ ok: boolean; workspace?: { default_region: string }; settings?: { available_regions: string | null; max_concurrent_uploads: number } | null }>(`/api/workspaces/${wsId}`),
-        ]);
-        if (regRes.ok) {
-          let available: string[] = [];
-          if (wsRes.ok && wsRes.settings?.available_regions) {
-            try { available = JSON.parse(wsRes.settings.available_regions); } catch { /* */ }
-          }
-          setRegions(available.length > 0 ? regRes.regions.filter((r) => available.includes(r.code)) : regRes.regions);
-          if (wsRes.ok && wsRes.workspace?.default_region) setSelectedRegion(wsRes.workspace.default_region);
-        }
+        const wsRes = await api<{ ok: boolean; settings?: { max_concurrent_uploads: number } | null }>(`/api/workspaces/${wsId}`);
         const cap = wsRes.ok ? (wsRes.settings?.max_concurrent_uploads ?? 0) : 0;
         setWsMaxUploads(cap);
         setWorkspaceCap(cap);
@@ -93,7 +77,7 @@ export default function UploadsPage() {
   }, [wsId, groupId]);
 
   const uploadInput = () => ({
-    workspace_id: wsId, folder_id: folderId, region: selectedRegion, group_id: groupId,
+    workspace_id: wsId, folder_id: folderId, group_id: groupId,
   });
 
   const onConcurrencyChange = (n: number) => { setConcurrency(n); setUserConcurrency(n); };
@@ -113,19 +97,7 @@ export default function UploadsPage() {
 
   const totalBytes = queue.reduce((s, e) => s + e.fileSize, 0);
   const doneCount = queue.filter((e) => e.status === 'complete').length;
-
-  // Selected region floats to the top so it stays visible; the rest keep the
-  // server's order. Matching is case-insensitive across city, country and code.
-  const visibleRegions = (() => {
-    const q = regionQuery.trim().toLowerCase();
-    const matched = q
-      ? regions.filter((r) =>
-          r.city.toLowerCase().includes(q) ||
-          r.country.toLowerCase().includes(q) ||
-          r.code.toLowerCase().includes(q))
-      : regions;
-    return [...matched].sort((a, b) => (a.code === selectedRegion ? -1 : b.code === selectedRegion ? 1 : 0));
-  })();
+  const failedCount = queue.filter((e) => e.status === 'error').length;
 
   return (
     <div className="p-6 overflow-y-auto">
@@ -136,7 +108,7 @@ export default function UploadsPage() {
             ? <>Uploading to <span className="font-semibold text-foreground">{folderName}</span> · encrypted in transit</>
             : groupId
               ? <>Uploading to <span className="font-semibold text-foreground">{groupName || 'this group'}</span> · files land at the top level and are added to the group</>
-              : 'Files are end-to-end encrypted in transit. You pick the region.'}
+              : "Files are end-to-end encrypted in transit and stored in this workspace's location."}
         </p>
       </div>
 
@@ -174,7 +146,14 @@ export default function UploadsPage() {
                   <CardTitle className="text-sm font-semibold">Upload queue</CardTitle>
                   <p className="text-xs text-muted-foreground mt-0.5">{queue.length} file{queue.length !== 1 ? 's' : ''} · {humanSize(totalBytes)} total · {doneCount} complete</p>
                 </div>
-                <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => useUploads.getState().clearFinished()}>Clear done</Button>
+                <div className="flex items-center gap-1.5">
+                  {failedCount > 0 && (
+                    <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => retryAllFailed()}>
+                      <RotateCw className="size-3" /> Retry all failed
+                    </Button>
+                  )}
+                  <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => useUploads.getState().clearFinished()}>Clear done</Button>
+                </div>
               </CardHeader>
               <CardContent className="space-y-0">
                 {queue.map((item) => <QueueRow key={item.id} item={item} />)}
@@ -194,34 +173,6 @@ export default function UploadsPage() {
                   : <Home className="size-3.5 text-muted-foreground shrink-0" />}
                 <span className="flex-1 truncate">{folderName}</span>
               </button>
-            </div>
-            <div className="border-t" />
-            <div>
-              <p className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-1"><Globe className="size-3" /> Select region</p>
-              {/* 46 regions in a scroll box meant hunting for one by eye. Filter
-                  on city, country or region code. */}
-              <div className="relative mb-1.5">
-                <Search className="size-3 text-muted-foreground absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none" />
-                <input
-                  type="search"
-                  value={regionQuery}
-                  onChange={(e) => setRegionQuery(e.target.value)}
-                  placeholder="Search city, country or code"
-                  aria-label="Search regions"
-                  className="w-full h-7 pl-7 pr-2 rounded-lg border bg-background text-[11px] outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-1.5 max-h-50 overflow-y-auto">
-                {visibleRegions.map((r) => (
-                  <button key={r.code} className={`flex flex-col px-2.5 py-2 rounded-lg border text-left transition-colors ${r.code === selectedRegion ? 'border-green-500 bg-green-50 dark:bg-green-950/30' : 'hover:bg-muted/50'}`} onClick={() => setSelectedRegion(r.code)}>
-                    <span className="text-[11px] font-medium">{r.city}, {r.country}</span>
-                    <span className="text-[10px] text-muted-foreground">{r.code}</span>
-                  </button>
-                ))}
-              </div>
-              {visibleRegions.length === 0 && (
-                <p className="text-[11px] text-muted-foreground py-2 text-center">No region matches "{regionQuery}".</p>
-              )}
             </div>
             <div className="border-t" />
             <div>
@@ -266,7 +217,7 @@ export default function UploadsPage() {
   );
 }
 
-const QueueRow = memo(function QueueRow({ item }: { item: UploadItem }) {
+export const QueueRow = memo(function QueueRow({ item }: { item: UploadItem }) {
   const ext = item.fileName.includes('.') ? item.fileName.split('.').pop()!.toUpperCase() : 'FILE';
   const navigate = useNavigate();
 
@@ -288,6 +239,22 @@ const QueueRow = memo(function QueueRow({ item }: { item: UploadItem }) {
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 mb-1">
           <p className="text-xs font-medium truncate">{item.fileName}</p>
+          {item.status === 'error' && (() => {
+            // The bytes live in memory only, so a row that outlived a reload
+            // has nothing to send. Saying so beats a button that does nothing.
+            const retryable = canRetry(item.id);
+            return (
+              <button
+                type="button"
+                onClick={() => retry(item.id)}
+                disabled={!retryable}
+                title={retryable ? 'Try this upload again' : 'Add the file again to upload it - this tab no longer has its contents.'}
+                className="shrink-0 inline-flex items-center gap-1 text-[11px] font-medium text-foreground hover:underline disabled:opacity-50 disabled:no-underline disabled:cursor-not-allowed"
+              >
+                <RotateCw className="size-3" /> Retry
+              </button>
+            );
+          })()}
           {item.status === 'complete' && (
             <span className="flex items-center gap-2 shrink-0">
               <button onClick={openFile} className="text-[11px] font-medium text-green-600 hover:text-green-700 hover:underline">
@@ -300,6 +267,11 @@ const QueueRow = memo(function QueueRow({ item }: { item: UploadItem }) {
             </span>
           )}
         </div>
+        {/* A failed row names its reason: "Error" alone left the user guessing
+            whether to retry, rename, or give up. */}
+        {item.status === 'error' && item.error && (
+          <p className="text-[11px] text-destructive truncate mb-1" title={item.error}>{item.error}</p>
+        )}
         <div className="flex items-center gap-2">
           <span className="text-[11px] text-muted-foreground">{humanSize(item.fileSize)}</span>
           <Progress

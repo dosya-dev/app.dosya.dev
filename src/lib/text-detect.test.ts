@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isTextReadable, looksBinary, langFromExtension } from './text-detect';
+import { decodeTextBytes, isTextReadable, looksBinary, langFromExtension } from './text-detect';
 
 describe('isTextReadable', () => {
   it('accepts broadened code/config extensions', () => {
@@ -30,6 +30,30 @@ describe('looksBinary', () => {
   });
   it('passes normal text', () => {
     expect(looksBinary('const x = 1;\nhello world')).toBe(false);
+  });
+});
+
+describe('decodeTextBytes', () => {
+  it('decodes plain UTF-8', () => {
+    expect(decodeTextBytes(new TextEncoder().encode('merhaba dünya').buffer as ArrayBuffer)).toBe('merhaba dünya');
+  });
+
+  it('decodes UTF-16LE with BOM (Windows Notepad "Unicode") without NUL bytes', () => {
+    const s = 'ab';
+    const bytes = new Uint8Array([0xff, 0xfe, 0x61, 0x00, 0x62, 0x00]);
+    const text = decodeTextBytes(bytes.buffer as ArrayBuffer);
+    expect(text).toBe(s);
+    expect(looksBinary(text)).toBe(false);
+  });
+
+  it('decodes UTF-16BE with BOM', () => {
+    const bytes = new Uint8Array([0xfe, 0xff, 0x00, 0x61, 0x00, 0x62]);
+    expect(decodeTextBytes(bytes.buffer as ArrayBuffer)).toBe('ab');
+  });
+
+  it('strips the UTF-8 BOM', () => {
+    const bytes = new Uint8Array([0xef, 0xbb, 0xbf, 0x61]);
+    expect(decodeTextBytes(bytes.buffer as ArrayBuffer)).toBe('a');
   });
 });
 

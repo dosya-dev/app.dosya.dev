@@ -1,5 +1,19 @@
-import { describe, it, expect } from 'vitest';
-import { missingPartNumbers, bytesForParts, PartBytes, runPool, buildQueueItems } from './upload-runner';
+import { describe, it, expect, vi } from 'vitest';
+import { missingPartNumbers, bytesForParts, PartBytes, runPool, buildQueueItems, sourceTimeHeaders, enqueue, enqueueRejected, retryAllFailed, canRetry } from './upload-runner';
+import { useUploads } from '@/stores/uploads';
+
+describe('sourceTimeHeaders', () => {
+  it('converts File.lastModified (ms) to a unix-seconds header', () => {
+    expect(sourceTimeHeaders(1_600_000_000_500)).toEqual({ 'X-Dosya-Source-Mtime': '1600000000' });
+  });
+
+  it('sends nothing for the epoch-zero fallback some browsers report', () => {
+    // A File with no real mtime reports lastModified 0 - sending that would
+    // just be sanitized to NULL server-side, so skip the header entirely.
+    expect(sourceTimeHeaders(0)).toEqual({});
+    expect(sourceTimeHeaders(undefined as unknown as number)).toEqual({});
+  });
+});
 
 describe('missingPartNumbers', () => {
   it('returns all parts when none uploaded', () => {
@@ -207,13 +221,96 @@ describe('buildQueueItems', () => {
     expect(new Set(items.map((i) => i.id)).size).toBe(50);
   });
 
-  it('carries region, group and status defaults onto every row', () => {
+  it('carries group and status defaults onto every row', () => {
     const [item] = buildQueueItems([{ file: f('a.txt'), folder_id: 'fld_x' }], {
-      ...input, region: 'ap-southeast-2', group_id: 'grp_1',
+      ...input, group_id: 'grp_1',
     });
     expect(item).toMatchObject({
-      region: 'ap-southeast-2', group_id: 'grp_1', status: 'queued',
+      group_id: 'grp_1', status: 'queued',
       progress: 0, bytesUploaded: 0, mimeType: 'text/plain', fileSize: 3,
     });
+    expect(item).not.toHaveProperty('region');
+  });
+});
+
+// F3 (field report): pre-screen rejections are queue rows, and one action
+// retries every failure.
+describe('enqueueRejected', () => {
+  it('adds one error row per rejected file, carrying the reason', () => {
+    localStorage.clear();
+    useUploads.setState({ items: [] });
+    enqueueRejected(
+      [{ file: new File(['x'], 'a.exe'), reason: 'File type .exe is not allowed in this workspace' }],
+      { workspace_id: 'ws_1', folder_id: 'fld_1' },
+    );
+    const items = useUploads.getState().items;
+    expect(items).toHaveLength(1);
+    expect(items[0].fileName).toBe('a.exe');
+    expect(items[0].status).toBe('error');
+    expect(items[0].error).toBe('File type .exe is not allowed in this workspace');
+    expect(items[0].folder_id).toBe('fld_1');
+    expect(items[0].progress).toBe(0);
+  });
+});
+
+describe('retryAllFailed (runner)', () => {
+  it('re-queues failures whose File is still in memory and marks the rest interrupted', () => {
+    localStorage.clear();
+    useUploads.setState({ items: [] });
+    // In memory: the rejected row registered its File with the runner.
+    enqueueRejected([{ file: new File(['x'], 'a.exe'), reason: 'nope' }], { workspace_id: 'ws_1', folder_id: null });
+    // Not in memory: an error row that survived a reload has no File.
+    useUploads.getState().addItems([{
+      id: 'ghost', session_id: null, fileName: 'g.txt', fileSize: 1, mimeType: 't', workspace_id: 'ws_1',
+      folder_id: null, status: 'error', error: 'Upload failed', progress: 0, bytesUploaded: 0,
+      part_size: null, total_parts: null, uploaded_parts: [],
+    }]);
+    retryAllFailed();
+    const byName = Object.fromEntries(useUploads.getState().items.map((i) => [i.fileName, i]));
+    // Re-queued - and, since the scheduler wakes synchronously, possibly
+    // already picked up. Either way it is no longer a failure.
+    expect(['queued', 'uploading']).toContain(byName['a.exe'].status);
+    expect(byName['a.exe'].error).toBeUndefined();
+    expect(byName['g.txt'].status).toBe('interrupted');
+    // Fix round 1, MINOR (a): the parked row keeps the reason it failed.
+    expect(byName['g.txt'].error).toBe('Upload failed');
+  });
+});
+
+// Fix round 1, MINOR (a): the UI needs to know a Retry would do nothing, so
+// it can disable the control instead of silently ignoring the click.
+describe('canRetry', () => {
+  it('is true only while the file\'s bytes are still held in this tab', () => {
+    localStorage.clear();
+    useUploads.setState({ items: [] });
+    enqueueRejected([{ file: new File(['x'], 'a.exe'), reason: 'nope' }], { workspace_id: 'ws_1', folder_id: null });
+    const id = useUploads.getState().items[0].id;
+    expect(canRetry(id)).toBe(true);
+    expect(canRetry('never-queued')).toBe(false);
+  });
+});
+
+// Where a file lands is the workspace's location, decided server-side. A
+// client that still named a region would be asking for one it cannot have -
+// the door ignores it, so the client must stop sending it.
+describe('initSession', () => {
+  it('never puts a region in the init body', async () => {
+    localStorage.clear();
+    useUploads.setState({ items: [] });
+    const bodies: string[] = [];
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async (_url: unknown, init?: { body?: unknown }) => {
+      bodies.push(String(init?.body ?? ''));
+      return { ok: false, status: 500, json: async () => ({ ok: false, error: 'stopped by the test' }) };
+    }) as unknown as typeof fetch;
+    try {
+      enqueue([new File(['x'], 'a.txt')], { workspace_id: 'ws_1', folder_id: 'fld_1' });
+      await vi.waitFor(() => expect(bodies).toHaveLength(1));
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+    const body = JSON.parse(bodies[0]);
+    expect(body).toMatchObject({ workspace_id: 'ws_1', folder_id: 'fld_1', file_name: 'a.txt' });
+    expect(body).not.toHaveProperty('region');
   });
 });

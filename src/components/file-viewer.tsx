@@ -3,12 +3,13 @@ import { api, API_BASE } from '@/api/client';
 import {
   X, Download, ChevronLeft, ChevronRight, ChevronDown, Pencil, Clock, SquarePen, Loader2,
   Star, Share2, MoreHorizontal, PanelRight, Trash2, Move, Lock, LockOpen,
-  Minus, Plus, Maximize, Check, Link2, MessageSquare,
+  Minus, Plus, Maximize, Check, Link2, MessageSquare, FileText,
 } from 'lucide-react';
-import { humanSize, extOf, isImage, isVideo, isAudio, fileIconSrc, isOfficeFile, isBook, colorFor, regionLabel, originLabel, timeAgo } from '@/lib/helpers';
+import { humanSize, extOf, isImage, isVideo, isAudio, fileIconSrc, isOfficeFile, isBook, isArchive, colorFor, regionLabel, originLabel, timeAgo } from '@/lib/helpers';
 import { FilePreviewImage } from '@/components/file-preview-image';
+import { ArchiveViewer } from '@/components/archive-viewer/archive-viewer';
 import { toast } from '@/lib/toast';
-import { isTextReadable, langFromExtension, looksBinary } from '@/lib/text-detect';
+import { decodeTextBytes, isTextReadable, langFromExtension, looksBinary } from '@/lib/text-detect';
 import { parseCsvTable } from '@/lib/csv-table';
 import { parseMarkdown, type InlineToken, type MdBlock } from '@/lib/markdown';
 import { BookViewer } from '@/components/book-viewer';
@@ -589,7 +590,9 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
                 on one - so it drops the centring and padding every other type wants. */}
             {/* PDF joins audio here: its viewer brings its own toolbar, scroller,
                 and background, so the centring and padding would just inset it. */}
-            <div className={`absolute inset-0 flex ${isAudio(file.name) || isPdf(file.name) ? 'overflow-hidden' : 'items-center justify-center overflow-auto p-6'}`}>
+            {/* Archive joins them too, for the same reason: it is a surface, not
+                an object sitting on one. */}
+            <div className={`absolute inset-0 flex ${isAudio(file.name) || isPdf(file.name) || isArchive(file.name) ? 'overflow-hidden' : 'items-center justify-center overflow-auto p-6'}`}>
               <FileContent file={file} files={files} rawUrl={rawUrl()} stableRawUrl={stableRawUrl} downloadUrl={downloadUrl} version={previewVersion} workspaceId={workspaceId} pdfToolbarSlots={pdfSlots} zoom={zoom} onSaved={() => { onRefresh(); loadVersions(); }} onNavigate={onNavigate} />
             </div>
             <button
@@ -928,6 +931,13 @@ function FileContent({ file, files, rawUrl, stableRawUrl, downloadUrl, version, 
     return <BookViewer file={file} />;
   }
 
+  // An archive is browsed, not rendered: the pane lists its entries and points
+  // the existing viewers at one entry at a time. After isBook on purpose -
+  // .cbz and .epub are zips too, and they already have a better home.
+  if (isArchive(file.name)) {
+    return <ArchiveViewer key={file.id} file={file} version={version} />;
+  }
+
   // Ahead of the text check: these are text with a better shape available
   // (same split the mobile viewer makes). Both fall back to the plain text
   // viewer for degenerate content, so the split costs nothing when wrong.
@@ -973,21 +983,74 @@ function FileContent({ file, files, rawUrl, stableRawUrl, downloadUrl, version, 
     return <OfficePreview file={file} version={version} fallback={fallbackCard} />;
   }
 
-  // Fallback
-  return fallbackCard;
+  // Unknown type: same card, plus an opt-in "open it as text anyway". Keyed
+  // on the file so navigating the strip resets a previous acceptance. Fed the
+  // stable URL because the accepted TextViewer refetches when its URL
+  // changes, and the Date.now()-stamped one changes on every parent render.
+  return <UnsupportedPreview key={file.id} file={file} rawUrl={stableRawUrl} downloadUrl={downloadUrl} />;
+}
+
+/**
+ * Fallback for types nothing else claims. Any file is openable as plain
+ * text if the user knowingly accepts that binary content will look garbled -
+ * the same accept-first gate TextViewer puts in front of binary-looking
+ * content, so both paths keep one behavior.
+ */
+function UnsupportedPreview({ file, rawUrl, downloadUrl }: { file: FileItem; rawUrl: string; downloadUrl: string }) {
+  const [asText, setAsText] = useState(false);
+  const ext = extOf(file.name);
+
+  if (asText) {
+    return <TextViewer file={file} rawUrl={rawUrl} downloadUrl={downloadUrl} force />;
+  }
+
+  return (
+    <div className="bg-background border rounded-xl p-10 text-center min-w-70 max-w-105">
+      <p className="text-4xl font-bold text-muted-foreground/30 tracking-wider mb-3">{ext.toUpperCase() || 'FILE'}</p>
+      <p className="text-sm text-muted-foreground mb-2 break-all">{file.name}</p>
+      <p className="text-xs text-muted-foreground mb-5">
+        Preview isn't available for this file type. You can open it as plain text - binary content will show up garbled.
+      </p>
+      <button
+        onClick={() => setAsText(true)}
+        className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg border text-sm font-semibold hover:bg-muted mr-2"
+      >
+        <FileText className="size-4" /> Open as text
+      </button>
+      <a
+        href={downloadUrl}
+        download
+        className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-foreground text-background text-sm font-semibold hover:opacity-90"
+      >
+        <Download className="size-4" /> Download
+      </a>
+    </div>
+  );
 }
 
 const TEXT_PREVIEW_MAX = 2 * 1024 * 1024; // 2 MB
 const HIGHLIGHT_MAX = 300 * 1024;         // 300 KB
 
-function TextViewer({ file, rawUrl, downloadUrl }: { file: FileItem; rawUrl: string; downloadUrl: string }) {
+function TextViewer({ file, rawUrl, downloadUrl, force }: { file: FileItem; rawUrl: string; downloadUrl: string; force?: boolean }) {
   const ext = extOf(file.name);
   const [plain, setPlain] = useState<string | null>(null);
   const [html, setHtml] = useState<string | null>(null);
   const [state, setState] = useState<'loading' | 'ok' | 'toobig' | 'binary' | 'error'>('loading');
+  // With `force` (the unsupported-type card's "Open as text") the binary
+  // warning is pre-accepted; otherwise the user accepts it per file.
+  const [accepted, setAccepted] = useState(!!force);
   const [findOpen, setFindOpen] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
   const find = useInFileFind(contentRef);
+
+  // A new source resets the acceptance - adjusted during render on the prop
+  // change (same pattern as prevFileId above) so it never shows file B's
+  // bytes under file A's accepted warning.
+  const [prevRawUrl, setPrevRawUrl] = useState(rawUrl);
+  if (prevRawUrl !== rawUrl) {
+    setPrevRawUrl(rawUrl);
+    setAccepted(!!force);
+  }
 
   // Fetch + detect
   useEffect(() => {
@@ -996,13 +1059,20 @@ function TextViewer({ file, rawUrl, downloadUrl }: { file: FileItem; rawUrl: str
     setState('loading');
     let cancelled = false;
     fetch(rawUrl, { credentials: 'include' })
-      .then((r) => (r.ok ? r.text() : Promise.reject()))
-      .then((text) => {
+      .then((r) => (r.ok ? r.arrayBuffer() : Promise.reject()))
+      .then((buf) => {
         if (cancelled) return;
-        if (looksBinary(text.slice(0, 8192))) { setState('binary'); return; }
+        const text = decodeTextBytes(buf);
+        if (looksBinary(text.slice(0, 8192))) {
+          // Keep the (NUL-stripped) text around: it is what "Open as text"
+          // shows if the user accepts the warning.
+          setPlain(text.replace(/\0/g, ''));
+          setState('binary');
+          return;
+        }
         setPlain(text);
         setState('ok');
-        if (text.length <= HIGHLIGHT_MAX) {
+        if (!force && text.length <= HIGHLIGHT_MAX) {
           highlightToHtml(text, langFromExtension(file.name))
             .then((h) => { if (!cancelled) { setHtml(h); requestAnimationFrame(() => find.refresh()); } })
             .catch(() => { /* keep plain */ });
@@ -1010,7 +1080,7 @@ function TextViewer({ file, rawUrl, downloadUrl }: { file: FileItem; rawUrl: str
       })
       .catch(() => { if (!cancelled) setState('error'); });
     return () => { cancelled = true; };
-  }, [rawUrl, file.name, file.size_bytes]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [rawUrl, file.name, file.size_bytes, force]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Ctrl/Cmd+F opens our find bar (intercept native find while a text file is shown)
   useEffect(() => {
@@ -1028,9 +1098,20 @@ function TextViewer({ file, rawUrl, downloadUrl }: { file: FileItem; rawUrl: str
   if (state === 'toobig') {
     return <OversizeFallback file={file} downloadUrl={downloadUrl} />;
   }
-  if (state === 'binary' || state === 'error') {
+  if (state === 'error') {
+    return <OversizeFallback file={file} downloadUrl={downloadUrl} note="Failed to load file content." />;
+  }
+  if (state === 'binary' && !accepted) {
     return <OversizeFallback file={file} downloadUrl={downloadUrl}
-      note={state === 'binary' ? 'This file is not text-previewable.' : 'Failed to load file content.'} />;
+      note="This file doesn't look like text. You can still open it as plain text - binary content will show up garbled."
+      action={
+        <button
+          onClick={() => setAccepted(true)}
+          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg border text-sm font-semibold hover:bg-muted mr-2"
+        >
+          <FileText className="size-4" /> Open as text
+        </button>
+      } />;
   }
 
   return (
@@ -1048,13 +1129,14 @@ function TextViewer({ file, rawUrl, downloadUrl }: { file: FileItem; rawUrl: str
   );
 }
 
-function OversizeFallback({ file, downloadUrl, note }: { file: FileItem; downloadUrl: string; note?: string }) {
+function OversizeFallback({ file, downloadUrl, note, action }: { file: FileItem; downloadUrl: string; note?: string; action?: ReactNode }) {
   const sizeStr = humanSize(file.size_bytes);
   return (
-    <div className="bg-background border rounded-xl p-10 text-center min-w-70">
+    <div className="bg-background border rounded-xl p-10 text-center min-w-70 max-w-105">
       <p className="text-4xl font-bold text-muted-foreground/30 tracking-wider mb-3">{extOf(file.name).toUpperCase() || 'FILE'}</p>
       <p className="text-sm text-muted-foreground mb-2 break-all">{file.name}</p>
       <p className="text-xs text-muted-foreground mb-5">{note ?? `File too large to preview inline (${sizeStr}).`}</p>
+      {action}
       <a href={downloadUrl} download className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-foreground text-background text-sm font-semibold hover:opacity-90">
         <Download className="size-4" /> Download
       </a>
@@ -1110,9 +1192,10 @@ function useTextBody(file: FileItem, rawUrl: string): { text: string | null; sta
     if (toobig) return;
     let cancelled = false;
     fetch(rawUrl, { credentials: 'include' })
-      .then((r) => (r.ok ? r.text() : Promise.reject()))
-      .then((body) => {
+      .then((r) => (r.ok ? r.arrayBuffer() : Promise.reject()))
+      .then((buf) => {
         if (cancelled) return;
+        const body = decodeTextBytes(buf);
         if (looksBinary(body.slice(0, 8192))) setFetched({ url: rawUrl, state: 'binary', text: null });
         else setFetched({ url: rawUrl, state: 'ok', text: body });
       })

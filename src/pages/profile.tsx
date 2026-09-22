@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useLocation, Link } from 'react-router-dom';
 import { api, API_BASE, ApiError } from '@/api/client';
+import { useSession } from '@/stores/session';
 import {
   CODE_LENGTH, normaliseCode, isCompleteCode, cooldownRemaining,
   describeBlocker, formatScheduledDate, daysRemaining, classifyDeleteError,
@@ -34,6 +35,7 @@ import { PROVIDER_LABELS, PROVIDER_ICONS } from '@/lib/cloud-providers';
 import { listProviders, type CloudProvider } from '@/api/cloud-import';
 import { FolderPickerDialog } from '@/components/folder-picker-dialog';
 import { roleLabel } from '@/lib/workspace-dashboard';
+import { s3Endpoint, S3_REGION } from '@/lib/integrations';
 
 // ── Types ──────────────────────────────────────────────────
 
@@ -51,6 +53,9 @@ interface TfaStatus {
 interface ApiKey {
   id: string; name: string; scope: string; key_prefix: string;
   created_at: number; s3_access_key_id: string | null;
+  // Unix seconds, or null for a key that never expires. Both doors refuse an
+  // expired key and the API refuses to mint S3 credentials for one.
+  expires_at: number | null;
   surfaces: string | null;
   // Folder anchor (migration 0095). NULL/NULL means the key sees the whole
   // account - see apps/api/src/lib/access/anchor.ts.
@@ -115,6 +120,20 @@ function formatSurfaces(surfaces: string | null): string {
   return surfaces.split(',').map((s) => SURFACE_LABELS[s] ?? s).join(', ');
 }
 
+// Mirrors credentialAllowsSurface() in apps/api/src/lib/access/credential.ts,
+// which is what the API's s3-credentials route and the S3 door both apply:
+// null is unrestricted, an empty list is a restriction to zero surfaces. The
+// page must agree with the server here or it offers an "Enable" the server
+// refuses (bounty report 2026-09-05).
+function keyAllowsS3(surfaces: string | null): boolean {
+  if (surfaces === null) return true;
+  return surfaces.split(',').map((s) => s.trim()).includes('s3');
+}
+
+function keyExpired(k: { expires_at: number | null }): boolean {
+  return k.expires_at !== null && k.expires_at * 1000 <= Date.now();
+}
+
 // Sentinel for the "no workspace pin" option in the create-key workspace
 // Select - '' isn't usable there since an unselected/placeholder value reads
 // the same way in that component.
@@ -166,13 +185,6 @@ function formatConditions(k: ApiKey): string | null {
   if (k.active_hours) parts.push('time-restricted');
   return parts.length > 0 ? parts.join(' + ') : null;
 }
-
-const LANGUAGES = [
-  { value: 'en', label: 'English (AU)' },
-  { value: 'en-us', label: 'English (US)' },
-  { value: 'tr', label: 'Turkish' },
-  { value: 'de', label: 'German' },
-];
 
 // ── API helper (never throws; normalises to { ok, error }) ──
 
@@ -360,10 +372,12 @@ function ProfileHero({ user, onAvatarChanged }: { user: UserProfile | null; onAv
 
 // ── Identity ───────────────────────────────────────────────
 
-function IdentitySection({ user, onSaved }: { user: UserProfile | null; onSaved: () => void }) {
+// Exported for its tests. There is deliberately no language selector here:
+// the interface is English only today, and the old "Preferred language"
+// dropdown saved nothing and changed nothing.
+export function IdentitySection({ user, onSaved }: { user: UserProfile | null; onSaved: () => void }) {
   const [name, setName] = useState(user?.name ?? '');
   const [email, setEmail] = useState(user?.email ?? '');
-  const [language, setLanguage] = useState(user?.preferred_language ?? 'en');
   const [savingName, setSavingName] = useState(false);
 
   // Email change flow
@@ -375,7 +389,7 @@ function IdentitySection({ user, onSaved }: { user: UserProfile | null; onSaved:
   const [confirming, setConfirming] = useState(false);
 
   useEffect(() => {
-    if (user) { setName(user.name); setEmail(user.email); setLanguage(user.preferred_language); }
+    if (user) { setName(user.name); setEmail(user.email); }
   }, [user]);
 
   const emailChanged = !!user && email.trim().toLowerCase() !== user.email.toLowerCase() && email.trim() !== '';
@@ -471,15 +485,6 @@ function IdentitySection({ user, onSaved }: { user: UserProfile | null; onSaved:
                 </div>
               )}
             </div>
-          </SettingRow>
-
-          <SettingRow label="Preferred language" desc="Interface language for your account.">
-            <Select value={language} onValueChange={(v) => setLanguage(v as string)} items={LANGUAGES}>
-              <SelectTrigger className="h-8 text-xs w-48"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {LANGUAGES.map((l) => <SelectItem key={l.value} value={l.value}>{l.label}</SelectItem>)}
-              </SelectContent>
-            </Select>
           </SettingRow>
         </CardContent>
       </Card>
@@ -585,7 +590,8 @@ function AppearanceSection() {
 
 // ── Password & 2FA ─────────────────────────────────────────
 
-function PasswordSection({ tfa, onTfaChanged, hasPassword }: { tfa: TfaStatus | null; onTfaChanged: () => void; hasPassword: boolean }) {
+// Exported for its tests.
+export function PasswordSection({ tfa, onTfaChanged, hasPassword }: { tfa: TfaStatus | null; onTfaChanged: () => void; hasPassword: boolean }) {
   const [passwordModal, setPasswordModal] = useState(false);
   const [current, setCurrent] = useState('');
   const [newPw, setNewPw] = useState('');
@@ -598,17 +604,24 @@ function PasswordSection({ tfa, onTfaChanged, hasPassword }: { tfa: TfaStatus | 
   const [regenModal, setRegenModal] = useState(false);
   const [enablingEmail, setEnablingEmail] = useState(false);
 
+  // Contract 7 (2026-09-02 field report): an account created through OAuth has
+  // no password to confirm, so the API accepts a missing current_password
+  // while password_set_at IS NULL. The dialog reads "Set a password" and asks
+  // only for the new one.
   const changePassword = async () => {
     if (newPw !== confirm) { toast.error('Passwords do not match', 'The new password and confirmation are different.'); return; }
     if (newPw.length < 8) { toast.error('Password too short', 'Password must be at least 8 characters'); return; }
     setSaving(true);
-    const res = await req('/api/me/password', {
-      method: 'PUT', body: JSON.stringify({ current_password: current, new_password: newPw }),
-    });
-    if (res.ok) { toast.success('Password changed', 'Your password has been updated.'); setPasswordModal(false); setCurrent(''); setNewPw(''); setConfirm(''); }
-    else toast.error('Update failed', res.error ?? 'The password could not be changed.');
+    const body = hasPassword ? { current_password: current, new_password: newPw } : { new_password: newPw };
+    const res = await req('/api/me/password', { method: 'PUT', body: JSON.stringify(body) });
+    if (res.ok) {
+      toast.success(hasPassword ? 'Password changed' : 'Password set', hasPassword ? 'Your password has been updated.' : 'You can now sign in with your email and password too.');
+      setPasswordModal(false); setCurrent(''); setNewPw(''); setConfirm('');
+      if (!hasPassword) onTfaChanged();
+    } else toast.error('Update failed', res.error ?? (hasPassword ? 'The password could not be changed.' : 'The password could not be set.'));
     setSaving(false);
   };
+  const passwordVerb = hasPassword ? 'Change password' : 'Set a password';
 
   const enableEmail = async () => {
     setEnablingEmail(true);
@@ -625,17 +638,23 @@ function PasswordSection({ tfa, onTfaChanged, hasPassword }: { tfa: TfaStatus | 
       <Card>
         <CardContent className="divide-y">
           {hasPassword ? (
-            // The API also requires a special character and rejects reusing the current
-            // password; the old copy mentioned neither, so users hit a 400 unprepared.
-            <SettingRow label="Password" desc="Min. 8 characters, with upper and lower case, a number, and a special character.">
+            // The rule the API actually enforces is length, both ends: the
+            // composition mandates (upper/lower/digit/symbol) were dropped
+            // from the shared policy - they push people toward short mangled
+            // passwords and reject strong passphrases - so promising them here
+            // would describe a check that no longer exists.
+            <SettingRow label="Password" desc="At least 8 characters. A long passphrase is stronger than a short mix of symbols.">
               <Button variant="outline" size="sm" className="text-xs" onClick={() => setPasswordModal(true)}>Change password</Button>
             </SettingRow>
           ) : (
             <SettingRow
               label="Password"
-              desc="You signed up with Google or GitHub, so this account has no password yet. Use “Forgot password” to set one - you'll need it to turn two-factor authentication off later."
+              desc="You signed in with Google, GitHub or Apple, so this account has no password yet. Set one to also sign in with email, and to turn two-factor authentication off later."
             >
-              <Badge variant="secondary" className="text-[10px]">Not set</Badge>
+              <div className="flex items-center gap-2">
+                <Badge variant="secondary" className="text-[10px]">Not set</Badge>
+                <Button variant="outline" size="sm" className="text-xs" onClick={() => setPasswordModal(true)}>Set a password</Button>
+              </div>
             </SettingRow>
           )}
 
@@ -656,7 +675,7 @@ function PasswordSection({ tfa, onTfaChanged, hasPassword }: { tfa: TfaStatus | 
               // Enrolling needs no password but disabling verifies one, so without a
               // password this is a one-way door. Block the door, don't just warn later.
               <p className="text-[11px] text-muted-foreground max-w-[16rem] text-right">
-                Set a password first - turning 2FA off later requires one.
+                Set your password first (above) - turning 2FA off later requires one.
               </p>
             ) : (
               <div className="flex items-center gap-2">
@@ -673,7 +692,7 @@ function PasswordSection({ tfa, onTfaChanged, hasPassword }: { tfa: TfaStatus | 
           {method && !hasPassword && (
             <SettingRow
               label="Password required"
-              desc="Turning two-factor authentication off requires a password. Use “Forgot password” to set one first."
+              desc="Turning two-factor authentication off requires a password. Set one above first."
             >
               <span />
             </SettingRow>
@@ -689,19 +708,22 @@ function PasswordSection({ tfa, onTfaChanged, hasPassword }: { tfa: TfaStatus | 
         </CardContent>
       </Card>
 
-      {/* Change password modal */}
+      {/* Change / set password modal */}
       <Dialog open={passwordModal} onOpenChange={setPasswordModal}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader><DialogTitle>Change password</DialogTitle></DialogHeader>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader><DialogTitle>{passwordVerb}</DialogTitle></DialogHeader>
           <div className="space-y-3">
-            <Input type="password" placeholder="Current password" value={current} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setCurrent(e.target.value)} className="h-9 text-sm" />
+            {hasPassword && (
+              <Input type="password" placeholder="Current password" value={current} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setCurrent(e.target.value)} className="h-9 text-sm" />
+            )}
             <Input type="password" placeholder="New password" value={newPw} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewPw(e.target.value)} className="h-9 text-sm" />
             <Input type="password" placeholder="Confirm new password" value={confirm} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setConfirm(e.target.value)} className="h-9 text-sm" onKeyDown={(e) => e.key === 'Enter' && changePassword()} />
+            <p className="text-[11px] text-muted-foreground">At least 8 characters. A long passphrase is stronger than a short mix of symbols.</p>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setPasswordModal(false)}>Cancel</Button>
             <Button onClick={changePassword} disabled={saving}>
-              {saving ? <Loader2 className="size-4 animate-spin mr-1.5" /> : null} Change password
+              {saving ? <Loader2 className="size-4 animate-spin mr-1.5" /> : null} {passwordVerb}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -928,7 +950,7 @@ function RegenCodesModal({ open, onOpenChange, onDone }: { open: boolean; onOpen
 
 interface S3Creds { access_key_id: string; secret_access_key: string; endpoint: string; region: string }
 
-function ApiKeysSection({ keys, workspaces, onChanged }: { keys: ApiKey[]; workspaces: Workspace[]; onChanged: () => void }) {
+export function ApiKeysSection({ keys, workspaces, onChanged }: { keys: ApiKey[]; workspaces: Workspace[]; onChanged: () => void }) {
   const [createOpen, setCreateOpen] = useState(false);
   const [keyName, setKeyName] = useState('');
   const [keyScope, setKeyScope] = useState('full');
@@ -1093,8 +1115,8 @@ function ApiKeysSection({ keys, workspaces, onChanged }: { keys: ApiKey[]; works
     setS3Creds({
       access_key_id: k.s3_access_key_id,
       secret_access_key: '(secret key is not retrievable - delete and recreate the key to rotate)',
-      endpoint: `${window.location.origin}/s3`,
-      region: 'auto',
+      endpoint: s3Endpoint(),
+      region: S3_REGION,
     });
     setS3Loading(false); setS3Open(true);
   };
@@ -1139,10 +1161,24 @@ function ApiKeysSection({ keys, workspaces, onChanged }: { keys: ApiKey[]; works
                     <button onClick={() => viewS3(k)} className="text-[9px] font-medium text-green-700 dark:text-green-400 hover:underline flex items-center gap-0.5">
                       <Check className="size-2.5" /> Active
                     </button>
-                  ) : (
+                  ) : keyExpired(k) ? (
+                    <span
+                      title="This key has expired. Create a new key to use S3."
+                      className="text-[9px] font-medium text-muted-foreground/60 cursor-help"
+                    >
+                      Expired
+                    </span>
+                  ) : keyAllowsS3(k.surfaces) ? (
                     <button onClick={() => enableS3(k.id)} className="text-[9px] font-medium text-muted-foreground hover:text-foreground flex items-center gap-0.5">
                       <Plus className="size-2.5" /> Enable
                     </button>
+                  ) : (
+                    <span
+                      title="This key's protocols don't include the S3 gateway. Create a key that allows S3 to use it."
+                      className="text-[9px] font-medium text-muted-foreground/60 cursor-help"
+                    >
+                      Not allowed
+                    </span>
                   )}
                 </span>
                 <div className="flex items-center gap-1 justify-end">
@@ -1812,6 +1848,8 @@ function DeleteAccountSection() {
       await api('/api/me/delete-cancel', { method: 'POST' });
       setScheduledFor(null);
       toast.success('Deletion cancelled', 'Your account will not be deleted.');
+      // The layout's banner reads the session store, not this page's state.
+      void useSession.getState().fetchMe().catch(() => { /* the banner clears on the next load */ });
       await load();
     } catch (e) { setError(classifyDeleteError(e).message); }
     finally { setBusy(false); }

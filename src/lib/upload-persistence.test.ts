@@ -5,7 +5,7 @@ import type { UploadItem } from './upload-types';
 function item(over: Partial<UploadItem>): UploadItem {
   return {
     id: 'a', session_id: null, fileName: 'f', fileSize: 10, mimeType: 't',
-    workspace_id: 'ws', folder_id: null, region: 'r', status: 'queued',
+    workspace_id: 'ws', folder_id: null, status: 'queued',
     progress: 0, bytesUploaded: 0, part_size: null, total_parts: null,
     uploaded_parts: [], ...over,
   };

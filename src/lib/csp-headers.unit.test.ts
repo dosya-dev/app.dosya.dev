@@ -45,4 +45,30 @@ describe('web CSP invariants', () => {
     expect(directive('media-src')).toContain('blob:');
     expect(directive('media-src')).toContain("'self'");
   });
+
+  // The Vault (E2EE Spaces) PUTs and GETs encrypted chunks straight against
+  // the R2 S3 endpoint with presigned URLs (apps/api/src/pages/api/e2ee/
+  // chunk-upload-url.ts). Bucket CORS was right and the presign was right,
+  // and every upload still died as "TypeError: Failed to fetch": connect-src
+  // did not list the R2 host, so the browser refused the request before it
+  // left the page. Explicit account hosts, not *.r2.cloudflarestorage.com, so
+  // an injected script cannot exfiltrate to a foreign R2 account. The EU
+  // jurisdiction bucket lives on its own hostname (lib/r2-buckets.ts).
+  it('allows presigned R2 chunk fetches for the Vault, on both R2 hostnames', () => {
+    expect(directive('connect-src')).toContain('https://0b25394b353c95a526538e19706809e8.r2.cloudflarestorage.com');
+    expect(directive('connect-src')).toContain('https://0b25394b353c95a526538e19706809e8.eu.r2.cloudflarestorage.com');
+    expect(directive('connect-src')).not.toContain('*.r2.cloudflarestorage.com');
+  });
+
+  // Cloudflare Web Analytics is auto-injected at the edge for this zone: a
+  // <script src="https://static.cloudflareinsights.com/beacon.min.js/..."> that
+  // then POSTs to https://cloudflareinsights.com/cdn-cgi/rum. Neither host was
+  // allowed, so the app had no browser analytics at all while every build and
+  // test stayed green. These are the two hosts Cloudflare documents for it
+  // (developers.cloudflare.com/fundamentals/reference/policies-compliances/
+  // content-security-policies/).
+  it('allows the Cloudflare Web Analytics beacon and its RUM endpoint', () => {
+    expect(directive('script-src')).toContain('https://static.cloudflareinsights.com');
+    expect(directive('connect-src')).toContain('https://cloudflareinsights.com');
+  });
 });

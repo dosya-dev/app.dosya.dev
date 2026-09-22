@@ -1,21 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useUploads, uploadSummary } from '@/stores/uploads';
-import { cancel, retry, retryInRegion, resumeWithFile } from '@/lib/upload-runner';
+import { cancel, retry, resumeWithFile, retryAllFailed, canRetry } from '@/lib/upload-runner';
 import type { UploadItem } from '@/lib/upload-types';
-import { api, API_BASE } from '@/api/client';
+import { API_BASE } from '@/api/client';
 import { ContextMenu } from '@/components/context-menu';
 import { Progress } from '@/components/ui/progress';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
 import { humanSize } from '@/lib/helpers';
 import { toast } from '@/lib/toast';
 import {
   ChevronUp, ChevronDown, X, RotateCw, Upload, Check, AlertCircle, Loader2,
-  Download, FolderOpen, Globe, Trash2,
+  Download, FolderOpen, Trash2,
 } from 'lucide-react';
-
-interface RegionInfo { code: string; city: string; country: string }
 
 export default function UploadDock() {
   const navigate = useNavigate();
@@ -24,40 +20,14 @@ export default function UploadDock() {
   const removeItem = useUploads((s) => s.removeItem);
   const [expanded, setExpanded] = useState(true);
   const [ctx, setCtx] = useState<{ item: UploadItem; x: number; y: number } | null>(null);
-  const [regionTarget, setRegionTarget] = useState<UploadItem | null>(null);
-  const [regions, setRegions] = useState<RegionInfo[]>([]);
   const resumeIdRef = useRef<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const loadedRegionsWsRef = useRef<string | null>(null);
   // The dock slides UP into view, so it has to leave through the same edge.
   // React unmounting the moment the last item is cleared made that impossible,
   // so `mounted` outlives `items`: it is set on the first item and only cleared
   // once the exit animation has actually finished.
   const [mounted, setMounted] = useState(false);
   const lastItemsRef = useRef(items);
-
-  // When the "retry in another region" dialog opens, load only the regions
-  // ALLOWED for that upload's workspace (same filter the Uploads page uses).
-  // Refetched only when the target's workspace differs from the last load.
-  useEffect(() => {
-    if (!regionTarget) return;
-    const ws = regionTarget.workspace_id;
-    if (loadedRegionsWsRef.current === ws) return;
-    Promise.all([
-      api<{ ok: boolean; regions: RegionInfo[] }>('/api/regions'),
-      api<{ ok: boolean; settings?: { available_regions: string | null } | null }>(`/api/workspaces/${ws}`),
-    ])
-      .then(([regRes, wsRes]) => {
-        if (!regRes.ok) return;
-        let available: string[] = [];
-        if (wsRes.ok && wsRes.settings?.available_regions) {
-          try { available = JSON.parse(wsRes.settings.available_regions); } catch { /* all */ }
-        }
-        setRegions(available.length > 0 ? regRes.regions.filter((r) => available.includes(r.code)) : regRes.regions);
-        loadedRegionsWsRef.current = ws;
-      })
-      .catch(() => { /* leave empty → dialog shows a loading note */ });
-  }, [regionTarget]);
 
   useEffect(() => { if (items.length > 0) setMounted(true); }, [items.length]);
 
@@ -99,7 +69,6 @@ export default function UploadDock() {
     if (item.status === 'error') {
       return [
         { label: 'Retry', icon: <RotateCw className="size-3.5" />, onClick: () => retry(item.id) },
-        { label: 'Retry in another region…', icon: <Globe className="size-3.5" />, onClick: () => setRegionTarget(item) },
         sep,
         { label: 'Remove', icon: <Trash2 className="size-3.5" />, danger: true, onClick: () => removeItem(item.id) },
       ];
@@ -165,6 +134,17 @@ export default function UploadDock() {
               : <Upload className="size-4 text-muted-foreground shrink-0" />}
             <span className="text-xs font-semibold truncate">{headline}</span>
           </button>
+          {/* One click for a batch with several failures; per-row Retry stays
+              in the row and its context menu. */}
+          {summary.failed > 0 && (
+            <button
+              type="button"
+              className="text-[11px] font-medium text-foreground hover:underline shrink-0"
+              onClick={() => retryAllFailed()}
+            >
+              Retry all failed
+            </button>
+          )}
           {clearable && (
             <button
               type="button"
@@ -226,34 +206,6 @@ export default function UploadDock() {
         onClose={() => setCtx(null)}
         items={ctx ? menuItems(ctx.item) : []}
       />
-
-      {/* "Retry in another region" picker for failed uploads */}
-      <Dialog open={!!regionTarget} onOpenChange={(v) => { if (!v) setRegionTarget(null); }}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader><DialogTitle>Upload in another region</DialogTitle></DialogHeader>
-          <p className="text-xs text-muted-foreground break-all">
-            Re-upload <span className="font-medium text-foreground">{regionTarget?.fileName}</span> to a different region.
-          </p>
-          <div className="flex flex-col gap-1 max-h-64 overflow-y-auto">
-            {regions.map((r) => (
-              <button
-                key={r.code}
-                className={`w-full flex items-center justify-between gap-3 px-3 py-2 rounded-lg border text-left transition-colors ${r.code === regionTarget?.region ? 'border-green-500 bg-green-50 dark:bg-green-950/30' : 'hover:bg-muted/50'}`}
-                onClick={() => { if (regionTarget) retryInRegion(regionTarget.id, r.code); setRegionTarget(null); }}
-              >
-                <span className="text-xs font-medium truncate">{r.city}, {r.country}</span>
-                <span className="text-[10px] text-muted-foreground shrink-0">{r.code}</span>
-              </button>
-            ))}
-            {regions.length === 0 && (
-              <p className="py-4 text-xs text-muted-foreground">Loading regions…</p>
-            )}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setRegionTarget(null)}>Close</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </>
   );
 }
@@ -324,8 +276,15 @@ function RowActions({ item, onResume }: { item: UploadItem; onResume: () => void
     );
   }
   if (item.status === 'error') {
+    // Same reasoning as the Uploads page: no bytes in this tab, no retry.
+    const retryable = canRetry(item.id);
     return (
-      <button className="text-muted-foreground hover:text-foreground" title="Retry" onClick={() => retry(item.id)}>
+      <button
+        className="text-muted-foreground hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed"
+        title={retryable ? 'Retry' : 'Add the file again to upload it - this tab no longer has its contents.'}
+        disabled={!retryable}
+        onClick={() => retry(item.id)}
+      >
         <RotateCw className="size-4" />
       </button>
     );

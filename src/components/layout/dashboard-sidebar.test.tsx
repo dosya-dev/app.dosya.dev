@@ -96,9 +96,11 @@ describe('DashboardSidebar active pill', () => {
           workspaces: [{ id: 'ws_1', name: 'Acme', slug: 'acme', icon_initials: 'AC', icon_color: '#000', icon_image_url: null, role_id: 'role_owner' }],
         });
       }
-      // ok:false keeps the storage widget on its "Loading..." branch (no
-      // tooltip, no svg); the empty job lists keep the two Integrations
-      // indicators on their render-nothing branch.
+      // The workspace above carries no `storage`, which keeps the storage
+      // widget on its "Loading..." branch (no tooltip, no svg); the two
+      // Integrations indicators list nothing on mount and stay on their
+      // render-nothing branch. Everything else (permissions, roles) gets
+      // ok:false and is ignored.
       return Promise.resolve({ ok: false, jobs: [] });
     });
     restoreLayout = stubLayout();

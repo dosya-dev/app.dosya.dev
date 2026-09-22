@@ -53534,6 +53534,7 @@ async function randomBytes(n) {
 }
 var AEAD_KEYBYTES = 32;
 var AEAD_NPUBBYTES = 24;
+var AEAD_ABYTES = 16;
 async function aeadEncrypt(key, plaintext, ad, nonce) {
   const s = await getSodium();
   if (key.length !== AEAD_KEYBYTES) throw new Error("aead: bad key length");
@@ -55915,7 +55916,8 @@ async function oprfBlind(input, serverPublicKey) {
   };
   return { blindedElement, finalize };
 }
-var DEFAULTS = { min: 256 * 1024, avg: 1024 * 1024, max: 4 * 1024 * 1024 };
+var CHUNK_MAX_PLAINTEXT_BYTES = 4 * 1024 * 1024;
+var DEFAULTS = { min: 256 * 1024, avg: 1024 * 1024, max: CHUNK_MAX_PLAINTEXT_BYTES };
 var GEAR = (() => {
   const g = new Uint32Array(256);
   let s = 2654435769 >>> 0;
@@ -55989,6 +55991,8 @@ async function merkleRoot(leaves) {
   }
   return level[0];
 }
+var CHUNK_MAX_CIPHERTEXT_BYTES = CHUNK_MAX_PLAINTEXT_BYTES + AEAD_ABYTES;
+var CHUNK_MIN_CIPHERTEXT_BYTES = 1 + AEAD_ABYTES;
 async function encryptChunk(dek, plainChunk, ad) {
   const [plainHash, { nonce, ciphertext }] = await Promise.all([
     sha2562(plainChunk),
@@ -56153,6 +56157,12 @@ async function wrapIdentityBundleForRecovery(bundle, recoveryKey, salt, fmt, use
   const wrappingKey = await deriveKEK(recoveryKey, salt);
   const ad = adUserKeys({ fmt, userId, source: "recovery" });
   return wrapKey(serializeIdentityBundle(bundle), wrappingKey, ad);
+}
+async function unwrapIdentityBundleForRecovery(wrapped, recoveryKey, salt, fmt, userId) {
+  const wrappingKey = await deriveKEK(recoveryKey, salt);
+  const ad = adUserKeys({ fmt, userId, source: "recovery" });
+  const bytes = await unwrapKey(wrapped, wrappingKey, ad);
+  return deserializeIdentityBundle(bytes);
 }
 async function generateWorkspaceKey() {
   return randomBytes(32);
@@ -56659,11 +56669,11 @@ function createFetchApiClient(opts) {
       if (!res.ok) throw new Error(`e2ee: rotate request failed (${res.status})`);
       return await res.json();
     },
-    async chunkUploadUrl(workspaceId, chunkId) {
+    async chunkUploadUrl(workspaceId, chunkId, size) {
       const res = await fetchFn(`${baseUrl}/api/e2ee/chunk-upload-url`, {
         method: "POST",
         headers: await headers(),
-        body: JSON.stringify({ workspaceId, chunkId })
+        body: JSON.stringify({ workspaceId, chunkId, size })
       });
       if (!res.ok) throw new Error(`e2ee: chunk-upload-url request failed (${res.status})`);
       const body = await res.json();
@@ -56734,6 +56744,37 @@ async function unlock(api, passphrase) {
   const kek = await deriveKEK(hardened, salt, tier);
   try {
     const identity = await unwrapIdentityBundle(fromB64(record.wrappedPriv), kek, FMT, IDENTITY_AD_USER_ID);
+    return { kek, identity };
+  } catch {
+    throw new Error("e2ee: unlock failed");
+  }
+}
+function parseRecoveryKey(input) {
+  const cleaned = input.replace(/[\s-]/g, "").toLowerCase();
+  if (cleaned.length === 0 || cleaned.length % 2 !== 0 || /[^0-9a-f]/.test(cleaned)) {
+    throw new Error("e2ee: unlock failed");
+  }
+  return fromHex(cleaned);
+}
+async function unlockWithRecoveryKey(api, recoveryKey) {
+  const record = await api.getUserKeys();
+  if (!record || !record.recoveryWrapped) throw new Error("e2ee: unlock failed");
+  let keyBytes;
+  try {
+    keyBytes = parseRecoveryKey(recoveryKey);
+  } catch {
+    throw new Error("e2ee: unlock failed");
+  }
+  const salt = fromB64(record.argonSalt);
+  try {
+    const identity = await unwrapIdentityBundleForRecovery(
+      fromB64(record.recoveryWrapped),
+      keyBytes,
+      salt,
+      FMT,
+      IDENTITY_AD_USER_ID
+    );
+    const kek = await deriveKEK(keyBytes, salt, ARGON_TIER);
     return { kek, identity };
   } catch {
     throw new Error("e2ee: unlock failed");
@@ -57398,7 +57439,7 @@ async function uploadFile(deps, folderId, name, bytes) {
     plaintext: bytes
   });
   for (const chunk of chunks) {
-    const url = await api.chunkUploadUrl(ws.workspaceId, toHex(chunk.chunkId));
+    const url = await api.chunkUploadUrl(ws.workspaceId, toHex(chunk.chunkId), chunk.ciphertext.length);
     await transport.putChunk(url, chunk.ciphertext);
   }
   for (let attempt = 1; ; attempt++) {
@@ -57476,7 +57517,7 @@ async function updateFile(deps, folderId, fileId, bytes) {
     newPlaintext: bytes
   });
   for (const chunk of newChunks) {
-    const url = await api.chunkUploadUrl(ws.workspaceId, toHex(chunk.chunkId));
+    const url = await api.chunkUploadUrl(ws.workspaceId, toHex(chunk.chunkId), chunk.ciphertext.length);
     await transport.putChunk(url, chunk.ciphertext);
   }
   const newChunkIds = new Set(manifest.chunks.map((c) => toHex(c.chunkId)));
@@ -57575,6 +57616,7 @@ export {
   serializeSignedEntry,
   setupIdentity,
   unlock,
+  unlockWithRecoveryKey,
   updateFile,
   uploadFile
 };

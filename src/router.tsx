@@ -1,7 +1,7 @@
-import { lazy, Suspense } from 'react';
-import { createBrowserRouter, Outlet, Navigate } from 'react-router-dom';
+import { lazy } from 'react';
+import { createBrowserRouter, Navigate } from 'react-router-dom';
 import { DashboardLayout } from '@/components/layout/dashboard-layout';
-import { RouteTitle } from '@/lib/page-title';
+import { RootLayout } from '@/components/layout/root-layout';
 import ErrorPage from '@/pages/error-page';
 
 // Every page is a lazy chunk: the entry bundle carries only the shell
@@ -27,6 +27,7 @@ const ActivityPage = lazy(() => import('@/pages/activity'));
 const NotificationsPage = lazy(() => import('@/pages/notifications'));
 const SearchPage = lazy(() => import('@/pages/search'));
 const BillingPage = lazy(() => import('@/pages/billing'));
+const CheckoutSuccessPage = lazy(() => import('@/pages/checkout-success'));
 const ReferralsPage = lazy(() => import('@/pages/referrals'));
 const WorkspaceDashboardPage = lazy(() => import('@/pages/workspace-dashboard'));
 const RoleCreatePage = lazy(() => import('@/pages/role-create'));
@@ -50,32 +51,12 @@ const LoginPage = lazy(() => import('@/pages/login'));
 const Login2faPage = lazy(() => import('@/pages/login-2fa'));
 const SignUpPage = lazy(() => import('@/pages/sign-up'));
 const VerifyPage = lazy(() => import('@/pages/verify'));
+const RedeemPage = lazy(() => import('@/pages/redeem'));
 const ForgotPasswordPage = lazy(() => import('@/pages/forgot-password'));
 const ResetPasswordPage = lazy(() => import('@/pages/reset-password'));
 const NotFoundPage = lazy(() => import('@/pages/not-found'));
 const WelcomePage = lazy(() => import('@/pages/welcome'));
 const EditorPage = lazy(() => import('@/pages/editor'));
-
-// Root layout: keeps the browser tab title in sync with the route for every
-// page. The Suspense boundary covers routes outside DashboardLayout (login,
-// sign-up, …) with the same centered spinner the boot gate and the static
-// index.html splash use, so the handoff is seamless.
-function RootLayout() {
-  return (
-    <>
-      <RouteTitle />
-      <Suspense
-        fallback={
-          <div className="h-screen flex items-center justify-center">
-            <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-          </div>
-        }
-      >
-        <Outlet />
-      </Suspense>
-    </>
-  );
-}
 
 export const router = createBrowserRouter([
   {
@@ -119,6 +100,8 @@ export const router = createBrowserRouter([
       { path: '/notifications', element: <NotificationsPage /> },
       { path: '/search', element: <SearchPage /> },
       { path: '/billing', element: <BillingPage /> },
+      // Stripe Checkout's success_url, and where a plan change lands.
+      { path: '/checkout/success', element: <CheckoutSuccessPage /> },
       { path: '/referrals', element: <ReferralsPage /> },
       { path: '/workspaces', element: <WorkspaceDashboardPage /> },
       { path: '/role-create', element: <RoleCreatePage /> },
@@ -137,6 +120,9 @@ export const router = createBrowserRouter([
   { path: '/login/2fa', element: <Login2faPage /> },
   { path: '/sign-up', element: <SignUpPage /> },
   { path: '/verify', element: <VerifyPage /> },
+  // Public shell: captures Gumroad links before sign-in and resumes here
+  // afterward. The API gates preview and activation with a cookie session.
+  { path: '/redeem', element: <RedeemPage /> },
   { path: '/forgot-password', element: <ForgotPasswordPage /> },
   { path: '/reset-password', element: <ResetPasswordPage /> },
   { path: '/dashboard', element: <Navigate to="/" replace /> },

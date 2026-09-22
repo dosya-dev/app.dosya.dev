@@ -1,17 +1,34 @@
 import type { ReactNode } from 'react';
 import { Upload } from 'lucide-react';
-import { DEMO_DASHBOARD, DEMO_REGION_BREAKDOWN, DEMO_USER, humanSize, KIND_COLORS } from '../engine/demoData';
+import { DEMO_DASHBOARD, DEMO_REGION_BREAKDOWN, DEMO_REGIONS, DEMO_USER, humanSize, KIND_COLORS } from '../engine/demoData';
 import { useDemo } from '../engine/demoState';
 
 // Mirrors apps/web dashboard.tsx: greeting + upload CTA, a 5-up stat row, and
 // a two-column body (storage breakdown w/ ring + recent files | activity +
 // storage by region). Reads live demo state so uploads/shares update it.
+/** One stable colour per region, taken from the seeded breakdown. */
+function regionColor(code: string): string {
+  return DEMO_REGION_BREAKDOWN.find((r) => r.region === code)?.color ?? DEMO_REGION_BREAKDOWN[0].color;
+}
+
 export function WebDashboard({ onNavigate }: { onNavigate: (id: string) => void }) {
   const { state } = useDemo();
   const sharedCount = state.files.filter((f) => f.shared).length;
   const recent = [...state.files].sort((a, b) => b.modifiedRank - a.modifiedRank).slice(0, 5);
   const maxCat = Math.max(...DEMO_DASHBOARD.breakdown.map((b) => b.bytes), 1);
-  const maxRegion = Math.max(...DEMO_REGION_BREAKDOWN.map((r) => r.bytes), 1);
+  // Bytes per file extension, from the live demo files, so an upload moves it.
+  // Bytes per region, from the live demo files, so an upload moves it. The
+  // colour comes from the region list rather than the file kind, so a region
+  // keeps one colour however mixed its contents are.
+  const byRegion = Object.values(
+    state.files.reduce<Record<string, { region: string; bytes: number; color: string }>>((acc, f) => {
+      const region = f.region || DEMO_REGIONS[0].code;
+      acc[region] ??= { region, bytes: 0, color: regionColor(region) };
+      acc[region].bytes += f.sizeBytes;
+      return acc;
+    }, {}),
+  ).sort((a, b) => b.bytes - a.bytes).slice(0, 4);
+  const maxRegion = Math.max(...byRegion.map((r) => r.bytes), 1);
 
   return (
     <div className="space-y-5 p-5">
@@ -107,7 +124,7 @@ export function WebDashboard({ onNavigate }: { onNavigate: (id: string) => void 
 
           <Card title="Storage by region">
             <div className="space-y-2">
-              {DEMO_REGION_BREAKDOWN.map((r) => (
+              {byRegion.map((r) => (
                 <div key={r.region} className="flex items-center gap-2">
                   <span className="size-2 shrink-0 rounded-full" style={{ background: r.color }} />
                   <span className="w-8 text-xs text-(--demo-fg)">{r.region}</span>

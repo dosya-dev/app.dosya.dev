@@ -51,6 +51,22 @@ export function looksBinary(sample: string): boolean {
   return sample.includes('\0');
 }
 
+/**
+ * Decode raw file bytes to a string, honouring a UTF-16 BOM. Decoding
+ * everything as UTF-8 made every UTF-16 file (Windows Notepad's "Unicode"
+ * default) trip the NUL-byte binary sniff and refuse to preview.
+ */
+export function decodeTextBytes(buf: ArrayBuffer): string {
+  const bytes = new Uint8Array(buf);
+  if (bytes.length >= 2) {
+    try {
+      if (bytes[0] === 0xff && bytes[1] === 0xfe) return new TextDecoder('utf-16le').decode(bytes);
+      if (bytes[0] === 0xfe && bytes[1] === 0xff) return new TextDecoder('utf-16be').decode(bytes);
+    } catch { /* no utf-16 decoder here - fall through to utf-8 */ }
+  }
+  return new TextDecoder().decode(bytes);
+}
+
 // Extension → canonical Shiki language id.
 const EXT_LANG: Record<string, string> = {
   ts: 'typescript', tsx: 'tsx', js: 'javascript', jsx: 'jsx', mjs: 'javascript',

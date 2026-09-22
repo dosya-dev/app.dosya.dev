@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test, vi, type MockInstance } 
 import { queryClient, shouldRetryQuery } from './query-client';
 import { ApiError } from '@/api/client';
 import { FILES_QUERY_ROOT } from '@/lib/files-request';
+import { LIBRARY_QUERY_ROOT } from '@/lib/library-request';
 import { useCloudImports } from '@/stores/cloud-imports';
 import type { CloudJob } from '@/api/cloud-import';
 
@@ -88,12 +89,15 @@ describe('module-scope cloud-import completion listener', () => {
     useCloudImports.setState(originalState, true);
   });
 
-  test('a job going active -> complete invalidates the files cache', () => {
+  test('a job going active -> complete invalidates the files AND photos caches', () => {
     useCloudImports.setState({ jobs: [job({ status: 'running' })] });
     expect(invalidateSpy).not.toHaveBeenCalled();
 
     useCloudImports.setState({ jobs: [job({ status: 'complete' })] });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: [FILES_QUERY_ROOT] });
+    // The Photos view caches the same rows under its own root; an import that
+    // only invalidated the listing left the library showing the old set.
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: [LIBRARY_QUERY_ROOT] });
   });
 
   test('does not fire again on a later update where the job stays terminal', () => {
@@ -103,10 +107,11 @@ describe('module-scope cloud-import completion listener', () => {
     // 'complete' (unchanged) must not read as a fresh edge and re-invalidate.
     useCloudImports.setState({ jobs: [job({ status: 'running' })] });
     useCloudImports.setState({ jobs: [job({ status: 'complete' })] });
-    expect(invalidateSpy).toHaveBeenCalledTimes(1);
+    // Two calls, one per cache root - both from that single edge.
+    expect(invalidateSpy).toHaveBeenCalledTimes(2);
 
     useCloudImports.setState({ jobs: [job({ status: 'complete' })] });
-    expect(invalidateSpy).toHaveBeenCalledTimes(1);
+    expect(invalidateSpy).toHaveBeenCalledTimes(2);
   });
 
   test('a job going active -> failed invalidates the files cache', () => {
@@ -140,7 +145,10 @@ describe('module-scope cloud-import completion listener', () => {
       jobs: [job({ id: 'job1', status: 'complete' }), job({ id: 'job2', status: 'failed' })],
     });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: [FILES_QUERY_ROOT] });
-    expect(invalidateSpy).toHaveBeenCalledTimes(1);
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: [LIBRARY_QUERY_ROOT] });
+    // Still one round of invalidation (one call per cache root), not one
+    // round per completed job.
+    expect(invalidateSpy).toHaveBeenCalledTimes(2);
   });
 
   test('invalidates regardless of workspace - there is no page mounted to scope it to', () => {

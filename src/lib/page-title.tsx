@@ -49,6 +49,7 @@ const TITLES: Record<string, string> = {
   '/login/2fa': 'Two-factor authentication',
   '/sign-up': 'Sign up',
   '/verify': 'Verify your email',
+  '/redeem': 'Redeem storage package',
   '/forgot-password': 'Reset password',
   '/reset-password': 'Set a new password',
   '/create-workspace': 'Create workspace',

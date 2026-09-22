@@ -12,7 +12,11 @@ import {
   DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { timeAgo, avatarColor, initials, activityLink } from '@/lib/helpers';
-import { parseUA } from '@/lib/ua';
+// Category, action and label tables are generated from
+// packages/shared/src/activity/catalog.ts - see scripts/gen-activity-catalog.mjs.
+import {
+  ACTIVITY_CATEGORIES as CATEGORIES, CATEGORY_ACTIONS, actionPhrase, parseUA,
+} from '@/lib/activity-catalog.generated';
 
 // ── Types ─────────────────────────────────────────────────
 
@@ -50,67 +54,6 @@ interface Pagination { page: number; per_page: number; total: number; total_page
 
 // ── Constants ─────────────────────────────────────────────
 
-const CATEGORIES: { value: string; label: string }[] = [
-  { value: 'files', label: 'Files' },
-  { value: 'folders', label: 'Folders' },
-  { value: 'sharing', label: 'Sharing' },
-  { value: 'members', label: 'Members' },
-  { value: 'workspace', label: 'Workspace' },
-  { value: 'comments', label: 'Comments' },
-];
-
-const CATEGORY_ACTIONS: Record<string, { value: string; label: string }[]> = {
-  files: [
-    { value: 'file_uploaded', label: 'File uploaded' },
-    { value: 'file_version_uploaded', label: 'Version uploaded' },
-    { value: 'file_downloaded', label: 'File downloaded' },
-    { value: 'file_deleted', label: 'File deleted' },
-    { value: 'file_permanently_deleted', label: 'Permanently deleted' },
-    { value: 'file_restored', label: 'File restored' },
-    { value: 'file_renamed', label: 'File renamed' },
-    { value: 'file_moved', label: 'File moved' },
-    { value: 'file_copied', label: 'File copied' },
-    { value: 'file_locked', label: 'File locked' },
-    { value: 'file_hidden', label: 'File hidden' },
-  ],
-  folders: [
-    { value: 'folder_created', label: 'Folder created' },
-    { value: 'folder_renamed', label: 'Folder renamed' },
-    { value: 'folder_moved', label: 'Folder moved' },
-    { value: 'folder_deleted', label: 'Folder deleted' },
-  ],
-  sharing: [
-    { value: 'file_shared', label: 'File shared (link)' },
-    { value: 'file_shared_email', label: 'File shared (email)' },
-    { value: 'folder_shared', label: 'Folder shared' },
-    { value: 'link_revoked', label: 'Link revoked' },
-    { value: 'file_request_created', label: 'File request created' },
-    { value: 'file_request_uploaded', label: 'Request upload' },
-    { value: 'file_request_revoked', label: 'Request revoked' },
-  ],
-  members: [
-    { value: 'member_invited', label: 'Member invited' },
-    { value: 'member_joined', label: 'Member joined' },
-    { value: 'member_removed', label: 'Member removed' },
-    { value: 'member_left', label: 'Member left' },
-    { value: 'invite_revoked', label: 'Invite revoked' },
-    { value: 'ownership_transferred', label: 'Ownership transferred' },
-    { value: 'member_anchor_updated', label: 'Folder access changed' },
-    { value: 'member_role_changed', label: 'Member role changed' },
-  ],
-  workspace: [
-    { value: 'workspace_created', label: 'Workspace created' },
-    { value: 'workspace_updated', label: 'Workspace updated' },
-    { value: 'workspace_settings_changed', label: 'Settings changed' },
-    { value: 'role_updated', label: 'Role updated' },
-    { value: 'role_deleted', label: 'Role deleted' },
-  ],
-  comments: [
-    { value: 'comment_added', label: 'Comment added' },
-    { value: 'comment_deleted', label: 'Comment deleted' },
-  ],
-};
-
 const ACTION_COLORS: Record<string, string> = {
   file_uploaded: '#22c55e', file_version_uploaded: '#22c55e', folder_created: '#22c55e',
   member_joined: '#22c55e', workspace_created: '#22c55e', comment_added: '#22c55e',
@@ -138,35 +81,6 @@ const ACTION_COLORS: Record<string, string> = {
   group_item_removed: '#ef4444', dmca_reported: '#ef4444', sync_session_failed: '#ef4444',
   share_link_unlocked: '#7C3AED',
   sync_session_started: '#2563EB',
-};
-
-const ACTION_LABELS: Record<string, string> = {
-  file_uploaded: 'uploaded', file_version_uploaded: 'uploaded a new version of',
-  file_downloaded: 'downloaded', file_deleted: 'deleted', file_permanently_deleted: 'permanently deleted',
-  file_restored: 'restored', file_renamed: 'renamed', file_moved: 'moved', file_copied: 'copied',
-  file_locked: 'locked', file_hidden: 'changed visibility of',
-  folder_created: 'created folder', folder_renamed: 'renamed folder', folder_moved: 'moved folder', folder_deleted: 'deleted folder',
-  file_shared: 'shared', file_shared_email: 'shared via email', folder_shared: 'shared folder',
-  link_revoked: 'revoked link for', file_request_created: 'created file request',
-  file_request_uploaded: 'uploaded to request', file_request_revoked: 'revoked file request',
-  member_invited: 'invited', member_joined: 'joined', member_removed: 'removed',
-  member_left: 'left the workspace', invite_revoked: 'revoked invite for',
-  ownership_transferred: 'transferred ownership to', member_anchor_updated: 'changed the folder access of',
-  member_role_changed: 'changed the role of',
-  workspace_created: 'created workspace', workspace_updated: 'updated workspace',
-  workspace_settings_changed: 'changed settings', role_updated: 'updated role', role_deleted: 'deleted role',
-  comment_added: 'commented on', comment_deleted: 'deleted comment on',
-  // New action codes (richer activity feed)
-  file_unlocked: 'unlocked', folder_unlocked: 'unlocked folder', folder_locked: 'locked folder',
-  file_unhidden: 'changed visibility of', folder_hidden: 'changed visibility of folder', folder_unhidden: 'changed visibility of folder',
-  files_batch_deleted: 'deleted multiple files', share_link_unlocked: 'unlocked share link',
-  comment_edited: 'edited comment on', role_created: 'created role',
-  favourite_added: 'favourited', favourite_removed: 'unfavourited',
-  group_created: 'created group', group_updated: 'updated group', group_deleted: 'deleted group',
-  group_item_added: 'added to group', group_item_removed: 'removed from group',
-  dmca_reported: 'reported (DMCA)',
-  sync_session_started: 'started a sync', sync_session_completed: 'completed a sync', sync_session_failed: 'sync failed',
-  profile_updated: 'updated profile', plan_changed: 'changed plan',
 };
 
 // ── Page ──────────────────────────────────────────────────
@@ -320,7 +234,7 @@ export default function ActivityPage() {
 function ActivityRow({ activity: a }: { activity: Activity }) {
   const [open, setOpen] = useState(false);
   const [avatarFailed, setAvatarFailed] = useState(false);
-  const label = ACTION_LABELS[a.action] ?? a.action;
+  const label = actionPhrase(a.action);
   const color = ACTION_COLORS[a.action] ?? '#706e69';
   // `meta` is the parsed, possibly server-gated metadata (Task 3); fall back
   // to the legacy `metadata` field for rows/responses that predate it.

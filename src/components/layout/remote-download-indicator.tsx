@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useWorkspace } from '@/stores/workspace';
 import { ACTIVE_REMOTE_STATUSES, useRemoteDownloads } from '@/stores/remote-downloads';
+import { hadActiveJobs } from '@/lib/job-activity';
 
 const RADIUS = 5;
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
@@ -9,6 +10,10 @@ const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 /**
  * Small circular progress ring shown on the Integrations sidebar item while
  * remote downloads are running. Renders nothing when idle.
+ *
+ * Lists jobs on mount only when the last refresh in this browser saw one
+ * running (lib/job-activity.ts): every other load of the app skips the
+ * request. A download started from this client refreshes the store itself.
  */
 export function RemoteDownloadIndicator() {
   const activeId = useWorkspace((s) => s.activeId);
@@ -16,7 +21,7 @@ export function RemoteDownloadIndicator() {
   const refresh = useRemoteDownloads((s) => s.refresh);
 
   useEffect(() => {
-    refresh();
+    if (hadActiveJobs('remote')) void refresh();
   }, [refresh, activeId]);
 
   const active = jobs.filter((j) => ACTIVE_REMOTE_STATUSES.has(j.status));

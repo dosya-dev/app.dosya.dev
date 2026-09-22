@@ -52,8 +52,8 @@ interface DeleteWorkspaceDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   workspaceId: string;
-  /** Called after the workspace is gone, so the caller can navigate away. */
-  onDeleted: () => void;
+  /** Logical removal permits navigation while physical cleanup can be pending. */
+  onDeleted: (pending: boolean) => void;
 }
 
 export function DeleteWorkspaceDialog({ open, onOpenChange, workspaceId, onDeleted }: DeleteWorkspaceDialogProps) {
@@ -122,11 +122,11 @@ export function DeleteWorkspaceDialog({ open, onOpenChange, workspaceId, onDelet
     setStep('deleting');
     setError('');
     try {
-      await api<{ ok: boolean }>(`/api/workspaces/${workspaceId}`, {
+      const result = await api<{ ok: boolean; pending?: boolean; operation_id?: string }>(`/api/workspaces/${workspaceId}`, {
         method: 'DELETE',
         body: JSON.stringify({ code: code.trim(), confirm_name: typedName }),
       });
-      onDeleted();
+      onDeleted(result.pending === true);
     } catch (err) {
       // Back to the confirm step rather than closing: the code may simply have
       // been mistyped, and it is still valid for another few attempts.
@@ -277,13 +277,12 @@ export function DeleteWorkspaceDialog({ open, onOpenChange, workspaceId, onDelet
             <p className="flex items-center gap-2 text-sm text-foreground">
               <Loader2 className="size-4 animate-spin" /> Deleting workspace...
             </p>
-            {/* Indeterminate on purpose: the server does this in one batch and
-                reports nothing until it is finished. */}
+            {/* The response reports whether physical cleanup is still pending. */}
             <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
               <div className="h-full w-1/3 rounded-full bg-destructive animate-indeterminate" />
             </div>
             <p className="text-xs text-muted-foreground">
-              Removing files, folders, share links and members. Please keep this tab open.
+              Starting deletion of files, folders, share links and members.
             </p>
           </div>
         )}

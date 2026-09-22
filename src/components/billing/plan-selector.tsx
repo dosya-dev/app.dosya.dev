@@ -16,6 +16,7 @@ export function PlanSelector({ plans, interval, selectedId, onSelect }: {
                     <button
                         key={p.id}
                         type="button"
+                        aria-pressed={selected}
                         disabled={!available}
                         onClick={() => onSelect(p.id)}
                         className={cn(

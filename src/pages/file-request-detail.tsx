@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { api, API_BASE, responseErrorMessage } from '@/api/client';
+import { api, API_BASE } from '@/api/client';
 import { useDocumentTitle } from '@/lib/page-title';
 import { FILES_QUERY_ROOT } from '@/lib/files-request';
 import { Button } from '@/components/ui/button';
@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { humanSize, timeAgo, fileIconSrc } from '@/lib/helpers';
 import { toast } from '@/lib/toast';
+import { startArchiveDownload } from '@/lib/archive-download';
 import { FileViewer } from '@/components/file-viewer';
 import { FileRequestEditDialog } from '@/components/file-request-edit-dialog';
 
@@ -216,22 +217,18 @@ export default function FileRequestDetailPage() {
     } catch { toast.error('Delete failed', 'The selected files could not be deleted.'); }
   };
 
+  // Streams through the shared helper rather than buffering the archive into a
+  // Blob and an object URL, which pinned the whole ZIP in tab memory and left
+  // the downloads shelf empty until the last byte arrived (see
+  // lib/archive-download).
   const bulkDownloadZip = async () => {
     if (selected.size === 0) return;
     setZipping(true);
-    try {
-      const res = await fetch(`${API_BASE}/api/files/download-archive`, {
-        method: 'POST', credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ file_ids: Array.from(selected) }),
-      });
-      if (!res.ok) { toast.error('Download failed', await responseErrorMessage(res, 'The download could not be prepared.')); setZipping(false); return; }
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a'); a.href = url; a.download = 'dosya-download.zip'; a.click();
-      URL.revokeObjectURL(url);
-      toast.success('Downloaded', 'Download started');
-    } catch { toast.error('Download failed', 'The download could not be prepared.'); }
+    const { parts } = await startArchiveDownload(
+      { fileIds: Array.from(selected) },
+      { onError: (message) => toast.error('Download problem', message) },
+    );
+    if (parts > 1) toast.info('Download started', `Too many files for one ZIP - arriving as ${parts} downloads.`);
     setZipping(false);
   };
 
@@ -321,7 +318,7 @@ export default function FileRequestDetailPage() {
                 ) : null}
                 <span className="text-[11px] text-muted-foreground">
                   {uploads.length} file{uploads.length === 1 ? '' : 's'}
-                  {request.expires_at ? ` · ${expired ? 'Expired' : 'Expires'} ${new Date(request.expires_at * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}` : ' · No expiry'}
+                  {request.expires_at ? ` · ${expired ? 'Expired' : 'Expires'} ${new Date(request.expires_at * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}` : ' · No expiry'}
                   {` · Created ${timeAgo(request.created_at)}${request.created_by_name ? ` by ${request.created_by_name}` : ''}`}
                 </span>
               </div>

@@ -20,7 +20,8 @@ interface FilePreviewImageProps {
 /**
  * The one place a file preview image is rendered.
  *
- * Non-HEIC images render natively from the original bytes (`/raw`). HEIC is the
+ * Non-HEIC images ask the server for a thumbnail sized to the caller's `size`,
+ * and fall back to the original bytes (`/raw`) only if that fails. HEIC is the
  * one format browsers can't display, and it's handled with a hybrid strategy:
  *
  *  1. Ask the server for a small WebP thumbnail (`/thumb`). The server decodes
@@ -59,6 +60,9 @@ function FilePreviewImageForFile({
   // `serverFailed` = the server couldn't make a thumbnail (e.g. 415 for a photo
   // too large to decode in a Worker) → decode it in the browser instead.
   const [serverFailed, setServerFailed] = useState(false);
+  // `thumbFailed` = the server thumbnail didn't load for a non-HEIC image →
+  // fall back to the raw original for this file.
+  const [thumbFailed, setThumbFailed] = useState(false);
 
   if (!isImage(fileName) || failed) return <>{fallback}</>;
 
@@ -87,7 +91,24 @@ function FilePreviewImageForFile({
     );
   }
 
-  // Every other image format renders natively - point straight at the original.
+  // Every other image format: request a server-generated thumbnail sized to the
+  // caller's `size` - a 28px table row or a photo-grid tile shouldn't download
+  // and decode the full-resolution original. `/thumb` 302-redirects to `/raw`
+  // for the passthrough formats (JPEG-with-no-EXIF-preview aside, see
+  // lib/thumbs/formats.ts), and the browser follows that redirect with cookies,
+  // so this is never worse than pointing straight at `/raw`. Fall back to the
+  // original only if the thumbnail itself fails to load.
+  if (!thumbFailed) {
+    return (
+      <img
+        src={fileThumbUrl({ fileId, version, query, size })}
+        alt={alt}
+        className={className}
+        loading="lazy"
+        onError={() => setThumbFailed(true)}
+      />
+    );
+  }
   return (
     <img
       src={fileRawUrl({ fileId, version, query })}

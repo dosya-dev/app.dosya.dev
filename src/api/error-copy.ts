@@ -17,6 +17,11 @@
  */
 export const API_ERROR_COPY: Record<string, string> = {
     folder_locked: 'This folder is locked. Enter its password to open it.',
+    // DELETE /api/e2ee/user-keys (Contract 6) answers this when the account
+    // has two-factor authentication and the request carried no code. The
+    // caller uses it to grow a code field, so it must stay branchable - and
+    // the user must never be shown the bare code.
+    '2fa_required': 'Enter your two-factor code to continue.',
 };
 
 /** The sentence for a code, or the code itself when there is no entry for it. */

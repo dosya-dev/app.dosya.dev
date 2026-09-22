@@ -14,7 +14,6 @@ export interface UploadItem {
   mimeType: string;
   workspace_id: string;
   folder_id: string | null;
-  region: string;
   /** Set when this upload replaces an existing file's contents (new version). */
   file_id?: string | null;
   /**
@@ -38,8 +37,6 @@ export interface UploadItem {
 export interface UploadInput {
   workspace_id: string;
   folder_id: string | null;
-  /** Omit to let the server apply the workspace's default region. */
-  region?: string;
   /** Set to upload a new version of an existing file instead of creating one. */
   file_id?: string | null;
   /** Set when uploading from a group view, to enrol the result into that group. */

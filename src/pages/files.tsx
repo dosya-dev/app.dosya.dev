@@ -1,17 +1,24 @@
 import { useState, useEffect, useCallback, useMemo, useRef, memo, type MouseEvent as ReactMouseEvent } from 'react';
 import { useSearchParams, Link, useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { api, API_BASE, ApiError, apiErrorMessage, responseErrorMessage } from '@/api/client';
+import { api, API_BASE, ApiError, apiErrorMessage } from '@/api/client';
 import { useDocumentTitle } from '@/lib/page-title';
 import { folderNavParams, filterNavParams, groupNavParams } from '@/lib/files-params';
 import { enqueue } from '@/lib/upload-runner';
 import { uploadFromDrop } from '@/lib/upload-drop';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
 import { useFilesListing, fetchFilesListing } from '@/hooks/use-files-listing';
+import { useLibrary } from '@/hooks/use-library';
+import { LibraryView, KIND_ICON, type TileSize } from '@/components/library/library-view';
+import {
+  kindForFilter, sortOptionsFor, plural, KIND_COPY, LIBRARY_QUERY_ROOT,
+  loadLibraryLayouts, saveLibraryLayout, type LibrarySort, type LibraryLayout,
+} from '@/lib/library-request';
 import { usePermissions } from '@/hooks/use-permissions';
-import { runBulk } from '@/lib/bulk-run';
+import { runBulk, chunkSelection, BULK_CONCURRENCY } from '@/lib/bulk-run';
+import { BulkProgressDialog, type BulkDeleteProgress } from '@/components/bulk-progress-dialog';
 import type { FileItem, FolderItem } from '@/lib/file-types';
-import { filesQueryKey, filesRequestPath, type FilesView } from '@/lib/files-request';
+import { filesQueryKey, filesRequestPath, FILES_QUERY_ROOT, type FilesView } from '@/lib/files-request';
 import { useWorkspace } from '@/stores/workspace';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -27,7 +34,7 @@ import {
   FolderOpen, Grid3X3, List, Loader2,
   Lock, Pencil, Copy, Move, Eye, EyeOff, History,
   MessageSquare, Star, SlidersHorizontal, RotateCcw, RefreshCw, Info,
-  ArrowUp, ArrowDown, AlertCircle, SquarePen,
+  ArrowUp, ArrowDown, AlertCircle, SquarePen, ZoomIn, ZoomOut,
 } from 'lucide-react';
 import {
   DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem,
@@ -43,15 +50,19 @@ import { ContextMenu } from '@/components/context-menu';
 import { FileInfoDialog, type InfoTarget } from '@/components/file-info-dialog';
 import { FileDetailPanel } from '@/components/file-detail-panel';
 import { ShareModal, type ShareTarget } from '@/components/share-modal';
+import { startArchiveDownload } from '@/lib/archive-download';
+import { purgeTrashedFolder, purgeSummary, bulkPurgeStillEmptying, bulkPurgeCancelled, partialProgressNote, purgeProgressOf, type PurgeResponse, type PurgeOutcome } from '@/lib/folder-purge';
 import { FileViewer } from '@/components/file-viewer';
-import { LockModal } from '@/components/lock-modal';
+import { LockModal, type LockTarget } from '@/components/lock-modal';
 import { FolderLockedPanel } from '@/components/folder-locked-panel';
 import { HideModal } from '@/components/hide-modal';
 import { FilesSidebar } from '@/components/files-sidebar';
 import { FilePreviewImage } from '@/components/file-preview-image';
 import { OriginBadge } from '@/components/origin-badge';
-import { humanSize, timeAgo, extOf, fileIconSrc, folderIconSrc, colorFor, originLabel, isOfficeFile, hiddenTitle } from '@/lib/helpers';
-import { serializeSort, parseSort, toggleSort, DEFAULT_SORT, type SortKey, type SortSpec } from '@/lib/list-sort';
+import { humanSize, extOf, fileIconSrc, folderIconSrc, colorFor, isOfficeFile, hiddenTitle } from '@/lib/helpers';
+import { serializeSort, parseSort, toggleSort, DEFAULT_SORT, type SortSpec } from '@/lib/list-sort';
+import { ALL_COLUMNS, DEFAULT_VISIBLE, TABLE_COLUMNS_KEY, loadSavedColumns, libraryColumnsFor, DateCell, type ColumnKey, type ColumnDef } from '@/lib/file-columns';
+import { useDateFormat } from '@/lib/date-format';
 import { toast } from '@/lib/toast';
 import { validateFolderPath, validateFileName, validateFolderName } from '@/lib/validation-policy.generated';
 import { FolderPickerDialog } from '@/components/folder-picker-dialog';
@@ -73,68 +84,44 @@ const SORT_OPTIONS: { value: string; label: string }[] = [
 ];
 
 
-// ── Table columns ─────────────────────────────────────────
-
-// Every table column doubles as a sort key (the API whitelists them all).
-type ColumnKey = SortKey;
-
-interface ColumnDef {
-  key: ColumnKey;
-  label: string;
-  defaultVisible: boolean;
-  width?: string;
-  render: (f: FileItem) => React.ReactNode;
-  renderFolder?: (f: FolderItem) => React.ReactNode;
-}
-
-const ALL_COLUMNS: ColumnDef[] = [
-  { key: 'name', label: 'Name', defaultVisible: true, width: 'flex-1 min-w-40', render: () => null /* handled separately */ },
-  { key: 'size', label: 'Size', defaultVisible: true, width: 'w-20', render: (f) => humanSize(f.size_bytes), renderFolder: (f) => humanSize(f.total_size_bytes) },
-  { key: 'created', label: 'Created', defaultVisible: true, width: 'w-24', render: (f) => timeAgo(f.created_at), renderFolder: (f) => timeAgo(f.created_at) },
-  { key: 'modified', label: 'Modified', defaultVisible: false, width: 'w-24', render: (f) => timeAgo(f.updated_at), renderFolder: (f) => timeAgo(f.content_updated_at) },
-  { key: 'type', label: 'Type', defaultVisible: false, width: 'w-28', render: (f) => f.mime_type, renderFolder: () => 'Folder' },
-  { key: 'extension', label: 'Extension', defaultVisible: false, width: 'w-16', render: (f) => (f.extension || extOf(f.name) || '-').toUpperCase() },
-  { key: 'version', label: 'Version', defaultVisible: false, width: 'w-16', render: (f) => f.current_version > 1 ? `v${f.current_version}` : '-' },
-  { key: 'uploader', label: 'Uploader', defaultVisible: false, width: 'w-28', render: (f) => f.uploader_name ?? '-', renderFolder: (f) => f.uploader_name ?? '-' },
-  { key: 'region', label: 'Region', defaultVisible: false, width: 'w-20', render: (f) => f.region || '-', renderFolder: (f) => f.region === 'multi' ? 'Multiple' : (f.region || '-') },
-  { key: 'origin', label: 'Origin', defaultVisible: true, width: 'w-20', render: (f) => originLabel(f.origin), renderFolder: (f) => originLabel(f.origin) },
-  { key: 'shares', label: 'Shares', defaultVisible: false, width: 'w-14', render: (f) => f.share_count > 0 ? String(f.share_count) : '-', renderFolder: (f) => f.share_count > 0 ? String(f.share_count) : '-' },
-  { key: 'comments', label: 'Comments', defaultVisible: false, width: 'w-14', render: (f) => f.comment_count > 0 ? String(f.comment_count) : '-', renderFolder: (f) => f.comment_count > 0 ? String(f.comment_count) : '-' },
-];
-
-const DEFAULT_VISIBLE: Set<ColumnKey> = new Set(ALL_COLUMNS.filter((c) => c.defaultVisible).map((c) => c.key));
+// Table column definitions (ColumnKey, ColumnDef, ALL_COLUMNS, DEFAULT_VISIBLE,
+// loadSavedColumns) now live in lib/file-columns - the library table layout
+// reuses them via libraryColumnsFor there instead of redefining them here.
 
 // Only the filters the API actually narrows by. `shared` is a no-op server-side,
 // so an empty view under it means the folder is empty, not that nothing is shared.
+// `images`, `videos` and `documents` are deliberately absent: those filters are
+// the library view, which owns its own per-kind empty state (and never renders
+// this page's folder empty state).
 const FILTER_EMPTY_LABELS: Record<string, string> = {
-  documents: 'No documents here',
-  videos: 'No videos here',
-  images: 'No images here',
   hidden: 'No hidden files here',
 };
 
-function loadSavedColumns(): Set<ColumnKey> {
-  try {
-    const saved = localStorage.getItem('dosya_table_columns');
-    if (!saved) return new Set(DEFAULT_VISIBLE);
-    const parsed: unknown = JSON.parse(saved);
-    if (!Array.isArray(parsed)) return new Set(DEFAULT_VISIBLE);
-    // The cast this used to do was a lie: localStorage is user-writable and
-    // outlives any column rename, so an unknown key silently produced a table
-    // whose headers and cells disagreed. Keep only keys that still exist, and
-    // fall back rather than render an empty table.
-    const known = new Set<string>(ALL_COLUMNS.map((c) => c.key));
-    const valid = parsed.filter((k): k is ColumnKey => typeof k === 'string' && known.has(k));
-    return valid.length > 0 ? new Set(valid) : new Set(DEFAULT_VISIBLE);
-  } catch {}
-  return new Set(DEFAULT_VISIBLE);
-}
+// Stable identities so the memoised consumers below don't see a new array on
+// every render while the library view is open.
+const EMPTY_FOLDERS: FolderItem[] = [];
+const EMPTY_BREADCRUMBS: { id: string; name: string }[] = [];
 
 const VIEW_STORAGE_KEY = 'dosya_files_view';
 
 function loadSavedView(): ViewMode {
   const saved = localStorage.getItem(VIEW_STORAGE_KEY);
   return saved === 'list' || saved === 'grid' ? saved : 'grid';
+}
+
+const PHOTO_SORT_KEY = 'dosya_photos_sort';
+const PHOTO_TILE_KEY = 'dosya_photos_tile';
+
+// One saved sort across every kind: the wire values are identical (only the
+// label of the primary date differs), so a sort chosen in Photos carries into
+// Videos and any kind's option list validates what was stored.
+function loadSavedPhotoSort(): LibrarySort {
+  const saved = localStorage.getItem(PHOTO_SORT_KEY);
+  return sortOptionsFor('photos').some((o) => o.value === saved) ? (saved as LibrarySort) : 'taken_desc';
+}
+
+function loadSavedTileSize(): TileSize {
+  return localStorage.getItem(PHOTO_TILE_KEY) === 'large' ? 'large' : 'small';
 }
 
 /**
@@ -201,13 +188,21 @@ export default function FilesPage() {
   };
   const [visibleColumns, setVisibleColumns] = useState<Set<ColumnKey>>(loadSavedColumns);
   const [columnPickerOpen, setColumnPickerOpen] = useState(false);
+  // "Exact dates": every date cell shows the full local date/time instead of
+  // "3d ago". Lives in the column picker because it is a display preference
+  // for the same table, and persists like the column set does.
+  const exactDates = useDateFormat((s) => s.exact);
+  const setExactDates = useDateFormat((s) => s.setExact);
 
   const toggleColumn = (key: ColumnKey) => {
-    if (key === 'name') return; // name is always visible
+    // Name is always visible, and so is the library table's primary date: it
+    // is the column the library is ordered by. In the folder listing "Date
+    // taken" is an ordinary optional column.
+    if (key === 'name' || (key === 'taken' && isLibraryView)) return;
     setVisibleColumns((prev) => {
       const next = new Set(prev);
       if (next.has(key)) next.delete(key); else next.add(key);
-      localStorage.setItem('dosya_table_columns', JSON.stringify([...next]));
+      localStorage.setItem(TABLE_COLUMNS_KEY, JSON.stringify([...next]));
       return next;
     });
   };
@@ -229,7 +224,7 @@ export default function FilesPage() {
   const [favourites, setFavourites] = useState<Set<string>>(new Set());
 
   // Lock modal
-  const [lockTarget, setLockTarget] = useState<{ id: string; name: string; type: 'file' | 'folder' } | null>(null);
+  const [lockTarget, setLockTarget] = useState<LockTarget | null>(null);
 
   // Get-info dialog
   const [infoTarget, setInfoTarget] = useState<InfoTarget | null>(null);
@@ -328,11 +323,22 @@ export default function FilesPage() {
    * can't send a follow-up DELETE that lands on the now-trashed item and
    * silently purges it - see `handleDelete`. */
   const [deleting, setDeleting] = useState(false);
+  /**
+   * Files removed so far by a multi-pass folder purge. Null when no purge is
+   * running - a purge that finishes in one pass never shows a progress line.
+   */
+  const [purgeProgress, setPurgeProgress] = useState<number | null>(null);
   /** Pending bulk delete awaiting confirmation - `permanent` distinguishes the Deleted view's irreversible purge. */
   const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState<{ permanent: boolean } | null>(null);
   /** A bulk action is in flight - disables the bulk bar so a second click
    *  can't fire the same requests against a selection already being mutated. */
   const [bulkBusy, setBulkBusy] = useState(false);
+  // Drives the blocking progress modal; null while no bulk delete is running.
+  const [bulkProgress, setBulkProgress] = useState<BulkDeleteProgress | null>(null);
+  const [bulkCancelRequested, setBulkCancelRequested] = useState(false);
+  // The runner polls this between requests - a ref, so an in-flight run sees
+  // the click without re-rendering its way into a stale closure.
+  const bulkCancelRef = useRef(false);
   /** File/folder ids with a restore request in flight - guards row-level
    * Restore (context menu / dropdown) against the same double-click race,
    * which has previously double-credited storage at the API layer. */
@@ -357,6 +363,44 @@ export default function FilesPage() {
   const currentGroup = searchParams.get('group') || '';
   const isDeletedView = currentFilter === 'deleted';
 
+  // The Images, Videos and Documents filters are the library view: a
+  // workspace-wide, month-grouped feed from /api/library instead of the folder
+  // listing. Which kind is asked for is the only difference between the three -
+  // everything below that reads `files` / `selected` (viewer, bulk bar, context
+  // menu, modals) works unchanged because the rows have the FileItem shape.
+  const libraryKind = kindForFilter(currentFilter);
+  const isLibraryView = libraryKind !== null;
+  const sortOptions = useMemo(() => (libraryKind ? sortOptionsFor(libraryKind) : []), [libraryKind]);
+  // The toolbar's stand-in for the breadcrumb icon; the fallback is never
+  // rendered (the slot is a breadcrumb outside the library).
+  const LibraryIcon = KIND_ICON[libraryKind ?? 'photos'];
+  const [photoSort, setPhotoSort] = useState<LibrarySort>(loadSavedPhotoSort);
+  const changePhotoSort = (next: LibrarySort) => { setPhotoSort(next); localStorage.setItem(PHOTO_SORT_KEY, next); };
+  const [tileSize, setTileSize] = useState<TileSize>(loadSavedTileSize);
+  const changeTileSize = (next: TileSize) => { setTileSize(next); localStorage.setItem(PHOTO_TILE_KEY, next); };
+
+  // Tiles or a table, remembered per kind rather than for the library as a
+  // whole: photos are a contact sheet and documents are a list of names and
+  // dates, so one shared preference would always be wrong for one of them.
+  // The folder listing keeps its own `viewMode` - the two never interfere.
+  const [libraryLayouts, setLibraryLayouts] = useState(loadLibraryLayouts);
+  const libraryLayout: LibraryLayout = libraryKind ? libraryLayouts[libraryKind] : 'grid';
+  const changeLibraryLayout = (next: LibraryLayout) => {
+    if (!libraryKind) return;
+    setLibraryLayouts((prev) => ({ ...prev, [libraryKind]: next }));
+    saveLibraryLayout(libraryKind, next);
+    // The column picker belongs to the table; going back to tiles unmounts it,
+    // so drop the open flag with it rather than let it reopen on the way back.
+    if (next === 'grid') setColumnPickerOpen(false);
+  };
+
+  // Where an upload started from this page lands. The library view spans every
+  // folder and ignores the `folder` param (which filterNavParams preserves so
+  // leaving the filter returns you to it), so there is no "current folder" to
+  // upload into there - it would also be mislabelled, since the name comes
+  // from breadcrumbs this view has none of.
+  const uploadFolderId = isLibraryView ? null : currentFolderId;
+
   /**
    * Unlock tokens for full_lock folders, keyed by folder id.
    *
@@ -373,7 +417,7 @@ export default function FilesPage() {
   const currentFolderToken = currentFolderId ? folderTokens[currentFolderId] ?? null : null;
 
   const view: FilesView | null = useMemo(
-    () => (wsId ? {
+    () => (wsId && !isLibraryView ? {
       workspaceId: wsId,
       folderId: currentFolderId,
       filter: currentFilter,
@@ -383,13 +427,41 @@ export default function FilesPage() {
       page: currentPage,
       unlockToken: currentFolderToken,
     } : null),
-    [wsId, currentFolderId, currentFilter, currentGroup, sortParam, search, currentPage, currentFolderToken],
+    [wsId, isLibraryView, currentFolderId, currentFilter, currentGroup, sortParam, search, currentPage, currentFolderToken],
   );
 
-  const {
-    folders, files, breadcrumbs, pagination, canLock, canHide,
-    isLoading: loading, isPlaceholder, error: loadError, errorCode: loadErrorCode, refresh: loadFiles,
-  } = useFilesListing(view);
+  const queryClient = useQueryClient();
+  const listing = useFilesListing(view);
+  const library = useLibrary(wsId && libraryKind ? { workspaceId: wsId, kind: libraryKind, sort: photoSort, q: search } : null);
+
+  // One data model, two sources. Exactly one of the two hooks is enabled at a
+  // time (each gets `null` when the other is on), so this is a switch, not a
+  // merge - and no consumer below has to know which one it is reading.
+  const folders = isLibraryView ? EMPTY_FOLDERS : listing.folders;
+  const files: FileItem[] = isLibraryView ? library.files : listing.files;
+  const breadcrumbs = isLibraryView ? EMPTY_BREADCRUMBS : listing.breadcrumbs;
+  const pagination = isLibraryView ? null : listing.pagination;
+  const canLock = isLibraryView ? library.canLock : listing.canLock;
+  const canHide = isLibraryView ? library.canHide : listing.canHide;
+  const loading = isLibraryView ? library.isLoading : listing.isLoading;
+  const isPlaceholder = isLibraryView ? library.isPlaceholder : listing.isPlaceholder;
+  const loadError = isLibraryView ? library.error : listing.error;
+  const loadErrorCode = isLibraryView ? null : listing.errorCode;
+  // Every mutation calls this; both caches are invalidated so a delete in the
+  // folder view is gone from the library and vice versa.
+  //
+  // Neither hook's own `refresh` is used, because each derives its workspace
+  // from the view it was given and exactly one of the two views is non-null
+  // at a time: in library mode `listing.refresh` would invalidate
+  // ['files', undefined], out of it `library.refresh` would invalidate
+  // ['library', undefined], and neither partial key matches anything. Both
+  // roots are invalidated by `wsId` here instead, which is live in both
+  // modes - and it has to be explicit, since staleTime is 30s and remounting
+  // the other view would not refetch on its own.
+  const loadFiles = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: [FILES_QUERY_ROOT, wsId] });
+    queryClient.invalidateQueries({ queryKey: [LIBRARY_QUERY_ROOT, wsId] });
+  }, [queryClient, wsId]);
 
   const { can, userId: currentUserId } = usePermissions();
 
@@ -413,8 +485,6 @@ export default function FilesPage() {
     const fresh = files.find((f) => f.id === viewerFile.id);
     if (fresh !== viewerFile) setViewerFile(fresh ?? null);
   }
-
-  const queryClient = useQueryClient();
 
   /**
    * Warm a folder's first page while the pointer is still travelling to it.
@@ -482,8 +552,13 @@ export default function FilesPage() {
   // Selection is per-view: ids from the previous folder must not survive into the
   // next one. Keyed on the view rather than the fetched rows, so a background
   // revalidation that happens to return changed data does not wipe an in-progress
-  // multi-select.
-  useEffect(() => { clearSelection(); }, [view]);
+  // multi-select. `view` is null throughout the library view, so that view's own
+  // identity (which kind - null when it is off - its sort, the search that
+  // narrows it, and the workspace it is reading) has to be listed too -
+  // otherwise a selection made before a search, a workspace switch or a hop
+  // from Videos to Documents survives into the new grid and the bulk bar acts
+  // on items that are no longer on screen.
+  useEffect(() => { clearSelection(); }, [view, libraryKind, photoSort, search, wsId]);
 
   useEffect(() => {
     if (!isPlaceholder) lastItemCount.current = folders.length + files.length;
@@ -671,19 +746,48 @@ export default function FilesPage() {
   const handleDelete = async () => {
     if (!deleteTarget || deleting) return;
     setDeleting(true);
+    setPurgeProgress(null);
     try {
       const ep = deleteTarget.type === 'file' ? `/api/files/${deleteTarget.id}` : `/api/folders/${deleteTarget.id}`;
-      await api(ep, { method: 'DELETE' });
-      toast.success('Deleted', deleteTarget.permanent ? `${deleteTarget.name} was permanently deleted.` : `${deleteTarget.name} was deleted.`);
+      // Permanently purging a folder is BOUNDED server-side: it works until
+      // its round-trip budget runs out, answers 202 `complete:false`, and
+      // expects to be asked again (the call is idempotent, and the folder rows
+      // survive an unfinished pass precisely so the next call can pick up
+      // where it stopped). Every other delete here is a single call.
+      if (deleteTarget.type === 'folder' && deleteTarget.permanent) {
+        const outcome = await purgeTrashedFolder(async () => {
+          const body = await api<PurgeResponse>(ep, { method: 'DELETE' });
+          setPurgeProgress((prev) => (prev ?? 0) + (body.files_affected ?? 0));
+          return body;
+        });
+        const message = purgeSummary(outcome, deleteTarget.name);
+        if (message.kind === 'success') toast.success(message.title, message.body);
+        else toast.info(message.title, message.body);
+      } else {
+        await api(ep, { method: 'DELETE' });
+        toast.success('Deleted', deleteTarget.permanent ? `${deleteTarget.name} was permanently deleted.` : `${deleteTarget.name} was deleted.`);
+      }
       // The deleted row can be part of the current bulk selection even though
       // this is the single-item delete path - clear explicitly so a stale id
       // for a now-gone row doesn't linger in `selected`/`selectedFolders`.
+      setPurgeProgress(null);
       setDeleteTarget(null); clearSelection(); loadFiles();
     } catch (err) {
       // A row-level permanent delete on a folder that isn't a trash root
       // 404/400s with an explanatory message ("...restore or delete that
       // one instead") - surface it instead of a generic failure.
-      toast.error('Delete failed', apiErrorMessage(err, 'The item could not be deleted.'));
+      const reason = apiErrorMessage(err, 'The item could not be deleted.');
+      // A purge that died partway still emptied whatever the earlier passes
+      // emptied. Reporting only the failure told the user nothing had happened
+      // over files that are gone for good. The dialog stays open with its
+      // progress line intact for the same reason.
+      const progress = purgeProgressOf(err);
+      toast.error(
+        'Delete failed',
+        progress && progress.filesAffected > 0
+          ? `Removed ${progress.filesAffected.toLocaleString()} file${progress.filesAffected === 1 ? '' : 's'}, then the purge failed. ${reason}`
+          : reason,
+      );
     }
     setDeleting(false);
   };
@@ -757,19 +861,18 @@ export default function FilesPage() {
 
   const handleDownload = (fileId: string) => { window.open(`${API_BASE}/api/files/${fileId}/download`, '_blank'); };
 
-  const handleDownloadFolder = async (folderId: string) => {
-    try {
-      const res = await fetch(`${API_BASE}/api/files/download-archive`, {
-        method: 'POST', credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ folder_ids: [folderId] }),
-      });
-      if (!res.ok) { toast.error('Download failed', await responseErrorMessage(res, 'The folder could not be prepared.')); return; }
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a'); a.href = url; a.download = 'dosya-download.zip'; a.click();
-      URL.revokeObjectURL(url);
-    } catch { toast.error('Download failed', 'The folder could not be prepared.'); }
+  // Only the buffered fallback (a selection too large for a URL) can report a
+  // refusal here; the streamed path shows the API's own answer in its tab.
+  // Covers both answers this can carry: a selection refused before anything
+  // started, and a multi-part download where some parts did not begin. Neither
+  // is "Download failed", which claims more than either one says.
+  const archiveError = (message: string) => toast.error('Download problem', message);
+
+  // Streamed straight to the browser's downloads (see lib/archive-download):
+  // buffering the ZIP into a Blob first pinned the whole archive in memory.
+  const handleDownloadFolder = (folderId: string) => {
+    // One folder is always one request, however many files are inside it.
+    void startArchiveDownload({ folderIds: [folderId] }, { onError: archiveError });
   };
 
   const handleCopy = async (fileId: string) => {
@@ -892,33 +995,54 @@ export default function FilesPage() {
   // firing the request straight from the toolbar was too easy to do by
   // accident. `bulkDeleteConfirm` holds the pending mode; these two runners
   // are only ever reached from the dialog's confirm button.
+  //
+  // 20 ids per batch-delete request: small enough that the progress bar moves
+  // visibly on a 100-item selection, large enough that request overhead stays
+  // a rounding error (the endpoint itself accepts up to 500).
+  const SOFT_DELETE_CHUNK = 20;
   const runBulkDelete = async () => {
     setBulkDeleteConfirm(null);
-    try {
-      await api('/api/files/batch-delete', { method: 'POST', body: JSON.stringify({
-        workspace_id: wsId,
-        file_ids: Array.from(selected),
-        folder_ids: Array.from(selectedFolders),
-      }) });
-      toast.success('Deleted', `${totalSelected} item${totalSelected === 1 ? '' : 's'} deleted.`);
-      clearSelection(); loadFiles();
-    } catch { toast.error('Delete failed', 'The selected items could not be deleted.'); }
+    setBulkBusy(true);
+    // One batch-delete request over the whole selection has no observable
+    // progress, so the selection is chunked and sent sequentially - each chunk
+    // that lands moves the bar. Soft delete stays non-cancelable: the modal
+    // blocks until every chunk settles, matching the old all-or-nothing feel.
+    const fileIds = Array.from(selected);
+    const folderIds = Array.from(selectedFolders);
+    const total = fileIds.length + folderIds.length;
+    let done = 0;
+    let failed = 0;
+    setBulkProgress({ done, total, permanent: false });
+    for (const chunk of chunkSelection(fileIds, folderIds, SOFT_DELETE_CHUNK)) {
+      const size = chunk.file_ids.length + chunk.folder_ids.length;
+      try {
+        await api('/api/files/batch-delete', { method: 'POST', body: JSON.stringify({
+          workspace_id: wsId,
+          file_ids: chunk.file_ids,
+          folder_ids: chunk.folder_ids,
+        }) });
+      } catch { failed += size; }
+      done += size;
+      setBulkProgress({ done, total, permanent: false });
+    }
+    setBulkProgress(null);
+    setBulkBusy(false);
+    clearSelection(); loadFiles();
+    if (failed === 0) toast.success('Deleted', `${total} item${total === 1 ? '' : 's'} deleted.`);
+    else toast.error('Some items could not be deleted', `${total - failed} deleted, ${failed} failed.`);
   };
 
   const bulkDownloadZip = async () => {
-    try {
-      const res = await fetch(`${API_BASE}/api/files/download-archive`, {
-        method: 'POST', credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ file_ids: Array.from(selected), folder_ids: Array.from(selectedFolders) }),
-      });
-      if (!res.ok) { toast.error('Download failed', await responseErrorMessage(res, 'The download could not be prepared.')); return; }
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a'); a.href = url; a.download = 'dosya-download.zip'; a.click();
-      URL.revokeObjectURL(url);
-      toast.success('Downloaded', 'Download started');
-    } catch { toast.error('Download failed', 'The download could not be prepared.'); }
+    // A selection too long for one URL arrives as several ZIPs (see
+    // lib/archive-download), so say how many rather than promising "your ZIP"
+    // while three downloads land. `parts === 0` means it was refused and
+    // `onError` has already said why.
+    const { parts } = await startArchiveDownload(
+      { fileIds: Array.from(selected), folderIds: Array.from(selectedFolders) },
+      { onError: archiveError },
+    );
+    if (parts === 1) toast.success('Download started', 'Your ZIP is being prepared by the browser.');
+    else if (parts > 1) toast.success('Download started', `Too many items for one file - arriving as ${parts} ZIPs.`);
   };
 
   const bulkMove = () => { if (totalSelected > 0) setBulkMoveOpen(true); };
@@ -960,19 +1084,90 @@ export default function FilesPage() {
   const runBulkPermanentDelete = async () => {
     setBulkDeleteConfirm(null);
     setBulkBusy(true);
+    bulkCancelRef.current = false;
+    setBulkCancelRequested(false);
+    const fileIds = Array.from(selected);
+    const folderIds = Array.from(selectedFolders);
+    const total = fileIds.length + folderIds.length;
+    let done = 0;
+    setBulkProgress({ done, total, permanent: true });
+    // Cancel stops launching new requests; the few already in flight settle
+    // first, so `done` can still tick up briefly after the click.
+    const opts = {
+      shouldStop: () => bulkCancelRef.current,
+      onItemDone: () => { done++; setBulkProgress({ done, total, permanent: true }); },
+    };
     // Permanent delete is a SECOND DELETE on the item itself - there is no
     // /permanent sub-route, and the one this used to call 404'd silently
     // while still reporting success.
-    const fileRes = await runBulk(Array.from(selected), (id) =>
-      api(`/api/files/${id}`, { method: 'DELETE' }));
-    const folderRes = await runBulk(Array.from(selectedFolders), (id) =>
-      api(`/api/folders/${id}`, { method: 'DELETE' }));
-    const ok = fileRes.ok + folderRes.ok;
+    const fileRes = await runBulk(fileIds, (id) =>
+      api(`/api/files/${id}`, { method: 'DELETE' }), BULK_CONCURRENCY, opts);
+    // Folders go through the same bounded loop the row-level purge uses: the
+    // API empties one until its round-trip budget runs out and answers 202,
+    // expecting to be asked again. Counting that 202 as a finished item is how
+    // this path used to report "1 item permanently deleted" over a folder that
+    // was still half full.
+    // `shouldStop` is threaded INTO the loop as well as into runBulk: without
+    // it a cancel waits out the whole inner purge - up to fifty sequential
+    // round trips for the folder already in flight.
+    const failedPartials = new Map<string, { filesAffected: number; remaining: number }>();
+    const folderRes = await runBulk(folderIds, (id) =>
+      purgeTrashedFolder(
+        () => api<PurgeResponse>(`/api/folders/${id}`, { method: 'DELETE' }),
+        { shouldStop: () => bulkCancelRef.current },
+      ).catch((err: unknown) => {
+        // runBulk swallows the rejection to keep the batch going, so the work
+        // this folder had already done is recorded here or lost.
+        const progress = purgeProgressOf(err);
+        if (progress) failedPartials.set(id, progress);
+        throw err;
+      }),
+      BULK_CONCURRENCY, opts);
+
+    // The row is still in the listing (an unfinished purge deliberately leaves
+    // it there), so its name is to hand.
+    const folderName = (id: string) => folders.find((f) => f.id === id)?.name ?? 'A folder';
+    const completedFolders = folderRes.results.filter((r) => r?.complete).length;
+    const unfinished = folderRes.results
+      .map((outcome, i) => ({ outcome, id: folderIds[i] }))
+      .filter((r): r is { outcome: PurgeOutcome; id: string } => !!r.outcome && !r.outcome.complete)
+      .map(({ outcome, id }) => ({
+        name: folderName(id),
+        filesAffected: outcome.filesAffected,
+        remaining: outcome.remaining,
+      }));
+    const failedProgress = [...failedPartials].map(([id, progress]) => ({
+      name: folderName(id),
+      filesAffected: progress.filesAffected,
+      remaining: progress.remaining,
+    }));
+
+    // Only files that went and folders that FINISHED are deleted items.
+    const deleted = fileRes.ok + completedFolders;
     const fail = fileRes.fail + folderRes.fail;
+    const skipped = total - fileRes.ok - folderRes.ok - fail;
+    setBulkProgress(null);
     setBulkBusy(false);
+    setBulkCancelRequested(false);
     clearSelection(); loadFiles();
-    if (fail === 0) toast.success('Deleted', `${ok} item${ok === 1 ? '' : 's'} permanently deleted.`);
-    else toast.error('Some items could not be deleted', `${ok} deleted, ${fail} failed.`);
+    if (bulkCancelRef.current) {
+      // A half-emptied folder is still in the trash, and says so here - along
+      // with what it did manage before the cancel landed.
+      const message = bulkPurgeCancelled({
+        deleted,
+        leftInTrash: skipped + fail + unfinished.length,
+        partial: [...unfinished, ...failedProgress],
+      });
+      toast.info(message.title, message.body);
+    } else if (unfinished.length > 0) {
+      const message = bulkPurgeStillEmptying({ deleted, failed: fail, incomplete: unfinished });
+      toast.info(message.title, message.body);
+    } else if (fail === 0) {
+      toast.success('Deleted', `${deleted} item${deleted === 1 ? '' : 's'} permanently deleted.`);
+    } else {
+      const note = partialProgressNote(failedProgress);
+      toast.error('Some items could not be deleted', `${deleted} deleted, ${fail} failed.${note ? ` ${note}` : ''}`);
+    }
   };
 
 
@@ -1003,7 +1198,7 @@ export default function FilesPage() {
     // upload finishes, so it appears where it was dropped.
     void uploadFromDrop(
       e.dataTransfer,
-      { workspace_id: wsId, folder_id: currentFolderId, group_id: currentGroup || null },
+      { workspace_id: wsId, folder_id: uploadFolderId, group_id: currentGroup || null },
       currentGroup ? { note: 'Files will be added to this group.' } : {},
     ).then((res) => {
       // Folders exist server-side before their files finish uploading, so the
@@ -1089,7 +1284,7 @@ export default function FilesPage() {
       { label: 'Add to group', icon: <FolderPlus />, onClick: () => openAddToGroup(f.id, f.name, 'file') },
       { label: 'Upload new version', icon: <Upload />, hidden: !can('upload_files'), onClick: () => setVersionUploadTarget(f.id) },
       { label: 'Version history', icon: <History />, onClick: () => openFileWithLockCheck(f, 'view') },
-      { label: f.lock_mode !== 'none' ? 'Unlock' : 'Lock', icon: <Lock />, hidden: !canLock, onClick: () => setLockTarget({ id: f.id, name: f.name, type: 'file' }) },
+      { label: f.lock_mode !== 'none' ? 'Unlock' : 'Lock', icon: <Lock />, hidden: !canLock, onClick: () => setLockTarget({ id: f.id, name: f.name, type: 'file', size_bytes: f.size_bytes, extension: f.extension, lock_mode: f.lock_mode }) },
       { label: f.is_hidden ? 'Unhide' : 'Hide', icon: f.is_hidden ? <Eye /> : <EyeOff />, hidden: !canHide, onClick: () => setHideTarget({ id: f.id, name: f.name, type: 'file' }) },
       { label: '', separator: true, onClick: () => {}, icon: null },
       { label: 'Delete', icon: <Trash2 />, hidden: !canDeleteFile(f), onClick: () => setDeleteTarget({ id: f.id, name: f.name, type: 'file' }), danger: true },
@@ -1129,7 +1324,7 @@ export default function FilesPage() {
       { label: 'Move to...', icon: <Move />, hidden: !can('rename_folders'), onClick: () => openMoveModal(f.id, 'folder') },
       { label: 'Add to group', icon: <FolderPlus />, onClick: () => openAddToGroup(f.id, f.name, 'folder') },
       { label: '', separator: true, onClick: () => {}, icon: null },
-      { label: f.lock_mode !== 'none' ? 'Unlock' : 'Lock', icon: <Lock />, hidden: !canLock, onClick: () => setLockTarget({ id: f.id, name: f.name, type: 'folder' }) },
+      { label: f.lock_mode !== 'none' ? 'Unlock' : 'Lock', icon: <Lock />, hidden: !canLock, onClick: () => setLockTarget({ id: f.id, name: f.name, type: 'folder', file_count: f.file_count, total_size_bytes: f.total_size_bytes, lock_mode: f.lock_mode }) },
       { label: f.is_hidden ? 'Unhide' : 'Hide', icon: f.is_hidden ? <Eye /> : <EyeOff />, hidden: !canHide, onClick: () => setHideTarget({ id: f.id, name: f.name, type: 'folder' }) },
       { label: '', separator: true, onClick: () => {}, icon: null },
       { label: 'Delete', icon: <Trash2 />, hidden: !can('delete_any_file') && !can('delete_own_files'), onClick: () => setDeleteTarget({ id: f.id, name: f.name, type: 'folder' }), danger: true },
@@ -1141,15 +1336,17 @@ export default function FilesPage() {
     : [
         { label: 'Refresh', icon: <RefreshCw />, onClick: () => loadFiles() },
         { label: '', separator: true, onClick: () => {}, icon: null },
-        { label: 'New folder', icon: <FolderPlus />, hidden: !can('create_folders'), onClick: () => setCreateFolderOpen(true) },
+        // The library view is workspace-wide with no current folder to create
+        // in - the toolbar button is hidden there for the same reason.
+        { label: 'New folder', icon: <FolderPlus />, hidden: isLibraryView || !can('create_folders'), onClick: () => setCreateFolderOpen(true) },
         { label: 'Upload files', icon: <Upload />, hidden: !can('access_upload') || !can('upload_files'), onClick: () => navigate(uploadHref) },
       ];
 
   // Carries the current folder, or the current group, through to the Uploads
   // page so a file started from a group view is enrolled into that group when
   // it lands (a group is a flat collection, so it can't be a `folder` target).
-  const uploadHref = currentFolderId
-    ? `/uploads?folder=${currentFolderId}&folder_name=${encodeURIComponent(breadcrumbs.at(-1)?.name ?? '')}`
+  const uploadHref = uploadFolderId
+    ? `/uploads?folder=${uploadFolderId}&folder_name=${encodeURIComponent(breadcrumbs.at(-1)?.name ?? '')}`
     : currentGroup
       ? `/uploads?group=${currentGroup}`
       : '/uploads';
@@ -1167,19 +1364,30 @@ export default function FilesPage() {
   // reading there) and is forced visible - like the always-on Name column -
   // so a first-time visitor sees when something was removed without having
   // to dig into the column picker.
-  const displayColumns: ColumnDef[] = useMemo(() => (isDeletedView
-    ? ALL_COLUMNS.map((c) => c.key === 'modified'
-        ? {
-            ...c,
-            label: 'Deleted',
-            render: (f: FileItem) => f.deleted_at ? timeAgo(f.deleted_at) : '-',
-            renderFolder: (f: FolderItem) => f.deleted_at ? timeAgo(f.deleted_at) : '-',
-          }
-        : c)
-    : ALL_COLUMNS), [isDeletedView]);
+  //
+  // The library table adds the kind's primary date ("Date taken" for photos,
+  // "Date created" otherwise) - the column its rows are actually ordered by -
+  // and forces it visible for the same reason. The three branches are
+  // mutually exclusive: a filter is the trash, a library kind, or neither.
+  const displayColumns: ColumnDef[] = useMemo(() => {
+    if (libraryKind) return libraryColumnsFor(libraryKind);
+    return isDeletedView
+      ? ALL_COLUMNS.map((c) => c.key === 'modified'
+          ? {
+              ...c,
+              label: 'Deleted',
+              render: (f: FileItem) => f.deleted_at ? <DateCell ts={f.deleted_at} /> : '-',
+              renderFolder: (f: FolderItem) => f.deleted_at ? <DateCell ts={f.deleted_at} /> : '-',
+            }
+          : c)
+      : ALL_COLUMNS;
+  }, [isDeletedView, libraryKind]);
   const effectiveVisibleColumns = useMemo(
-    () => (isDeletedView ? new Set(visibleColumns).add('modified') : visibleColumns),
-    [isDeletedView, visibleColumns],
+    () => {
+      if (isLibraryView) return new Set(visibleColumns).add('taken');
+      return isDeletedView ? new Set(visibleColumns).add('modified') : visibleColumns;
+    },
+    [isLibraryView, isDeletedView, visibleColumns],
   );
   // Hoisted out of the row loops: this used to be recomputed per row, so a
   // 100-file listing allocated 100 identical filtered arrays on every render.
@@ -1222,35 +1430,78 @@ export default function FilesPage() {
           <div className="flex scale-[0.97] flex-col items-center gap-2 text-primary transition-transform duration-150 ease-(--ease-out-strong) group-data-dragging/drop:scale-100 motion-reduce:scale-100 motion-reduce:transition-none">
             <Upload className="size-10" />
             <p className="text-sm font-semibold">Drop files or folders to upload</p>
-            <p className="text-xs opacity-70">{currentFolderId ? `to ${breadcrumbs.at(-1)?.name ?? 'folder'}` : 'to root folder'}</p>
+            <p className="text-xs opacity-70">{uploadFolderId ? `to ${breadcrumbs.at(-1)?.name ?? 'folder'}` : 'to root folder'}</p>
           </div>
         </div>
       {/* Toolbar */}
       <div className="flex items-center gap-3 px-5 py-3 border-b shrink-0">
-        <div className="flex items-center gap-1 text-sm flex-1 min-w-0">
-          <button onClick={() => navigateToFolder(null)} className="text-muted-foreground hover:text-foreground"><Home className="size-4" /></button>
-          {breadcrumbs.map((b) => (
-            <span key={b.id} className="flex items-center gap-1">
-              <ChevronRight className="size-3 text-muted-foreground" />
-              <button onClick={() => navigateToFolder(b.id)} className="text-xs font-medium hover:text-foreground text-muted-foreground truncate max-w-30">{b.name}</button>
+        {isLibraryView ? (
+          /* The library spans every folder, so there is no path to walk -
+             the breadcrumb is replaced by the view's name and its size. */
+          <div className="flex items-center gap-2.5 text-sm flex-1 min-w-0">
+            <LibraryIcon className="size-4 shrink-0" />
+            <span className="font-semibold">{KIND_COPY[libraryKind].title}</span>
+            <span className="text-xs text-muted-foreground tabular-nums whitespace-nowrap truncate">
+              {library.isLoading ? 'Loading...' : `${plural(libraryKind, library.total)} · all folders`}
             </span>
-          ))}
-        </div>
+          </div>
+        ) : (
+          <div className="flex items-center gap-1 text-sm flex-1 min-w-0">
+            <button onClick={() => navigateToFolder(null)} className="text-muted-foreground hover:text-foreground"><Home className="size-4" /></button>
+            {breadcrumbs.map((b) => (
+              <span key={b.id} className="flex items-center gap-1">
+                <ChevronRight className="size-3 text-muted-foreground" />
+                <button onClick={() => navigateToFolder(b.id)} className="text-xs font-medium hover:text-foreground text-muted-foreground truncate max-w-30">{b.name}</button>
+              </span>
+            ))}
+          </div>
+        )}
         <div className="relative w-48">
           <Search className="size-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
-          <Input value={searchInput} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchInput(e.target.value)} placeholder="Search files..." className="h-8 text-xs pl-8" />
+          <Input value={searchInput} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchInput(e.target.value)} placeholder={isLibraryView ? KIND_COPY[libraryKind].searchPlaceholder : 'Search files...'} className="h-8 text-xs pl-8" />
         </div>
-        <Select value={sortParam} onValueChange={(v) => changeSort(parseSort(v ?? ''))} items={sortSelectItems}>
-          <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            {sortSelectItems.map((o) => <SelectItem key={o.value} value={o.value} className="text-xs">{o.label}</SelectItem>)}
-          </SelectContent>
-        </Select>
-        <div className="flex border rounded-md overflow-hidden">
-          <button onClick={() => changeView('grid')} className={`p-1.5 ${viewMode === 'grid' ? 'bg-accent text-accent-foreground' : 'hover:bg-muted/50'}`}><Grid3X3 className="size-3.5" /></button>
-          <button onClick={() => changeView('list')} className={`p-1.5 ${viewMode === 'list' ? 'bg-accent text-accent-foreground' : 'hover:bg-muted/50'}`}><List className="size-3.5" /></button>
-        </div>
-        {viewMode === 'list' && (
+        {isLibraryView ? (
+          <Select value={photoSort} onValueChange={(v) => changePhotoSort((v ?? 'taken_desc') as LibrarySort)} items={sortOptions}>
+            <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {sortOptions.map((o) => <SelectItem key={o.value} value={o.value} className="text-xs">{o.label}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        ) : (
+          <Select value={sortParam} onValueChange={(v) => changeSort(parseSort(v ?? ''))} items={sortSelectItems}>
+            <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {sortSelectItems.map((o) => <SelectItem key={o.value} value={o.value} className="text-xs">{o.label}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        )}
+        {isLibraryView ? (
+          /* Every kind can be tiles or a table, so the library gets the same
+             grid/list toggle the folder listing has - against its own per-kind
+             preference, not `viewMode`. The tile-size toggle only follows the
+             tiles (documents included now that they can be a grid); a table is
+             one size, and gets the column picker below instead. */
+          <>
+            <div className="flex border rounded-md overflow-hidden">
+              <button title="Grid" aria-pressed={libraryLayout === 'grid'} onClick={() => changeLibraryLayout('grid')} className={`p-1.5 ${libraryLayout === 'grid' ? 'bg-accent text-accent-foreground' : 'hover:bg-muted/50'}`}><Grid3X3 className="size-3.5" /></button>
+              <button title="List" aria-pressed={libraryLayout === 'list'} onClick={() => changeLibraryLayout('list')} className={`p-1.5 ${libraryLayout === 'list' ? 'bg-accent text-accent-foreground' : 'hover:bg-muted/50'}`}><List className="size-3.5" /></button>
+            </div>
+            {libraryLayout === 'grid' && (
+              <div className="flex border rounded-md overflow-hidden">
+                <button title="Small tiles" aria-pressed={tileSize === 'small'} onClick={() => changeTileSize('small')} className={`p-1.5 ${tileSize === 'small' ? 'bg-accent text-accent-foreground' : 'hover:bg-muted/50'}`}><ZoomOut className="size-3.5" /></button>
+                <button title="Large tiles" aria-pressed={tileSize === 'large'} onClick={() => changeTileSize('large')} className={`p-1.5 ${tileSize === 'large' ? 'bg-accent text-accent-foreground' : 'hover:bg-muted/50'}`}><ZoomIn className="size-3.5" /></button>
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="flex border rounded-md overflow-hidden">
+            <button onClick={() => changeView('grid')} className={`p-1.5 ${viewMode === 'grid' ? 'bg-accent text-accent-foreground' : 'hover:bg-muted/50'}`}><Grid3X3 className="size-3.5" /></button>
+            <button onClick={() => changeView('list')} className={`p-1.5 ${viewMode === 'list' ? 'bg-accent text-accent-foreground' : 'hover:bg-muted/50'}`}><List className="size-3.5" /></button>
+          </div>
+        )}
+        {/* One picker, two tables: the folder listing's list view and the
+            library's, each gated on the mode that owns it. */}
+        {((viewMode === 'list' && !isLibraryView) || (isLibraryView && libraryLayout === 'list')) && (
           <DropdownMenu open={columnPickerOpen} onOpenChange={setColumnPickerOpen}>
             <DropdownMenuTrigger
               className={`h-8 px-2 text-xs border rounded-md flex items-center gap-1.5 hover:bg-muted/50 ${columnPickerOpen ? 'bg-muted' : ''}`}
@@ -1265,18 +1516,30 @@ export default function FilesPage() {
                   checked={effectiveVisibleColumns.has(col.key)}
                   onCheckedChange={() => toggleColumn(col.key)}
                   closeOnClick={false}
-                  disabled={col.key === 'name' || (isDeletedView && col.key === 'modified')}
+                  disabled={col.key === 'name' || (col.key === 'taken' && isLibraryView) || (isDeletedView && col.key === 'modified')}
                   className="text-xs"
                 >
                   {col.label}
                 </DropdownMenuCheckboxItem>
               ))}
+              <DropdownMenuSeparator />
+              <DropdownMenuCheckboxItem
+                checked={exactDates}
+                onCheckedChange={(v) => setExactDates(!!v)}
+                closeOnClick={false}
+                className="text-xs"
+                title="Show the full date and time in every date column"
+              >
+                Exact dates
+              </DropdownMenuCheckboxItem>
             </DropdownMenuContent>
           </DropdownMenu>
         )}
         {!isDeletedView && (
           <>
-            <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={() => setCreateFolderOpen(true)}><FolderPlus className="size-3.5" /> New folder</Button>
+            {/* A folder made from the library view would land nowhere the view
+                can show, so only Upload survives there. */}
+            {!isLibraryView && <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={() => setCreateFolderOpen(true)}><FolderPlus className="size-3.5" /> New folder</Button>}
             <Link to={uploadHref}><Button size="sm" className="h-8 text-xs gap-1.5"><Upload className="size-3.5" /> Upload</Button></Link>
           </>
         )}
@@ -1346,7 +1609,34 @@ export default function FilesPage() {
         <div className="flex-1 overflow-y-auto p-5" onClick={() => setSelectedFile(null)}>
           {/* Cloud import progress - collapses to nothing (empty:hidden) when no job is active */}
           <div className="mb-4 empty:hidden"><ImportProgressCard /></div>
-          {loading ? <FileSkeleton view={viewMode} count={lastItemCount.current ?? undefined} /> : loadErrorCode === 'folder_locked' && currentFolderId ? (
+          {isLibraryView ? (
+            <LibraryView
+              kind={libraryKind}
+              months={library.months}
+              total={library.total}
+              loaded={library.loaded}
+              hasMore={library.hasMore}
+              isLoading={library.isLoading}
+              isLoadingMore={library.isLoadingMore}
+              error={library.error}
+              search={search}
+              selected={selected}
+              favourites={favourites}
+              unlockedFiles={unlockedFiles}
+              activeId={selectedFile?.id ?? null}
+              tileSize={tileSize}
+              layout={libraryLayout}
+              columns={activeColumns}
+              uploadHref={uploadHref}
+              onLoadMore={library.loadMore}
+              onRetry={library.refresh}
+              onOpen={(f) => openFileWithLockCheck(f, 'view')}
+              onToggleSelect={toggleSelect}
+              onSelectMany={(ids) => setSelected((prev) => new Set([...prev, ...ids]))}
+              onFavourite={toggleFavourite}
+              onContextMenu={(e, f) => onContextMenu(e, 'file', f)}
+            />
+          ) : loading ? <FileSkeleton view={viewMode} count={lastItemCount.current ?? undefined} /> : loadErrorCode === 'folder_locked' && currentFolderId ? (
             /* Not the generic error panel: this is not a failure, it is a gate.
                Reached by clicking a locked folder, deep-linking into one, or an
                unlock token expiring after its hour - all three land here. */
@@ -1463,7 +1753,7 @@ export default function FilesPage() {
                     {activeColumns.map((col) => (
                       <button
                         key={col.key}
-                        onClick={() => changeSort(toggleSort(sort, col.key))}
+                        onClick={() => { if (col.key === 'taken' && isLibraryView) return; changeSort(toggleSort(sort, col.key)); }}
                         title={`Sort by ${col.label.toLowerCase()}`}
                         className={`flex items-center gap-1 text-left uppercase tracking-wider hover:text-foreground transition-colors ${col.key === 'name' ? 'flex-1 min-w-40' : col.width} ${sort.key === col.key ? 'text-foreground' : ''}`}
                       >
@@ -1645,7 +1935,7 @@ export default function FilesPage() {
           second click during the request can't send a follow-up DELETE that
           lands on the now-trashed item and silently purges it. */}
       <Dialog open={!!deleteTarget} onOpenChange={(open) => { if (!open && !deleting) setDeleteTarget(null); }}>
-        <DialogContent className="max-w-sm" showCloseButton={!deleting}>
+        <DialogContent className="sm:max-w-sm" showCloseButton={!deleting}>
           <DialogHeader><DialogTitle>{deleteTarget?.permanent ? 'Delete permanently?' : `Delete ${deleteTarget?.type}?`}</DialogTitle></DialogHeader>
           <p className={`text-sm ${deleteTarget?.permanent ? 'text-destructive' : 'text-muted-foreground'}`}>
             {deleteTarget?.permanent ? (
@@ -1660,6 +1950,13 @@ export default function FilesPage() {
           </p>
           {!deleteTarget?.permanent && (
             <p className="text-xs text-muted-foreground">It moves to the trash and keeps using storage until it's permanently deleted.</p>
+          )}
+          {/* A big folder is emptied over several passes; say what has gone so
+              far rather than leaving a spinner with nothing behind it. */}
+          {purgeProgress !== null && purgeProgress > 0 && (
+            <p className="text-xs text-muted-foreground tabular-nums">
+              {purgeProgress.toLocaleString()} file{purgeProgress === 1 ? '' : 's'} removed so far…
+            </p>
           )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteTarget(null)} disabled={deleting}>Cancel</Button>
@@ -1730,6 +2027,15 @@ export default function FilesPage() {
         </DialogContent>
       </Dialog>
 
+      {/* Blocking progress while a bulk delete runs; cancel only on the permanent path */}
+      <BulkProgressDialog
+        progress={bulkProgress}
+        cancelRequested={bulkCancelRequested}
+        onCancel={bulkProgress?.permanent
+          ? () => { bulkCancelRef.current = true; setBulkCancelRequested(true); }
+          : undefined}
+      />
+
       {/* Rename dialog */}
       <Dialog open={!!renameTarget} onOpenChange={() => setRenameTarget(null)}>
         <DialogContent className="max-w-sm">
@@ -1790,6 +2096,7 @@ export default function FilesPage() {
         open={!!shareTarget}
         target={shareTarget?.target ?? null}
         name={shareTarget?.name ?? ''}
+        workspaceId={wsId}
         onClose={() => { setShareTarget(null); loadFiles(); }}
       />
 
@@ -1935,7 +2242,7 @@ export default function FilesPage() {
             onShare: can('create_share_links') ? (f) => openShare(f.id, f.name) : undefined,
             onRename: can('rename_files') ? (f) => { setRenameTarget({ id: f.id, name: f.name, type: 'file' }); setRenameName(f.name); } : undefined,
             onMove: can('upload_files') ? (f) => openMoveModal(f.id, 'file') : undefined,
-            onLock: canLock ? (f) => setLockTarget({ id: f.id, name: f.name, type: 'file' }) : undefined,
+            onLock: canLock ? (f) => setLockTarget({ id: f.id, name: f.name, type: 'file', size_bytes: f.size_bytes, extension: f.extension, lock_mode: f.lock_mode }) : undefined,
             onDelete: canDeleteFile(viewerFile) ? (f) => setDeleteTarget({ id: f.id, name: f.name, type: 'file' }) : undefined,
           }}
         />
@@ -2009,7 +2316,7 @@ function FileCard({ file, view, selected, anySelected, active, highlight, domId,
         {file.current_version > 1 && <Badge variant="secondary" className="text-[9px]">v{file.current_version}</Badge>}
         {file.comment_count > 0 && <Badge variant="secondary" className="text-[9px]"><MessageSquare className="size-2.5 mr-1" />{file.comment_count}</Badge>}
         <span className="text-xs text-muted-foreground">{humanSize(file.size_bytes)}</span>
-        <span className="text-xs text-muted-foreground">{timeAgo(file.updated_at)}</span>
+        <span className="text-xs text-muted-foreground"><DateCell ts={file.updated_at} /></span>
         {file.share_count > 0 && <Badge variant="secondary" className="text-[9px]"><Share2 className="size-2.5 mr-1" />{file.share_count}</Badge>}
         {isFavourite && <Star className="size-3 text-orange-400 fill-orange-400 shrink-0" />}
         {trashed ? (
@@ -2110,7 +2417,7 @@ function FileCard({ file, view, selected, anySelected, active, highlight, domId,
           </Tooltip>
           {file.current_version > 1 && <span className="shrink-0 rounded border border-white/30 px-1 text-[9px] font-mono text-white/80">v{file.current_version}</span>}
         </div>
-        <p className="font-mono text-[11px] text-white/70 truncate drop-shadow">{humanSize(file.size_bytes)} · {timeAgo(file.updated_at)}</p>
+        <p className="font-mono text-[11px] text-white/70 truncate drop-shadow">{humanSize(file.size_bytes)} · <DateCell ts={file.updated_at} /></p>
       </div>
     </Card>
   );

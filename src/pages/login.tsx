@@ -8,6 +8,7 @@ import { API_BASE } from '@/api/client';
 import { PublicNav } from '@/components/public-nav';
 import { TurnstileWidget, type TurnstileHandle } from '@/components/turnstile-widget';
 import { LegalNotice } from '@/components/legal-notice';
+import { pendingPostAuthPath } from '@/lib/redemption-claim';
 
 // OAuth callbacks redirect here as /login?error=<provider>_<reason> on failure.
 const PROVIDER_LABELS: Record<string, string> = { github: 'GitHub', google: 'Google', apple: 'Apple' };
@@ -86,7 +87,7 @@ export default function LoginPage() {
       // second attempt after a wrong password fails verification instead.
       turnstileRef.current?.reset();
       if (res.ok && data.ok) {
-        navigate(data.redirect ?? '/');
+        navigate(pendingPostAuthPath() ?? data.redirect ?? '/');
       } else {
         setError(data.error ?? 'Sign-in failed');
       }

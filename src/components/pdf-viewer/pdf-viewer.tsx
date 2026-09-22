@@ -48,7 +48,21 @@ export function PdfViewer({ fileName, rawUrl, downloadUrl, toolbarSlots }: PdfVi
   // with fresh state instead of resetting fields here.
   useEffect(() => {
     let cancelled = false;
-    const task = getDocument({ url: rawUrl, withCredentials: true });
+    // Open the document lazily. /api/files/:id/raw answers Range requests and
+    // the API exposes Accept-Ranges cross-origin, so pdf.js can read a large
+    // PDF page by page - but only if told not to stream the whole file up front
+    // (disableStream) and not to prefetch every remaining chunk once page one
+    // renders (disableAutoFetch). Without both, a 2 GB PDF is a 2 GB download
+    // before anything appears. 1 MiB chunks keep a page to a few requests
+    // instead of the 64 KB default's dozens. withCredentials carries the
+    // session cookie cross-origin to api.dosya.dev.
+    const task = getDocument({
+      url: rawUrl,
+      withCredentials: true,
+      disableStream: true,
+      disableAutoFetch: true,
+      rangeChunkSize: 1024 * 1024,
+    });
     task.promise.then(
       (loaded) => { if (!cancelled) setDoc(loaded); },
       () => { if (!cancelled) setError(true); },

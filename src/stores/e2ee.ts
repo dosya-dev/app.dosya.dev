@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import * as e2eeClient from '@dosya-dev/e2ee-client';
 import {
   setupIdentity,
   unlock as engineUnlock,
@@ -11,12 +12,14 @@ import {
   grantAccess as engineGrantAccess,
   revokeAccess as engineRevokeAccess,
   listMembers as engineListMembers,
+  type ApiClient,
   type Session,
   type Workspace,
   type FileDeps,
 } from '@dosya-dev/e2ee-client';
 import { toHex } from '@dosya-dev/e2ee-core';
-import { buildE2eeClient } from '@/lib/e2ee/client';
+import { api as restApi, apiErrorMessage } from '@/api/client';
+import { buildE2eeClient, normalizeRecoveryKey } from '@/lib/e2ee/client';
 import { saveBytes } from '@/lib/e2ee/save';
 import { toast } from '@/lib/toast';
 import { useWorkspace } from '@/stores/workspace';
@@ -52,6 +55,20 @@ export interface E2eeEngine {
   /** first-time setup; returns the recovery key as hex to show ONCE. */
   setup(passphrase: string): Promise<{ recoveryKeyHex: string }>;
   unlock(passphrase: string): Promise<void>;
+  /**
+   * Unlock with the recovery key shown once at setup (the hex string
+   * `setup()` returned; whitespace and dashes are ignored). Contract 6 of the
+   * 2026-09-02 field report: `unlockWithRecoveryKey` in @dosya-dev/e2ee-client.
+   */
+  unlockWithRecoveryKey(recoveryKey: string): Promise<void>;
+  /**
+   * Destroy this account's Vault identity, grants and index rows so setup can
+   * run again - `DELETE /api/e2ee/user-keys` (Contract 6). Everything
+   * encrypted under the old identity becomes unreadable; the caller confirms
+   * that with the user first. `totpCode` is required when the account has
+   * 2FA (the server answers 400 `2fa_required` otherwise).
+   */
+  destroyIdentity(password: string, totpCode?: string): Promise<void>;
   lock(): void;
   createWorkspace(id: string): Promise<void>;
   /**
@@ -94,6 +111,32 @@ export interface E2eeEngine {
 }
 
 /**
+ * `unlockWithRecoveryKey` from @dosya-dev/e2ee-client (Contract 6). Looked up
+ * on the module namespace rather than imported by name: the web app builds
+ * against the VENDORED bundle in apps/web/vendor, which is re-vendored from
+ * packages/e2ee-client after that package ships the export. Until then the
+ * function is absent and the recovery path reports itself unavailable
+ * instead of failing the whole build.
+ */
+type RecoveryUnlock = (api: ApiClient, recoveryKey: string) => Promise<Session>;
+
+/**
+ * Pull `unlockWithRecoveryKey` off a module namespace, or null when the bundle
+ * predates it. Exported and taking the namespace as an argument purely so it
+ * can be tested: `vi.mock` cannot express "this export does not exist" - its
+ * mocked-module guard throws on any access to an export the factory omitted,
+ * which is the exact situation this has to survive.
+ */
+export function recoveryUnlockFrom(mod: unknown): RecoveryUnlock | null {
+  const fn = (mod as { unlockWithRecoveryKey?: unknown } | undefined)?.unlockWithRecoveryKey;
+  return typeof fn === 'function' ? (fn as RecoveryUnlock) : null;
+}
+
+function vendoredRecoveryUnlock(): RecoveryUnlock | null {
+  return recoveryUnlockFrom(e2eeClient);
+}
+
+/**
  * The real engine: wraps `buildE2eeClient()` and holds the in-memory
  * `Session`/`Workspace` in closure - neither is ever exposed to callers.
  */
@@ -121,6 +164,28 @@ export function defaultEngine(): E2eeEngine {
 
     async unlock(passphrase) {
       session = await engineUnlock(api, passphrase);
+    },
+
+    async unlockWithRecoveryKey(recoveryKey) {
+      const recover = vendoredRecoveryUnlock();
+      if (!recover) throw new Error('e2ee: recovery unlock unavailable in this build');
+      // Normalised here as well as in the store action: this is the last point
+      // before the key reaches the crypto library, and a future caller of the
+      // engine should not have to know the rule.
+      session = await recover(api, normalizeRecoveryKey(recoveryKey));
+    },
+
+    async destroyIdentity(password, totpCode) {
+      const body: { password: string; totp_code?: string } = { password };
+      if (totpCode) body.totp_code = totpCode;
+      // `restApi` is the cookie-authed REST helper; `api` in this closure is
+      // the e2ee ApiClient, which has no method for this route.
+      await restApi('/api/e2ee/user-keys', { method: 'DELETE', body: JSON.stringify(body) });
+      // Only AFTER the server confirms. Dropping the in-memory session first
+      // meant a refused destroy (wrong password, missing 2FA code) locked the
+      // user out of a Vault that still exists and made them unlock again.
+      session = null;
+      ws = null;
     },
 
     lock() {
@@ -207,6 +272,14 @@ interface E2eeState {
   checkIdentity(): Promise<void>;
   setup(passphrase: string): Promise<void>;
   unlock(passphrase: string): Promise<void>;
+  /** Unlock with the recovery key from setup. A failure is reported generically, like `unlock`. */
+  unlockWithRecoveryKey(recoveryKey: string): Promise<void>;
+  /**
+   * Destroy the Vault identity and return to first-time setup. Resolves true
+   * on success; on refusal `error` carries the server's sentence (wrong
+   * password, missing 2FA code) and the identity is untouched.
+   */
+  destroyIdentity(password: string, totpCode?: string): Promise<boolean>;
   lock(): void;
   createWorkspace(name: string): Promise<void>;
   openWorkspace(id: string): Promise<void>;
@@ -245,6 +318,16 @@ interface E2eeState {
   __setEngine(engine: E2eeEngine): void;
   /** Test seam: swap in a fake saver (production default is the real `saveBytes`, DOM-dependent). */
   __setSaver(saver: (name: string, bytes: Uint8Array) => void): void;
+}
+
+/**
+ * The API's 412 `e2ee_scope_required` as it reaches the store: e2ee-client's
+ * transport throws `e2ee: <route> request failed (<status>)` for any non-2xx
+ * (apart from the 409 it treats as a CAS conflict), so the status code in
+ * that text is the only signal available here.
+ */
+function isScopeRequired(e: unknown): boolean {
+  return e instanceof Error && /\(412\)/.test(e.message);
 }
 
 function errorMessage(e: unknown, fallback: string): string {
@@ -311,6 +394,54 @@ export const useE2ee = create<E2eeState>()(
             busy: false,
             error: 'Incorrect passphrase or no identity found.',
           });
+        }
+      },
+
+      async unlockWithRecoveryKey(recoveryKey) {
+        set({ status: 'unlocking', error: null, busy: true });
+        try {
+          // The spacing and dashes belong to however the key was pasted, not
+          // to the key - normalised once here, at the boundary every caller
+          // (the unlock gate today) goes through.
+          await get().engine.unlockWithRecoveryKey(normalizeRecoveryKey(recoveryKey));
+          set({ status: 'unlocked', hasIdentity: true, busy: false, error: null });
+        } catch (e) {
+          // Same opacity rule as `unlock`: one generic sentence, never the
+          // engine's own text - except when the build has no recovery path at
+          // all, which is a product state the user should be told about.
+          const unavailable = e instanceof Error && e.message.includes('recovery unlock unavailable');
+          set({
+            status: 'locked',
+            busy: false,
+            error: unavailable
+              ? 'Recovery key unlock is not available in this version yet. Please try again after the next update.'
+              : 'That recovery key did not unlock your Vault.',
+          });
+        }
+      },
+
+      async destroyIdentity(password, totpCode) {
+        set({ busy: true, error: null });
+        try {
+          await get().engine.destroyIdentity(password, totpCode);
+          // Everything the old identity described is gone with it: the
+          // persisted Spaces list would otherwise point at grants that no
+          // longer exist. hasIdentity=false routes the gate to Setup.
+          set({
+            status: 'locked',
+            hasIdentity: false,
+            workspaces: [],
+            activeWorkspaceId: null,
+            entries: [],
+            members: [],
+            recoveryKeyOnce: null,
+            busy: false,
+            error: null,
+          });
+          return true;
+        } catch (e) {
+          set({ busy: false, error: apiErrorMessage(e, errorMessage(e, 'Could not destroy the Vault.')) });
+          return false;
         }
       },
 
@@ -415,7 +546,25 @@ export const useE2ee = create<E2eeState>()(
         try {
           for (const file of Array.from(files)) {
             const bytes = new Uint8Array(await file.arrayBuffer());
-            await get().engine.uploadFile(folderId, file.name, bytes);
+            try {
+              await get().engine.uploadFile(folderId, file.name, bytes);
+            } catch (e) {
+              // A Space with no storage workspace cannot take bytes (the API
+              // answers 412 `e2ee_scope_required` from chunk-upload-url or
+              // commit). Pre-P2e Spaces and Spaces whose workspace was since
+              // deleted are in that state; attach this one to the active
+              // global workspace - where the Vault UI already lists it - and
+              // retry once. e2ee-client surfaces only the status code in its
+              // error text, so the status is what is matched.
+              const spaceId = get().activeWorkspaceId;
+              const gw = useWorkspace.getState().activeId;
+              if (!isScopeRequired(e) || !spaceId || !gw) throw e;
+              await get().engine.setWorkspaceScope(spaceId, gw);
+              set((s) => ({
+                workspaces: s.workspaces.map((w) => (w.id === spaceId ? { ...w, globalWorkspaceId: gw } : w)),
+              }));
+              await get().engine.uploadFile(folderId, file.name, bytes);
+            }
           }
           await get().refreshFolder(folderId);
           set({ busy: false });

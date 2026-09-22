@@ -40,6 +40,12 @@ export interface FileItem {
   origin?: string | null;
   /** Only populated by the deleted=1 listing. */
   deleted_at?: number | null;
+  /**
+   * EXIF capture date as a wall-clock string ("YYYY-MM-DD HH:MM:SS", no zone)
+   * when the listing carries it; the "Date taken" column falls back to
+   * `created_at` (source date, then upload) when it is absent.
+   */
+  captured_at?: string | null;
 }
 
 export interface FolderItem {

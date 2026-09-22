@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -7,6 +7,7 @@ import { Loader2 } from 'lucide-react';
 import { API_BASE } from '@/api/client';
 import { PublicNav } from '@/components/public-nav';
 import { TurnstileWidget, type TurnstileHandle } from '@/components/turnstile-widget';
+import { pendingPostAuthPath } from '@/lib/redemption-claim';
 
 export default function VerifyPage() {
   const navigate = useNavigate();
@@ -38,7 +39,7 @@ export default function VerifyPage() {
       // Single-use token: reset on every outcome, not just failures, or a
       // retry after a wrong code fails verification instead.
       turnstileRef.current?.reset();
-      if (res.ok && data.ok) navigate(data.redirect ?? '/create-workspace');
+      if (res.ok && data.ok) navigate(pendingPostAuthPath() ?? data.redirect ?? '/create-workspace');
       else setError(data.error ?? 'Verification failed');
     } catch {
       turnstileRef.current?.reset();
@@ -113,11 +114,26 @@ export default function VerifyPage() {
               </form>
 
               <div className="mt-6 text-center text-sm text-muted-foreground">
-                Didn't get it?{' '}
+                Didn't get the code?{' '}
                 <button type="button" onClick={resend} disabled={resending} className="font-medium underline underline-offset-4 hover:text-foreground disabled:opacity-50">
                   {resending ? 'Sending…' : 'Resend code'}
                 </button>
               </div>
+              {/* Resending is not always the answer: a typo in the address or a
+                  mail server that drops us needs a person, or a fresh start. */}
+              <p className="mt-2 text-center text-xs text-muted-foreground">
+                Still nothing?{' '}
+                <a
+                  href="https://dosya.dev/contact?topic=verification"
+                  className="font-medium underline underline-offset-4 hover:text-foreground"
+                >
+                  Contact support
+                </a>
+                {' · '}
+                <Link to="/sign-up" className="font-medium underline underline-offset-4 hover:text-foreground">
+                  Use a different email
+                </Link>
+              </p>
               <p className="mt-2 text-center text-sm text-muted-foreground">
                 <a href="/login" className="font-medium underline underline-offset-4 hover:text-foreground">Back to login</a>
               </p>

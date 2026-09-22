@@ -158,13 +158,13 @@ function Root() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl">
+    <div className="mx-auto max-w-7xl">
       {/* Theme picker sits OUTSIDE the app window so the theme options are obvious. */}
       <ThemeBar />
       <div className="demo-root" data-demo-theme={state.theme} role="region"
         aria-label="Interactive dosya web app demo - sample data only">
         <WebShell>
-          <div className="relative flex h-[600px] flex-col">
+          <div className="relative flex min-h-[600px] flex-col">
             <WebTopbar view={view} onSelect={onSelect} />
             <div className="flex min-h-0 flex-1">
               <WebSidebar view={view} onSelect={onSelect} />

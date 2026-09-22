@@ -1,10 +1,12 @@
 import { useState } from 'react';
-import { Sun, Moon } from 'lucide-react';
+import { ArrowRight, Sun, Moon } from 'lucide-react';
 import { withThemeSweep } from '@/lib/theme';
+import { useSessionProbe } from '@/hooks/use-session-probe';
 
 // Marketing navbar for public pages (login, etc.), ported from the Astro site's Menu.
 // Centered rounded card, original logo + mono-italic wordmark, Pricing, CTA, theme toggle.
 export function PublicNav({ cta = 'login' }: { cta?: 'login' | 'signup' }) {
+  const session = useSessionProbe();
   const [dark, setDark] = useState(
     () => typeof document !== 'undefined' && document.documentElement.classList.contains('dark'),
   );
@@ -15,6 +17,7 @@ export function PublicNav({ cta = 'login' }: { cta?: 'login' | 'signup' }) {
       setDark(isDark);
     });
   };
+  const ctaClass = 'inline-flex items-center gap-1.5 h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors';
 
   return (
     <nav className="max-w-[800px] mx-auto flex items-center justify-between px-6 py-3 bg-card border rounded-lg shadow-sm">
@@ -27,12 +30,18 @@ export function PublicNav({ cta = 'login' }: { cta?: 'login' | 'signup' }) {
         <a href="https://dosya.dev/#pricing" className="hidden sm:inline text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
           Pricing
         </a>
-        <a
-          href={cta === 'signup' ? '/sign-up' : '/login'}
-          className="inline-flex items-center h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors"
-        >
-          {cta === 'signup' ? 'Sign Up' : 'Login'}
-        </a>
+        {session === 'pending' ? (
+          <span data-session-probe="pending" className="inline-block h-9 w-[88px]" aria-hidden="true" />
+        ) : session === 'in' ? (
+          <a href="/" className={ctaClass}>
+            Open dashboard
+            <ArrowRight className="size-4" aria-hidden="true" />
+          </a>
+        ) : (
+          <a href={cta === 'signup' ? '/sign-up' : '/login'} className={ctaClass}>
+            {cta === 'signup' ? 'Sign Up' : 'Login'}
+          </a>
+        )}
         <button
           type="button"
           onClick={toggleTheme}

@@ -14,9 +14,10 @@ import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { Plus } from 'lucide-react';
+import { licenseProviderLabel, licenseTimeline } from '@/lib/license-timeline';
 
 const SOURCE_DOT: Record<string, string> = {
-  plan: '#3b82f6', package: '#8b5cf6', custom: '#f59e0b', referral: '#22c55e',
+  plan: '#3b82f6', package: '#8b5cf6', custom: '#f59e0b', license: '#ec4899', referral: '#22c55e',
 };
 
 export default function WorkspaceDashboardPage() {
@@ -139,13 +140,30 @@ export default function WorkspaceDashboardPage() {
             <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold">Where your space comes from</CardTitle></CardHeader>
             <CardContent>
               <div className="space-y-2">
-                {sources.map((src, i) => (
-                  <div key={`${src.kind}-${i}`} className="flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full shrink-0" style={{ background: SOURCE_DOT[src.kind] ?? '#6b7280' }} />
-                    <span className="text-xs flex-1 truncate">{src.label}</span>
-                    <span className="text-[11px] font-medium text-muted-foreground">{formatBytes(src.bytes)}</span>
-                  </div>
-                ))}
+                {sources.map((src, i) => {
+                  const provider = typeof src.meta.provider === 'string' ? src.meta.provider : null;
+                  const timeline = src.kind === 'license'
+                    ? licenseTimeline({
+                      ends_at: typeof src.meta.ends_at === 'number' ? src.meta.ends_at : null,
+                      renews_at: typeof src.meta.renews_at === 'number' ? src.meta.renews_at : null,
+                      provider,
+                    })
+                    : null;
+                  return (
+                    <div key={`${src.kind}-${i}`} className="flex items-start gap-2">
+                      <div className="mt-[5px] w-2 h-2 rounded-full shrink-0" style={{ background: SOURCE_DOT[src.kind] ?? '#6b7280' }} />
+                      <div className="min-w-0 flex-1">
+                        <span className="block text-xs truncate">{src.label}</span>
+                        {timeline ? (
+                          <span className={timeline.tone === 'ending' ? 'block text-[11px] font-medium text-amber-600' : 'block text-[11px] text-muted-foreground'}>
+                            {licenseProviderLabel(provider)} · {timeline.text}
+                          </span>
+                        ) : null}
+                      </div>
+                      <span className="text-[11px] font-medium text-muted-foreground">{formatBytes(src.bytes)}</span>
+                    </div>
+                  );
+                })}
               </div>
               <div className="flex justify-between border-t mt-3 pt-2 text-xs font-semibold">
                 <span>Total</span><span>{formatBytes(total.limit_bytes)}</span>

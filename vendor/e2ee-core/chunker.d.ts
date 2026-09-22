@@ -30,6 +30,13 @@ export interface ChunkParams {
     max: number;
 }
 /**
+ * The largest plaintext chunk the DEFAULT parameters emit - the chunker's hard
+ * cut. Every shipped client (e2ee-client file.ts) chunks with the defaults, so
+ * this is the largest plaintext any uploaded chunk carries; see
+ * CHUNK_MAX_CIPHERTEXT_BYTES in aead.ts for what that weighs on the wire.
+ */
+export declare const CHUNK_MAX_PLAINTEXT_BYTES: number;
+/**
  * Compute content-defined chunk boundaries over `data`.
  *
  * Pure and deterministic: same input + params always produce the same

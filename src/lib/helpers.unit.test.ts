@@ -1,5 +1,15 @@
 import { describe, it, expect } from "vitest";
-import { humanSize, humanSizeShort, timeAgo, timeUntil, initials, extOf, isImage, isHeic, fileIconSrc, isOfficeFile, hiddenTitle } from "./helpers";
+import { humanSize, humanSizeShort, timeAgo, timeUntil, initials, extOf, isImage, isHeic, fileIconSrc, isOfficeFile, hiddenTitle, actionLabel } from "./helpers";
+
+describe("actionLabel", () => {
+  it("labels a redeemed coupon code", () => {
+    expect(actionLabel("voucher_redeemed")).toBe("redeemed a coupon code");
+  });
+
+  it("labels a redeemed Gumroad package", () => {
+    expect(actionLabel("gumroad_license_redeemed")).toBe("redeemed a Gumroad package");
+  });
+});
 
 describe("humanSize", () => {
   it("formats sizes with the right unit", () => {

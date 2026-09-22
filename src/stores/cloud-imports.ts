@@ -3,6 +3,7 @@ import { ApiError } from '@/api/client';
 import {
   type CloudJob, cancelJob, createImport, listJobs, type SelectionEntry,
 } from '@/api/cloud-import';
+import { rememberActiveJobs } from '@/lib/job-activity';
 
 export const ACTIVE_CLOUD_STATUSES = new Set(['discovering', 'running']);
 
@@ -92,6 +93,9 @@ export const useCloudImports = create<CloudImportState>((set, get) => ({
       const jobs = await listJobs();
       set({ jobs });
       const hasActive = jobs.some((j) => ACTIVE_CLOUD_STATUSES.has(j.status));
+      // The sidebar indicator only lists jobs on mount when this says yes -
+      // see lib/job-activity.ts.
+      rememberActiveJobs('cloud', hasActive);
       if (hasActive && !pollTimer) {
         pollTimer = setInterval(() => { void get().refresh(); }, CLOUD_IMPORT_POLL_MS);
       }

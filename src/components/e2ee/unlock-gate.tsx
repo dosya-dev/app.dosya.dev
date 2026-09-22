@@ -10,8 +10,9 @@ import { Skeleton } from '@/components/ui/skeleton';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
-import { Lock, ShieldCheck, KeyRound, Copy, TriangleAlert } from 'lucide-react';
+import { Lock, ShieldCheck, KeyRound, Copy, TriangleAlert, Trash2 } from 'lucide-react';
 import { toast } from '@/lib/toast';
+import { api } from '@/api/client';
 
 /**
  * Gate shown whenever the encrypted workspaces aren't unlocked yet. Resolves
@@ -173,50 +174,216 @@ function SetupCard({ error }: { error: string | null }) {
   );
 }
 
+/**
+ * Returning user: passphrase unlock, with the two ways out of a forgotten
+ * passphrase (2026-09-02 field report, Contract 6). The recovery key is the
+ * one shown once at setup; destroying the Vault is the last resort when that
+ * is gone too, and is confirmed with the account password (and 2FA code).
+ */
 function UnlockCard({ error }: { error: string | null }) {
   const status = useE2ee((s) => s.status);
   const unlock = useE2ee((s) => s.unlock);
+  const unlockWithRecoveryKey = useE2ee((s) => s.unlockWithRecoveryKey);
   const [pass, setPass] = useState('');
+  const [mode, setMode] = useState<'passphrase' | 'recovery'>('passphrase');
+  const [recoveryKey, setRecoveryKey] = useState('');
+  const [destroyOpen, setDestroyOpen] = useState(false);
   const unlocking = status === 'unlocking';
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!pass || unlocking) return;
-    unlock(pass);
+    if (unlocking) return;
+    if (mode === 'recovery') {
+      if (!recoveryKey.trim()) return;
+      unlockWithRecoveryKey(recoveryKey.trim());
+    } else {
+      if (!pass) return;
+      unlock(pass);
+    }
+  };
+
+  const canSubmit = mode === 'recovery' ? recoveryKey.trim().length > 0 : pass.length > 0;
+
+  return (
+    <>
+      <Card className="w-full">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            {mode === 'recovery'
+              ? <><KeyRound className="size-4 text-primary" /> Unlock with recovery key</>
+              : <><Lock className="size-4 text-primary" /> Unlock Vault</>}
+          </CardTitle>
+          <CardDescription>
+            {mode === 'recovery'
+              ? 'Paste the recovery key you saved when you set up your Vault. Spaces and dashes are ignored.'
+              : 'Enter your passphrase to decrypt your files in this browser.'}
+          </CardDescription>
+        </CardHeader>
+        <form onSubmit={handleSubmit}>
+          <CardContent className="space-y-3">
+            {error && <p className="text-xs text-destructive">{error}</p>}
+            {mode === 'recovery' ? (
+              <div className="space-y-1.5">
+                <Label htmlFor="e2ee-recovery-key">Recovery key</Label>
+                <Input
+                  id="e2ee-recovery-key"
+                  type="text"
+                  autoComplete="off"
+                  spellCheck={false}
+                  autoFocus
+                  value={recoveryKey}
+                  onChange={(e) => setRecoveryKey(e.target.value)}
+                  disabled={unlocking}
+                  placeholder="Your recovery key"
+                  className="font-mono"
+                />
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                <Label htmlFor="e2ee-unlock-pass">Passphrase</Label>
+                <Input
+                  id="e2ee-unlock-pass"
+                  type="password"
+                  autoComplete="current-password"
+                  autoFocus
+                  value={pass}
+                  onChange={(e) => setPass(e.target.value)}
+                  disabled={unlocking}
+                  placeholder="Your encryption passphrase"
+                />
+              </div>
+            )}
+          </CardContent>
+          <CardFooter className="flex-col items-stretch gap-3">
+            <Button type="submit" className="w-full" disabled={unlocking || !canSubmit}>
+              {unlocking ? 'Unlocking…' : 'Unlock'}
+            </Button>
+            <div className="flex items-center justify-between text-xs">
+              <button
+                type="button"
+                className="text-muted-foreground underline underline-offset-2 hover:text-foreground"
+                onClick={() => setMode(mode === 'recovery' ? 'passphrase' : 'recovery')}
+                disabled={unlocking}
+              >
+                {mode === 'recovery' ? 'Use passphrase' : 'Use recovery key'}
+              </button>
+              <button
+                type="button"
+                className="text-destructive/80 underline underline-offset-2 hover:text-destructive"
+                onClick={() => setDestroyOpen(true)}
+                disabled={unlocking}
+              >
+                Destroy vault and start over
+              </button>
+            </div>
+          </CardFooter>
+        </form>
+      </Card>
+      <DestroyVaultDialog open={destroyOpen} onOpenChange={setDestroyOpen} />
+    </>
+  );
+}
+
+/**
+ * Last resort for a Vault whose passphrase and recovery key are both lost:
+ * delete the identity so setup can run again. Everything encrypted under it
+ * is unrecoverable afterwards, which is said in plain words before the
+ * button. Confirmed with the account password, plus a 2FA code when the
+ * account has one (the API refuses without it).
+ */
+function DestroyVaultDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
+  const destroyIdentity = useE2ee((s) => s.destroyIdentity);
+  const busy = useE2ee((s) => s.busy);
+  const [password, setPassword] = useState('');
+  const [code, setCode] = useState('');
+  const [needsCode, setNeedsCode] = useState(false);
+  const [confirmed, setConfirmed] = useState(false);
+  const [localError, setLocalError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    setPassword(''); setCode(''); setConfirmed(false); setLocalError(null); setNeedsCode(false);
+    let cancelled = false;
+    api<{ ok: boolean; method: string | null }>('/api/me/2fa/status')
+      .then((r) => { if (!cancelled) setNeedsCode(!!r.method); })
+      .catch(() => { /* the server still refuses without a code; the field just appears after the first refusal */ });
+    return () => { cancelled = true; };
+  }, [open]);
+
+  const submit = async () => {
+    if (!password || busy) return;
+    setLocalError(null);
+    const ok = await destroyIdentity(password, needsCode && code ? code : undefined);
+    if (ok) {
+      toast.success('Vault destroyed', 'Set up encryption again whenever you are ready.');
+      onOpenChange(false);
+      return;
+    }
+    const err = useE2ee.getState().error;
+    setLocalError(err);
+    // Contract 6: 400 `2fa_required` when the account has 2FA and no code
+    // came. The store surfaces that code as its sentence (api/error-copy.ts),
+    // so match either spelling - the copy can change, the meaning cannot.
+    if (err && /two-factor|2fa/i.test(err)) setNeedsCode(true);
   };
 
   return (
-    <Card className="w-full">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <Lock className="size-4 text-primary" /> Unlock Vault
-        </CardTitle>
-        <CardDescription>Enter your passphrase to decrypt your files in this browser.</CardDescription>
-      </CardHeader>
-      <form onSubmit={handleSubmit}>
-        <CardContent className="space-y-3">
-          {error && <p className="text-xs text-destructive">{error}</p>}
+    <Dialog open={open} onOpenChange={(v) => { if (!busy) onOpenChange(v); }}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-destructive">
+            <Trash2 className="size-4" /> Destroy vault and start over
+          </DialogTitle>
+        </DialogHeader>
+        <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+          This deletes your Vault identity. Every file in every Space you encrypted with it becomes
+          permanently unreadable - to you and to anyone you shared a Space with. There is no undo.
+        </div>
+        {localError && <p className="text-xs text-destructive">{localError}</p>}
+        <div className="space-y-1.5">
+          <Label htmlFor="e2ee-destroy-password">Account password</Label>
+          <Input
+            id="e2ee-destroy-password"
+            type="password"
+            autoComplete="current-password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            disabled={busy}
+            placeholder="Your dosya password"
+          />
+        </div>
+        {needsCode && (
           <div className="space-y-1.5">
-            <Label htmlFor="e2ee-unlock-pass">Passphrase</Label>
+            <Label htmlFor="e2ee-destroy-code">Two-factor code</Label>
             <Input
-              id="e2ee-unlock-pass"
-              type="password"
-              autoComplete="current-password"
-              autoFocus
-              value={pass}
-              onChange={(e) => setPass(e.target.value)}
-              disabled={unlocking}
-              placeholder="Your encryption passphrase"
+              id="e2ee-destroy-code"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              value={code}
+              onChange={(e) => setCode(e.target.value.replace(/\s/g, '').slice(0, 10))}
+              disabled={busy}
+              placeholder="6-digit code"
             />
           </div>
-        </CardContent>
-        <CardFooter>
-          <Button type="submit" className="w-full" disabled={unlocking || !pass}>
-            {unlocking ? 'Unlocking…' : 'Unlock'}
+        )}
+        <label className="flex items-start gap-2 text-xs">
+          <input
+            type="checkbox"
+            className="mt-0.5"
+            checked={confirmed}
+            onChange={(e) => setConfirmed(e.target.checked)}
+            disabled={busy}
+          />
+          <span>I understand my encrypted files cannot be recovered after this.</span>
+        </label>
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>Cancel</Button>
+          <Button type="button" variant="destructive" onClick={submit} disabled={busy || !password || !confirmed}>
+            {busy ? 'Destroying…' : 'Destroy my vault'}
           </Button>
-        </CardFooter>
-      </form>
-    </Card>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -249,7 +416,7 @@ export function RecoveryKeyDialog() {
 
   return (
     <Dialog open={!!recoveryKeyHex} onOpenChange={() => {}}>
-      <DialogContent className="max-w-md" showCloseButton={false}>
+      <DialogContent className="sm:max-w-md" showCloseButton={false}>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <KeyRound className="size-4 text-primary" /> Save your recovery key

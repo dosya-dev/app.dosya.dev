@@ -17,21 +17,17 @@ import {
 } from 'lucide-react';
 import { api, API_BASE } from '@/api/client';
 import { useWorkspace } from '@/stores/workspace';
+import { useSession, type SessionWorkspace } from '@/stores/session';
 import { usePermissions } from '@/hooks/use-permissions';
 import { RemoteDownloadIndicator } from '@/components/layout/remote-download-indicator';
 import { CloudImportIndicator } from '@/components/layout/cloud-import-indicator';
 import { formatBytes } from '@/lib/billing/cart-math';
 
-interface Workspace {
-  id: string; name: string; slug: string; icon_initials: string; icon_color: string;
-  icon_image_url: string | null; role_id: string;
-  storage?: { used: number; total: number } | null;
-}
+type Workspace = SessionWorkspace;
 
-interface StorageInfo {
-  plan: { name: string; storage_label: string };
-  usage: { used_label: string; pct: number };
-}
+// A stable empty list for the render before the boot gate's answer lands, so
+// effects keyed on `workspaces` do not re-run on every render.
+const EMPTY_WORKSPACES: Workspace[] = [];
 
 // `perm` is the page-access permission that reveals the entry. The six
 // access_* keys existed in the role editor since migration 0008 and were read
@@ -81,8 +77,11 @@ export function DashboardSidebar() {
   const navigate = useNavigate();
   const { activeId, setActiveId } = useWorkspace();
   const { can, rootFolderId, rootFolderName } = usePermissions();
-  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
-  const [storage, setStorage] = useState<StorageInfo | null>(null);
+  // Filled by the boot gate (dashboard-layout.tsx). This used to be a second
+  // GET /api/workspaces of its own on every mount.
+  const workspaces = useSession((s) => s.workspaces) ?? EMPTY_WORKSPACES;
+  const workspacesLoaded = useSession((s) => s.workspaces !== null);
+  const fetchWorkspaces = useSession((s) => s.fetchWorkspaces);
   const [roleName, setRoleName] = useState<string | null>(null);
 
   // Sliding active pill: measure the active menu button and glide one shared
@@ -142,20 +141,23 @@ export function DashboardSidebar() {
   // image.
   const [iconVersion, setIconVersion] = useState(0);
 
-  // Load workspaces
+  // Refetch the list into the session store. Only a mount with nothing
+  // loaded yet (the boot's list failed, or this is rendered without the boot
+  // gate) fetches on its own; otherwise the boot's answer is used as-is.
   const loadWorkspaces = useCallback(async () => {
     try {
-      const data = await api<{ ok: boolean; workspaces: Workspace[] }>('/api/workspaces');
-      if (data.ok) {
-        setWorkspaces(data.workspaces);
-        if (!activeId && data.workspaces.length > 0) {
-          setActiveId(data.workspaces[0].id);
-        }
-      }
-    } catch { /* */ }
-  }, [activeId, setActiveId]);
+      await fetchWorkspaces();
+    } catch { /* keep whatever the store holds */ }
+  }, [fetchWorkspaces]);
 
-  useEffect(() => { void loadWorkspaces(); }, [loadWorkspaces]);
+  useEffect(() => {
+    if (!workspacesLoaded) void loadWorkspaces();
+  }, [workspacesLoaded, loadWorkspaces]);
+
+  // Heal a missing selection to the first workspace, as the boot gate does.
+  useEffect(() => {
+    if (!activeId && workspaces.length > 0) setActiveId(workspaces[0].id);
+  }, [activeId, workspaces, setActiveId]);
 
   // Settings renames the workspace and swaps its icon through its own fetch, so
   // this list used to sit on whatever it loaded at mount - the switcher kept the
@@ -166,17 +168,6 @@ export function DashboardSidebar() {
     window.addEventListener('dosya:workspace-changed', onChanged);
     return () => window.removeEventListener('dosya:workspace-changed', onChanged);
   }, [loadWorkspaces]);
-
-  // Load storage
-  useEffect(() => {
-    if (!activeId) return;
-    (async () => {
-      try {
-        const data = await api<{ ok: boolean; plan: StorageInfo['plan']; usage: StorageInfo['usage'] }>('/api/billing/status');
-        if (data.ok) setStorage({ plan: data.plan, usage: data.usage });
-      } catch { /* */ }
-    })();
-  }, [activeId]);
 
   // Resolve the current user's role name (covers custom roles, not just built-ins)
   useEffect(() => {
@@ -205,7 +196,15 @@ export function DashboardSidebar() {
     window.setTimeout(() => setSwitchingWs(null), 2000);
   };
 
-  const storagePct = storage?.usage.pct ?? 0;
+  // The active workspace's own figures, which /api/workspaces already
+  // carries: its bytes against its ceiling (the admin cap when one is set,
+  // the owner's entitlement when not) - the same pair the dashboard's ring
+  // shows. This used to be a GET /api/billing/status per load - six D1
+  // statements plus two Stripe calls for a paying customer, for one bar -
+  // and it showed the signed-in user's own account total under whichever
+  // workspace happened to be active.
+  const storage = activeWs?.storage ?? null;
+  const storagePct = storage && storage.total > 0 ? Math.min(100, Math.round((storage.used / storage.total) * 100)) : 0;
   const storageColor = storagePct > 90 ? '#ef4444' : storagePct > 70 ? '#D97706' : '#22c55e';
 
   return (
@@ -271,7 +270,7 @@ export function DashboardSidebar() {
                   <p className="truncate text-xs leading-tight">{ws.name}</p>
                   {ws.storage && ws.storage.total > 0 && (
                     <p className="text-[10px] leading-tight text-muted-foreground">
-                      {formatBytes(Math.max(0, ws.storage.total - ws.storage.used))} free of {formatBytes(ws.storage.total)}
+                      {formatBytes(Math.max(0, ws.storage.free ?? ws.storage.total - ws.storage.used))} free of {formatBytes(ws.storage.total)}
                     </p>
                   )}
                 </div>
@@ -364,7 +363,7 @@ export function DashboardSidebar() {
             <div className="group-data-[collapsible=icon]:hidden">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs text-muted-foreground">Storage</span>
-                <span className="text-[11px] text-muted-foreground">{storage.usage.used_label} / {storage.plan.storage_label}</span>
+                <span className="text-[11px] text-muted-foreground">{formatBytes(storage.used)} / {formatBytes(storage.total)}</span>
               </div>
               <Progress
                 value={Math.min(storagePct, 100)}
@@ -376,7 +375,7 @@ export function DashboardSidebar() {
                   {storagePct >= 95 ? 'Storage almost full. Upgrade your plan.' : `${Math.round(100 - storagePct)}% remaining`}
                 </p>
               )}
-              <p className="text-[10px] text-muted-foreground mt-1">{activeWs?.name} · {storage.plan.name}</p>
+              <p className="text-[10px] text-muted-foreground mt-1">{activeWs?.name}</p>
             </div>
             {/* Collapsed: circle progress */}
             <div className="hidden group-data-[collapsible=icon]:block">
@@ -399,8 +398,8 @@ export function DashboardSidebar() {
                 </TooltipTrigger>
                 <TooltipContent side="right">
                   <div className="text-xs leading-relaxed">
-                    <p className="font-semibold">{storage.usage.used_label} / {storage.plan.storage_label}</p>
-                    <p className="opacity-70">{storage.plan.name} plan</p>
+                    <p className="font-semibold">{formatBytes(storage.used)} / {formatBytes(storage.total)}</p>
+                    <p className="opacity-70">{activeWs?.name}</p>
                   </div>
                 </TooltipContent>
               </Tooltip>

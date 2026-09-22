@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Progress } from '@/components/ui/progress';
-import { getReferralSummary, type ReferralSummary } from '@/api/referrals';
+import { friendStatusLabel, getReferralSummary, type ReferralSummary } from '@/api/referrals';
 
 export default function ReferralsPage() {
   const [data, setData] = useState<ReferralSummary | null>(null);
@@ -52,7 +52,10 @@ export default function ReferralsPage() {
           <Gift className="size-5" /> Refer friends
         </h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Invite a friend and earn 5&nbsp;GB when they join - up to {data.max_rewards} friends ({data.max_rewards * 5}&nbsp;GB total).
+          Invite a friend and earn 5&nbsp;GB once they start using dosya - up to {data.max_rewards} friends ({data.max_rewards * 5}&nbsp;GB total).
+        </p>
+        <p className="text-xs text-muted-foreground mt-1">
+          A friend counts once their account is a week old and they have uploaded at least 50&nbsp;MB. We check once a day.
         </p>
       </div>
 
@@ -70,7 +73,7 @@ export default function ReferralsPage() {
 
         <div className="space-y-2">
           <div className="flex items-center justify-between text-sm">
-            <span className="text-muted-foreground">{joined} of {data.max_rewards} friends joined</span>
+            <span className="text-muted-foreground">{joined} of {data.max_rewards} friends counted</span>
             <span className="font-medium">+{data.bonus_label} earned</span>
           </div>
           <Progress value={pct} />
@@ -95,7 +98,7 @@ export default function ReferralsPage() {
             <div key={i} className="flex items-center justify-between px-5 py-3 border-b last:border-b-0">
               <span className="text-sm">{f.email_masked}</span>
               <Badge variant={f.status === 'credited' ? 'default' : 'secondary'}>
-                {f.status === 'credited' ? 'Joined' : f.status === 'blocked' ? 'Not eligible' : 'Pending'}
+                {friendStatusLabel(f.status)}
               </Badge>
             </div>
           ))

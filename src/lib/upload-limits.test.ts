@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { screenBatch, summariseRejections } from './upload-limits';
+import { screenBatch, summariseRejections, checkUploadFile } from './upload-limits';
 
 const f = (name: string, size = 1) => ({ name, size });
 const nameOf = (x: { name: string }) => x.name;
@@ -63,5 +63,49 @@ describe('summariseRejections', () => {
       { name: 'c.bin', reason: 'Too big' },
     ];
     expect(summariseRejections(mixed)).toBe('Blocked (2 files), and 1 other reason');
+  });
+});
+
+// F3 (field report): the server refuses names over 255 characters, so the
+// pre-screen has to say so up front rather than let the row fail later with
+// a generic message.
+describe('checkUploadFile (web)', () => {
+  it('rejects a 300-character name with the limit in the message', () => {
+    const reason = checkUploadFile({ name: 'a'.repeat(296) + '.txt', size: 1 }, {});
+    expect(reason).not.toBeNull();
+    expect(reason).toContain('255');
+  });
+
+  it('still applies the workspace rules after the name check', () => {
+    expect(checkUploadFile({ name: 'ok.txt', size: 1 }, {})).toBeNull();
+    expect(checkUploadFile({ name: 'a.exe', size: 1 }, { blocked_extensions: '.exe' }))
+      .toBe('File type .exe is not allowed in this workspace');
+  });
+
+  // Fix round 1, MINOR (b): the ingest routes sanitise the name BEFORE they
+  // validate it (apps/api/src/pages/api/upload/init.ts calls
+  // sanitizeIngestName first), so a backslash or a control character is
+  // rewritten server-side, not refused. Screening the raw name refused files
+  // the server would have taken.
+  it('accepts names the server would sanitise rather than refuse', () => {
+    expect(checkUploadFile({ name: 'draft\\v2.txt', size: 1 }, {})).toBeNull();
+    expect(checkUploadFile({ name: 'a/b.txt', size: 1 }, {})).toBeNull();
+    expect(checkUploadFile({ name: 'weird\u0007name.txt', size: 1 }, {})).toBeNull();
+    expect(checkUploadFile({ name: '../escape.txt', size: 1 }, {})).toBeNull();
+  });
+
+  it('still refuses a name that is empty once sanitised', () => {
+    expect(checkUploadFile({ name: '   ', size: 1 }, {})).not.toBeNull();
+  });
+
+  it('measures the length limit against the sanitised name', () => {
+    // 300 slashes sanitise to 300 underscores - still over the cap.
+    expect(checkUploadFile({ name: '/'.repeat(300), size: 1 }, {})).toContain('255');
+  });
+
+  it('screenBatch carries the name-length reason', () => {
+    const r = screenBatch([f('a'.repeat(300))], {}, nameOf, sizeOf);
+    expect(r.accepted).toHaveLength(0);
+    expect(r.rejected[0].reason).toContain('255');
   });
 });

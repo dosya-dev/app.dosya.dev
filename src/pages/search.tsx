@@ -34,7 +34,7 @@ interface SharedResult {
   folder_name: string | null; status: string;
 }
 interface RequestResult {
-  id: string; token: string; title: string; message: string;
+  id: string; title: string; message: string;
   expires_at: number | null; upload_count: number; is_revoked: number;
   created_at: number; created_by_name: string | null;
 }

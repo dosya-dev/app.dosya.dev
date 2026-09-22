@@ -54,6 +54,32 @@ export const LIMITS = {
     /** RFC 5321 practical ceiling. */
     EMAIL_MAX: 254,
     PASSWORD_MIN: 8,
+    /**
+     * A ceiling, not a security limit. PBKDF2 hashes any length, but an
+     * unbounded field is a cheap denial-of-service (megabyte "passwords" hashed
+     * on every attempt) and no human types 256 characters. 256 comfortably
+     * clears any real passphrase.
+     */
+    PASSWORD_MAX: 256,
+
+    /**
+     * A person's display name.
+     *
+     * A ceiling, not a formatting rule. This name is not private to the account
+     * that sets it: `renderInviteEmail` prints it to whatever address the
+     * account holder invites, in a mail sent from our own domain. Unbounded, it
+     * is a free text field addressed at strangers - a whole phishing paragraph
+     * with our From line on it. 80 characters is longer than any real name and
+     * short enough that the invite still reads as an invite.
+     */
+    DISPLAY_NAME_MAX: 80,
+
+    /**
+     * A workspace's name. Shown in the switcher, in member lists and in the
+     * invite mail next to the display name above, so it carries the same
+     * ceiling for the same reason.
+     */
+    WORKSPACE_NAME_MAX: 80,
 
     /** A file name is one path segment. */
     FILE_NAME_MAX: 255,
@@ -98,7 +124,34 @@ const EMAIL_RE =
 
 export function isValidEmail(email: string): boolean {
     if (!email || email.length > LIMITS.EMAIL_MAX) return false;
-    return EMAIL_RE.test(email);
+
+    const at = email.lastIndexOf("@");
+    if (at <= 0) return false;
+    let domain = email.slice(at + 1);
+
+    // Reject URL structure BEFORE the parse below. `new URL()` is a URL parser,
+    // not a hostname validator: it cheerfully drops a path, port, query or
+    // fragment and hands back a clean hostname, so "bucher.example/evil" would
+    // normalise to "xn--bcher-kva.example" and pass - while the caller goes on
+    // to store and mail the ORIGINAL string. Every character here is illegal in
+    // a domain and already rejected by the ASCII regex below, so this only
+    // stops the IDN spelling from being a way around it.
+    if (/[/\\:?#@[\]]/.test(domain)) return false;
+
+    // The regex is deliberately ASCII-only - that is the form a domain actually
+    // takes on the wire (DNS is punycode). An internationalised domain like
+    // "bucher.example" is legal but non-ASCII, so it is normalised to its
+    // punycode form, exactly as a resolver would see it. Only the domain is
+    // touched, and only when it carries non-ASCII characters, so every ordinary
+    // ASCII address takes the identical path it always did.
+    if (/[^\x00-\x7f]/.test(domain)) {
+        try {
+            domain = new URL("http://" + domain).hostname;
+        } catch {
+            return false;
+        }
+    }
+    return EMAIL_RE.test(email.slice(0, at) + "@" + domain);
 }
 
 /**
@@ -111,26 +164,144 @@ export function validateEmail(email: string): string | null {
 
 /* ── Password ────────────────────────────────────────────────────────────── */
 
-const PASSWORD_SPECIAL_RE = /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?`~]/;
-
 /**
- * Four clauses, checked in a fixed order so the same failing password produces
- * the same sentence on every surface. Returns null when valid.
+ * Length only, both ends. Returns null when valid.
+ *
+ * Deliberately NO composition rules (upper/lower/digit/special). Forcing a
+ * character mix pushes people toward short, mangled, hard-to-remember passwords
+ * ("P@ss1!") and actively rejects a long passphrase - "correct horse battery
+ * staple" - which is stronger and more memorable. NIST SP 800-63B says the same:
+ * screen for length, drop composition mandates. The lower bound stays at 8 so a
+ * trivially short password is still refused; the upper bound caps an
+ * unbounded-input DoS (see LIMITS.PASSWORD_MAX) without touching any real one.
  */
 export function validatePassword(password: string): string | null {
     if (password.length < LIMITS.PASSWORD_MIN) {
         return `Password must be at least ${LIMITS.PASSWORD_MIN} characters`;
     }
-    if (!/[a-z]/.test(password) || !/[A-Z]/.test(password)) {
-        return "Password must include upper and lower case letters";
-    }
-    if (!/[0-9]/.test(password)) {
-        return "Password must include at least one number";
-    }
-    if (!PASSWORD_SPECIAL_RE.test(password)) {
-        return "Password must include at least one special character";
+    if (password.length > LIMITS.PASSWORD_MAX) {
+        return `Password must be at most ${LIMITS.PASSWORD_MAX} characters`;
     }
     return null;
+}
+
+/* ── Display name ────────────────────────────────────────────────────────── */
+
+/*
+ * Code points that have no glyph of their own and so cannot be told apart by
+ * eye: C0/C1 controls, and the Unicode "format" class (Cf) - zero-width
+ * spaces and joiners, the word joiner, soft hyphen, bidi embeddings and
+ * overrides, the byte-order mark, interlinear annotation marks. Written as
+ * explicit ranges rather than `\p{Cf}` so the same file runs unchanged in
+ * every engine that receives a copy of it.
+ *
+ * Bounty report 2026-09-17: "\u200Bacme" was accepted as a workspace name and
+ * rendered identically to "acme"; a name made of nothing but these characters
+ * passed the "required" check because `trim()` strips only U+FEFF.
+ */
+// eslint-disable-next-line no-control-regex
+const INVISIBLE_CHARS = /[\u0000-\u001F\u007F-\u009F\u00AD\u061C\u180E\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u206F\uFEFF\uFFF9-\uFFFB]/;
+
+/** Combining marks: visible only when attached to a base character. */
+const COMBINING_MARK = /[\u0300-\u036F\u0483-\u0489\u0591-\u05BD\u0610-\u061A\u064B-\u065F\u1AB0-\u1AFF\u1DC0-\u1DFF\u20D0-\u20FF\uFE00-\uFE0F\uFE20-\uFE2F]/;
+
+/**
+ * ZWNJ (U+200C) and ZWJ (U+200D) are letters' worth of meaning in Persian,
+ * Arabic-script and Indic text, and glue emoji sequences together, so they
+ * are kept when BOTH neighbours come from a script that can use them. Latin,
+ * Greek, Cyrillic and Hebrew all sit below U+0600 and never do; a joiner next
+ * to one of those, a digit, a space, or at either end is only ever a trick.
+ */
+function joinerHasScriptNeighbours(chars: string[], i: number): boolean {
+    const prev = chars[i - 1];
+    const next = chars[i + 1];
+    if (prev === undefined || next === undefined) return false;
+    const usesJoiners = (c: string) =>
+        (c.codePointAt(0) ?? 0) >= 0x0600 && !INVISIBLE_CHARS.test(c) && c.trim() !== "";
+    return usesJoiners(prev) && usesJoiners(next);
+}
+
+/**
+ * The one transformation this file applies to a name: canonical (NFC) form,
+ * invisible characters removed, surrounding whitespace trimmed. Nothing here
+ * changes what a name LOOKS like - which is the point. Every name that goes
+ * into a member list, a workspace switcher or an invite email passes through
+ * this first, so what is stored is what the reader sees.
+ */
+export function normalizeName(raw: unknown): string {
+    if (typeof raw !== "string") return "";
+    const chars = Array.from(raw.normalize("NFC"));
+    let out = "";
+    for (let i = 0; i < chars.length; i++) {
+        const c = chars[i];
+        if (c === "\u200C" || c === "\u200D") {
+            if (joinerHasScriptNeighbours(chars, i)) out += c;
+            continue;
+        }
+        if (INVISIBLE_CHARS.test(c)) continue;
+        out += c;
+    }
+    return out.trim();
+}
+
+/** True when at least one character would put ink on the page. */
+function hasVisibleCharacter(normalized: string): boolean {
+    for (const c of normalized) {
+        if (c.trim() === "") continue;
+        if (COMBINING_MARK.test(c)) continue;
+        return true;
+    }
+    return false;
+}
+
+function validateName(raw: string, max: number): string | null {
+    const name = normalizeName(raw);
+    if (name.length < 1 || !hasVisibleCharacter(name)) return "Name is required";
+    if (name.length > max) return `Name is too long (max ${max} chars)`;
+    return null;
+}
+
+/**
+ * A person's own name, as shown to other people.
+ *
+ * A bound plus the normalisation above, and no character class beyond that:
+ * apostrophes, hyphens, spaces, every script in Unicode and the ordering
+ * conventions of a hundred cultures are all legitimate, and every "sanitiser"
+ * applied to them is wrong about somebody. Escaping is a render-time concern
+ * and already handled where it belongs (escapeHtml on the way into every
+ * email, React on the way into the DOM).
+ *
+ * Callers store `normalizeName(raw)`, not `raw`: this validates the form that
+ * will be stored, so a stripped prefix cannot smuggle length past the cap.
+ *
+ * `PUT /api/me/name` capped this from the start; the two signup routes did not,
+ * which made the cap one authenticated PUT away from meaningless. All three
+ * call this now so they cannot drift again.
+ */
+export function validateDisplayName(name: string): string | null {
+    return validateName(name, LIMITS.DISPLAY_NAME_MAX);
+}
+
+/**
+ * The same bound, applied instead of enforced.
+ *
+ * An identity provider's profile name arrives with a LOGIN, not with a form,
+ * and the person signing in cannot see an error message or fix the field. So
+ * the OAuth paths trim to the ceiling rather than refusing the request: the
+ * alternative is failing somebody's sign-in over the length of their Google
+ * profile name. Without it the cap above would be a front door with the back
+ * one open, since the account holder controls that profile too.
+ */
+export function clampDisplayName(name: string): string {
+    return normalizeName(name).slice(0, LIMITS.DISPLAY_NAME_MAX);
+}
+
+/**
+ * A workspace's name. `POST /api/workspaces` and `PUT /api/workspaces/:id`
+ * each carried their own inline trim-and-count; both call this now.
+ */
+export function validateWorkspaceName(name: string): string | null {
+    return validateName(name, LIMITS.WORKSPACE_NAME_MAX);
 }
 
 /* ── File and folder names ───────────────────────────────────────────────── */

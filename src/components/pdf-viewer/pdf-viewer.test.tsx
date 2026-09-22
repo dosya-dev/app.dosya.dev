@@ -116,6 +116,20 @@ describe('PdfViewer - document load', () => {
     );
   });
 
+  // /raw answers Range requests, and the API now exposes Accept-Ranges
+  // cross-origin, so pdf.js can open a large PDF by reading only the pages
+  // being looked at. That needs two switches pdf.js does not flip by itself:
+  // with streaming on it keeps the initial full GET open and reads the whole
+  // file through it in the background, and with auto-fetch on it pulls every
+  // remaining chunk once page 1 is up. Either one turns a 2 GB PDF back into
+  // a 2 GB download.
+  it('opens the document lazily: ranges only, no background stream, 1 MiB chunks', async () => {
+    await mount();
+    expect(vi.mocked(getDocument)).toHaveBeenCalledWith(
+      expect.objectContaining({ disableStream: true, disableAutoFetch: true, rangeChunkSize: 1024 * 1024 }),
+    );
+  });
+
   it('renders an error card with a download link when the document fails to load', async () => {
     H.failWith = new Error('bad pdf');
     await mount();

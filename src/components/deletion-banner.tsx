@@ -1,7 +1,6 @@
-import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AlertTriangle } from 'lucide-react';
-import { api } from '@/api/client';
+import { useSession } from '@/stores/session';
 import { formatScheduledDate, daysRemaining } from '@/lib/account-deletion';
 
 /**
@@ -12,22 +11,13 @@ import { formatScheduledDate, daysRemaining } from '@/lib/account-deletion';
  * only on the screen they scheduled it from. Two weeks of silence followed by an
  * empty account is the outcome this prevents.
  *
- * Reads the flag off GET /api/me, which the app already calls, so this adds no
- * polling of its own.
+ * Reads the flag off the session store, which the boot gate fills from GET
+ * /api/me - this used to be a third GET /api/me of its own on every load. The
+ * profile page refreshes the store after a cancellation, so the banner
+ * disappears without a reload.
  */
 export function DeletionBanner() {
-  const [scheduledFor, setScheduledFor] = useState<number | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await api<{ ok: boolean; user?: { deletion_scheduled_for: number | null } }>('/api/me');
-        if (!cancelled && res.ok) setScheduledFor(res.user?.deletion_scheduled_for ?? null);
-      } catch { /* a failed /api/me is already surfaced by the boot gate */ }
-    })();
-    return () => { cancelled = true; };
-  }, []);
+  const scheduledFor = useSession((s) => s.user?.deletion_scheduled_for ?? null);
 
   if (scheduledFor == null) return null;
 

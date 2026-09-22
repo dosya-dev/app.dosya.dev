@@ -15,6 +15,7 @@ export const TOUR_DONE_KEY = 'dosya_tour_done';
 
 interface MeResponseLike {
   ok: boolean;
+  status: number;
   json: () => Promise<unknown>;
 }
 
@@ -35,9 +36,11 @@ export interface BootResult {
   themePref: ThemePref | null;
   /** Non-null when the persisted selection is missing/stale and should heal to this id. */
   activeWorkspaceId: string | null;
+  /** Non-null when /api/me answered 503 surface_disabled: the web app itself is switched off. */
+  maintenance: { surface: string; message: string | null } | null;
 }
 
-const LOGGED_OUT: BootResult = { authed: false, redirect: '/login', themePref: null, activeWorkspaceId: null };
+const LOGGED_OUT: BootResult = { authed: false, redirect: '/login', themePref: null, activeWorkspaceId: null, maintenance: null };
 
 // sessionStorage throws in some privacy modes (Safari private browsing with
 // certain settings, third-party-storage lockdowns). A throw here must not
@@ -67,7 +70,26 @@ export async function bootDashboard(deps: BootDeps): Promise<BootResult> {
   } catch {
     return LOGGED_OUT;
   }
-  if (!me.ok) return LOGGED_OUT;
+  if (!me.ok) {
+    if (me.status === 503) {
+      try {
+        const body = (await me.json()) as { code?: unknown; surface?: unknown; message?: unknown };
+        if (body?.code === 'surface_disabled') {
+          return {
+            authed: false,
+            redirect: null,
+            themePref: null,
+            activeWorkspaceId: null,
+            maintenance: {
+              surface: typeof body.surface === 'string' ? body.surface : 'web',
+              message: typeof body.message === 'string' ? body.message : null,
+            },
+          };
+        }
+      } catch { /* not json */ }
+    }
+    return LOGGED_OUT;
+  }
 
   let themePref: ThemePref | null = null;
   let tourCompleted = true;
@@ -93,7 +115,7 @@ export async function bootDashboard(deps: BootDeps): Promise<BootResult> {
   if (ws?.ok) {
     if (ws.workspaces.length === 0) {
       // A user with no workspace has a real problem to fix; that beats a tour.
-      return { authed: true, redirect: '/create-workspace', themePref, activeWorkspaceId: null };
+      return { authed: true, redirect: '/create-workspace', themePref, activeWorkspaceId: null, maintenance: null };
     }
     if (!ws.workspaces.some((w) => w.id === deps.currentActiveId)) {
       healedWorkspaceId = ws.workspaces[0].id;
@@ -103,8 +125,8 @@ export async function bootDashboard(deps: BootDeps): Promise<BootResult> {
   // /welcome is registered OUTSIDE DashboardLayout, so it never re-enters this
   // gate. That is what makes redirecting from here safe.
   if (!tourCompleted && !tourDoneLocally()) {
-    return { authed: true, redirect: '/welcome', themePref, activeWorkspaceId: healedWorkspaceId };
+    return { authed: true, redirect: '/welcome', themePref, activeWorkspaceId: healedWorkspaceId, maintenance: null };
   }
 
-  return { authed: true, redirect: null, themePref, activeWorkspaceId: healedWorkspaceId };
+  return { authed: true, redirect: null, themePref, activeWorkspaceId: healedWorkspaceId, maintenance: null };
 }

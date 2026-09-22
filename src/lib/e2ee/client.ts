@@ -20,3 +20,15 @@ export function buildE2eeClient(): { api: ApiClient; transport: ChunkTransport }
   const transport = createFetchChunkTransport(); // plain fetch, no cookies
   return { api, transport };
 }
+
+/**
+ * The recovery key as the engine wants it.
+ *
+ * `setup()` shows the key as one unbroken hex string, but people paste it back
+ * from a password manager or a note with spaces, dashes or a line break in it
+ * (Contract 6 calls the key whitespace- and dash-insensitive). Nothing else is
+ * touched: the value is hex, and case is the caller's business.
+ */
+export function normalizeRecoveryKey(raw: string): string {
+  return raw.replace(/[\s-]/g, '');
+}

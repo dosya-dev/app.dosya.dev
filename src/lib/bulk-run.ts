@@ -21,10 +21,22 @@ export interface BulkResult<R> {
 /** How many requests a bulk action keeps in flight by default. */
 export const BULK_CONCURRENCY = 6;
 
+export interface BulkOptions {
+  /** Called after each item settles (success or failure); skipped items don't fire it. */
+  onItemDone?: () => void;
+  /**
+   * Polled before each item starts. Once it returns true no further items are
+   * started; items already in flight run to completion. Skipped items are
+   * counted in neither `ok` nor `fail` and stay `null` in `results`.
+   */
+  shouldStop?: () => boolean;
+}
+
 export async function runBulk<T, R>(
   items: readonly T[],
   task: (item: T, index: number) => Promise<R>,
   limit: number = BULK_CONCURRENCY,
+  opts: BulkOptions = {},
 ): Promise<BulkResult<R>> {
   const results: (R | null)[] = new Array(items.length).fill(null);
   let ok = 0;
@@ -36,6 +48,7 @@ export async function runBulk<T, R>(
 
   const worker = async (): Promise<void> => {
     for (;;) {
+      if (opts.shouldStop?.()) return;
       const i = next++;
       if (i >= items.length) return;
       try {
@@ -44,9 +57,38 @@ export async function runBulk<T, R>(
       } catch {
         fail++;
       }
+      opts.onItemDone?.();
     }
   };
 
   await Promise.all(Array.from({ length: width }, worker));
   return { ok, fail, results };
+}
+
+export interface SelectionChunk {
+  file_ids: string[];
+  folder_ids: string[];
+}
+
+/**
+ * Split a mixed file/folder selection into batch-delete payloads of at most
+ * `size` combined ids. One batch-delete request per chunk is what turns the
+ * soft-delete progress bar from a guess into a count - a single request over
+ * 100 folders has no observable progress.
+ */
+export function chunkSelection(fileIds: readonly string[], folderIds: readonly string[], size: number): SelectionChunk[] {
+  const all = [
+    ...fileIds.map((id) => ({ id, folder: false })),
+    ...folderIds.map((id) => ({ id, folder: true })),
+  ];
+  const step = Math.max(1, size);
+  const chunks: SelectionChunk[] = [];
+  for (let i = 0; i < all.length; i += step) {
+    const slice = all.slice(i, i + step);
+    chunks.push({
+      file_ids: slice.filter((s) => !s.folder).map((s) => s.id),
+      folder_ids: slice.filter((s) => s.folder).map((s) => s.id),
+    });
+  }
+  return chunks;
 }

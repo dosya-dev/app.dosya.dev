@@ -53632,6 +53632,7 @@ async function randomBytes(n) {
 // src/aead.ts
 var AEAD_KEYBYTES = 32;
 var AEAD_NPUBBYTES = 24;
+var AEAD_ABYTES = 16;
 async function aeadEncrypt(key, plaintext, ad, nonce) {
   const s = await getSodium();
   if (key.length !== AEAD_KEYBYTES) throw new Error("aead: bad key length");
@@ -56252,7 +56253,8 @@ async function oprfBlind(input, serverPublicKey) {
 }
 
 // src/chunker.ts
-var DEFAULTS = { min: 256 * 1024, avg: 1024 * 1024, max: 4 * 1024 * 1024 };
+var CHUNK_MAX_PLAINTEXT_BYTES = 4 * 1024 * 1024;
+var DEFAULTS = { min: 256 * 1024, avg: 1024 * 1024, max: CHUNK_MAX_PLAINTEXT_BYTES };
 var GEAR = (() => {
   const g = new Uint32Array(256);
   let s = 2654435769 >>> 0;
@@ -56332,6 +56334,8 @@ async function merkleRoot(leaves) {
 }
 
 // src/file.ts
+var CHUNK_MAX_CIPHERTEXT_BYTES = CHUNK_MAX_PLAINTEXT_BYTES + AEAD_ABYTES;
+var CHUNK_MIN_CIPHERTEXT_BYTES = 1 + AEAD_ABYTES;
 async function encryptChunk(dek, plainChunk, ad) {
   const [plainHash, { nonce, ciphertext }] = await Promise.all([
     sha2562(plainChunk),
@@ -56900,9 +56904,13 @@ function rebase(args) {
   return { merged, conflicts };
 }
 export {
+  AEAD_ABYTES,
   AEAD_KEYBYTES,
   AEAD_NPUBBYTES,
   ARGON2_TIERS,
+  CHUNK_MAX_CIPHERTEXT_BYTES,
+  CHUNK_MAX_PLAINTEXT_BYTES,
+  CHUNK_MIN_CIPHERTEXT_BYTES,
   KDF_SALTBYTES,
   OPRF_SUITE,
   adChunk,

@@ -12,6 +12,7 @@
 import { QueryClient } from '@tanstack/react-query';
 import { ApiError } from '@/api/client';
 import { FILES_QUERY_ROOT } from '@/lib/files-request';
+import { LIBRARY_QUERY_ROOT } from '@/lib/library-request';
 import { activeJobIds, completedJobIds, useCloudImports } from '@/stores/cloud-imports';
 import { completionToast } from '@/lib/cloud-import-toasts';
 import { toast } from '@/lib/toast';
@@ -57,6 +58,9 @@ export const queryClient = new QueryClient({
 if (typeof window !== 'undefined') {
   window.addEventListener('dosya:upload-complete', () => {
     queryClient.invalidateQueries({ queryKey: [FILES_QUERY_ROOT] });
+    // The Photos view is a second cache over the same rows, so an upload that
+    // is not reflected there is just as missing as one absent from a folder.
+    queryClient.invalidateQueries({ queryKey: [LIBRARY_QUERY_ROOT] });
   });
 }
 
@@ -98,6 +102,7 @@ useCloudImports.subscribe((state) => {
   prevActiveCloudImportIds = activeJobIds(state.jobs);
   if (completed.length > 0) {
     queryClient.invalidateQueries({ queryKey: [FILES_QUERY_ROOT] });
+    queryClient.invalidateQueries({ queryKey: [LIBRARY_QUERY_ROOT] });
     // Same edge, second consumer: tell the user each import finished and
     // which account it came from. completedJobIds only ever reports
     // active -> terminal transitions, so this cannot double-toast a job.

@@ -1,11 +1,10 @@
 import { useState, useEffect, useCallback, useRef, Fragment } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { api, apiErrorMessage, ApiError, API_BASE } from '@/api/client';
+import { api, apiErrorMessage, API_BASE } from '@/api/client';
 import { useWorkspace } from '@/stores/workspace';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
@@ -22,9 +21,10 @@ import {
   Lock, Trash2, LogOut, Upload, X, Plus, ArrowRightLeft,
 } from 'lucide-react';
 import { toast } from '@/lib/toast';
-import { humanSize } from '@/lib/helpers';
+import { humanSize, regionLabel } from '@/lib/helpers';
 import { DeleteWorkspaceDialog } from '@/components/delete-workspace-dialog';
 import { usePermissions } from '@/hooks/use-permissions';
+import { clearShareDefaultsCache } from '@/lib/share-defaults';
 
 
 // ── Types ──────────────────────────────────────────────────
@@ -41,12 +41,14 @@ interface WsSettings {
   country_allowlist: string | null;
   country_blocklist: string | null;
   allowed_email_domains: string | null;
+  /** Accepted and ignored by the API; no web surface. */
   available_regions: string | null;
   session_timeout_minutes: number | null;
   download_rate_limit: number | null;
   disable_share_links: number;
   force_share_password: number;
   share_max_expiry_days: number | null;
+  default_share_expiry_days: number | null;
   require_2fa: number;
   disable_password_login: number;
   record_upload_origin: number;
@@ -74,7 +76,6 @@ interface WsData {
 // deliberately fails OPEN while loading.
 const NO_PERM = (what: string) => `You don't have permission to change ${what}.`;
 
-interface RegionInfo { code: string; city: string; country: string; continent?: string }
 
 const ICON_COLORS = ['#22c55e', '#7C3AED', '#3b82f6', '#f59e0b', '#06b6d4', '#ec4899', '#1a1917'];
 /**
@@ -113,7 +114,11 @@ const PERM_GROUPS: { group: string; perms: [string, string][] }[] = [
   ] },
   { group: 'Workspace identity', perms: [
     ['change_workspace_name', 'Change workspace name'], ['change_workspace_icon', 'Change workspace icon'],
-    ['change_workspace_region', 'Change default region'],
+    // Legacy since 2026-09-07: the route 409s before this permission is ever
+    // checked, so granting it does nothing. The key stays in the API registry
+    // (existing role rows are untouched), and the label says so - this matrix
+    // has no hint slot the way role-create.tsx does.
+    ['change_workspace_region', 'Change workspace location (legacy - location is fixed at creation)'],
   ] },
   { group: 'Workspace limits', perms: [
     ['change_max_file_size', 'Change max file size'], ['change_storage_per_member', 'Change storage per member'],
@@ -148,16 +153,14 @@ export default function SettingsPage() {
   const navigate = useNavigate();
   const wsId = useWorkspace((s: { activeId: string }) => s.activeId);
   const [data, setData] = useState<WsData | null>(null);
-  const [regions, setRegions] = useState<RegionInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeSection, setActiveSection] = useState('info');
 
   const load = useCallback(async () => {
     if (!wsId) return;
     try {
-      const [wsRes, regRes, rolesRes, teamRes] = await Promise.all([
+      const [wsRes, rolesRes, teamRes] = await Promise.all([
         api<{ ok: boolean } & WsData>(`/api/workspaces/${wsId}`),
-        api<{ ok: boolean; regions: RegionInfo[] }>('/api/regions'),
         api<{ ok: boolean; roles: { id: string; name: string; is_default: number; is_builtin: boolean; is_custom: boolean; permissions: Record<string, boolean> }[] }>(`/api/roles?workspace_id=${wsId}`),
         api<{ ok: boolean; members?: { membership_id: string; user_id: string; name: string; email: string; role_id: string; is_you?: boolean }[] }>(`/api/team?workspace_id=${wsId}`),
       ]);
@@ -174,7 +177,6 @@ export default function SettingsPage() {
         }
         setData(d);
       }
-      if (regRes.ok) setRegions(regRes.regions);
     } catch {}
     setLoading(false);
   }, [wsId]);
@@ -211,7 +213,7 @@ export default function SettingsPage() {
           <h1 className="text-xl font-bold tracking-tight">Workspace settings</h1>
           <p className="text-sm text-muted-foreground mt-1">{data.workspace.name} · you are {data.is_owner ? 'the owner' : 'a member'}</p>
         </div>
-        <WorkspaceInfoSection data={data} wsId={wsId} regions={regions} onSaved={load} />
+        <WorkspaceInfoSection data={data} wsId={wsId} onSaved={load} />
         <HardLimitsSection data={data} wsId={wsId} onSaved={load} />
         <SecuritySection data={data} wsId={wsId} onSaved={load} />
         <RolesSection data={data} wsId={wsId} onSaved={load} />
@@ -223,25 +225,21 @@ export default function SettingsPage() {
 
 // ── Workspace Info ─────────────────────────────────────────
 
-function WorkspaceInfoSection({ data, wsId, regions, onSaved }: { data: WsData; wsId: string; regions: RegionInfo[]; onSaved: () => void }) {
+export function WorkspaceInfoSection({ data, wsId, onSaved }: { data: WsData; wsId: string; onSaved: () => void }) {
   const [name, setName] = useState(data.workspace.name);
-  const [region, setRegion] = useState(data.workspace.default_region);
   const [initials, setInitials] = useState(data.workspace.icon_initials);
   const [iconColor, setIconColor] = useState(data.workspace.icon_color);
   const [iconUrl, setIconUrl] = useState(data.workspace.icon_image_url);
   const [iconVersion, setIconVersion] = useState(0);
   const [saving, setSaving] = useState<string | null>(null);
-  const [regionsModalOpen, setRegionsModalOpen] = useState(false);
-  const [availableRegions, setAvailableRegions] = useState<Set<string>>(() => {
-    try { return new Set(JSON.parse(data.settings?.available_regions || '[]')); } catch { return new Set(); }
-  });
   const fileRef = useRef<HTMLInputElement>(null);
   const { can } = usePermissions();
 
+  const locationCode = data.workspace.default_region;
+  const locationLabel = regionLabel(locationCode);
+
   const canName = can('change_workspace_name');
   const canIcon = can('change_workspace_icon');
-  const canRegion = can('change_workspace_region');
-  const canManage = can('manage_settings');
 
   // onSaved() only reloads this page's own copy of the workspace. The sidebar
   // switcher holds a separate list it fetched at mount, so renaming a workspace
@@ -287,19 +285,6 @@ function WorkspaceInfoSection({ data, wsId, regions, onSaved }: { data: WsData; 
     setSaving(null);
   };
 
-  const saveRegions = async () => {
-    setSaving('regions');
-    try {
-      await api(`/api/workspaces/${wsId}/settings`, { method: 'PUT', body: JSON.stringify({ available_regions: JSON.stringify([...availableRegions]) }) });
-      toast.success('Regions updated', 'Your available upload regions have been saved.'); setRegionsModalOpen(false); onSaved();
-    } catch (err) {
-      toast.error('Couldn\'t save', err instanceof ApiError && err.status === 403
-        ? 'You don\'t have permission to change the workspace regions.'
-        : apiErrorMessage(err, 'Your available regions were not updated.'));
-    }
-    setSaving(null);
-  };
-
   return (
     <section id="section-info">
       <SectionHeader title="Workspace info" desc="Name, identity and basic configuration." />
@@ -337,50 +322,16 @@ function WorkspaceInfoSection({ data, wsId, regions, onSaved }: { data: WsData; 
             </div>
           </SettingRow>
 
-          <SettingRow label="Default upload region" desc="Members can override per upload.">
-            <div className="flex items-center gap-2">
-              <Select value={region} onValueChange={(v) => setRegion(v as string)} items={regions.map((r) => ({ value: r.code, label: `${r.code} (${r.city})` }))}>
-                <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {regions.map((r) => <SelectItem key={r.code} value={r.code}>{r.code} ({r.city})</SelectItem>)}
-                </SelectContent>
-              </Select>
-              <SaveBtn loading={saving === 'region'} onClick={() => save({ default_region: region }, 'region')} disabled={!canRegion} disabledReason={NO_PERM('the default upload region')} />
-            </div>
-          </SettingRow>
-
-          <SettingRow label="Available regions" desc="Restrict which regions members can upload to.">
-            <div className="flex items-center gap-2">
-              <Badge variant="secondary" className="text-[10px]">{availableRegions.size === 0 ? 'All' : `${availableRegions.size} selected`}</Badge>
-              <span title={!canManage ? NO_PERM('the workspace regions') : undefined} className={!canManage ? 'cursor-not-allowed' : ''}>
-                <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setRegionsModalOpen(true)} disabled={!canManage}>Manage</Button>
-              </span>
-            </div>
+          {/* Read-only on purpose: the location was chosen when the workspace
+              was created and the API answers 409 to any attempt to change it -
+              a control here could only ever fail. */}
+          <SettingRow label="Location" desc="Chosen when the workspace was created. Every file in this workspace is stored here.">
+            {/* regionLabel falls back to the code, so a legacy value would
+                otherwise render as "weur (weur)". */}
+            <span className="text-xs">{locationLabel}{locationLabel !== locationCode && <span className="text-muted-foreground"> ({locationCode})</span>}</span>
           </SettingRow>
         </CardContent>
       </Card>
-
-      {/* Regions modal */}
-      <Dialog open={regionsModalOpen} onOpenChange={setRegionsModalOpen}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader><DialogTitle>Available regions</DialogTitle></DialogHeader>
-          <p className="text-xs text-muted-foreground mb-2">Uncheck regions to restrict. Empty = all allowed.</p>
-          <div className="max-h-64 overflow-y-auto border rounded-lg">
-            {regions.map((r) => (
-              <label key={r.code} className="flex items-center gap-2.5 px-3 py-2 text-xs border-b last:border-b-0 hover:bg-muted/50 cursor-pointer">
-                <Checkbox className="size-4" checked={availableRegions.size === 0 || availableRegions.has(r.code)}
-                  onCheckedChange={() => { setAvailableRegions((prev) => { const next = new Set(prev); if (next.has(r.code)) next.delete(r.code); else next.add(r.code); return next; }); }} />
-                <span className="flex-1">{r.code}</span>
-                <span className="text-muted-foreground">{r.city}, {r.country}</span>
-              </label>
-            ))}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setRegionsModalOpen(false)}>Cancel</Button>
-            <Button onClick={saveRegions} disabled={saving === 'regions'}>{saving === 'regions' && <Loader2 className="size-4 animate-spin mr-1.5" />}Save</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </section>
   );
 }
@@ -482,18 +433,28 @@ const SHARE_EXPIRY_OPTIONS = [
   { value: '', label: 'No limit' }, { value: '1', label: '1 day' }, { value: '7', label: '7 days' },
   { value: '30', label: '30 days' }, { value: '90', label: '90 days' }, { value: '365', label: '1 year' },
 ];
+// What the share modal starts on. Distinct from the cap above: a default is
+// a suggestion the sharer can change, a cap clamps every link.
+const SHARE_DEFAULT_EXPIRY_OPTIONS = [
+  { value: '', label: '7 days (standard)' }, { value: '1', label: '1 day' }, { value: '7', label: '7 days' },
+  { value: '30', label: '30 days' }, { value: '90', label: '90 days' }, { value: '365', label: '1 year' },
+];
 
-function SecuritySection({ data, wsId, onSaved }: { data: WsData; wsId: string; onSaved: () => void }) {
+// Exported for its tests.
+export function SecuritySection({ data, wsId, onSaved }: { data: WsData; wsId: string; onSaved: () => void }) {
   const s = data.settings;
   const { can } = usePermissions();
   const canManageSec = can('manage_settings');
+  // `require_2fa` and `disable_password_login` still exist on the API row but
+  // are not offered here: the server stores them and enforces neither, and a
+  // toggle that changes nothing is worse than no toggle.
   const [toggles, setToggles] = useState({
     disable_share_links: s?.disable_share_links === 1, force_share_password: s?.force_share_password === 1,
-    require_2fa: s?.require_2fa === 1, disable_password_login: s?.disable_password_login === 1,
     record_upload_origin: s?.record_upload_origin !== 0,
   });
   const [sessionTimeout, setSessionTimeout] = useState(s?.session_timeout_minutes != null ? String(s.session_timeout_minutes) : '');
   const [shareExpiry, setShareExpiry] = useState(s?.share_max_expiry_days != null ? String(s.share_max_expiry_days) : '');
+  const [shareDefaultExpiry, setShareDefaultExpiry] = useState(s?.default_share_expiry_days != null ? String(s.default_share_expiry_days) : '');
   const [downloadRate, setDownloadRate] = useState(s?.download_rate_limit != null ? String(s.download_rate_limit) : '');
   const [saving, setSaving] = useState<string | null>(null);
 
@@ -504,7 +465,14 @@ function SecuritySection({ data, wsId, onSaved }: { data: WsData; wsId: string; 
 
   const saveSetting = async (field: string, value: unknown) => {
     setSaving(field);
-    try { await api(`/api/workspaces/${wsId}/settings`, { method: 'PUT', body: JSON.stringify({ [field]: value }) }); toast.success('Settings updated', 'Your security setting has been saved.'); } catch (err) { toast.error('Couldn\'t save', apiErrorMessage(err, 'Your security setting was not updated.')); }
+    try {
+      await api(`/api/workspaces/${wsId}/settings`, { method: 'PUT', body: JSON.stringify({ [field]: value }) });
+      // The share modal memoises this workspace's default expiry for the
+      // session; without this the admin who just changed it keeps sharing
+      // with the old pre-fill until they reload.
+      clearShareDefaultsCache();
+      toast.success('Settings updated', 'Your security setting has been saved.');
+    } catch (err) { toast.error('Couldn\'t save', apiErrorMessage(err, 'Your security setting was not updated.')); }
     setSaving(null);
   };
 
@@ -541,8 +509,6 @@ function SecuritySection({ data, wsId, onSaved }: { data: WsData; wsId: string; 
   const toggleItems = [
     { field: 'disable_share_links', label: 'Disable public share links', desc: 'Block all share link creation.' },
     { field: 'force_share_password', label: 'Force password on share links', desc: 'Every share link must have a password.' },
-    { field: 'require_2fa', label: 'Require 2FA for all members', desc: 'Members without 2FA will be prompted.' },
-    { field: 'disable_password_login', label: 'Disable password login', desc: 'Force SSO-only login.' },
     { field: 'record_upload_origin', label: 'Record upload-origin location', desc: 'Fall back to the uploader\'s approximate (IP-based) location on the map when a file or folder has no GPS data.' },
   ];
 
@@ -597,7 +563,18 @@ function SecuritySection({ data, wsId, onSaved }: { data: WsData; wsId: string; 
                   {SHARE_EXPIRY_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
                 </SelectContent>
               </Select>
-              <SaveBtn loading={saving === 'share_expiry'} onClick={() => saveSetting('share_max_expiry_days', shareExpiry || null)} disabled={!canManageSec} disabledReason={NO_PERM('the share link expiry cap')} />
+              <SaveBtn loading={saving === 'share_max_expiry_days'} onClick={() => saveSetting('share_max_expiry_days', shareExpiry || null)} disabled={!canManageSec} disabledReason={NO_PERM('the share link expiry cap')} />
+            </div>
+          </SettingRow>
+          <SettingRow label="Default share link expiry" desc="What new share links start with. Anyone sharing can still change it.">
+            <div className="flex items-center gap-2">
+              <Select value={shareDefaultExpiry} onValueChange={(v) => setShareDefaultExpiry(v as string)} items={SHARE_DEFAULT_EXPIRY_OPTIONS}>
+                <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {SHARE_DEFAULT_EXPIRY_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <SaveBtn loading={saving === 'default_share_expiry_days'} onClick={() => saveSetting('default_share_expiry_days', shareDefaultExpiry || null)} disabled={!canManageSec} disabledReason={NO_PERM('the default share link expiry')} />
             </div>
           </SettingRow>
           <SettingRow label="Download rate limit" desc="Max downloads per user per hour.">
@@ -746,8 +723,10 @@ function DangerSection({ data, wsId, isOwner, navigate, onSaved }: { data: WsDat
    * (review the damage, enter a mailed code, retype the name), not something
    * this button can complete on its own.
    */
-  const handleDeleted = () => {
-    toast.success('Workspace deleted', 'The workspace and all its files have been removed.');
+  const handleDeleted = (pending: boolean) => {
+    toast.success(pending ? 'Workspace deletion started' : 'Workspace deleted', pending
+      ? 'The workspace is unavailable. Its files are being removed in the background.'
+      : 'The workspace and all its files have been removed.');
     navigate('/');
   };
 

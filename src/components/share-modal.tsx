@@ -14,6 +14,13 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Mail, Link2, X, Loader2, Copy, ChevronDown, Files, Folder } from 'lucide-react';
 import { toast } from '@/lib/toast';
 import { validateSharePassword, validateShareExpiryAt, validateShareBundle } from '@/lib/validation-policy.generated';
+import { useWorkspace } from '@/stores/workspace';
+import { rememberShareDefault, readShareDefault, clearShareDefaultsCache } from '@/lib/share-defaults';
+
+// Re-exported so callers (and this component's tests) have one import for the
+// modal and its cache; the cache itself lives in lib/share-defaults so the
+// settings save path and logout can invalidate it without importing this UI.
+export { clearShareDefaultsCache };
 
 /**
  * What is being shared. A share link is one file, one bundle of files, or one
@@ -31,6 +38,14 @@ interface ShareModalProps {
   target: ShareTarget | null;
   /** Display name: the file name, "N files", or the folder name. */
   name: string;
+  /**
+   * The workspace the TARGET lives in, whose default share expiry pre-fills
+   * the form (Contract 8). Falls back to the active workspace, which is right
+   * for every caller today but wrong the moment something shares an item from
+   * another workspace - a default is a property of the item's workspace, not
+   * of whatever the sidebar has selected.
+   */
+  workspaceId?: string;
   onClose: () => void;
 }
 
@@ -59,14 +74,28 @@ function localInputToUnix(value: string): number | null {
   return Number.isFinite(ms) ? Math.floor(ms / 1000) : null;
 }
 
-/** Now + 7 days, formatted for a `datetime-local` input's initial value. */
-function defaultCustomExpiry(): string {
-  const d = new Date(Date.now() + 7 * 86400 * 1000);
+const FALLBACK_EXPIRY_DAYS = 7;
+
+/** Now + `days`, formatted for a `datetime-local` input's initial value. */
+function defaultCustomExpiry(days: number = FALLBACK_EXPIRY_DAYS): string {
+  const d = new Date(Date.now() + days * 86400 * 1000);
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-export function ShareModal({ open, target, name, onClose }: ShareModalProps) {
+/**
+ * Initial expiry state for a workspace default of `days` (Contract 8). A
+ * default that matches a preset selects it; any other whole number becomes a
+ * pre-filled custom date; no default falls back to 7 days.
+ */
+export function initialExpiryFor(days: number | null | undefined): { expiry: string; customExpiry: string } {
+  const d = days != null && Number.isFinite(days) && days > 0 ? days : FALLBACK_EXPIRY_DAYS;
+  const seconds = String(d * 86400);
+  if (EXPIRY_OPTIONS.some((o) => o.value === seconds)) return { expiry: seconds, customExpiry: defaultCustomExpiry(d) };
+  return { expiry: 'custom', customExpiry: defaultCustomExpiry(d) };
+}
+
+export function ShareModal({ open, target, name, workspaceId: targetWorkspaceId, onClose }: ShareModalProps) {
   const isFolder = target?.kind === 'folder';
   const isBundle = target?.kind === 'bundle';
   const [excludedCount, setExcludedCount] = useState(0);
@@ -75,10 +104,30 @@ export function ShareModal({ open, target, name, onClose }: ShareModalProps) {
   const [emailInput, setEmailInput] = useState('');
   const [expiry, setExpiry] = useState('604800');
   const [customExpiry, setCustomExpiry] = useState(defaultCustomExpiry);
+  const activeWorkspaceId = useWorkspace((s) => s.activeId);
+  const workspaceId = targetWorkspaceId ?? activeWorkspaceId;
+  // The workspace's default_share_expiry_days, read once per open. Kept so
+  // `reset()` (which runs on close) restores the workspace's choice rather
+  // than the product-wide 7 days.
+  const defaultDaysRef = useRef<number | null>(null);
+  // Set the moment the user touches the expiry select, so a slow settings
+  // response cannot overwrite a choice they already made.
+  const userPickedExpiryRef = useRef(false);
   const [restrictToRecipients, setRestrictToRecipients] = useState(true);
   const [password, setPassword] = useState('');
   const [title, setTitle] = useState('');
   const [message, setMessage] = useState('');
+  /**
+   * A link that opens but never downloads.
+   *
+   * lib/share/create.ts has accepted `lock_mode` since migration 0019 and
+   * validates it; the CLI sends it as `--lock`. This dialog never sent the
+   * field at all, so a feature that shipped years ago was reachable only from
+   * a terminal.
+   */
+  const [viewOnly, setViewOnly] = useState(false);
+  /** Download ceiling (migration 0143). Empty string means unlimited. */
+  const [maxDownloads, setMaxDownloads] = useState('');
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -97,16 +146,52 @@ export function ShareModal({ open, target, name, onClose }: ShareModalProps) {
     return () => { cancelled = true; };
   }, [open, target]);
 
+  // Pre-fill the expiry from the workspace default (Contract 8). Advisory: a
+  // failed read leaves the 7-day fallback in place rather than blocking the
+  // modal, and a response that arrives after the user already picked
+  // something is ignored.
+  useEffect(() => {
+    if (!open || !workspaceId) return;
+    let cancelled = false;
+    userPickedExpiryRef.current = false;
+
+    const apply = (days: number | null) => {
+      defaultDaysRef.current = days;
+      const next = initialExpiryFor(days);
+      setExpiry(next.expiry);
+      setCustomExpiry(next.customExpiry);
+    };
+
+    const remembered = readShareDefault(workspaceId);
+    if (remembered) {
+      apply(remembered.days);
+      return () => { cancelled = true; };
+    }
+
+    api<{ ok: boolean; settings: { default_share_expiry_days?: number | null } | null }>(`/api/workspaces/${workspaceId}/settings`)
+      .then((r) => {
+        const days = r.settings?.default_share_expiry_days ?? null;
+        rememberShareDefault(workspaceId, days);
+        if (cancelled || userPickedExpiryRef.current) return;
+        apply(days);
+      })
+      .catch(() => { /* fallback stays; a failed read is not cached */ });
+    return () => { cancelled = true; };
+  }, [open, workspaceId]);
+
   const reset = useCallback(() => {
     setTab('email');
     setEmails([]);
     setEmailInput('');
-    setExpiry('604800');
-    setCustomExpiry(defaultCustomExpiry());
+    const initial = initialExpiryFor(defaultDaysRef.current);
+    setExpiry(initial.expiry);
+    setCustomExpiry(initial.customExpiry);
     setRestrictToRecipients(true);
     setPassword('');
     setTitle('');
     setMessage('');
+    setViewOnly(false);
+    setMaxDownloads('');
     setShowAdvanced(false);
     setSubmitting(false);
     setError('');
@@ -180,6 +265,18 @@ export function ShareModal({ open, target, name, onClose }: ShareModalProps) {
     const pwError = validateSharePassword(pw);
     if (pwError) { setError(pwError); return; }
 
+    // Parsed here rather than trusted to the input's `type=number`: a browser
+    // lets "1e3" and "  " through, and the API refuses 0 outright.
+    let capField: number | null = null;
+    if (maxDownloads.trim()) {
+      const n = Number(maxDownloads);
+      if (!Number.isInteger(n) || n < 1) {
+        setError('Download limit must be a whole number of at least 1.');
+        return;
+      }
+      capField = n;
+    }
+
     const nowSeconds = Math.floor(Date.now() / 1000);
     let expiresAt: number | null = null;
     if (expiry === 'custom') {
@@ -198,6 +295,15 @@ export function ShareModal({ open, target, name, onClose }: ShareModalProps) {
     } else if (expiry !== 'never') {
       expiresAt = nowSeconds + Number(expiry);
     }
+
+    // "Never" has to be SAID, not left out. The API applies the workspace's
+    // default_share_expiry_days only when a payload names no expiry at all
+    // (createShareLink's `hasExplicitExpiry`), so omitting the field made the
+    // workspace default override the one choice that means "no expiry" - a
+    // link the user set to never expire dying after N days. `expires_in_days:
+    // 0` is the API's own spelling of never (lib/share/expiry.ts).
+    const expiryFields: { expires_at?: number; expires_in_days?: number } =
+      expiry === 'never' ? { expires_in_days: 0 } : (expiresAt ? { expires_at: expiresAt } : {});
 
     setSubmitting(true);
 
@@ -221,7 +327,9 @@ export function ShareModal({ open, target, name, onClose }: ShareModalProps) {
               restrict_to_recipients: restrictToRecipients,
             };
         if (pw) body.password = pw;
-        if (expiresAt) body.expires_at = expiresAt;
+        if (viewOnly) body.lock_mode = 'view_only';
+        if (capField !== null) body.max_downloads = capField;
+        Object.assign(body, expiryFields);
 
         const endpoint = target.kind === 'folder'
           ? `/api/folders/${target.folderId}/share-email`
@@ -250,8 +358,10 @@ export function ShareModal({ open, target, name, onClose }: ShareModalProps) {
         }
       } else {
         const linkBody: Record<string, unknown> = isBundle ? { file_ids: target.fileIds } : {};
-        if (expiresAt) linkBody.expires_at = expiresAt;
+        Object.assign(linkBody, expiryFields);
         if (pw) linkBody.password = pw;
+        if (viewOnly) linkBody.lock_mode = 'view_only';
+        if (capField !== null) linkBody.max_downloads = capField;
 
         const endpoint = target.kind === 'folder'
           ? `/api/folders/${target.folderId}/share`
@@ -384,7 +494,7 @@ export function ShareModal({ open, target, name, onClose }: ShareModalProps) {
         {!resultUrl && (
           <div>
             <Label className="text-xs font-medium text-muted-foreground mb-1.5 block">Expires in</Label>
-            <Select value={expiry} onValueChange={(value) => setExpiry(value ?? 'never')} items={EXPIRY_OPTIONS}>
+            <Select value={expiry} onValueChange={(value) => { userPickedExpiryRef.current = true; setExpiry(value ?? 'never'); }} items={EXPIRY_OPTIONS}>
               <SelectTrigger className="w-full h-9 border rounded-md px-2.5 text-xs bg-background">
                 <SelectValue />
               </SelectTrigger>
@@ -431,6 +541,38 @@ export function ShareModal({ open, target, name, onClose }: ShareModalProps) {
                     className="h-8 text-xs"
                     autoComplete="off"
                   />
+                </div>
+                <label className="flex items-start gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={viewOnly}
+                    onChange={(e) => setViewOnly(e.target.checked)}
+                    className="mt-0.5 size-3.5 accent-green-600"
+                    data-testid="share-view-only"
+                  />
+                  <span className="text-[11px] leading-relaxed text-muted-foreground">
+                    <span className="font-medium text-foreground">View only.</span>{' '}
+                    People can open {isFolder ? 'the folder' : isBundle ? 'the files' : 'the file'} but
+                    not download a copy.
+                  </span>
+                </label>
+                <div>
+                  <Label className="text-xs font-medium text-muted-foreground mb-1 block">
+                    Download limit <span className="font-normal">(optional)</span>
+                  </Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    value={maxDownloads}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setMaxDownloads(e.target.value)}
+                    placeholder="Unlimited"
+                    className="h-8 text-xs"
+                    data-testid="share-max-downloads"
+                  />
+                  <p className="text-[11px] text-muted-foreground mt-1">
+                    The link stops serving the {isFolder ? 'folder' : isBundle ? 'files' : 'file'} once it has been
+                    downloaded this many times.
+                  </p>
                 </div>
                 <div>
                   <Label className="text-xs font-medium text-muted-foreground mb-1 block">

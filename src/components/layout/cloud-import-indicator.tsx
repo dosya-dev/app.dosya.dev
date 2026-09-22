@@ -4,6 +4,7 @@ import { useWorkspace } from '@/stores/workspace';
 import { ACTIVE_CLOUD_STATUSES, jobProgress, useCloudImports } from '@/stores/cloud-imports';
 import { PROVIDER_LABELS } from '@/lib/cloud-providers';
 import { describeJob } from '@/components/cloud-import/import-progress-card';
+import { hadActiveJobs } from '@/lib/job-activity';
 
 const RADIUS = 5;
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
@@ -15,6 +16,10 @@ const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
  * Renders nothing when idle. Same visual rules as
  * remote-download-indicator.tsx: determinate ring once byte totals exist,
  * indeterminate spinner while discovery is still counting.
+ *
+ * Lists jobs on mount only when the last refresh in this browser saw one
+ * running (lib/job-activity.ts): every other load of the app skips the
+ * request. An import started from this client refreshes the store itself.
  */
 export function CloudImportIndicator() {
   const activeId = useWorkspace((s) => s.activeId);
@@ -22,7 +27,7 @@ export function CloudImportIndicator() {
   const refresh = useCloudImports((s) => s.refresh);
 
   useEffect(() => {
-    void refresh();
+    if (hadActiveJobs('cloud')) void refresh();
   }, [refresh, activeId]);
 
   const active = jobs.filter((j) => ACTIVE_CLOUD_STATUSES.has(j.status));

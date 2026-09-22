@@ -66,7 +66,7 @@ export function ReferralStep() {
     <div>
       <p className="text-sm font-medium mb-1">Your invite link</p>
       <p className="text-xs text-muted-foreground mb-3">
-        Every friend who joins adds 5 GB to your account, up to 25 GB.
+        Every friend who starts using dosya adds 5 GB to your account, up to 25 GB.
       </p>
       <div className="flex items-center gap-2">
         <input

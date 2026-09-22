@@ -155,8 +155,19 @@ export interface ApiClient {
      * `commit`. Any other non-2xx status throws.
      */
     rotate(body: RotateBody): Promise<RotateResult>;
-    /** POST /api/e2ee/chunk-upload-url - a presigned R2 PUT for `chunkId` (hex(sha256(ciphertext))). */
-    chunkUploadUrl(workspaceId: string, chunkId: string): Promise<string>;
+    /**
+     * POST /api/e2ee/chunk-upload-url - a presigned R2 PUT for `chunkId`
+     * (hex(sha256(ciphertext))).
+     *
+     * `size` is the EXACT byte length of the ciphertext about to be PUT. The
+     * server refuses a size outside e2ee-core's CHUNK_MIN/MAX_CIPHERTEXT_BYTES
+     * and signs it into the URL as Content-Length, so R2 403s a body of any
+     * other length - which is what stops a member parking arbitrary bytes
+     * under random chunk ids. The body sent to R2 must therefore be exactly
+     * this many bytes (the fetch transport sends a Uint8Array, whose
+     * Content-Length the runtime derives from its length).
+     */
+    chunkUploadUrl(workspaceId: string, chunkId: string, size: number): Promise<string>;
     /** GET /api/e2ee/chunk-download-url - a presigned R2 GET for the SAME key a prior `chunkUploadUrl` wrote. */
     chunkDownloadUrl(workspaceId: string, chunkId: string): Promise<string>;
 }

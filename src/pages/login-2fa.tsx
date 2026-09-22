@@ -6,6 +6,7 @@ import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Lock, Loader2, ArrowLeft } from 'lucide-react';
+import { pendingPostAuthPath } from '@/lib/redemption-claim';
 
 export default function Login2faPage() {
   const navigate = useNavigate();
@@ -26,13 +27,13 @@ export default function Login2faPage() {
         body: JSON.stringify(showRecovery ? { code: value, is_recovery: true } : { code: value }),
       });
       if (res.ok) {
-        navigate(res.redirect || '/');
+        navigate(pendingPostAuthPath() ?? res.redirect ?? '/');
       } else {
         setError(res.error ?? 'Verification failed');
       }
-    } catch (e: any) {
+    } catch (e: unknown) {
       try {
-        const body = JSON.parse(e.body || '{}');
+        const body = JSON.parse(e && typeof e === 'object' && 'body' in e && typeof e.body === 'string' ? e.body : '{}') as { error?: string };
         setError(body.error || 'Verification failed');
       } catch {
         setError('Verification failed');

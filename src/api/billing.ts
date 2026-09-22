@@ -20,17 +20,41 @@ export type SubscriptionItemView = {
     kind: "plan" | "addon" | "custom"; ref_id: string; quantity: number;
     storage_bytes: number; total_bytes: number; total_label: string; interval: "month" | "year";
 };
+export type ExternalLicenseGrantView = {
+    id: string;
+    provider: string;
+    package_name: string;
+    storage_bytes: number;
+    storage_label: string;
+    interval: "month" | "quarter" | "half_year" | "year" | "two_years" | "unknown" | null;
+    status: "active" | "ended" | "revoked";
+    linked_at: number;
+    provider_end_at: number | null;
+    contribution_bytes: number;
+    /** When the package stops (or stopped) adding storage; null while it renews. */
+    ends_at: number | null;
+    /** Estimated next Gumroad charge, from the purchase date; null when unknown or ending. */
+    renews_at: number | null;
+};
 export type BillingStatus = {
     plan: { id: string; name: string; storage_bytes: number; storage_label: string; price_monthly: number; price_yearly: number | null };
-    usage: { used_bytes: number; used_label: string; limit_bytes: number; pct: number };
+    usage: { used_bytes: number; used_label: string; limit_bytes: number; limit_label: string; pct: number };
     subscription: { status: string | null; current_period_end: number | null; has_subscription: boolean; cancel_at_period_end: boolean; grace_period_end: number | null };
     interval: "month" | "year";
     items: SubscriptionItemView[];
     referral_bonus_bytes: number;
     invoices: { id: string; period_start: number; period_end: number; amount: number; status: string; pdf_url: string | null }[];
+    license_grants: ExternalLicenseGrantView[];
 };
 
-export type CartPayload = { interval: "month" | "year"; plan_id: string; addons: { id: string; qty: number }[]; promo_code?: string };
+export type CartPayload = {
+    interval: "month" | "year";
+    plan_id: string;
+    addons: { id: string; qty: number }[];
+    promo_code?: string;
+    /** Set once the customer has been shown what a smaller plan replaces. */
+    confirm_downgrade?: boolean;
+};
 export type CouponInfo = { code: string; type: "percent" | "amount"; value: number; currency: string | null; duration: string; duration_in_months: number | null };
 
 export const getCatalog = () => api<{ ok: true } & Catalog>("/api/billing/catalog");
@@ -40,7 +64,12 @@ export const getBillingStatus = () => api<{ ok: true } & BillingStatus>("/api/bi
 
 /** Reconcile plan/items from Stripe now (webhook may lag right after checkout). */
 export const syncBilling = () => api<{ ok: true }>("/api/billing/sync", { method: "POST" });
-/** Create a Stripe Customer Portal session (cancel, payment method, invoices). */
+/**
+ * Create a Stripe Customer Portal session - payment method and invoices only.
+ * Plan switching and cancellation are deliberately turned off in the portal
+ * configuration: both bypass the checks that only exist in our own flow (the
+ * downgrade confirmation, add-on handling and preserved custom packages).
+ */
 export const createPortalSession = () => api<{ ok: true; url: string }>("/api/billing/portal", { method: "POST" });
 
 export const startCheckout = (cart: CartPayload) =>

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { api } from '@/api/client';
+import { api, apiErrorMessage } from '@/api/client';
 import { FilesSidebar } from '@/components/files-sidebar';
 import { useWorkspace } from '@/stores/workspace';
 import { Input } from '@/components/ui/input';
@@ -228,7 +228,7 @@ function RequestRow({ request: r, revoked, expired, isActive, onRevoke, onOpenRe
   const expiryText = r.expires_at
     ? expired
       ? `Expired ${timeAgo(r.expires_at)}`
-      : `Expires ${new Date(r.expires_at * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
+      : `Expires ${new Date(r.expires_at * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`
     : 'No expiry';
 
   return (
@@ -373,8 +373,8 @@ function CreateRequestDialog({ workspaceId, onClose, onCreated }: {
         setError(res.error ?? 'Failed to create');
         setSubmitting(false);
       }
-    } catch {
-      setError('Network error');
+    } catch (err) {
+      setError(apiErrorMessage(err));
       setSubmitting(false);
     }
   };
@@ -601,7 +601,7 @@ function RecipientsDialog({ requestId, onClose }: { requestId: string; onClose: 
         method: 'POST', body: JSON.stringify({ email: trimmed }),
       });
       if (data.ok) { setEmail(''); load(); } else setError(data.error ?? 'Failed');
-    } catch { setError('Network error'); }
+    } catch (err) { setError(apiErrorMessage(err)); }
     setAdding(false);
   };
 

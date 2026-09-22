@@ -56,7 +56,7 @@ const PERM_INFO: PermInfo[] = [
   { key: 'manage_roles', label: 'Manage roles', hint: 'Create, edit, and delete custom roles and assign permissions.', category: 'Team' },
   { key: 'change_workspace_name', label: 'Change workspace name', hint: 'Rename the workspace shown in the switcher.', category: 'Workspace identity' },
   { key: 'change_workspace_icon', label: 'Change workspace icon', hint: 'Update the initials and color of the workspace icon.', category: 'Workspace identity' },
-  { key: 'change_workspace_region', label: 'Change default region', hint: 'Set the default upload region for new files.', category: 'Workspace identity' },
+  { key: 'change_workspace_region', label: 'Change workspace location', hint: 'Legacy: a workspace\'s location is fixed when it is created and cannot be changed.', category: 'Workspace identity' },
   { key: 'change_max_file_size', label: 'Change max upload file size', hint: 'Set the maximum size for a single file upload.', category: 'Workspace limits' },
   { key: 'change_storage_per_member', label: 'Change storage per member', hint: 'Set the max storage any single member can consume.', category: 'Workspace limits' },
   { key: 'change_total_storage_cap', label: 'Change total workspace storage cap', hint: 'Set the hard ceiling on total storage.', category: 'Workspace limits' },

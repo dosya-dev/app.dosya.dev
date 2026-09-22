@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { buildE2eeClient } from './client';
+import { buildE2eeClient, normalizeRecoveryKey } from './client';
 
 // A valid base64 encoding of 32 zero bytes - just needs to decode cleanly so
 // oprfPublicKey() resolves; the actual key material is irrelevant here.
@@ -41,5 +41,23 @@ describe('buildE2eeClient', () => {
     const [, init] = fetchMock.mock.calls[0] as [RequestInfo | URL, RequestInit | undefined];
     expect(init?.credentials).not.toBe('include');
     expect(init?.credentials).toBeUndefined();
+  });
+});
+
+// Fix round 2, test hygiene: the recovery key is displayed as one hex string
+// and pasted back with whatever spacing, dashes or line breaks the password
+// manager added (Contract 6 calls it whitespace- and dash-insensitive). The
+// tests that exercised the UI and the store were asserting the raw string
+// passed through, so deleting the normalisation would have kept them green.
+describe('normalizeRecoveryKey', () => {
+  it('drops every kind of whitespace and dash a paste can carry', () => {
+    expect(normalizeRecoveryKey('  ab12-cd34 ef56\n')).toBe('ab12cd34ef56');
+    expect(normalizeRecoveryKey('ab12\tcd34\r\nef56')).toBe('ab12cd34ef56');
+    expect(normalizeRecoveryKey('ab12 - cd34 - ef56')).toBe('ab12cd34ef56');
+  });
+
+  it('changes nothing else - the key is hex and case is not ours to touch', () => {
+    expect(normalizeRecoveryKey('AB12cd34')).toBe('AB12cd34');
+    expect(normalizeRecoveryKey('')).toBe('');
   });
 });

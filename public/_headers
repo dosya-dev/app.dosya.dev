@@ -4,8 +4,19 @@
 # 'https://app.dosya.dev/' violates ... frame-ancestors 'none'". 'self' still
 # refuses every third-party frame, which is the clickjacking threat this
 # directive exists for; it only stops the site refusing itself.
+# connect-src lists the two R2 S3 hostnames (main account + the EU
+# jurisdiction bucket) because the Vault fetches presigned chunk PUT/GET URLs
+# against them directly from the browser. Explicit hosts on purpose: a
+# *.r2.cloudflarestorage.com wildcard would let an injected script exfiltrate
+# to any R2 account. Keep in step with apps/api/src/lib/r2-buckets.ts.
+# Cloudflare Web Analytics is auto-injected at the edge for this zone, so
+# script-src allows static.cloudflareinsights.com (the beacon) and connect-src
+# allows cloudflareinsights.com (its /cdn-cgi/rum POST), per Cloudflare's CSP
+# guidance. Not allowed on purpose: the inline bot JavaScript-detections
+# snippet Cloudflare also injects; it needs a per-request nonce, which a
+# static headers file cannot mint, and 'unsafe-inline' would gut script-src.
 /*
-  Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://challenges.cloudflare.com https://docs.dosya.dev; style-src 'self' 'unsafe-inline' blob:; img-src 'self' data: blob: https://api.dosya.dev; media-src 'self' blob: data: https://api.dosya.dev; font-src 'self' blob: data:; connect-src 'self' https://api.dosya.dev https://challenges.cloudflare.com https://docs.dosya.dev; frame-src 'self' blob: https://api.dosya.dev https://challenges.cloudflare.com https://docs.dosya.dev; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'self'; form-action 'self'
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://challenges.cloudflare.com https://docs.dosya.dev https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline' blob:; img-src 'self' data: blob: https://api.dosya.dev; media-src 'self' blob: data: https://api.dosya.dev; font-src 'self' blob: data:; connect-src 'self' https://api.dosya.dev https://challenges.cloudflare.com https://docs.dosya.dev https://0b25394b353c95a526538e19706809e8.r2.cloudflarestorage.com https://0b25394b353c95a526538e19706809e8.eu.r2.cloudflarestorage.com https://cloudflareinsights.com; frame-src 'self' blob: https://api.dosya.dev https://challenges.cloudflare.com https://docs.dosya.dev; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'self'; form-action 'self'
   X-Content-Type-Options: nosniff
   Referrer-Policy: strict-origin-when-cross-origin
   Strict-Transport-Security: max-age=31536000; includeSubDomains

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, ApiError, apiErrorMessage } from '@/api/client';
 import { Button } from '@/components/ui/button';
@@ -9,6 +9,7 @@ import { Loader2, LogOut, Plus, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useWorkspace } from '@/stores/workspace';
 import { logoutAndRedirect } from '@/lib/logout';
 import { roleLabel } from '@/lib/workspace-dashboard';
+import { LocationPicker, type RegionInfo } from '@/components/location-picker';
 
 const COLORS = [
   { value: '#22c55e', label: 'Green' },
@@ -41,23 +42,60 @@ export default function CreateWorkspacePage() {
   const [error, setError] = useState('');
   const [storageLimit, setStorageLimit] = useState('');
   const [allocation, setAllocation] = useState<Allocation | null>(null);
+  // Where this workspace's files will live. Chosen here and only here - the
+  // server refuses to move a workspace later, so there is no second chance and
+  // no per-upload override anywhere in the app.
+  const [regions, setRegions] = useState<RegionInfo[]>([]);
+  const [region, setRegion] = useState('');
+  const [regionsError, setRegionsError] = useState(false);
 
-  // Load the user's existing workspaces - if they have any, default to the picker.
+  const loadRegions = useCallback(async () => {
+    setRegionsError(false);
+    try {
+      const res = await api<{ ok: boolean; regions: RegionInfo[]; suggested: string }>('/api/regions');
+      if (!res.ok) throw new Error('regions');
+      const rows = res.regions ?? [];
+      setRegions(rows);
+      // The server's nearest-location guess, so the common case is one click
+      // fewer rather than an empty required field. Only honoured if the list
+      // actually offers it: preselecting a code with no matching option would
+      // arm the Create button while the picker shows nothing chosen.
+      setRegion(rows.some((r) => r.code === res.suggested) ? res.suggested : '');
+    } catch {
+      setRegionsError(true);
+    }
+  }, []);
+
+  // Load the user's existing workspaces - if they have any, default to the
+  // picker - alongside the locations this account can create in. Each half
+  // swallows its own failure: a locations outage must not hide the workspace
+  // list, and a workspace-list outage must not empty the picker.
   useEffect(() => {
     (async () => {
-      try {
-        const res = await api<{ ok: boolean; workspaces: Workspace[]; allocation?: Allocation }>('/api/workspaces');
-        if (res.ok) {
-          setAllocation(res.allocation ?? null);
-          if (res.workspaces.length > 0) {
-            setWorkspaces(res.workspaces);
-            setMode('select');
-          }
-        }
-      } catch { /* fall back to create */ }
+      await Promise.all([
+        (async () => {
+          try {
+            const res = await api<{ ok: boolean; workspaces: Workspace[]; allocation?: Allocation }>('/api/workspaces');
+            if (res.ok) {
+              setAllocation(res.allocation ?? null);
+              if (res.workspaces.length > 0) {
+                setWorkspaces(res.workspaces);
+                setMode('select');
+              }
+            }
+          } catch { /* fall back to create */ }
+        })(),
+        loadRegions(),
+      ]);
       setLoading(false);
     })();
-  }, []);
+  }, [loadRegions]);
+
+  // Nothing to choose from - the request failed, or the server offered no
+  // locations. Either way the form must stay usable: it submits without a
+  // location and lets the server pick one, rather than disabling the only
+  // button on the page with nothing to act on.
+  const noLocationChoice = regionsError || regions.length === 0;
 
   const preview = name.trim()
     ? name.trim().split(/\s+/).map((w) => w[0]).join('').slice(0, 2).toUpperCase()
@@ -71,6 +109,7 @@ export default function CreateWorkspacePage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) { setError('Workspace name is required'); return; }
+    if (!region && !noLocationChoice) { setError('Pick a location for this workspace.'); return; }
     const limitGb = storageLimit.trim() === '' ? null : Number(storageLimit);
     if (limitGb !== null && (!Number.isFinite(limitGb) || limitGb <= 0)) {
       setError('Storage limit must be a positive number of GB.'); return;
@@ -86,6 +125,10 @@ export default function CreateWorkspacePage() {
         body: JSON.stringify({
           name: name.trim(),
           icon_color: color,
+          // Omitted when there is no list to choose from: the server answers an
+          // absent location with its own suggestion, which beats blocking the
+          // only way to create a workspace on a request that will not load.
+          ...(region ? { default_region: region } : {}),
           ...(limitGb !== null ? { max_total_storage_gb: limitGb } : {}),
         }),
       });
@@ -216,6 +259,18 @@ export default function CreateWorkspacePage() {
                   </div>
 
                   <div>
+                    <Label className="text-xs font-medium text-muted-foreground mb-2 block">Location</Label>
+                    <p className="text-[11px] text-muted-foreground mb-2">Where this workspace's files are stored. Chosen once; every file in the workspace lives here.</p>
+                    {regionsError && (
+                      <div className="flex items-center gap-2 mb-2 text-[11px] text-destructive">
+                        <span>Couldn't load the list of locations.</span>
+                        <button type="button" onClick={() => void loadRegions()} className="underline">Try again</button>
+                      </div>
+                    )}
+                    <LocationPicker regions={regions} value={region} onChange={setRegion} />
+                  </div>
+
+                  <div>
                     <Label className="text-xs font-medium text-muted-foreground mb-2 block">
                       Storage limit <span className="font-normal">(optional)</span>
                     </Label>
@@ -237,7 +292,10 @@ export default function CreateWorkspacePage() {
                     )}
                   </div>
 
-                  <Button type="submit" className="w-full h-10" disabled={creating}>
+                  {/* The choice is permanent, so the form waits for one - but
+                      only while there is a choice to make. With no list, the
+                      server decides rather than the button staying dead. */}
+                  <Button type="submit" className="w-full h-10" disabled={creating || (!region && !noLocationChoice)}>
                     {creating ? <Loader2 className="size-4 animate-spin mr-2" /> : null}
                     Create workspace
                   </Button>
