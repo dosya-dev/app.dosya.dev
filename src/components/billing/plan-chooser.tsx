@@ -64,7 +64,17 @@ export function PlanChooser({ hasSubscription, initial, usedBytes, limitBytes, c
     // A fresh pick has to be confirmed again.
     useEffect(() => { setConfirmedDowngrade(false); }, [state.planId]);
 
-    const setInterval = (interval: "month" | "year") => setState((s) => ({ ...s, interval }));
+    // Switching the billing period drops a code that is limited to the other
+    // one, and says so, instead of letting checkout refuse it later.
+    const setInterval = (interval: "month" | "year") => {
+        const c = state.coupon;
+        if (c?.intervals && !c.intervals.includes(interval)) {
+            setCouponError(`Code ${c.code} removed: it is for ${c.intervals.length === 1 ? `${c.intervals[0]}ly` : "another"} billing only.`);
+            setState((s) => ({ ...s, interval, coupon: null }));
+            return;
+        }
+        setState((s) => ({ ...s, interval }));
+    };
     const setPlan = (planId: string) => setState((s) => ({ ...s, planId }));
     const setQty = (id: string, qty: number) => setState((s) => ({ ...s, addonQty: { ...s.addonQty, [id]: qty } }));
 
@@ -102,7 +112,7 @@ export function PlanChooser({ hasSubscription, initial, usedBytes, limitBytes, c
 
     const applyCoupon = async () => {
         setCouponError(null);
-        try { const info = await validateCoupon(codeInput.trim()); setState((s) => ({ ...s, coupon: info as CouponInfo })); }
+        try { const info = await validateCoupon(codeInput.trim(), state.interval); setState((s) => ({ ...s, coupon: info as CouponInfo })); }
         catch (e) { setState((s) => ({ ...s, coupon: null })); setCouponError(apiErrorMessage(e, "Invalid code")); }
     };
 

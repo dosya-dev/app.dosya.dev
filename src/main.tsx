@@ -1,4 +1,6 @@
 // App entry - mounts the router. Deployed to app.dosya.dev via the sync-web workflow.
+// Crash reporting must initialise before router.tsx is evaluated - keep this first.
+import './instrument';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { RouterProvider } from 'react-router-dom';

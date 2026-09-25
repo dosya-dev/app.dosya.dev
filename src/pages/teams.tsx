@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { api, apiErrorMessage, API_BASE } from '@/api/client';
 import { useWorkspace } from '@/stores/workspace';
+import { usePermissions } from '@/hooks/use-permissions';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -96,6 +97,10 @@ const ROLE_COLORS: Record<string, string> = {
 
 export default function TeamsPage() {
   const wsId = useWorkspace((s: { activeId: string }) => s.activeId);
+  // Without `view_activity` the server narrows this panel to the member's own
+  // rows, so the heading says whose rows these are rather than implying the
+  // workspace's. Labelling only - the server is what withholds them.
+  const { can } = usePermissions();
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [invites, setInvites] = useState<Invite[]>([]);
   const [links, setLinks] = useState<InviteLink[]>([]);
@@ -439,7 +444,7 @@ export default function TeamsPage() {
       <div className="w-56 shrink-0 border-l overflow-y-auto hidden lg:block">
         {/* Activity */}
         <div className="p-4 border-b">
-          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-3">Recent activity</p>
+          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-3">{can('view_activity') ? 'Recent activity' : 'Your recent activity'}</p>
           {activity.length === 0 ? (
             <p className="text-xs text-muted-foreground">No activity yet</p>
           ) : activity.slice(0, 8).map((a, i) => (

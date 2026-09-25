@@ -2,12 +2,20 @@ import { useEffect, useState } from 'react';
 import { useRouteError, isRouteErrorResponse } from 'react-router-dom';
 import { ErrorLayout } from '@/components/error-layout';
 import { isChunkLoadError, recoverFromChunkErrorInBrowser } from '@/lib/chunk-reload';
+import { reportRouteError } from '@/lib/sentry';
 
 // Router errorElement - renders for thrown render/loader errors (and 404 route responses).
 export default function ErrorPage() {
   const err = useRouteError();
   const staleChunk = isChunkLoadError(err);
   const [recovering, setRecovering] = useState(staleChunk);
+
+  // The router catches these before the SDK's global handler can see them,
+  // so this is what makes the "We've been notified" line below true. 404s and
+  // stale chunks are filtered inside reportRouteError.
+  useEffect(() => {
+    reportRouteError(err);
+  }, [err]);
 
   // A deploy replaces every hashed chunk filename, so a tab opened before it
   // asks for files that no longer exist and lands here. Reloading picks up the

@@ -1,5 +1,6 @@
 import { Button } from '@/components/ui/button';
 import { Home, ArrowLeft } from 'lucide-react';
+import { Logo } from "@/components/brand/logo";
 
 // Shared full-page layout for 404 / 500 / error states.
 // `code` is optional: states like the post-deploy reload are not an HTTP
@@ -8,7 +9,7 @@ export function ErrorLayout({ code, title, message }: { code?: string; title: st
   return (
     <div className="min-h-screen bg-background flex flex-col items-center justify-center text-center px-4" style={{ backgroundImage: 'url(/grid.svg)', backgroundRepeat: 'repeat' }}>
       <a href="/" className="inline-flex items-center gap-2 font-mono italic font-semibold text-lg mb-10">
-        <img src="/logo.svg" alt="dosya.dev logo" className="h-7 w-7" />
+        <Logo className="h-7 w-7" />
         dosya.dev
       </a>
 

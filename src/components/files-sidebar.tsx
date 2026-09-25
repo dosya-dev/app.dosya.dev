@@ -16,6 +16,8 @@ import {
   Loader2, MapPin,
 } from 'lucide-react';
 import { toast } from '@/lib/toast';
+import { SwatchPicker } from '@/components/brand/swatch-picker';
+import { SWATCHES } from '@/lib/palette';
 
 interface FavFile { file_id: string; file_name: string }
 interface GroupFolder { folder_id: string; folder_name: string }
@@ -32,11 +34,6 @@ const NAV_ITEMS: { value: Filter; label: string; icon: React.ReactNode }[] = [
   { value: 'shared', label: 'Shared', icon: <Share2 className="size-4" /> },
   { value: 'deleted', label: 'Deleted', icon: <Trash2 className="size-4" /> },
   { value: 'hidden', label: 'Hidden', icon: <EyeOff className="size-4" /> },
-];
-
-const GROUP_COLORS = [
-  '#22c55e', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6',
-  '#ec4899', '#06b6d4', '#14b8a6', '#f97316', '#6366f1',
 ];
 
 interface FilesSidebarProps {
@@ -69,7 +66,7 @@ export function FilesSidebar({ onFilterChange, onFavouriteClick, onGroupClick }:
   // Group modal
   const [groupModalOpen, setGroupModalOpen] = useState(false);
   const [newGroupName, setNewGroupName] = useState('');
-  const [newGroupColor, setNewGroupColor] = useState(GROUP_COLORS[0]);
+  const [newGroupColor, setNewGroupColor] = useState(SWATCHES[0].light);
   const [creatingGroup, setCreatingGroup] = useState(false);
 
   // Delete group (confirmation modal)
@@ -143,7 +140,7 @@ export function FilesSidebar({ onFilterChange, onFavouriteClick, onGroupClick }:
       loadGroups();
       setGroupModalOpen(false);
       setNewGroupName('');
-      setNewGroupColor(GROUP_COLORS[0]);
+      setNewGroupColor(SWATCHES[0].light);
     } catch { toast.error('Group failed', 'Failed to create group.'); }
     setCreatingGroup(false);
   };
@@ -370,16 +367,7 @@ export function FilesSidebar({ onFilterChange, onFavouriteClick, onGroupClick }:
             </div>
             <div>
               <Label className="text-xs font-medium text-muted-foreground mb-1.5 block">Color</Label>
-              <div className="flex flex-wrap gap-2">
-                {GROUP_COLORS.map((c) => (
-                  <button
-                    key={c}
-                    onClick={() => setNewGroupColor(c)}
-                    className={`size-7 rounded-full transition-all ${newGroupColor === c ? 'ring-2 ring-offset-2 ring-foreground scale-110' : 'hover:scale-110'}`}
-                    style={{ background: c }}
-                  />
-                ))}
-              </div>
+              <SwatchPicker value={newGroupColor} onChange={setNewGroupColor} label="Group colour" />
             </div>
           </div>
           <DialogFooter>

@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { api, API_BASE } from '@/api/client';
 import { onMaintenance, type MaintenanceInfo } from '@/lib/maintenance-signal';
+import { setSentryUser } from '@/lib/sentry';
 
 /**
  * The signed-in user and their workspace list, fetched once at boot.
@@ -102,8 +103,15 @@ export const useSession = create<SessionState>((set) => ({
       body = null;
     }
     const me = body as MeResponse | null;
-    if (res.ok && me?.ok && me.user) set({ user: me.user });
-    else if (res.status === 401) set({ user: null });
+    // Crash reports carry the opaque account id (never the email or name);
+    // a 401 clears it so a shared machine's next user is not tagged.
+    if (res.ok && me?.ok && me.user) {
+      set({ user: me.user });
+      setSentryUser(me.user.id);
+    } else if (res.status === 401) {
+      set({ user: null });
+      setSentryUser(null);
+    }
     return { ok: res.ok, status: res.status, json: async () => body };
   },
 

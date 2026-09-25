@@ -179,9 +179,16 @@ describe('checkout thank-you page', () => {
     ]) {
       expect(hrefs).toContain(url);
     }
+    // The Microsoft badge is no longer an <img>: it is the official
+    // <ms-store-badge> web component, which renders its artwork inside a shadow
+    // root that jsdom never populates (the script is never fetched here). Assert
+    // the element and its product id instead.
     expect([...container!.querySelectorAll('img')].map((img) => img.getAttribute('src'))).toEqual([
-      '/badges/appstore.svg', '/badges/googleplay.svg', '/badges/mac-appstore.svg', '/badges/msstore.svg',
+      '/badges/appstore.svg', '/badges/googleplay.svg', '/badges/mac-appstore.svg',
     ]);
+    const msBadge = container!.querySelector('ms-store-badge');
+    expect(msBadge).not.toBeNull();
+    expect(msBadge!.getAttribute('productid')).toBe('9p1q4pm856st');
     // Every answer is in the page at rest, so find-in-page reaches it.
     expect(container!.querySelectorAll('details').length).toBe(8);
     expect(container!.textContent).toContain('When does my new storage appear?');

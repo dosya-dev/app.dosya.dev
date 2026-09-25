@@ -71,4 +71,13 @@ describe('web CSP invariants', () => {
     expect(directive('script-src')).toContain('https://static.cloudflareinsights.com');
     expect(directive('connect-src')).toContain('https://cloudflareinsights.com');
   });
+
+  // Crash reports are a fetch from the browser to the Sentry ingest host
+  // (src/lib/sentry.ts). Nothing in a build or a jsdom test can see a CSP
+  // refusal; the error page would keep saying "We've been notified" while
+  // every report died at the browser.
+  it('allows crash reports to reach the Sentry ingest host, and only that host', () => {
+    expect(directive('connect-src')).toContain('https://o4512130123825152.ingest.de.sentry.io');
+    expect(directive('connect-src')).not.toContain('*.sentry.io');
+  });
 });

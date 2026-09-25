@@ -17,6 +17,7 @@ import { timeAgo, avatarColor, initials, activityLink } from '@/lib/helpers';
 import {
   ACTIVITY_CATEGORIES as CATEGORIES, CATEGORY_ACTIONS, actionPhrase, parseUA,
 } from '@/lib/activity-catalog.generated';
+import { activityColor } from '@/lib/palette';
 
 // ── Types ─────────────────────────────────────────────────
 
@@ -53,35 +54,6 @@ interface Member { id: string; name: string; email: string; avatar_url: string |
 interface Pagination { page: number; per_page: number; total: number; total_pages: number }
 
 // ── Constants ─────────────────────────────────────────────
-
-const ACTION_COLORS: Record<string, string> = {
-  file_uploaded: '#22c55e', file_version_uploaded: '#22c55e', folder_created: '#22c55e',
-  member_joined: '#22c55e', workspace_created: '#22c55e', comment_added: '#22c55e',
-  file_request_uploaded: '#22c55e',
-  file_downloaded: '#2563EB', file_restored: '#2563EB', file_request_created: '#2563EB',
-  file_deleted: '#ef4444', file_permanently_deleted: '#ef4444', folder_deleted: '#ef4444',
-  member_removed: '#ef4444', member_left: '#ef4444', link_revoked: '#ef4444',
-  invite_revoked: '#ef4444', file_request_revoked: '#ef4444', comment_deleted: '#ef4444',
-  role_deleted: '#ef4444',
-  file_renamed: '#D97706', file_moved: '#D97706', file_locked: '#D97706',
-  file_hidden: '#D97706', folder_renamed: '#D97706', folder_moved: '#D97706',
-  member_invited: '#D97706', ownership_transferred: '#D97706', member_anchor_updated: '#D97706',
-  member_role_changed: '#D97706',
-  workspace_updated: '#D97706', workspace_settings_changed: '#D97706', role_updated: '#D97706',
-  file_shared: '#7C3AED', file_shared_email: '#7C3AED', folder_shared: '#7C3AED',
-  file_copied: '#706e69',
-  // New action codes (richer activity feed)
-  file_unlocked: '#22c55e', folder_unlocked: '#22c55e', file_unhidden: '#22c55e',
-  folder_unhidden: '#22c55e', role_created: '#22c55e', favourite_added: '#22c55e',
-  group_created: '#22c55e', group_item_added: '#22c55e',
-  sync_session_completed: '#22c55e',
-  folder_locked: '#D97706', folder_hidden: '#D97706', comment_edited: '#D97706',
-  group_updated: '#D97706', profile_updated: '#D97706', plan_changed: '#D97706',
-  files_batch_deleted: '#ef4444', favourite_removed: '#ef4444', group_deleted: '#ef4444',
-  group_item_removed: '#ef4444', dmca_reported: '#ef4444', sync_session_failed: '#ef4444',
-  share_link_unlocked: '#7C3AED',
-  sync_session_started: '#2563EB',
-};
 
 // ── Page ──────────────────────────────────────────────────
 
@@ -235,7 +207,7 @@ function ActivityRow({ activity: a }: { activity: Activity }) {
   const [open, setOpen] = useState(false);
   const [avatarFailed, setAvatarFailed] = useState(false);
   const label = actionPhrase(a.action);
-  const color = ACTION_COLORS[a.action] ?? '#706e69';
+  const color = activityColor(a.action);
   // `meta` is the parsed, possibly server-gated metadata (Task 3); fall back
   // to the legacy `metadata` field for rows/responses that predate it.
   const meta = a.meta ?? a.metadata;

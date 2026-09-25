@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { ArrowUpDown } from 'lucide-react';
 import { ThemeSwitcher } from '../core/ThemeSwitcher';
+import { Logo } from '../../BrandLogo';
 
 // Mirrors the real desktop app's macOS TitleBar: traffic lights at the left,
 // the dosya.dev logo + wordmark centered, and the LAN-transfer button at the
@@ -20,7 +21,7 @@ export function DesktopShell({ children }: { children: ReactNode }) {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <img src="/logo.svg" alt="" className="size-5" width={20} height={20} />
+          <Logo className="size-5 text-(--demo-fg)" />
           <span className="text-sm font-semibold text-(--demo-fg)">dosya.dev</span>
         </div>
         <div className="flex flex-1 items-center justify-end">

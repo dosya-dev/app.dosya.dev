@@ -2,6 +2,7 @@ import { Component, type ErrorInfo, type ReactNode } from 'react';
 import { ArrowLeft, ArrowRight, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { TourStep } from './tour-steps';
+import { Logo } from "@/components/brand/logo";
 
 /**
  * Isolates the demo preview from the rest of the page.
@@ -63,7 +64,7 @@ export function TourLayout({
     <div className="min-h-screen bg-background flex flex-col">
       <header className="flex items-center justify-between px-6 py-5">
         <span className="inline-flex items-center gap-2 font-mono italic font-semibold">
-          <img src="/logo.svg" alt="" className="h-6 w-6" />
+          <Logo className="h-6 w-6" />
           dosya.dev
         </span>
         <button

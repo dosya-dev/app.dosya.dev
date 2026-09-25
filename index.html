@@ -4,9 +4,13 @@
     <meta charset="UTF-8" />
     <link rel="icon" href="/favicon.ico" sizes="any" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <link rel="apple-touch-icon" href="/favicon.svg" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- The dashboard is not a search result. Every route serves this same
+         shell, so without this each one is a thin duplicate titled "dosya.dev".
+         See public/robots.txt and public/_headers for the other two layers. -->
+    <meta name="robots" content="noindex, nofollow" />
     <title>dosya.dev</title>
     <meta name="description" content="dosya.dev - secure file storage, sharing and requests." />
     <script src="/theme-init.js"></script>

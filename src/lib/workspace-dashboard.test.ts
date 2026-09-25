@@ -7,12 +7,22 @@ const ws = (id: string, used_bytes: number): OwnedWorkspace => ({
 });
 
 describe('storageColor', () => {
-  it('is green up to 70%, amber up to 90%, red above', () => {
-    expect(storageColor(0)).toBe('#22c55e');
-    expect(storageColor(70)).toBe('#22c55e');
-    expect(storageColor(71)).toBe('#D97706');
-    expect(storageColor(90)).toBe('#D97706');
-    expect(storageColor(91)).toBe('#ef4444');
+  // The thresholds are the contract; the hexes come from the shared palette
+  // (packages/brand) and are asserted there, so this checks the banding and that each
+  // band is a distinct colour rather than pinning three literals in four places.
+  it('bands at 70 and 90, with a distinct colour per band', () => {
+    const ok = storageColor(0);
+    expect(storageColor(70)).toBe(ok);
+    const warn = storageColor(71);
+    expect(storageColor(90)).toBe(warn);
+    const critical = storageColor(91);
+    expect(new Set([ok, warn, critical]).size).toBe(3);
+  });
+
+  it('has a colour for each band in both schemes', () => {
+    for (const scheme of ['light', 'dark'] as const) {
+      for (const pct of [0, 80, 95]) expect(storageColor(pct, scheme)).toMatch(/^#[0-9a-f]{6}$/i);
+    }
   });
 });
 

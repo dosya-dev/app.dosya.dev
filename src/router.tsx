@@ -1,8 +1,10 @@
 import { lazy } from 'react';
-import { createBrowserRouter, Navigate } from 'react-router-dom';
+import { createBrowserRouter as createBrowserRouterBase, Navigate } from 'react-router-dom';
+import { wrapCreateBrowserRouterV7 } from '@sentry/react';
 import { DashboardLayout } from '@/components/layout/dashboard-layout';
 import { RootLayout } from '@/components/layout/root-layout';
 import ErrorPage from '@/pages/error-page';
+import { RequirePermission } from '@/components/require-permission';
 
 // Every page is a lazy chunk: the entry bundle carries only the shell
 // (layout, sidebar, boot gate), so first paint doesn't wait for feature code
@@ -58,6 +60,10 @@ const NotFoundPage = lazy(() => import('@/pages/not-found'));
 const WelcomePage = lazy(() => import('@/pages/welcome'));
 const EditorPage = lazy(() => import('@/pages/editor'));
 
+// Navigation spans and route names for crash reports. Requires Sentry.init to
+// have run already - main.tsx imports instrument.ts before this module.
+const createBrowserRouter = wrapCreateBrowserRouterV7(createBrowserRouterBase);
+
 export const router = createBrowserRouter([
   {
     element: <RootLayout />,
@@ -75,7 +81,16 @@ export const router = createBrowserRouter([
       { path: '/support', element: <SupportPage /> },
       { path: '/support/:id', element: <SupportTicketPage /> },
       { path: '/uploads', element: <UploadsPage /> },
-      { path: '/settings', element: <SettingsPage /> },
+      {
+        path: '/settings',
+        // Hiding the sidebar link never stopped anyone typing the URL. See
+        // components/require-permission.tsx.
+        element: (
+          <RequirePermission perm="access_settings">
+            <SettingsPage />
+          </RequirePermission>
+        ),
+      },
       { path: '/profile', element: <ProfilePage /> },
       { path: '/api-analytics', element: <ApiAnalyticsPage /> },
       { path: '/teams', element: <TeamsPage /> },

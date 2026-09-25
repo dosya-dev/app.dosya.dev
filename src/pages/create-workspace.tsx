@@ -10,16 +10,8 @@ import { useWorkspace } from '@/stores/workspace';
 import { logoutAndRedirect } from '@/lib/logout';
 import { roleLabel } from '@/lib/workspace-dashboard';
 import { LocationPicker, type RegionInfo } from '@/components/location-picker';
-
-const COLORS = [
-  { value: '#22c55e', label: 'Green' },
-  { value: '#7C3AED', label: 'Purple' },
-  { value: '#2563EB', label: 'Blue' },
-  { value: '#EA580C', label: 'Orange' },
-  { value: '#059669', label: 'Teal' },
-  { value: '#DB2777', label: 'Pink' },
-  { value: '#1A1917', label: 'Black' },
-];
+import { Logo } from "@/components/brand/logo";
+import { SwatchPicker } from '@/components/brand/swatch-picker';
 
 interface Workspace {
   id: string; name: string; icon_initials: string; icon_color: string;
@@ -160,7 +152,7 @@ export default function CreateWorkspacePage() {
       <div className="w-full max-w-md">
         {/* Logo */}
         <div className="flex items-center gap-2 justify-center mb-8">
-          <img src="/logo.svg" alt="dosya.dev" className="h-7 w-7" />
+          <Logo className="h-7 w-7" />
           <span className="font-semibold font-mono italic text-lg">dosya.dev</span>
         </div>
 
@@ -244,18 +236,7 @@ export default function CreateWorkspacePage() {
 
                   <div>
                     <Label className="text-xs font-medium text-muted-foreground mb-2 block">Color</Label>
-                    <div className="flex gap-2">
-                      {COLORS.map((c) => (
-                        <button
-                          key={c.value}
-                          type="button"
-                          onClick={() => setColor(c.value)}
-                          className={`w-7 h-7 rounded-lg transition-all ${color === c.value ? 'ring-2 ring-offset-2 ring-foreground' : ''}`}
-                          style={{ background: c.value }}
-                          aria-label={c.label}
-                        />
-                      ))}
-                    </div>
+                    <SwatchPicker value={color} onChange={setColor} shape="square" label="Workspace colour" />
                   </div>
 
                   <div>

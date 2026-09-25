@@ -5,7 +5,7 @@ self.addEventListener("push", (event) => {
   const title = data.title || "Notification";
   const options = {
     body: data.body || "",
-    icon: "/logo.svg",
+    icon: "/apple-touch-icon.png",
     badge: "/favicon.ico",
     data: { link_path: data.link_path || "/notifications", id: data.id || null },
   };

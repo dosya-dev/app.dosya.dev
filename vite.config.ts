@@ -1,10 +1,39 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+import { sentryVitePlugin } from '@sentry/vite-plugin'
 import path from 'path'
 
+// Source maps go to Sentry only when SENTRY_AUTH_TOKEN is set (a hand deploy
+// from a machine holding the token, or CI) - never from a stray
+// ~/.sentryclirc. Then, and only then, the build emits hidden maps, uploads
+// them keyed by debug id, and deletes them so dist/ ships no source. A failed
+// upload is a warning, not a failed build: the bundle is still correct, only
+// symbolication is lost. No release name is set: the plugin injects the git
+// SHA and debug ids do the matching.
+const SENTRY_UPLOAD = Boolean(process.env.SENTRY_AUTH_TOKEN)
+
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [
+    react(),
+    tailwindcss(),
+    ...(SENTRY_UPLOAD
+      ? [
+          sentryVitePlugin({
+            org: 'dosya-pty-ltd',
+            project: 'dosya-web',
+            url: 'https://de.sentry.io/',
+            authToken: process.env.SENTRY_AUTH_TOKEN,
+            telemetry: false,
+            errorHandler: (err) => console.warn(`::warning::Sentry source-map upload failed: ${err.message}`),
+            sourcemaps: { filesToDeleteAfterUpload: [path.resolve(__dirname, 'dist/**/*.map')] },
+          }),
+        ]
+      : []),
+  ],
+  build: {
+    sourcemap: SENTRY_UPLOAD ? 'hidden' : false,
+  },
   worker: {
     // The client-side HEIC decoder is a Web Worker that dynamically imports a
     // ~1.5MB libheif WASM chunk. Default worker format is 'iife', which forces

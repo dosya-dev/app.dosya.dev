@@ -11,6 +11,7 @@ import { PasswordStrengthMeter } from '@/components/password-strength-meter';
 import { validateEmail, validatePassword } from '@/lib/validation-policy.generated';
 import { TurnstileWidget, type TurnstileHandle } from '@/components/turnstile-widget';
 import { LegalLinks, LegalNotice } from '@/components/legal-notice';
+import { Logo } from "@/components/brand/logo";
 
 export default function SignUpPage() {
   const navigate = useNavigate();
@@ -114,7 +115,7 @@ export default function SignUpPage() {
             <CardContent className="pt-8 pb-6">
               <div className="text-center mb-8">
                 <a href="/" className="inline-flex items-center gap-2 font-mono italic font-semibold text-lg">
-                  <img src="/logo.svg" alt="dosya.dev logo" className="h-7 w-7" />
+                  <Logo className="h-7 w-7" />
                   dosya.dev
                 </a>
                 <h1 className="text-2xl font-bold mt-2">Create an account</h1>

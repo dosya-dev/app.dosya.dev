@@ -18,6 +18,7 @@ import { toast } from '@/lib/toast';
 import { timeAgo, initials } from '@/lib/helpers';
 import { useDocumentTitle } from '@/lib/page-title';
 import { ChevronLeft, Copy } from 'lucide-react';
+import { Logo } from "@/components/brand/logo";
 
 export default function SupportTicketPage() {
   const { id } = useParams<{ id: string }>();
@@ -172,7 +173,7 @@ export default function SupportTicketPage() {
                 ) : (
                   // Our side always shows the dosya logo - never a staff member's name/photo.
                   <div className="size-7 rounded-full bg-background border flex items-center justify-center shrink-0 mt-4">
-                    <img src="/logo.svg" alt="dosya.dev" className="size-4" />
+                    <Logo className="size-4" aria-label="dosya" />
                   </div>
                 )}
                 <div className={`flex flex-col min-w-0 ${m.author_type === 'user' ? 'items-end' : 'items-start'}`}>

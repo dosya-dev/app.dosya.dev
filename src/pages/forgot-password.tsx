@@ -6,6 +6,7 @@ import { Loader2, MailCheck } from 'lucide-react';
 import { API_BASE } from '@/api/client';
 import { PublicNav } from '@/components/public-nav';
 import { TurnstileWidget, type TurnstileHandle } from '@/components/turnstile-widget';
+import { Logo } from "@/components/brand/logo";
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState('');
@@ -50,7 +51,7 @@ export default function ForgotPasswordPage() {
             <CardContent className="pt-8 pb-6">
               <div className="text-center mb-8">
                 <a href="/" className="inline-flex items-center gap-2 font-mono italic font-semibold text-lg">
-                  <img src="/logo.svg" alt="dosya.dev logo" className="h-7 w-7" />
+                  <Logo className="h-7 w-7" />
                   dosya.dev
                 </a>
                 <h1 className="text-2xl font-bold mt-2">Reset your password</h1>

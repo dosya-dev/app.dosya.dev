@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { API_BASE, apiErrorMessage } from '@/api/client';
 import { dashboardQueryKey, dashboardQueryOptions, type DashboardActivity } from '@/lib/dashboard-query';
 import { useWorkspace } from '@/stores/workspace';
+import { usePermissions } from '@/hooks/use-permissions';
 import { useOnboarding } from '@/stores/onboarding';
 import { FirstRunHome } from '@/components/onboarding/first-run-home';
 import { shouldShowFirstRun } from '@/components/onboarding/steps';
@@ -25,6 +26,13 @@ const MEMBER_COLORS = ['#22c55e', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#
 
 export default function DashboardPage() {
   const wsId = useWorkspace((s: { activeId: string }) => s.activeId);
+  // Without `view_activity` the server narrows this panel to the member's own
+  // rows, so the card says so and drops the "All" link - which leads to
+  // /activity, the one door that still answers 403 for the want of it. Same
+  // contract as everywhere else: this hides a door known to be locked, it
+  // does not decide what is allowed (see use-permissions.ts).
+  const { can } = usePermissions();
+  const canViewActivity = can('view_activity');
   const onbDismissed = useOnboarding((s) => s.dismissed);
   const refreshOnboarding = useOnboarding((s) => s.refresh);
   const queryClient = useQueryClient();
@@ -257,8 +265,10 @@ export default function DashboardPage() {
           {/* Activity feed */}
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-semibold">Activity</CardTitle>
-              <Link to="/activity" className="text-xs text-muted-foreground hover:text-foreground">All</Link>
+              <CardTitle className="text-sm font-semibold">{canViewActivity ? 'Activity' : 'Your activity'}</CardTitle>
+              {canViewActivity && (
+                <Link to="/activity" className="text-xs text-muted-foreground hover:text-foreground">All</Link>
+              )}
             </CardHeader>
             <CardContent className="max-h-[360px] overflow-y-auto">
               {data.activity.length === 0 ? (

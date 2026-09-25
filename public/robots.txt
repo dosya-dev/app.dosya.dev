@@ -1,0 +1,21 @@
+# app.dosya.dev is the signed-in dashboard. Nothing here should be indexed:
+# every route renders the same SPA shell, so a crawler sees dozens of thin,
+# near-identical pages titled "dosya.dev" competing with the real marketing
+# site at dosya.dev.
+#
+# Crawling is deliberately ALLOWED. The work is done by noindex, which is in
+# index.html as a meta tag and in _headers as X-Robots-Tag. "Disallow: /" would
+# be actively counterproductive here: a blocked URL is never fetched, so the
+# noindex is never seen, and any URL already in the index stays there as
+# "Indexed, though blocked by robots.txt". Blocking and de-indexing are opposite
+# instructions and the block wins. Crawl budget is not a concern for a handful
+# of SPA routes that all return one small shell.
+#
+# Once Search Console shows nothing left indexed for this host, a Disallow can
+# be added to save the crawl - but not before.
+#
+# This file must exist as a real asset: _redirects sends /* to /index.html with
+# a 200, so without it a request for /robots.txt was answered with the SPA's own
+# HTML (content-type: text/html), which is not a robots file at all.
+User-agent: *
+Allow: /

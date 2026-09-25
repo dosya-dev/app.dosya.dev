@@ -191,3 +191,32 @@
   --demo-primary-fg: oklch(0 0 0);
   --demo-sidebar: oklch(0.22 0 0);
 }
+
+/* ── Mobile replica typography ─────────────────────────────
+   The real mobile app sets Space Grotesk (UI) and Space Mono (labels) via
+   @expo-google-fonts, and the site already self-hosts both as variable faces
+   in brand.css, so the replica just names them.
+
+   It used to redeclare them here as four static weights out of /fonts/. That
+   was a second copy of the same two families, 132 KB of it, and it was also a
+   bug: those declarations carried no unicode-range, so for a Turkish letter
+   the browser could pick a latin-only file, find no glyph, and fall back to
+   the system sans mid-word - the exact failure brand.css's latin-ext subset
+   exists to prevent. */
+.demo-mobile {
+  font-family: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+}
+.demo-mobile .font-mono {
+  font-family: "Space Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+/* The Backup engine's running halo (CoverageRing's Halo in the app): two
+   soft rings breathing out from the core, a second apart. */
+@keyframes demo-halo {
+  from { transform: scale(1); opacity: 0.3; }
+  to { transform: scale(1.45); opacity: 0; }
+}
+.demo-halo { animation: demo-halo 2s linear infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .demo-halo { animation: none; opacity: 0.15; }
+}

@@ -55,7 +55,11 @@ export type CartPayload = {
     /** Set once the customer has been shown what a smaller plan replaces. */
     confirm_downgrade?: boolean;
 };
-export type CouponInfo = { code: string; type: "percent" | "amount"; value: number; currency: string | null; duration: string; duration_in_months: number | null };
+export type CouponInfo = {
+    code: string; type: "percent" | "amount"; value: number; currency: string | null; duration: string; duration_in_months: number | null;
+    /** Billing periods the code may be used with; null = any. Absent from an API older than this field. */
+    intervals?: ("month" | "year")[] | null;
+};
 
 export const getCatalog = () => api<{ ok: true } & Catalog>("/api/billing/catalog");
 // no-store: after checkout/plan changes we refetch to pick up webhook-settled
@@ -78,8 +82,9 @@ export const updateSubscription = (cart: CartPayload) =>
     api<{ ok: true }>("/api/billing/subscription", { method: "POST", body: JSON.stringify(cart) });
 export const previewSubscription = (cart: CartPayload) =>
     api<{ ok: true; amount_due: number; currency: string }>("/api/billing/preview", { method: "POST", body: JSON.stringify(cart) });
-export const validateCoupon = (code: string) =>
-    api<{ ok: true } & CouponInfo>("/api/billing/coupon/validate", { method: "POST", body: JSON.stringify({ code }) });
+/** Given the cart's interval, a code limited to another billing period is refused here rather than at checkout. */
+export const validateCoupon = (code: string, interval?: "month" | "year") =>
+    api<{ ok: true } & CouponInfo>("/api/billing/coupon/validate", { method: "POST", body: JSON.stringify({ code, interval }) });
 
 export interface CancelResult {
     ok: boolean;

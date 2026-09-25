@@ -9,6 +9,7 @@ import { PublicNav } from '@/components/public-nav';
 import { TurnstileWidget, type TurnstileHandle } from '@/components/turnstile-widget';
 import { LegalNotice } from '@/components/legal-notice';
 import { pendingPostAuthPath } from '@/lib/redemption-claim';
+import { Logo } from "@/components/brand/logo";
 
 // OAuth callbacks redirect here as /login?error=<provider>_<reason> on failure.
 const PROVIDER_LABELS: Record<string, string> = { github: 'GitHub', google: 'Google', apple: 'Apple' };
@@ -119,7 +120,7 @@ export default function LoginPage() {
           <CardContent className="pt-8 pb-6">
             <div className="text-center mb-8">
               <a href="/" className="inline-flex items-center gap-2 font-mono italic font-semibold text-lg">
-                <img src="/logo.svg" alt="dosya.dev logo" className="h-7 w-7" />
+                <Logo className="h-7 w-7" />
                 dosya.dev
               </a>
               <h1 className="text-2xl font-bold mt-2">Welcome back</h1>

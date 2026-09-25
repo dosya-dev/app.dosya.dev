@@ -25,6 +25,7 @@ import { humanSize, regionLabel } from '@/lib/helpers';
 import { DeleteWorkspaceDialog } from '@/components/delete-workspace-dialog';
 import { usePermissions } from '@/hooks/use-permissions';
 import { clearShareDefaultsCache } from '@/lib/share-defaults';
+import { SwatchPicker } from '@/components/brand/swatch-picker';
 
 
 // ── Types ──────────────────────────────────────────────────
@@ -77,7 +78,6 @@ interface WsData {
 const NO_PERM = (what: string) => `You don't have permission to change ${what}.`;
 
 
-const ICON_COLORS = ['#22c55e', '#7C3AED', '#3b82f6', '#f59e0b', '#06b6d4', '#ec4899', '#1a1917'];
 /**
  * The permission matrix on this page.
  *
@@ -313,9 +313,7 @@ export function WorkspaceInfoSection({ data, wsId, onSaved }: { data: WsData; ws
                 </div>
                 <div className="flex items-center gap-1.5">
                   <Input value={initials} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setInitials(e.target.value.slice(0, 3).toUpperCase())} className="h-7 text-xs w-14" maxLength={3} placeholder="AB" />
-                  {ICON_COLORS.map((c) => (
-                    <button key={c} onClick={() => setIconColor(c)} className={`size-5 rounded-full ${iconColor === c ? 'ring-2 ring-offset-1 ring-foreground' : ''}`} style={{ background: c }} />
-                  ))}
+                  <SwatchPicker value={iconColor} onChange={setIconColor} size="sm" disabled={!canIcon} label="Workspace colour" />
                   <SaveBtn loading={saving === 'initials'} onClick={() => save({ icon_initials: initials, icon_color: iconColor }, 'initials')} disabled={!canIcon} disabledReason={NO_PERM('the workspace icon')} />
                 </div>
               </div>

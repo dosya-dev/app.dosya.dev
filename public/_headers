@@ -15,8 +15,20 @@
 # guidance. Not allowed on purpose: the inline bot JavaScript-detections
 # snippet Cloudflare also injects; it needs a per-request nonce, which a
 # static headers file cannot mint, and 'unsafe-inline' would gut script-src.
+# get.microsoft.com is in four directives for one component: the official
+# <ms-store-badge> in the "Get the apps" row on /checkout/success
+# (src/components/ms-store-badge.tsx). It loads its script from there
+# (script-src), draws its artwork from get.microsoft.com/images (img-src),
+# always appends a 0x0 iframe to get.microsoft.com/iframe.html (frame-src), and
+# in window-mode="direct" fetches the Windows installer (connect-src). Miss one
+# and the badge silently does not render. Keep in step with the same four
+# entries in the marketing site's public/_headers.
+# connect-src also names the Sentry ingest host (src/lib/sentry.ts): crash
+# reports are a POST from the browser, and without it every report would be
+# refused at the CSP while the app kept telling users "We've been notified".
 /*
-  Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://challenges.cloudflare.com https://docs.dosya.dev https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline' blob:; img-src 'self' data: blob: https://api.dosya.dev; media-src 'self' blob: data: https://api.dosya.dev; font-src 'self' blob: data:; connect-src 'self' https://api.dosya.dev https://challenges.cloudflare.com https://docs.dosya.dev https://0b25394b353c95a526538e19706809e8.r2.cloudflarestorage.com https://0b25394b353c95a526538e19706809e8.eu.r2.cloudflarestorage.com https://cloudflareinsights.com; frame-src 'self' blob: https://api.dosya.dev https://challenges.cloudflare.com https://docs.dosya.dev; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'self'; form-action 'self'
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://challenges.cloudflare.com https://docs.dosya.dev https://get.microsoft.com https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline' blob:; img-src 'self' data: blob: https://api.dosya.dev https://get.microsoft.com; media-src 'self' blob: data: https://api.dosya.dev; font-src 'self' blob: data:; connect-src 'self' https://api.dosya.dev https://challenges.cloudflare.com https://docs.dosya.dev https://get.microsoft.com https://0b25394b353c95a526538e19706809e8.r2.cloudflarestorage.com https://0b25394b353c95a526538e19706809e8.eu.r2.cloudflarestorage.com https://cloudflareinsights.com https://o4512130123825152.ingest.de.sentry.io; frame-src 'self' blob: https://api.dosya.dev https://challenges.cloudflare.com https://docs.dosya.dev https://get.microsoft.com; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'self'; form-action 'self'
+  X-Robots-Tag: noindex, nofollow
   X-Content-Type-Options: nosniff
   Referrer-Policy: strict-origin-when-cross-origin
   Strict-Transport-Security: max-age=31536000; includeSubDomains

@@ -5,6 +5,7 @@ import { api, ApiError } from '@/api/client';
 import { getBillingStatus, syncBilling, type BillingStatus } from '@/api/billing';
 import { buttonVariants, Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
+import { MsStoreBadge } from '@/components/ms-store-badge';
 import { formatBytes, formatGigabytes } from '@/lib/billing/cart-math';
 import { INTEGRATIONS, type IntegrationSlug } from '@/lib/integrations';
 import { clearStorageBeforePurchase, readStorageBeforePurchase, takeRecentPlanChange } from '@/lib/checkout-return';
@@ -709,12 +710,15 @@ function ConnectSection() {
   );
 }
 
-/** Badges link to the product pages on the site, not to store listings. */
+/**
+ * Static badges link to the product pages on the site, not to store listings.
+ * The Microsoft one is not here: it is the real <ms-store-badge> web component
+ * now (see ../components/ms-store-badge), which goes to the Store itself.
+ */
 const BADGES: Array<{ src: string; alt: string; href: string; width: number }> = [
   { src: '/badges/appstore.svg', alt: 'Download on the App Store', href: 'https://dosya.dev/mobile/', width: 114 },
   { src: '/badges/googleplay.svg', alt: 'Get it on Google Play', href: 'https://dosya.dev/mobile/', width: 129 },
   { src: '/badges/mac-appstore.svg', alt: 'Download on the Mac App Store', href: 'https://dosya.dev/desktop/', width: 149 },
-  { src: '/badges/msstore.svg', alt: 'Get it from Microsoft', href: 'https://dosya.dev/desktop/', width: 139 },
 ];
 
 function AppsSection() {
@@ -734,6 +738,7 @@ function AppsSection() {
               <img src={badge.src} alt={badge.alt} width={badge.width} height={38} className="h-[38px] w-auto" loading="lazy" />
             </a>
           ))}
+          <MsStoreBadge />
         </div>
       </div>
     </section>

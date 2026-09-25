@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { ArrowRight, Sun, Moon } from 'lucide-react';
 import { withThemeSweep } from '@/lib/theme';
 import { useSessionProbe } from '@/hooks/use-session-probe';
+import { Logo } from "@/components/brand/logo";
 
 // Marketing navbar for public pages (login, etc.), ported from the Astro site's Menu.
 // Centered rounded card, original logo + mono-italic wordmark, Pricing, CTA, theme toggle.
@@ -22,7 +23,7 @@ export function PublicNav({ cta = 'login' }: { cta?: 'login' | 'signup' }) {
   return (
     <nav className="max-w-[800px] mx-auto flex items-center justify-between px-6 py-3 bg-card border rounded-lg shadow-sm">
       <a href="/" className="flex items-center gap-2 font-mono italic font-semibold text-lg">
-        <img src="/logo.svg" alt="dosya.dev logo" className="h-8 w-8" />
+        <Logo className="h-8 w-8" />
         dosya.dev
       </a>
 

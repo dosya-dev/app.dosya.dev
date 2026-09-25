@@ -1,4 +1,5 @@
 import { actionPhrase } from "@/lib/activity-catalog.generated";
+import { EXTENSION_FAMILY, FILE_FAMILY, SWATCH_BY_NAME, defaultSwatch } from '@/lib/palette';
 
 /**
  * `now` (unix seconds) is injectable so the formatting is testable.
@@ -74,22 +75,19 @@ export function humanSizeShort(b: number): string {
   return (b / 1073741824).toFixed(1) + ' GB';
 }
 
-const EXT_COLORS: Record<string, string> = {
-  mp4: '#EF4444', mov: '#EF4444', avi: '#EF4444', mkv: '#EF4444', webm: '#EF4444',
-  fig: '#7C3AED', sketch: '#7C3AED', xd: '#7C3AED',
-  pdf: '#2563EB', doc: '#D97706', docx: '#D97706', pptx: '#D97706', ppt: '#D97706',
-  xls: '#059669', xlsx: '#059669', csv: '#374151',
-  zip: '#0891B2', rar: '#0891B2',
-  png: '#059669', jpg: '#059669', jpeg: '#059669', gif: '#059669', svg: '#059669', webp: '#059669',
-  heic: '#059669', heif: '#059669',
-};
-
 export function extOf(name: string): string {
   return name.includes('.') ? name.split('.').pop()!.toLowerCase() : '';
 }
 
-export function colorFor(name: string): string {
-  return EXT_COLORS[extOf(name)] ?? '#706E69';
+/**
+ * File-type colour. The extension-to-family map and the family-to-colour map both live
+ * in the shared palette now, so a `.xlsx` and a "spreadsheet" can no longer be coloured
+ * by two different lookups that disagree.
+ */
+export function colorFor(name: string, scheme: 'light' | 'dark' = 'light'): string {
+  const family = EXTENSION_FAMILY[extOf(name)] ?? 'other';
+  const swatch = SWATCH_BY_NAME[FILE_FAMILY[family] ?? 'graphite'];
+  return swatch[scheme];
 }
 
 export function labelFor(name: string): string {
@@ -209,11 +207,12 @@ export function hiddenTitle(hiddenMode: string | null | undefined): string {
     : 'Hidden from some people. Not included in share links.';
 }
 
-const AVATAR_COLORS = ['#7C3AED', '#059669', '#2563EB', '#EA580C', '#DB2777', '#0891B2', '#D97706'];
-export function avatarColor(userId: string): string {
-  let hash = 0;
-  for (let i = 0; i < userId.length; i++) hash = ((hash << 5) - hash + userId.charCodeAt(i)) | 0;
-  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
+/**
+ * Avatar colour, from the shared identity swatches. Keyed on the user id so it is stable
+ * for a person across sessions and devices.
+ */
+export function avatarColor(userId: string, scheme: 'light' | 'dark' = 'light'): string {
+  return defaultSwatch(userId)[scheme];
 }
 
 export function initials(name: string | null | undefined): string {
