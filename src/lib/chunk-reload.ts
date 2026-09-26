@@ -1,3 +1,5 @@
+import { lazy, type ComponentType, type LazyExoticComponent } from 'react';
+
 /**
  * Recovery for the stale-chunk failure that follows every deploy.
  *
@@ -88,4 +90,56 @@ export function recoverFromChunkErrorInBrowser(err: unknown): boolean {
     now: () => Date.now(),
     storage: window.sessionStorage,
   });
+}
+
+/**
+ * Bridge over the gap between committing a reload and the reload landing.
+ *
+ * `window.location.reload()` is queued, not immediate, so React gets at least
+ * one more render after the handler above decides to recover. That render used
+ * to crash: Vite's preload helper rethrows a failed dynamic import only while
+ * the `vite:preloadError` event is un-prevented, and our handler prevents it
+ * once a reload is committed. The helper's `.catch()` then RESOLVES the import
+ * with `undefined`, React.lazy reads `.default` off that, and the router's
+ * error boundary paints "Something went wrong" for the few ms before the tab
+ * reloads - the exact symptom this module exists to prevent, arriving through
+ * the recovery path itself. It also reported a TypeError to Sentry on every
+ * successful recovery, so each deploy paged us for a bug that had healed.
+ *
+ * Never settling is the fix: React keeps the Suspense fallback on screen until
+ * the reload replaces the document. The promise is collected with the page.
+ */
+export function resolveLazyModule<T>(mod: T | undefined): Promise<T> {
+  if (mod === undefined) return new Promise<never>(() => {});
+  return Promise.resolve(mod);
+}
+
+/**
+ * `React.lazy` for a default-exported chunk, with the recovery bridge applied.
+ * Use this instead of `lazy` directly so a post-deploy reload never surfaces as
+ * a render crash. Chunks behind a named export need the same `resolveLazyModule`
+ * step before their picker runs, since the picker would otherwise be the thing
+ * that reads a property off undefined.
+ */
+export function lazyChunk<P>(
+  factory: () => Promise<{ default: ComponentType<P> }>,
+): LazyExoticComponent<ComponentType<P>> {
+  return lazy(() => factory().then(resolveLazyModule));
+}
+
+/**
+ * The same bridge for a chunk whose component is a NAMED export.
+ *
+ * The picker has to live here rather than next to the `import()` call. Vite's
+ * build transform absorbs a `.then()` written alongside `import()` into the
+ * preload helper's own callback, which would run the picker BEFORE the helper
+ * swallows a stale-chunk error - so the picker, not React, becomes the thing
+ * that reads a property off undefined. Passing the factory in from another
+ * module keeps the chain outside the helper, where it belongs.
+ */
+export function lazyChunkNamed<M, P>(
+  factory: () => Promise<M>,
+  pick: (mod: M) => ComponentType<P>,
+): LazyExoticComponent<ComponentType<P>> {
+  return lazy(() => factory().then(resolveLazyModule).then((mod) => ({ default: pick(mod) })));
 }

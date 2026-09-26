@@ -42,7 +42,13 @@ export function applyTheme(pref: ThemePref): void {
 
 /** lib.dom types startViewTransition as always-present; it isn't, so read it
  *  through a shape that admits `undefined` and check before calling. */
-type StartViewTransition = (cb: () => void) => { finished: Promise<void> };
+interface ViewTransitionLike {
+  /** Rejects whenever the transition is skipped or aborted. Optional because a
+   *  partial implementation could omit it, and reading it must never throw. */
+  ready?: Promise<void>;
+  finished: Promise<void>;
+}
+type StartViewTransition = (cb: () => void) => ViewTransitionLike;
 
 function viewTransitionStarter(): StartViewTransition | null {
   if (typeof document === 'undefined') return null;
@@ -71,9 +77,17 @@ export function withThemeSweep(mutate: () => void): void {
   el.setAttribute('data-theme-sweep', '');
   const done = () => el.removeAttribute('data-theme-sweep');
   try {
-    // Rejects when a second toggle interrupts this one; that's not an error,
-    // it just means this sweep was skipped - either way, disarm the CSS.
-    start(mutate).finished.then(done, done);
+    const transition = start(mutate);
+    // `finished` settles once the DOM is updated, whether or not the animation
+    // ran, so it is what disarms the CSS. Either outcome is fine here.
+    transition.finished.then(done, done);
+    // `ready` is the one that REJECTS when this sweep is skipped (a second
+    // toggle: AbortError) or aborted (the document torn down mid-sweep:
+    // InvalidStateError). Neither is worth reporting - the theme change itself
+    // still lands - but an unclaimed rejection reaches Sentry's global handler,
+    // which is how "Transition was aborted because of invalid state" got
+    // reported from a toggle that worked. Claim it and drop it.
+    transition.ready?.catch(() => {});
   } catch {
     done();
     mutate();

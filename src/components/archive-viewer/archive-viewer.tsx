@@ -17,15 +17,19 @@
 // rail belongs to FileViewer and already shows the .zip's own details, so the
 // entry's facts go in the caption strip under the preview instead - which the
 // artboard also shows.
-import { useCallback, useEffect, useMemo, useState, Suspense, lazy } from 'react';
+import { useCallback, useEffect, useMemo, useState, Suspense } from 'react';
 import { ChevronDown, ChevronRight, Folder, Lock, Ban, Search, Download, Loader2 } from 'lucide-react';
 import { api, API_BASE, ApiError, apiErrorMessage } from '@/api/client';
 import { buildArchiveTree, type ArchiveEntry, type TreeNode } from '@/lib/archive-tree';
 import { colorFor, labelFor, humanSize, extOf, isImage, isVideo, isAudio } from '@/lib/helpers';
 import { isTextReadable } from '@/lib/text-detect';
+import { lazyChunkNamed } from '@/lib/chunk-reload';
 import type { FileItem } from '@/lib/file-types';
 
-const PdfViewer = lazy(() => import('@/components/pdf-viewer/pdf-viewer').then((m) => ({ default: m.PdfViewer })));
+const PdfViewer = lazyChunkNamed(
+  () => import('@/components/pdf-viewer/pdf-viewer'),
+  (m) => m.PdfViewer,
+);
 
 // Not exported by helpers.ts - file-viewer.tsx keeps the same local
 // definition rather than growing a shared export for one line.

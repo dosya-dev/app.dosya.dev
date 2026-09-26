@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense, type ReactNode } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef, Suspense, type ReactNode } from 'react';
 import { api, API_BASE } from '@/api/client';
 import {
   X, Download, ChevronLeft, ChevronRight, ChevronDown, Pencil, Clock, SquarePen, Loader2,
@@ -9,6 +9,7 @@ import { humanSize, extOf, isImage, isVideo, isAudio, fileIconSrc, isOfficeFile,
 import { FilePreviewImage } from '@/components/file-preview-image';
 import { ArchiveViewer } from '@/components/archive-viewer/archive-viewer';
 import { toast } from '@/lib/toast';
+import { lazyChunk } from '@/lib/chunk-reload';
 import { decodeTextBytes, isTextReadable, langFromExtension, looksBinary } from '@/lib/text-detect';
 import { parseCsvTable } from '@/lib/csv-table';
 import { parseMarkdown, type InlineToken, type MdBlock } from '@/lib/markdown';
@@ -23,7 +24,7 @@ import { OfficePreview } from '@/components/office-preview';
 import type { FileItem } from '@/lib/file-types';
 
 // pdf.js is ~350KB gzipped plus a worker - loaded only when a PDF is opened.
-const PdfViewer = lazy(() => import('@/components/pdf-viewer/pdf-viewer'));
+const PdfViewer = lazyChunk(() => import('@/components/pdf-viewer/pdf-viewer'));
 
 
 // ── Types ─────────────────────────────────────────────────

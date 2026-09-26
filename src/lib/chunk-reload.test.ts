@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { isChunkLoadError, recoverFromChunkError, CHUNK_RELOAD_MIN_INTERVAL_MS } from './chunk-reload';
+import { isChunkLoadError, recoverFromChunkError, resolveLazyModule, CHUNK_RELOAD_MIN_INTERVAL_MS } from './chunk-reload';
 
 /** The messages browsers actually produce for this failure, verbatim from a real incident. */
 const CHROME_DYNAMIC_IMPORT =
@@ -94,5 +94,93 @@ describe('recoverFromChunkError', () => {
     const d = deps({ last: 'not-a-number' });
     expect(recoverFromChunkError(new Error(CHROME_DYNAMIC_IMPORT), d)).toBe(true);
     expect(d.reload).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * Faithful model of Vite's build-time preload helper (the deployed copy is in
+ * assets/preload-helper-*.js). The detail that matters: when a listener calls
+ * preventDefault, `handlePreloadError` stops rethrowing and returns undefined,
+ * so `.catch(handlePreloadError)` RESOLVES the import with undefined.
+ */
+function vitePreload<T>(load: () => Promise<T>): Promise<T | undefined> {
+  const handlePreloadError = (err: unknown) => {
+    const event = new Event('vite:preloadError', { cancelable: true }) as Event & { payload?: unknown };
+    event.payload = err;
+    window.dispatchEvent(event);
+    if (!event.defaultPrevented) throw err;
+    return undefined;
+  };
+  return load().catch(handlePreloadError);
+}
+
+/** React's lazy initializer, which is where the production TypeError was thrown. */
+function reactLazyInitializer<T>(moduleObject: { default: T } | undefined): T {
+  return (moduleObject as { default: T }).default;
+}
+
+async function settlesWithin<T>(promise: Promise<T>, ms = 20): Promise<{ settled: boolean }> {
+  const marker = Symbol('pending');
+  const race = await Promise.race([
+    promise.then(() => 'settled' as const, () => 'settled' as const),
+    new Promise<typeof marker>((resolve) => setTimeout(() => resolve(marker), ms)),
+  ]);
+  return { settled: race !== marker };
+}
+
+describe('resolveLazyModule', () => {
+  it('passes a real module through untouched', async () => {
+    const mod = { default: () => null };
+    await expect(resolveLazyModule(mod)).resolves.toBe(mod);
+  });
+
+  // Regression: a swallowed stale-chunk error resolved the import with
+  // undefined, React read `.default` off it, and the router boundary painted
+  // "Something went wrong" in the few ms before location.reload() landed.
+  it('never settles when the preload helper swallowed a stale-chunk error', async () => {
+    const { settled } = await settlesWithin(resolveLazyModule(undefined));
+    expect(settled).toBe(false);
+  });
+
+  it('keeps React.lazy from reading .default off undefined after a recovery', async () => {
+    const listener = (event: Event) => {
+      const err = (event as Event & { payload?: unknown }).payload ?? event;
+      // Stand in for recoverFromChunkErrorInBrowser returning true: a reload is
+      // now committed, so the handler suppresses the error.
+      if (isChunkLoadError(err)) event.preventDefault();
+    };
+    window.addEventListener('vite:preloadError', listener);
+    try {
+      const staleChunk = () => Promise.reject(new Error(CHROME_DYNAMIC_IMPORT));
+      const factory = () => vitePreload(staleChunk).then(resolveLazyModule).then(reactLazyInitializer);
+      const { settled } = await settlesWithin(factory());
+      expect(settled).toBe(false);
+    } finally {
+      window.removeEventListener('vite:preloadError', listener);
+    }
+  });
+  
+  // The named-export case has an extra trap: the picker reads a property off
+  // the module, so if it runs on a swallowed (undefined) module it throws the
+  // same TypeError the bridge exists to prevent. It must never run.
+  it('never runs a named-export picker on a swallowed stale-chunk module', async () => {
+    const pick = vi.fn((m: { PdfViewer: unknown }) => m.PdfViewer);
+    const listener = (event: Event) => {
+      const err = (event as Event & { payload?: unknown }).payload ?? event;
+      if (isChunkLoadError(err)) event.preventDefault();
+    };
+    window.addEventListener('vite:preloadError', listener);
+    try {
+      const staleChunk = () => Promise.reject(new Error(CHROME_DYNAMIC_IMPORT));
+      const { settled } = await settlesWithin(
+        vitePreload(staleChunk)
+          .then(resolveLazyModule)
+          .then((m) => ({ default: pick(m as unknown as { PdfViewer: unknown }) })),
+      );
+      expect(settled).toBe(false);
+      expect(pick).not.toHaveBeenCalled();
+    } finally {
+      window.removeEventListener('vite:preloadError', listener);
+    }
   });
 });

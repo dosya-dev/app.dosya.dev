@@ -63,14 +63,33 @@ describe('withThemeSweep', () => {
   // reach it through a loose shape to stub a two-line fake and to delete it.
   const doc = document as unknown as { startViewTransition?: unknown };
 
-  /** Stub the API and hand back the promise resolver so a test can end the transition. */
+  /**
+   * Stub the API and hand back the resolver so a test can end the transition.
+   *
+   * Shaped like a REAL ViewTransition, verified against Chromium 151: when a
+   * transition is skipped (a second toggle) or aborted (the document torn down
+   * mid-sweep), `ready` REJECTS while `finished` still RESOLVES. The earlier
+   * fake returned only `finished` and rejected it on interruption, which is the
+   * opposite of what browsers do, so it passed against code that could not work.
+   */
   function stubViewTransition(outcome: 'finish' | 'interrupt' = 'finish') {
     let settle = () => {};
     doc.startViewTransition = (cb: () => void) => {
       cb();
+      let rejectReady: (reason: unknown) => void = () => {};
+      const ready = new Promise<void>((resolve, reject) => {
+        if (outcome === 'finish') resolve();
+        else rejectReady = reject;
+      });
       return {
-        finished: new Promise<void>((resolve, reject) => {
-          settle = outcome === 'finish' ? resolve : () => reject(new Error('skipped'));
+        ready,
+        finished: new Promise<void>((resolve) => {
+          settle = () => {
+            if (outcome === 'interrupt') {
+              rejectReady(Object.assign(new Error('Transition was skipped'), { name: 'AbortError' }));
+            }
+            resolve();
+          };
         }),
       };
     };
@@ -101,8 +120,36 @@ describe('withThemeSweep', () => {
     const interrupt = stubViewTransition('interrupt');
     withThemeSweep(() => {});
     interrupt();
-    // A rejected finished promise must still clean up, or the wipe rules stay
+    // An interrupted transition must still clean up, or the wipe rules stay
     // armed and catch every later view transition.
+    await vi.waitFor(() => expect(document.documentElement.hasAttribute('data-theme-sweep')).toBe(false));
+  });
+
+  // Sentry 149371532's sibling: the browser rejects `ready` on every skipped or
+  // aborted transition. withThemeSweep only ever claimed `finished`, so that
+  // rejection went unhandled and Sentry's global handler reported it as
+  // "InvalidStateError: Transition was aborted because of invalid state" even
+  // though the theme change itself had succeeded.
+  it('claims the ready rejection so it never reaches the global handler', async () => {
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => { unhandled.push(reason); };
+    process.on('unhandledRejection', onUnhandled);
+    try {
+      const interrupt = stubViewTransition('interrupt');
+      withThemeSweep(() => {});
+      interrupt();
+      await new Promise((r) => setTimeout(r, 20));
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off('unhandledRejection', onUnhandled);
+    }
+  });
+
+  it('survives an implementation that exposes no ready promise', async () => {
+    let ran = 0;
+    doc.startViewTransition = (cb: () => void) => { cb(); return { finished: Promise.resolve() }; };
+    withThemeSweep(() => { ran += 1; });
+    expect(ran).toBe(1);
     await vi.waitFor(() => expect(document.documentElement.hasAttribute('data-theme-sweep')).toBe(false));
   });
 
