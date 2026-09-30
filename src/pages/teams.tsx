@@ -2,7 +2,10 @@ import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { api, apiErrorMessage, API_BASE } from '@/api/client';
 import { useWorkspace } from '@/stores/workspace';
-import { usePermissions } from '@/hooks/use-permissions';
+import { usePermissions, permissionsQueryKey } from '@/hooks/use-permissions';
+import { useQueryClient } from '@tanstack/react-query';
+import { canGrantRole } from '@/lib/role-grant';
+import { summarizeInviteFailures } from '@/lib/invite-failures';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -73,7 +76,7 @@ interface Invite {
   invite_url: string;
 }
 interface InviteLink {
-  id: string; url: string; role_name: string;
+  id: string; url: string; role_id: string; role_name: string;
   max_uses: number | null; use_count: number;
   expires_at: number | null; created_by_name: string | null;
 }
@@ -92,6 +95,11 @@ const ROLE_COLORS: Record<string, string> = {
   role_member: 'bg-secondary text-secondary-foreground',
   role_viewer: 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-400',
 };
+// Custom roles used to fall back to the Member colour, so a member and a
+// custom-role holder were indistinguishable at a glance. Same rose the role
+// editor's dot uses for "custom".
+const CUSTOM_ROLE_COLOR = 'bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-400';
+const roleColor = (id: string) => ROLE_COLORS[id] ?? CUSTOM_ROLE_COLOR;
 
 // ── Page ───────────────────────────────────────────────────
 
@@ -100,7 +108,8 @@ export default function TeamsPage() {
   // Without `view_activity` the server narrows this panel to the member's own
   // rows, so the heading says whose rows these are rather than implying the
   // workspace's. Labelling only - the server is what withholds them.
-  const { can } = usePermissions();
+  const { can, permissions: myPerms } = usePermissions();
+  const queryClient = useQueryClient();
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [invites, setInvites] = useState<Invite[]>([]);
   const [links, setLinks] = useState<InviteLink[]>([]);
@@ -205,12 +214,25 @@ export default function TeamsPage() {
    */
   const changeRole = async (m: TeamMember, roleId: string) => {
     if (roleId === m.role_id) return;
+    // The picker only offers grantable roles, but the member's current role
+    // stays listed (disabled) so the control reads right; refuse it here too.
+    const target = roles.find((r) => r.id === roleId);
+    if (target && !grantable(target)) {
+      toast.error("Can't assign that role", 'It grants more than your own role holds.');
+      return;
+    }
     setChangingRoleId(m.membership_id);
     try {
       const res = await api<{ ok: boolean; error?: string }>(`/api/team/members/${m.membership_id}`, {
         method: 'PUT', body: JSON.stringify({ role_id: roleId }),
       });
-      if (res.ok) { toast.success('Role updated', `${m.name} is now ${roleName(roleId)}.`); load(); }
+      if (res.ok) {
+        toast.success('Role updated', `${m.name} is now ${roleName(roleId)}.`);
+        load();
+        // Not our own row (the endpoint refuses that), but the map is
+        // 60s-stale and this is the one moment we know roles moved.
+        void queryClient.invalidateQueries({ queryKey: permissionsQueryKey(wsId) });
+      }
       else toast.error('Update failed', res.error ?? 'The role could not be changed.');
     } catch (err) { toast.error('Update failed', apiErrorMessage(err, 'The role could not be changed.')); }
     setChangingRoleId(null);
@@ -253,16 +275,24 @@ export default function TeamsPage() {
 
   // Whether the current user can set another member's folder anchor. The
   // server enforces manage_roles on every request regardless, but hiding the
-  // control otherwise would just be a button that always 400s.
-  const myRoleId = members.find((m) => m.is_you)?.role_id;
-  const canManageRoles = !!myRoleId && (roles.find((r) => r.id === myRoleId)?.permissions?.manage_roles ?? false);
+  // control otherwise would just be a button that always 400s. Read from the
+  // caller's own map rather than cross-referencing /api/roles with the is_you
+  // row, which is the two-request detour usePermissions exists to replace.
+  const canManageRoles = can('manage_roles');
+  const canInvite = can('invite_members');
 
-  // Roles a member can be moved INTO. role_owner is excluded because ownership
-  // is transferred, never assigned - the endpoint refuses it outright, so
-  // offering it here would only produce a 400. Same list the invite dialog
-  // uses, and it includes this workspace's custom roles.
-  const assignableRoles = roles.filter((r) => r.id !== 'role_owner');
-  const assignableRoleItems = assignableRoles.map((r) => ({ value: r.id, label: r.name }));
+  // Roles the caller may hand out: the ceiling as the server applies it
+  // (lib/role-grant.ts) - a role must grant nothing the caller lacks, and
+  // role_owner is never grantable because ownership is transferred, not
+  // assigned. Fails open while the map is loading, like can(); the server
+  // still decides.
+  const grantable = (r: Role) => !myPerms ? r.id !== 'role_owner' : canGrantRole(myPerms, r);
+  const assignableRoles = roles.filter(grantable);
+  // A member whose current role is not grantable keeps it listed, disabled,
+  // so the select shows what they hold instead of a blank.
+  const rowRoles = (m: TeamMember) => assignableRoles.some((r) => r.id === m.role_id)
+    ? assignableRoles
+    : [...assignableRoles, ...roles.filter((r) => r.id === m.role_id)];
 
   if (loading) return <TeamSkeleton />;
 
@@ -273,9 +303,13 @@ export default function TeamsPage() {
         {/* Header */}
         <div className="flex items-start justify-between">
           <h1 className="text-xl font-bold tracking-tight">Team</h1>
-          <Button className="gap-1.5" onClick={() => { setInviteOpen(true); setInviteTab('email'); }}>
-            <UserPlus className="size-4" /> Invite to workspace
-          </Button>
+          {/* Both invite endpoints need invite_members; a button that only
+              ever 403s is not an invitation. */}
+          {canInvite && (
+            <Button className="gap-1.5" onClick={() => { setInviteOpen(true); setInviteTab('email'); }}>
+              <UserPlus className="size-4" /> Invite to workspace
+            </Button>
+          )}
         </div>
 
         {wsName && <Badge variant="secondary" className="text-xs">{wsName} workspace</Badge>}
@@ -315,11 +349,11 @@ export default function TeamsPage() {
                   icon={Users}
                   title="You are the only member"
                   description="Invite people to share this workspace. Roles control who can upload, share, delete and manage billing."
-                  actions={
+                  actions={canInvite ? (
                     <Button size="sm" className="h-7 text-xs" onClick={() => { setInviteOpen(true); setInviteTab('email'); }}>
                       Invite someone
                     </Button>
-                  }
+                  ) : undefined}
                 />
               ) : members.map((m) => (
                 <div key={m.membership_id} className="grid grid-cols-[2.2fr_1.6fr_1fr_1fr_80px] px-5 items-center min-h-[58px] border-b last:border-b-0 hover:bg-muted/50 group">
@@ -342,18 +376,20 @@ export default function TeamsPage() {
                       <Select
                         value={m.role_id}
                         onValueChange={(v) => changeRole(m, v as string)}
-                        items={assignableRoleItems}
+                        items={rowRoles(m).map((r) => ({ value: r.id, label: r.name }))}
                         disabled={changingRoleId === m.membership_id}
                       >
                         <SelectTrigger className="h-6 text-[11px] w-[130px]" aria-label={`Role for ${m.name}`}>
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          {assignableRoles.map((r) => (<SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>))}
+                          {rowRoles(m).map((r) => (
+                            <SelectItem key={r.id} value={r.id} disabled={!grantable(r)}>{r.name}</SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
                     ) : (
-                      <Badge className={`text-[11px] ${ROLE_COLORS[m.role_id] ?? ROLE_COLORS.role_member}`}>{roleName(m.role_id)}</Badge>
+                      <Badge className={`text-[11px] ${roleColor(m.role_id)}`}>{roleName(m.role_id)}</Badge>
                     )}
                     <p className="text-[10px] text-muted-foreground mt-0.5 truncate max-w-[160px]">
                       {m.root_folder_id ? (m.root_folder_name ?? 'Folder') : 'Whole workspace'}
@@ -428,7 +464,7 @@ export default function TeamsPage() {
                   <div className="flex-1 min-w-0">
                     <p className="text-xs font-mono truncate">{l.url}</p>
                     <p className="text-[11px] text-muted-foreground">
-                      {l.role_name} · {l.max_uses ? `${l.use_count}/${l.max_uses} used` : `${l.use_count} used`} · {l.expires_at ? `Expires ${timeAgo(l.expires_at)}` : 'No expiry'}
+                      {roleName(l.role_id) || l.role_name} · {l.max_uses ? `${l.use_count}/${l.max_uses} used` : `${l.use_count} used`} · {l.expires_at ? `Expires ${timeAgo(l.expires_at)}` : 'No expiry'}
                     </p>
                   </div>
                   <CopyButton text={l.url} />
@@ -489,7 +525,7 @@ export default function TeamsPage() {
       </div>
 
       {/* Invite modal */}
-      <InviteModal open={inviteOpen} tab={inviteTab} onTabChange={setInviteTab} onClose={() => setInviteOpen(false)} wsId={wsId} roles={roles} onInvited={load} />
+      <InviteModal open={inviteOpen} tab={inviteTab} onTabChange={setInviteTab} onClose={() => setInviteOpen(false)} wsId={wsId} roles={assignableRoles} onInvited={load} />
 
       {/* Remove member dialog */}
       <Dialog open={!!removeTarget} onOpenChange={() => setRemoveTarget(null)}>
@@ -595,7 +631,7 @@ export default function TeamsPage() {
                   {profileMember.name}
                   {profileMember.is_you && <Badge variant="secondary" className="text-[9px] ml-1.5">you</Badge>}
                 </p>
-                <Badge className={`text-[10px] mt-1 ${ROLE_COLORS[profileMember.role_id] ?? ROLE_COLORS.role_member}`}>{roleName(profileMember.role_id)}</Badge>
+                <Badge className={`text-[10px] mt-1 ${roleColor(profileMember.role_id)}`}>{roleName(profileMember.role_id)}</Badge>
               </div>
               <div className="w-full space-y-2 text-left border rounded-lg p-3">
                 <div className="flex items-center justify-between gap-3">
@@ -645,9 +681,11 @@ const LINK_EXPIRY_OPTIONS = [
 ];
 
 function InviteModal({ open, tab, onTabChange, onClose, wsId, roles, onInvited }: {
-  open: boolean; tab: 'email' | 'link'; onTabChange: (t: 'email' | 'link') => void; onClose: () => void; wsId: string; roles: Role[]; onInvited: () => void;
+  open: boolean; tab: 'email' | 'link'; onTabChange: (t: 'email' | 'link') => void; onClose: () => void; wsId: string;
+  /** Already filtered to what the caller may grant - see `grantable` in TeamsPage. */
+  roles: Role[]; onInvited: () => void;
 }) {
-  const assignable = roles.filter((r) => r.id !== 'role_owner');
+  const assignable = roles;
   const roleItems = assignable.map((r) => ({ value: r.id, label: r.name }));
   // Multi-email invite: each address gets its own invite with a unique,
   // email-bound accept link.
@@ -669,12 +707,20 @@ function InviteModal({ open, tab, onTabChange, onClose, wsId, roles, onInvited }
       setEmails((prev) => prev.slice(0, -1));
     }
   };
-  const [role, setRole] = useState('role_member');
+  const [pickedRole, setRole] = useState('role_member');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
 
   // Link tab
-  const [linkRole, setLinkRole] = useState('role_member');
+  const [pickedLinkRole, setLinkRole] = useState('role_member');
+
+  // role_member is the sensible default but not always grantable (a custom
+  // role without manage_roles may only add viewers), and the list arrives
+  // after this mounts. Derived, not synced: the first grantable role stands
+  // in until a pick lands on one that is.
+  const settle = (picked: string) => (assignable.some((r) => r.id === picked) ? picked : (assignable[0]?.id ?? picked));
+  const role = settle(pickedRole);
+  const linkRole = settle(pickedLinkRole);
   const [linkMaxUses, setLinkMaxUses] = useState('');
   const [linkExpires, setLinkExpires] = useState('7');
   const [createdLink, setCreatedLink] = useState('');
@@ -690,14 +736,14 @@ function InviteModal({ open, tab, onTabChange, onClose, wsId, roles, onInvited }
 
     setError(''); setSending(true);
     // One invite per address - each gets its own unique, email-bound link
-    const failures: string[] = [];
+    const failures: { addr: string; message: string }[] = [];
     for (const addr of list) {
       try {
         const res = await api<{ ok: boolean; error?: string }>('/api/team/invite', {
           method: 'POST', body: JSON.stringify({ workspace_id: wsId, email: addr, role }),
         });
-        if (!res.ok) failures.push(`${addr}: ${res.error ?? 'failed'}`);
-      } catch (err) { failures.push(`${addr}: ${apiErrorMessage(err, 'failed')}`); }
+        if (!res.ok) failures.push({ addr, message: res.error ?? 'failed' });
+      } catch (err) { failures.push({ addr, message: apiErrorMessage(err, 'failed') }); }
     }
     const sent = list.length - failures.length;
     if (sent > 0) {
@@ -706,9 +752,9 @@ function InviteModal({ open, tab, onTabChange, onClose, wsId, roles, onInvited }
     }
     if (failures.length > 0) {
       // Keep only the failed addresses so the user can correct/retry
-      setEmails(list.filter((a) => failures.some((f) => f.startsWith(`${a}:`))));
+      setEmails(list.filter((a) => failures.some((f) => f.addr === a)));
       setEmailInput('');
-      setError(failures.join(' · '));
+      setError(summarizeInviteFailures(failures));
     } else {
       setEmails([]); setEmailInput('');
       onClose();

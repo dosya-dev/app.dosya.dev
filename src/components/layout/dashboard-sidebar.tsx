@@ -18,7 +18,8 @@ import {
 import { api, API_BASE } from '@/api/client';
 import { useWorkspace } from '@/stores/workspace';
 import { useSession, type SessionWorkspace } from '@/stores/session';
-import { usePermissions } from '@/hooks/use-permissions';
+import { usePermissions, permissionsQueryKey } from '@/hooks/use-permissions';
+import { useQueryClient } from '@tanstack/react-query';
 import { RemoteDownloadIndicator } from '@/components/layout/remote-download-indicator';
 import { CloudImportIndicator } from '@/components/layout/cloud-import-indicator';
 import { formatBytes } from '@/lib/billing/cart-math';
@@ -163,11 +164,19 @@ export function DashboardSidebar() {
   // this list used to sit on whatever it loaded at mount - the switcher kept the
   // old name and icon until a full page reload. Same `dosya:*-changed` idiom the
   // files sidebar already uses for favourites and groups.
+  // The caller's permission map is dropped on the same event: it is the one
+  // signal the app has that something about the workspace changed underneath
+  // this session, and a 60s-stale map is what shows a control that then 403s.
+  const queryClient = useQueryClient();
   useEffect(() => {
-    const onChanged = () => { setIconVersion((v) => v + 1); void loadWorkspaces(); };
+    const onChanged = () => {
+      setIconVersion((v) => v + 1);
+      void loadWorkspaces();
+      if (activeId) void queryClient.invalidateQueries({ queryKey: permissionsQueryKey(activeId) });
+    };
     window.addEventListener('dosya:workspace-changed', onChanged);
     return () => window.removeEventListener('dosya:workspace-changed', onChanged);
-  }, [loadWorkspaces]);
+  }, [loadWorkspaces, activeId, queryClient]);
 
   // Resolve the current user's role name (covers custom roles, not just built-ins)
   useEffect(() => {

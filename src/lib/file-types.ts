@@ -46,6 +46,13 @@ export interface FileItem {
    * `created_at` (source date, then upload) when it is absent.
    */
   captured_at?: string | null;
+  /**
+   * Live Photo pairing, computed by the API from name, folder and size. A
+   * still carries the id of its twin video; the twin carries the still's id.
+   * Optional: search, map pins and file requests never compute them.
+   */
+  live_video_id?: string | null;
+  live_photo_id?: string | null;
 }
 
 export interface FolderItem {

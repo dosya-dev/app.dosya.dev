@@ -72,15 +72,17 @@ export const router = createBrowserRouter([
   {
     element: <DashboardLayout />,
     children: [
-      { path: '/', element: <DashboardPage /> },
-      { path: '/files', element: <FilesPage /> },
+      // Each access_* page is gated the way /settings is (see the comment
+      // there): the sidebar hides the link, the gate keeps the page shut.
+      { path: '/', element: <RequirePermission perm="access_dashboard"><DashboardPage /></RequirePermission> },
+      { path: '/files', element: <RequirePermission perm="access_files"><FilesPage /></RequirePermission> },
       { path: '/map', element: <MapPage /> },
       { path: '/duplicates', element: <DuplicatesPage /> },
       { path: '/file-requests', element: <FileRequestsPage /> },
       { path: '/file-requests/:id', element: <FileRequestDetailPage /> },
       { path: '/support', element: <SupportPage /> },
       { path: '/support/:id', element: <SupportTicketPage /> },
-      { path: '/uploads', element: <UploadsPage /> },
+      { path: '/uploads', element: <RequirePermission perm="access_upload"><UploadsPage /></RequirePermission> },
       {
         path: '/settings',
         // Hiding the sidebar link never stopped anyone typing the URL. See
@@ -93,7 +95,7 @@ export const router = createBrowserRouter([
       },
       { path: '/profile', element: <ProfilePage /> },
       { path: '/api-analytics', element: <ApiAnalyticsPage /> },
-      { path: '/teams', element: <TeamsPage /> },
+      { path: '/teams', element: <RequirePermission perm="access_team"><TeamsPage /></RequirePermission> },
       { path: '/integrations', element: <IntegrationsPage /> },
       { path: '/integrations/rclone', element: <RcloneSetup /> },
       { path: '/integrations/webdav', element: <WebdavSetup /> },
@@ -107,11 +109,14 @@ export const router = createBrowserRouter([
       { path: '/integrations/dropbox', element: <DropboxSetup /> },
       { path: '/integrations/webhooks', element: <WebhooksPage /> },
       { path: '/integrations/remote-download', element: <RemoteDownloadPage /> },
-      { path: '/shared', element: <SharedPage /> },
+      { path: '/shared', element: <RequirePermission perm="access_shared"><SharedPage /></RequirePermission> },
       { path: '/shared/:id', element: <ShareAnalyticsPage /> },
       { path: '/vault', element: <EncryptedPage /> },
       { path: '/comments', element: <CommentsPage /> },
-      { path: '/activity', element: <ActivityPage /> },
+      // GET /api/activity answers 403 for the whole page without
+      // view_activity - it IS the audit trail, nothing is narrowed - so the
+      // page is gated on that rather than an access_* key it does not have.
+      { path: '/activity', element: <RequirePermission perm="view_activity"><ActivityPage /></RequirePermission> },
       { path: '/notifications', element: <NotificationsPage /> },
       { path: '/search', element: <SearchPage /> },
       { path: '/billing', element: <BillingPage /> },
@@ -119,7 +124,9 @@ export const router = createBrowserRouter([
       { path: '/checkout/success', element: <CheckoutSuccessPage /> },
       { path: '/referrals', element: <ReferralsPage /> },
       { path: '/workspaces', element: <WorkspaceDashboardPage /> },
-      { path: '/role-create', element: <RoleCreatePage /> },
+      // Every write the editor makes needs manage_roles; the read-only
+      // ?view= mode is not worth a second door.
+      { path: '/role-create', element: <RequirePermission perm="manage_roles"><RoleCreatePage /></RequirePermission> },
     ],
   },
   { path: '/login', element: <LoginPage /> },

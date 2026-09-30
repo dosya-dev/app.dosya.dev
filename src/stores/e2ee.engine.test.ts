@@ -13,6 +13,7 @@ vi.mock('@/api/client', async (importOriginal) => {
 const recoveryUnlock = vi.fn();
 const passphraseUnlock = vi.fn();
 const createWorkspace = vi.fn();
+const setupIdentity = vi.fn();
 vi.mock('@dosya-dev/e2ee-client', async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
   return {
@@ -20,6 +21,7 @@ vi.mock('@dosya-dev/e2ee-client', async (importOriginal) => {
     unlock: (...a: unknown[]) => passphraseUnlock(...a),
     createWorkspace: (...a: unknown[]) => createWorkspace(...a),
     unlockWithRecoveryKey: (...a: unknown[]) => recoveryUnlock(...a),
+    setupIdentity: (...a: unknown[]) => setupIdentity(...a),
   };
 });
 
@@ -32,9 +34,21 @@ beforeEach(() => {
   recoveryUnlock.mockReset();
   passphraseUnlock.mockReset();
   createWorkspace.mockReset();
+  setupIdentity.mockReset();
   recoveryUnlock.mockResolvedValue(SESSION);
   passphraseUnlock.mockResolvedValue(SESSION);
   createWorkspace.mockResolvedValue({} as never);
+  setupIdentity.mockResolvedValue({ session: SESSION, recoveryKey: new Uint8Array([0xab, 0x12, 0x00, 0xff]) });
+});
+
+// toHex is now a local helper (not imported from @dosya-dev/e2ee-core, which
+// e2ee-client already inlines a copy of - see the doc comment above it in
+// ./e2ee.ts) - this pins its output shape now that nothing re-exports it.
+describe('defaultEngine.setup', () => {
+  it('returns the recovery key as lowercase hex', async () => {
+    const { recoveryKeyHex } = await defaultEngine().setup('passphrase');
+    expect(recoveryKeyHex).toBe('ab1200ff');
+  });
 });
 
 // Contract 6: the key is displayed as one hex string, but people paste it back

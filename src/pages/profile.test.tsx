@@ -8,7 +8,7 @@ vi.mock('@/api/client', async (importOriginal) => {
   return { ...actual, api: (...args: unknown[]) => apiMock(...args) };
 });
 
-const { IntegrationsSection, IdentitySection, PasswordSection } = await import('./profile');
+const { IntegrationsSection, IdentitySection, PasswordSection, DeleteAccountSection } = await import('./profile');
 
 beforeAll(() => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -226,3 +226,71 @@ describe('PasswordSection', () => {
   });
 });
 
+
+describe('DeleteAccountSection', () => {
+  let root: Root | null = null;
+  let container: HTMLDivElement | null = null;
+
+  afterEach(() => {
+    if (root) act(() => root!.unmount());
+    container?.remove();
+    root = null;
+    container = null;
+    apiMock.mockReset();
+  });
+
+  // Chrome's page translation (Sentry 149714040, a zh-TW user on /profile)
+  // does not edit text in place: it detaches every text node and puts a
+  // <font> holding the translated string where it was. React still owns the
+  // detached node, so the next time it removes or reorders a bare text child
+  // the browser throws NotFoundError from removeChild and the router's error
+  // page replaces the profile. This mimics that rewrite exactly.
+  function translate(el: Element) {
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    const texts: Text[] = [];
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) texts.push(n as Text);
+    for (const t of texts) {
+      const font = document.createElement('font');
+      font.textContent = `譯:${t.data}`;
+      t.parentNode!.replaceChild(font, t);
+    }
+  }
+
+  it('survives a translated DOM when the preview arrives with one workspace', async () => {
+    let resolvePreview: (v: unknown) => void = () => {};
+    apiMock.mockImplementation((path: string) => {
+      if (path === '/api/me/delete-preview') return new Promise((r) => { resolvePreview = r; });
+      return Promise.resolve({ ok: true });
+    });
+    const uncaught: unknown[] = [];
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container, { onUncaughtError: (e) => { uncaught.push(e); } });
+    await act(async () => {
+      root!.render(<DeleteAccountSection />);
+      await Promise.resolve();
+    });
+    const summary = container.querySelector('[data-testid="delete-summary"]');
+    expect(summary).not.toBeNull();
+    expect(summary!.textContent).toContain('0 workspaces and 0 files');
+
+    translate(container);
+
+    await act(async () => {
+      resolvePreview({
+        ok: true,
+        workspaces: [{ id: 'ws_1', name: 'Only' }],
+        file_count: 1,
+        total_bytes: 0,
+        blockers: [],
+        window_days: 30,
+        deletion_scheduled_for: null,
+      });
+      await Promise.resolve();
+    });
+
+    expect(uncaught).toEqual([]);
+    expect(container.querySelector('[data-testid="delete-summary"]')!.textContent)
+      .toContain('1 workspace and 1 file');
+  });
+});

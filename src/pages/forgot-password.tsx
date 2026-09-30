@@ -6,6 +6,7 @@ import { Loader2, MailCheck } from 'lucide-react';
 import { API_BASE } from '@/api/client';
 import { PublicNav } from '@/components/public-nav';
 import { TurnstileWidget, type TurnstileHandle } from '@/components/turnstile-widget';
+import { resolveTurnstileToken, turnstileFailureMessage, isTurnstileRejection } from '@/lib/turnstile-submit';
 import { Logo } from "@/components/brand/logo";
 
 export default function ForgotPasswordPage() {
@@ -20,12 +21,13 @@ export default function ForgotPasswordPage() {
     setError('');
     setLoading(true);
     try {
+      const challengeToken = await resolveTurnstileToken(turnstileRef.current);
       const res = await fetch(`${API_BASE}/api/auth/forgot-password`, {
         method: 'POST',
         credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
-          'X-Turnstile-Token': turnstileRef.current?.getToken() ?? '',
+          'X-Turnstile-Token': challengeToken,
         },
         body: JSON.stringify({ email }),
       });
@@ -34,6 +36,7 @@ export default function ForgotPasswordPage() {
       // retry fails verification instead.
       turnstileRef.current?.reset();
       if (res.ok && data.ok) setSent(true);
+      else if (isTurnstileRejection(data)) setError(turnstileFailureMessage(turnstileRef.current));
       else setError(data.error ?? 'Could not send reset link');
     } catch {
       turnstileRef.current?.reset();

@@ -35,6 +35,7 @@
  * upload/edit, so that table stays populated for whenever such an endpoint
  * lands - this module just doesn't depend on reading it back yet.
  */
+import { type PlainChunkSource, type PlainChunkSink } from "@dosya-dev/e2ee-core";
 import type { ApiClient } from "./api.js";
 import type { ChunkTransport } from "./transport.js";
 import type { Session } from "./session.js";
@@ -46,23 +47,24 @@ export type FileDeps = {
     ws: Workspace;
 };
 /**
- * Encrypt `bytes` under a fresh per-file DEK, upload every ciphertext chunk
- * via `transport`, then commit a new folder `Entry` (kind "file") whose
- * `contentRef` is `hex(manifest.merkleRoot)` - a hash over the file's actual
- * chunk sequence, NOT the stable `fileId` - and whose `meta.record` carries
- * the encrypted `FileManifest` + wrapped DEK (see this module's doc
- * comment). `contentRef` must vary with content (not just identity) because
- * e2ee-core's rebase.ts uses `contentRef` INEQUALITY as its sole signal for
- * "these two versions have genuinely conflicting content edits" (§9): using
- * the invariant `fileId` there would make every edit of the SAME file look
- * metadata-only forever, so two devices' concurrent edits would both fall
- * into the LWW branch and silently drop the loser's write. A merkle-root
- * contentRef changes on any real content edit (`updateFile` below) while
- * staying IDENTICAL for a pure metadata/rename op, so LWW still applies
- * correctly to those. The SAME encrypted manifest also rides through the
- * commit's `fileManifests` field into `e2ee_file_manifests` (see
- * `workspace.ts`'s `commitFolderOps`), and every fresh chunk's hex id is
- * added via `chunkRefDeltas` so the server's refcount bookkeeping stays
+ * Encrypt the file `source` describes under a fresh per-file DEK, upload
+ * every ciphertext chunk via `transport`, then commit a new folder `Entry`
+ * (kind "file") whose `contentRef` is `hex(manifest.merkleRoot)` - a hash
+ * over the file's actual chunk sequence, NOT the stable `fileId` - and
+ * whose `meta.record` carries the encrypted `FileManifest` + wrapped DEK
+ * (see this module's doc comment). `contentRef` must vary with content
+ * (not just identity) because e2ee-core's rebase.ts uses `contentRef`
+ * INEQUALITY as its sole signal for "these two versions have genuinely
+ * conflicting content edits" (§9): using the invariant `fileId` there
+ * would make every edit of the SAME file look metadata-only forever, so
+ * two devices' concurrent edits would both fall into the LWW branch and
+ * silently drop the loser's write. A merkle-root contentRef changes on any
+ * real content edit (`updateFile` below) while staying IDENTICAL for a
+ * pure metadata/rename op, so LWW still applies correctly to those. The
+ * SAME encrypted manifest also rides through the commit's `fileManifests`
+ * field into `e2ee_file_manifests` (see `workspace.ts`'s
+ * `commitFolderOps`), and every fresh chunk's hex id is added via
+ * `chunkRefDeltas` so the server's refcount bookkeeping stays
  * accurate - see `commitFolderOps`'s doc comment for why that delta is
  * reported per-entry rather than as a flat array.
  *
@@ -80,7 +82,17 @@ export type FileDeps = {
  * re-encrypted or re-uploaded by this retry - only the small WK-sealed
  * record changes, exactly like `computeRotation`'s own re-key of existing
  * files.
+ *
+ * Chunks are read, sealed and uploaded one at a time from `source`, so
+ * memory stays at one chunk. If `source.read` or a chunk PUT throws
+ * part-way, the chunks already uploaded stay in R2 unreferenced (no commit
+ * happened); a retry re-encrypts with fresh nonces, so they are never
+ * reused. Reclaiming them is the server's job, outside this client.
  */
+export declare function uploadFileStreaming(deps: FileDeps, folderId: string, name: string, source: PlainChunkSource): Promise<{
+    fileId: string;
+}>;
+/** Whole-buffer convenience over `uploadFileStreaming`: chunks `bytes` with the default chunker. */
 export declare function uploadFile(deps: FileDeps, folderId: string, name: string, bytes: Uint8Array): Promise<{
     fileId: string;
 }>;
@@ -90,7 +102,7 @@ export declare function uploadFile(deps: FileDeps, folderId: string, name: strin
  * `computeDelta`, so chunks whose plaintext didn't change are neither
  * re-encrypted nor re-uploaded - only genuinely new chunks hit `transport`.
  * The new entry's `contentRef` is recomputed as `hex(manifest.merkleRoot)`
- * (see `uploadFile`'s doc comment for why) - it changes here precisely
+ * (see `uploadFileStreaming`'s doc comment for why) - it changes here precisely
  * because the content changed, which is what lets a concurrent edit of the
  * SAME file on another device be recognized by rebase.ts as a genuine
  * content conflict rather than silently LWW'd away.
@@ -115,7 +127,7 @@ export declare function uploadFile(deps: FileDeps, folderId: string, name: strin
  * but required to exercise the delta path end-to-end (spec §5.5 `computeDelta`
  * reuse), per this task's own test scenario ("edit+re-upload a file").
  *
- * RE-SEAL ON CONCURRENT RE-KEY -- see `uploadFile`'s doc comment for the full
+ * RE-SEAL ON CONCURRENT RE-KEY -- see `uploadFileStreaming`'s doc comment for the full
  * rationale (`WorkspaceRekeyedError`). Exactly the same shape here: `dek` /
  * `manifest` / `newChunks` are computed and uploaded ONCE, before the retry
  * loop; only the WK-sealed record (`manifestCiphertext`/`wrappedDek`) is
@@ -129,7 +141,7 @@ export declare function updateFile(deps: FileDeps, folderId: string, fileId: str
  * Reverse of `uploadFile`/`updateFile`: read the folder index, find the file
  * `Entry`, decrypt its manifest + unwrap its DEK (both from `entry.meta.record`
  * - see this module's doc comment), then fetch+verify+decrypt every chunk in
- * manifest order via `transport`. `decryptFile` verifies
+ * manifest order via `transport`. `decryptFileStreaming` verifies
  * `sha256(ciphertext) === chunkId` for each chunk internally before any AEAD
  * decryption is attempted (e2ee-core's file.ts).
  *
@@ -140,4 +152,18 @@ export declare function updateFile(deps: FileDeps, folderId: string, fileId: str
  * doc comment), never this parameter, so downloading a conflicted copy
  * still decrypts correctly.
  */
+export declare function downloadFileTo(deps: FileDeps, folderId: string, fileId: string, sink: PlainChunkSink): Promise<{
+    totalSize: number;
+}>;
+/** Whole-buffer convenience over `downloadFileTo`. */
 export declare function downloadFile(deps: FileDeps, folderId: string, fileId: string): Promise<Uint8Array>;
+/**
+ * Remove an entry from `folderId`. A file entry also reports every chunk its
+ * manifest references in `chunkRefDeltas.removed`, so the server's refcounts
+ * fall and the bytes stop counting against the storage workspace (see
+ * `commitFolderOps`'s doc comment for when removals are applied). A folder
+ * entry is just dropped from its parent; its own index row stays on the
+ * server, unreachable - reclaiming it is a follow-up. Like `updateFile`,
+ * nothing is re-sealed here, so a concurrent re-key only retries the commit.
+ */
+export declare function deleteEntry(deps: FileDeps, folderId: string, entryId: string): Promise<void>;

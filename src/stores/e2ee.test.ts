@@ -27,6 +27,9 @@ function makeFakeEngine(overrides: Partial<E2eeEngine> = {}): E2eeEngine {
     unlock: async () => {},
     lock: () => {},
     createWorkspace: async () => {},
+    readWorkspaceName: async () => null,
+    readWorkspaceNameById: async () => null,
+    renameWorkspace: async () => {},
     setWorkspaceScope: async () => {},
     openWorkspace: async () => {},
     listFolder: async () => [],
@@ -146,6 +149,142 @@ describe('useE2ee: createWorkspace', () => {
   });
 });
 
+/**
+ * A Space's name lives in the Space now, sealed under its own key. This
+ * browser's list is a cache of it, and opening a Space is where the two are
+ * made to agree.
+ */
+describe('useE2ee: the name this browser shows for a Space', () => {
+  it("takes the Space's own name over the placeholder it invented", async () => {
+    useE2ee.getState().__setEngine(makeFakeEngine({ readWorkspaceName: async () => 'Tax 2026' }));
+    useE2ee.setState({
+      workspaces: [
+        { id: 'ws-1', name: 'Space', selfFounded: false, shared: false, globalWorkspaceId: 'gw-1', stub: true },
+      ],
+      activeWorkspaceId: 'ws-1',
+    });
+
+    await useE2ee.getState().reconcileWorkspaceName('ws-1');
+
+    expect(useE2ee.getState().workspaces[0]).toMatchObject({ name: 'Tax 2026', stub: false });
+  });
+
+  it("writes THIS browser's name into a Space that has none, so an older Space gets its label with nobody retyping it", async () => {
+    const renamed: (string | null)[] = [];
+    useE2ee.getState().__setEngine(
+      makeFakeEngine({
+        readWorkspaceName: async () => null,
+        renameWorkspace: async (name) => { renamed.push(name); },
+      }),
+    );
+    useE2ee.setState({
+      workspaces: [
+        { id: 'ws-old', name: 'Receipts', selfFounded: true, shared: false, globalWorkspaceId: 'gw-1' },
+      ],
+      activeWorkspaceId: 'ws-old',
+    });
+
+    await useE2ee.getState().reconcileWorkspaceName('ws-old');
+
+    expect(renamed).toEqual(['Receipts']);
+  });
+
+  it('never promotes a placeholder into the Space', async () => {
+    const renamed: (string | null)[] = [];
+    useE2ee.getState().__setEngine(
+      makeFakeEngine({
+        readWorkspaceName: async () => null,
+        renameWorkspace: async (name) => { renamed.push(name); },
+      }),
+    );
+    useE2ee.setState({
+      workspaces: [
+        { id: 'ws-d', name: 'Shared Space', selfFounded: false, shared: true, globalWorkspaceId: 'gw-1', stub: true },
+      ],
+      activeWorkspaceId: 'ws-d',
+    });
+
+    await useE2ee.getState().reconcileWorkspaceName('ws-d');
+
+    expect(renamed).toEqual([]);
+    expect(useE2ee.getState().workspaces[0]!.name).toBe('Shared Space');
+  });
+
+  it('says nothing when the Space will not answer: a label is not worth an error over a Space that opened', async () => {
+    useE2ee.getState().__setEngine(
+      makeFakeEngine({ readWorkspaceName: async () => { throw new Error('offline'); } }),
+    );
+    useE2ee.setState({
+      workspaces: [{ id: 'ws-1', name: 'Receipts', selfFounded: true, shared: false, globalWorkspaceId: 'gw-1' }],
+      activeWorkspaceId: 'ws-1',
+      error: null,
+    });
+
+    await useE2ee.getState().reconcileWorkspaceName('ws-1');
+
+    expect(useE2ee.getState().error).toBeNull();
+    expect(useE2ee.getState().workspaces[0]!.name).toBe('Receipts');
+  });
+
+  it('fills in every placeholder label, so a list of Spaces is not a column of identical rows', async () => {
+    const names: Record<string, string> = { 'ws-a': 'Photos', 'ws-b': 'Tax 2026' };
+    useE2ee.getState().__setEngine(
+      makeFakeEngine({ readWorkspaceNameById: async (id) => names[id] ?? null }),
+    );
+    useE2ee.setState({
+      workspaces: [
+        { id: 'ws-a', name: 'Space', selfFounded: false, shared: false, globalWorkspaceId: 'gw-1', stub: true },
+        { id: 'ws-b', name: 'Space', selfFounded: false, shared: false, globalWorkspaceId: 'gw-1', stub: true },
+        { id: 'ws-c', name: 'Mine', selfFounded: true, shared: false, globalWorkspaceId: 'gw-1' },
+      ],
+    });
+
+    await useE2ee.getState().resolveSpaceNames();
+
+    expect(useE2ee.getState().workspaces.map((w) => w.name)).toEqual(['Photos', 'Tax 2026', 'Mine']);
+  });
+
+  it('leaves a placeholder alone when the Space has no name of its own, and never turns one failure into an error', async () => {
+    useE2ee.getState().__setEngine(
+      makeFakeEngine({
+        readWorkspaceNameById: async (id) => {
+          if (id === 'ws-a') throw new Error('offline');
+          return null;
+        },
+      }),
+    );
+    useE2ee.setState({
+      workspaces: [
+        { id: 'ws-a', name: 'Space', selfFounded: false, shared: false, globalWorkspaceId: 'gw-1', stub: true },
+        { id: 'ws-b', name: 'Space', selfFounded: false, shared: false, globalWorkspaceId: 'gw-1', stub: true },
+      ],
+      error: null,
+    });
+
+    await useE2ee.getState().resolveSpaceNames();
+
+    expect(useE2ee.getState().workspaces.map((w) => w.name)).toEqual(['Space', 'Space']);
+    expect(useE2ee.getState().workspaces.every((w) => w.stub === true)).toBe(true);
+    expect(useE2ee.getState().error).toBeNull();
+  });
+
+  it('renameWorkspace writes the new name into the Space and shows it here', async () => {
+    const renamed: (string | null)[] = [];
+    useE2ee.getState().__setEngine(
+      makeFakeEngine({ renameWorkspace: async (name) => { renamed.push(name); } }),
+    );
+    useE2ee.setState({
+      workspaces: [{ id: 'ws-1', name: 'Old', selfFounded: true, shared: false, globalWorkspaceId: 'gw-1' }],
+      activeWorkspaceId: 'ws-1',
+    });
+
+    await useE2ee.getState().renameWorkspace('ws-1', 'New');
+
+    expect(renamed).toEqual(['New']);
+    expect(useE2ee.getState().workspaces[0]).toMatchObject({ name: 'New', stub: false });
+  });
+});
+
 describe('useE2ee: refreshMyWorkspaces', () => {
   it('adds a discovered createdByMe:false entry as {shared:true, selfFounded:false} with its globalWorkspaceId', async () => {
     useE2ee.getState().__setEngine(
@@ -166,6 +305,8 @@ describe('useE2ee: refreshMyWorkspaces', () => {
       globalWorkspaceId: 'gw-1',
       shared: true,
       selfFounded: false,
+      // Invented here, so never written into the Space.
+      stub: true,
     });
   });
 
@@ -188,6 +329,7 @@ describe('useE2ee: refreshMyWorkspaces', () => {
       globalWorkspaceId: 'gw-2',
       shared: false,
       selfFounded: false,
+      stub: true,
     });
     // Explicit, isolated assertion of the security invariant: a
     // createdByMe:true discovered entry must NOT become selfFounded:true.
@@ -224,6 +366,8 @@ describe('useE2ee: refreshMyWorkspaces', () => {
       globalWorkspaceId: 'gw-1',
       shared: true,
       selfFounded: false,
+      // Invented here, so never written into the Space.
+      stub: true,
     });
   });
 });

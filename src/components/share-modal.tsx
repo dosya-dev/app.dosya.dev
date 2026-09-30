@@ -126,6 +126,12 @@ export function ShareModal({ open, target, name, workspaceId: targetWorkspaceId,
    * a terminal.
    */
   const [viewOnly, setViewOnly] = useState(false);
+  /**
+   * Serve photos without their EXIF/XMP/IPTC (migration 0183): location,
+   * camera, capture time. Off by default, and absent from the request when
+   * off, so an ordinary link is what it always was.
+   */
+  const [stripMetadata, setStripMetadata] = useState(false);
   /** Download ceiling (migration 0143). Empty string means unlimited. */
   const [maxDownloads, setMaxDownloads] = useState('');
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -191,6 +197,7 @@ export function ShareModal({ open, target, name, workspaceId: targetWorkspaceId,
     setTitle('');
     setMessage('');
     setViewOnly(false);
+    setStripMetadata(false);
     setMaxDownloads('');
     setShowAdvanced(false);
     setSubmitting(false);
@@ -328,6 +335,7 @@ export function ShareModal({ open, target, name, workspaceId: targetWorkspaceId,
             };
         if (pw) body.password = pw;
         if (viewOnly) body.lock_mode = 'view_only';
+        if (stripMetadata) body.strip_metadata = true;
         if (capField !== null) body.max_downloads = capField;
         Object.assign(body, expiryFields);
 
@@ -361,6 +369,7 @@ export function ShareModal({ open, target, name, workspaceId: targetWorkspaceId,
         Object.assign(linkBody, expiryFields);
         if (pw) linkBody.password = pw;
         if (viewOnly) linkBody.lock_mode = 'view_only';
+        if (stripMetadata) linkBody.strip_metadata = true;
         if (capField !== null) linkBody.max_downloads = capField;
 
         const endpoint = target.kind === 'folder'
@@ -552,8 +561,23 @@ export function ShareModal({ open, target, name, workspaceId: targetWorkspaceId,
                   />
                   <span className="text-[11px] leading-relaxed text-muted-foreground">
                     <span className="font-medium text-foreground">View only.</span>{' '}
-                    People can open {isFolder ? 'the folder' : isBundle ? 'the files' : 'the file'} but
-                    not download a copy.
+                    People can open {isFolder ? 'the folder' : isBundle ? 'the files' : 'the file'} with
+                    no download button, and images open as a reduced-size preview rather than the original.
+                    Anything shown on screen can still be screenshotted.
+                  </span>
+                </label>
+                <label className="flex items-start gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={stripMetadata}
+                    onChange={(e) => setStripMetadata(e.target.checked)}
+                    className="mt-0.5 size-3.5 accent-green-600"
+                    data-testid="share-strip-metadata"
+                  />
+                  <span className="text-[11px] leading-relaxed text-muted-foreground">
+                    <span className="font-medium text-foreground">Remove photo metadata.</span>{' '}
+                    Photos are handed over without location, camera and capture-time details.
+                    Your originals stay as they are.
                   </span>
                 </label>
                 <div>

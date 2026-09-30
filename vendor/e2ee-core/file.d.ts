@@ -33,7 +33,7 @@
  * check is cheap, fails fast on corrupt/truncated storage, and - crucially -
  * happens before any key material touches attacker-controlled bytes.
  */
-import { type ChunkParams } from "./chunker.js";
+import { type ChunkParams, type ChunkBoundary } from "./chunker.js";
 /**
  * THE BYTE RANGE OF ONE UPLOADED CIPHERTEXT CHUNK, as the API enforces it.
  *
@@ -71,7 +71,51 @@ export type EncryptedChunk = {
     chunkId: Uint8Array;
     ciphertext: Uint8Array;
 };
-/** Split, encrypt (fresh nonces), and build the manifest for a whole file. */
+/**
+ * Where a streaming encrypt reads plaintext from. `boundaries` come from any
+ * chunker implementation (the TypeScript `chunkBoundaries`, or a native
+ * port validated against `CHUNKER_VECTORS`); `read` returns exactly `size`
+ * bytes at `offset` - callers may return a subarray of a larger buffer, the
+ * bytes are only read, never kept. Reads happen in boundary order, one at a
+ * time, so a file handle can serve them sequentially.
+ */
+export type PlainChunkSource = {
+    totalSize: number;
+    boundaries: ChunkBoundary[];
+    read(offset: number, size: number): Promise<Uint8Array>;
+};
+/** Receives each sealed chunk in index order; typically uploads it. */
+export type EncryptedChunkSink = (chunk: EncryptedChunk, ref: ChunkRef, index: number) => Promise<void>;
+/** Receives each decrypted chunk in index order; typically appends it to a file. */
+export type PlainChunkSink = (plaintext: Uint8Array, index: number) => Promise<void>;
+/**
+ * Reject a boundary list a chunker should never have produced, BEFORE any
+ * byte is read: a gap, an overlap, a start past zero, a zero-length chunk,
+ * a chunk the API would refuse (over CHUNK_MAX_PLAINTEXT_BYTES), or a list
+ * that does not add up to `totalSize`. A native chunker port with a bug
+ * fails here, loudly, instead of producing a manifest that decrypts to the
+ * wrong bytes.
+ */
+export declare function validateBoundaries(boundaries: ChunkBoundary[], totalSize: number): void;
+/**
+ * Split (per `source.boundaries`), encrypt (fresh nonces), hand each sealed
+ * chunk to `sink` as it is produced, and build the manifest. Holds one
+ * plaintext chunk and one ciphertext chunk at a time - the shape a phone
+ * needs for a file it cannot fit in memory.
+ */
+export declare function encryptFileStreaming(args: {
+    dek: Uint8Array;
+    dekId: string;
+    fmt: number;
+    workspaceId: string;
+    fileId: string;
+    version: number;
+    source: PlainChunkSource;
+    sink: EncryptedChunkSink;
+}): Promise<{
+    manifest: FileManifest;
+}>;
+/** Split, encrypt (fresh nonces), and build the manifest for a whole in-memory file. */
 export declare function encryptFile(args: {
     dek: Uint8Array;
     dekId: string;
@@ -85,6 +129,22 @@ export declare function encryptFile(args: {
     manifest: FileManifest;
     chunks: EncryptedChunk[];
 }>;
+/**
+ * Fetch, verify, and decrypt every chunk in manifest order, handing each
+ * plaintext chunk to `sink` as it is produced. Integrity checks happen
+ * BEFORE the first fetch (manifest root and declared sizes) and before each
+ * chunk's decryption (content address), so a corrupt or tampered chunk stops
+ * the stream at that chunk and never reaches the sink.
+ */
+export declare function decryptFileStreaming(args: {
+    dek: Uint8Array;
+    fmt: number;
+    workspaceId: string;
+    dekId: string;
+    manifest: FileManifest;
+    getCiphertext: (chunkId: Uint8Array) => Promise<Uint8Array>;
+    sink: PlainChunkSink;
+}): Promise<void>;
 /** Fetch, verify, and decrypt every chunk in manifest order; concatenate the plaintext. */
 export declare function decryptFile(args: {
     dek: Uint8Array;

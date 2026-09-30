@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, memo, type DragEvent, type ChangeEvent } f
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { api } from '@/api/client';
 import { useWorkspace } from '@/stores/workspace';
+import { usePermissions } from '@/hooks/use-permissions';
 import { useUploads } from '@/stores/uploads';
 import { useShallow } from 'zustand/react/shallow';
 import type { UploadItem } from '@/lib/upload-types';
@@ -14,13 +15,19 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
-import { Upload, Info, Check, AlertCircle, Loader2, Home, FolderOpen, Layers, RotateCw } from 'lucide-react';
+import { Upload, Info, Check, AlertCircle, Loader2, Home, FolderOpen, Layers, RotateCw, Lock } from 'lucide-react';
 import { humanSize, folderIconSrc } from '@/lib/helpers';
 import { toast } from '@/lib/toast';
 import { FolderPickerDialog } from '@/components/folder-picker-dialog';
 
 export default function UploadsPage() {
   const wsId = useWorkspace((s: { activeId: string }) => s.activeId);
+  // The route is gated on access_upload; upload_files is the separate right to
+  // actually put bytes in. A role with the page but not the right used to get
+  // a dropzone whose every drop 403'd. Only a RESOLVED map hides it - the hook
+  // fails open on purpose.
+  const { can, isResolved } = usePermissions();
+  const cannotUpload = isResolved && !can('upload_files');
   const [searchParams] = useSearchParams();
   const [folderId, setFolderId] = useState<string | null>(searchParams.get('folder'));
   const [folderName, setFolderName] = useState(searchParams.get('folder_name') || 'Root (top level)');
@@ -114,6 +121,13 @@ export default function UploadsPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-5 items-start">
         <div className="space-y-4">
+          {cannotUpload ? (
+            <Card className="gap-3 py-12 text-center text-sm text-muted-foreground">
+              <Lock className="size-5 mx-auto opacity-60" />
+              <p>Your role can't upload files</p>
+              <p className="text-xs">Ask a workspace owner or admin if you need to add files here.</p>
+            </Card>
+          ) : (
           <div
             className={`border-2 border-dashed rounded-xl bg-card p-12 text-center cursor-pointer transition-colors ${dragging ? 'border-green-500 bg-green-50/50 dark:bg-green-950/20' : 'border-border hover:border-muted-foreground/30'}`}
             onClick={() => fileInputRef.current?.click()}
@@ -138,6 +152,7 @@ export default function UploadsPage() {
               {['Video', 'Images', 'Documents', 'Archives', 'Any format'].map((t) => <Badge key={t} variant="secondary" className="text-[10px]">{t}</Badge>)}
             </div>
           </div>
+          )}
 
           {queue.length > 0 && (
             <Card>

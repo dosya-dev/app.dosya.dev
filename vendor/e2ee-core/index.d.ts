@@ -1,4 +1,4 @@
-export { getSodium, type Sodium } from "./sodium.js";
+export { setCryptoBackend, getCryptoBackend, type CryptoBackend, type Argon2Params, type Argon2Tiers, type BackendKeyPair, } from "./backend.js";
 export * from "./bytes.js";
 export * from "./random.js";
 export * from "./aead.js";
@@ -6,9 +6,12 @@ export * from "./kdf.js";
 export * from "./sign.js";
 export * from "./ad.js";
 export * from "./vectors.js";
+export * from "./backend-selftest.js";
 export * from "./hpke.js";
+export { createMinimalSubtle } from "./subtle-shim.js";
 export * from "./oprf-client.js";
 export * from "./chunker.js";
+export * from "./chunker-vectors.js";
 export * from "./hash.js";
 export * from "./merkle.js";
 export * from "./file.js";

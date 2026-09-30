@@ -62,7 +62,7 @@ interface WsData {
   plan: string;
   plan_limits?: { storage_gb?: number };
   allocation?: { plan_gb: number; allocated_gb: number; remaining_gb: number };
-  roles: { id: string; name: string; is_default: number }[];
+  roles: { id: string; name: string; is_default: number; is_builtin: boolean; is_custom: boolean }[];
   permissions: Record<string, { [perm: string]: boolean }>;
   /** Shape mirrors /api/team: the row id is `membership_id`; there is no `id`. */
   members?: { membership_id: string; user_id: string; name: string; email: string; role_id: string }[];
@@ -114,11 +114,6 @@ const PERM_GROUPS: { group: string; perms: [string, string][] }[] = [
   ] },
   { group: 'Workspace identity', perms: [
     ['change_workspace_name', 'Change workspace name'], ['change_workspace_icon', 'Change workspace icon'],
-    // Legacy since 2026-09-07: the route 409s before this permission is ever
-    // checked, so granting it does nothing. The key stays in the API registry
-    // (existing role rows are untouched), and the label says so - this matrix
-    // has no hint slot the way role-create.tsx does.
-    ['change_workspace_region', 'Change workspace location (legacy - location is fixed at creation)'],
   ] },
   { group: 'Workspace limits', perms: [
     ['change_max_file_size', 'Change max file size'], ['change_storage_per_member', 'Change storage per member'],
@@ -135,7 +130,7 @@ const PERM_GROUPS: { group: string; perms: [string, string][] }[] = [
     ['access_team', 'Access Team'], ['access_settings', 'Access Settings'],
   ] },
   { group: 'Protocol access', perms: [
-    ['access_webdav', 'Use WebDAV'], ['access_s3', 'Use the S3 gateway'],
+    ['access_webdav', 'Use WebDAV'], ['access_s3', 'Use the S3 gateway'], ['access_sftp', 'SFTP access'],
   ] },
 ];
 
@@ -168,7 +163,7 @@ export default function SettingsPage() {
         const d = wsRes;
         // Merge roles + permissions from /api/roles into workspace data
         if (rolesRes.ok && rolesRes.roles) {
-          d.roles = rolesRes.roles.map((r) => ({ id: r.id, name: r.name, is_default: r.is_default ?? 0 }));
+          d.roles = rolesRes.roles.map((r) => ({ id: r.id, name: r.name, is_default: r.is_default ?? 0, is_builtin: r.is_builtin, is_custom: r.is_custom }));
           d.permissions = {};
           rolesRes.roles.forEach((r) => { d.permissions[r.id] = r.permissions; });
         }
@@ -636,10 +631,15 @@ export function SecuritySection({ data, wsId, onSaved }: { data: WsData; wsId: s
 
 // ── Roles ──────────────────────────────────────────────────
 
-function RolesSection({ data }: { data: WsData; wsId: string; onSaved: () => void }) {
+export function RolesSection({ data }: { data: WsData; wsId: string; onSaved: () => void }) {
   const roles = data.roles ?? [];
   const perms = data.permissions ?? {};
-  const builtinIds = new Set(roles.filter((r) => ['owner', 'admin', 'member', 'viewer'].includes(r.name.toLowerCase())).map((r) => r.id));
+  // PUT /api/roles/:id refuses the role the caller holds ("You cannot edit
+  // your own role"), so that column gets View, like a built-in.
+  const { roleId: myRoleId } = usePermissions();
+  // Built-in vs custom used to be decided by NAME, so a custom role called
+  // "Viewer" was shown as uneditable. /api/roles says which is which.
+  const canEdit = (r: { id: string; is_builtin: boolean }) => !r.is_builtin && r.id !== myRoleId;
 
   return (
     <section id="section-roles">
@@ -654,7 +654,7 @@ function RolesSection({ data }: { data: WsData; wsId: string; onSaved: () => voi
                   <TableHead key={r.id} className="h-auto text-center py-2 px-2">
                     <div className="flex flex-col items-center gap-1">
                       <span>{r.name}</span>
-                      {!builtinIds.has(r.id) ? (
+                      {canEdit(r) ? (
                         <Link to={`/role-create?edit=${r.id}`} className="text-[9px] text-muted-foreground hover:text-foreground underline">Edit</Link>
                       ) : (
                         <Link to={`/role-create?view=${r.id}`} className="text-[9px] text-muted-foreground hover:text-foreground underline">View</Link>

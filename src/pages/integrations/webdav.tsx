@@ -1,14 +1,32 @@
 import { IntegrationLayout, ApiKeyCallout, Step } from '@/components/integrations/integration-layout';
 import { CodeBlock } from '@/components/integrations/code-block';
 import { useIntegrationCtx } from '@/hooks/use-integration-ctx';
+import { usePermissions } from '@/hooks/use-permissions';
+import { Lock } from 'lucide-react';
 import { getIntegration, webdavUrl, webdavWindowsMount, webdavLinuxMount } from '@/lib/integrations';
 
 const meta = getIntegration('webdav')!;
 
 export default function WebdavSetup() {
   const ctx = useIntegrationCtx();
+  // The door itself is per role (access_webdav); the key made below is refused at
+  // it. Saying so here beats a setup walkthrough that ends in a 403 from a
+  // mount dialog. Only a RESOLVED map says no - the hook fails open.
+  const { can, isResolved } = usePermissions();
+  const noAccess = isResolved && !can('access_webdav');
   return (
     <IntegrationLayout icon={meta.icon} title={meta.title} description={meta.description}>
+      {noAccess && (
+        <div className="mb-6 flex items-start gap-3 rounded-lg border border-destructive/30 bg-destructive/5 p-3">
+          <Lock className="mt-0.5 size-4 shrink-0 text-destructive" />
+          <div className="text-sm">
+            <p className="font-medium">Your role can&rsquo;t use WebDAV</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              Any credentials you set up below will be refused for this workspace. Ask a workspace owner or admin for access.
+            </p>
+          </div>
+        </div>
+      )}
       <ApiKeyCallout />
       <Step n={1} title="Endpoint & credentials">
         <p>Connect any WebDAV client to this URL:</p>

@@ -25,12 +25,46 @@ declare global {
   interface Window { turnstile?: TurnstileApi }
 }
 
+/**
+ * Why the widget has no token right now.
+ *
+ * `waiting` is the ordinary case for the first second or so after mount (the
+ * script is loading, or the challenge is still running) and is also what an
+ * interactive challenge looks like while it waits to be clicked. `unavailable`
+ * means no token is ever coming on this page load: no sitekey in the build, the
+ * script could not be fetched, or Turnstile handed us an error. The two need
+ * different words in front of the user, which is the only reason this is
+ * exposed at all.
+ */
+export type TurnstileStatus = 'waiting' | 'ready' | 'unavailable';
+
 export interface TurnstileHandle {
   /** Current token, or '' if none has been issued yet. */
   getToken(): string;
+  /**
+   * Resolve as soon as a token exists, or with '' if none arrives in time.
+   *
+   * getToken() alone loses a race every real user can win: the challenge
+   * usually resolves in well under a second, but a person who types a 6-digit
+   * code and hits Enter can beat it, and then the token is '' and an enforcing
+   * route 403s them. Awaiting this instead costs nothing in the common case
+   * (the token is already there and it resolves synchronously on the
+   * microtask queue) and turns that race into a short wait.
+   */
+  waitForToken(timeoutMs?: number): Promise<string>;
+  /** Why there is no token, for choosing what to tell the user. */
+  status(): TurnstileStatus;
   /** Discard the current token and ask for a fresh one. */
   reset(): void;
 }
+
+/**
+ * How long waitForToken() waits before giving up and letting the submit go
+ * out tokenless. Generous: a slow phone on hotel wifi still has to fetch
+ * challenges.cloudflare.com and run the challenge, and the cost of being
+ * wrong here is a 403 on a login.
+ */
+export const TURNSTILE_WAIT_MS = 8000;
 
 // One script tag per document no matter how many widgets mount. Deduped behind
 // a module-level promise so concurrent mounts do not each inject a tag.
@@ -66,9 +100,35 @@ export const TurnstileWidget = forwardRef<TurnstileHandle, { action: string }>(
     const widgetIdRef = useRef<string | null>(null);
     const tokenRef = useRef('');
     const [failed, setFailed] = useState(false);
+    // Mirrors `failed` for the imperative handle, which is built once with
+    // [] deps and so cannot read the state variable.
+    const unavailableRef = useRef(!SITEKEY);
+    // Callers parked in waitForToken(). Resolved by the success callback, or
+    // by whichever of the failure paths fires first, so nobody waits out the
+    // full timeout for an answer we already have.
+    const waitersRef = useRef(new Set<(token: string) => void>());
+
+    const settle = (token: string) => {
+      for (const resolve of waitersRef.current) resolve(token);
+      waitersRef.current.clear();
+    };
 
     useImperativeHandle(ref, () => ({
       getToken: () => tokenRef.current,
+      status: () => (tokenRef.current ? 'ready' : unavailableRef.current ? 'unavailable' : 'waiting'),
+      waitForToken: (timeoutMs = TURNSTILE_WAIT_MS) => {
+        if (tokenRef.current) return Promise.resolve(tokenRef.current);
+        if (unavailableRef.current) return Promise.resolve('');
+        return new Promise<string>((resolve) => {
+          const done = (token: string) => {
+            clearTimeout(timer);
+            waitersRef.current.delete(done);
+            resolve(token);
+          };
+          const timer = setTimeout(() => done(''), timeoutMs);
+          waitersRef.current.add(done);
+        });
+      },
       reset: () => {
         tokenRef.current = '';
         const id = widgetIdRef.current;
@@ -77,11 +137,17 @@ export const TurnstileWidget = forwardRef<TurnstileHandle, { action: string }>(
     }), []);
 
     useEffect(() => {
-      // No sitekey means the build env var was never set. Rendering anyway
-      // makes Turnstile throw "expected string, got object" into every
-      // visitor's console. Skip silently instead: getToken() keeps returning
-      // '', which the server logs as outcome "missing" under monitor mode, so
-      // the form still submits. Fail quiet, not loud, on a config mistake.
+      // No sitekey means the build env var was never set AND the literal
+      // fallback above was lost. Rendering anyway makes Turnstile throw
+      // "expected string, got object" into every visitor's console, so skip.
+      //
+      // This used to be described as harmless because every route was on
+      // `monitor` and a "missing" outcome still submitted. That is no longer
+      // true: the auth routes are `enforce-web` and isBlocking() treats
+      // "missing" as a block, so on production a tokenless submit is a 403.
+      // Only an unreachable siteverify fails open, which is a server-side
+      // condition this component cannot produce. Hence status(): the form asks
+      // what went wrong and says so, rather than relaying a bare 403.
       if (!SITEKEY) return;
 
       let cancelled = false;
@@ -93,23 +159,42 @@ export const TurnstileWidget = forwardRef<TurnstileHandle, { action: string }>(
             sitekey: SITEKEY,
             action,
             theme: currentTheme(),
-            callback: (token: string) => { tokenRef.current = token; },
+            callback: (token: string) => { tokenRef.current = token; settle(token); },
             'expired-callback': () => { tokenRef.current = ''; },
-            'error-callback': () => { tokenRef.current = ''; },
+            // Turnstile itself gave up (network, blocked domain, bad sitekey
+            // for this hostname). No token is coming, so release anyone
+            // waiting immediately instead of making them sit out the timeout.
+            'error-callback': () => {
+              tokenRef.current = '';
+              unavailableRef.current = true;
+              settle('');
+            },
           });
         })
-        .catch(() => { if (!cancelled) setFailed(true); });
+        .catch(() => {
+          if (cancelled) return;
+          unavailableRef.current = true;
+          settle('');
+          setFailed(true);
+        });
 
       return () => {
         cancelled = true;
+        // Nobody is left to receive a token, and an unresolved promise here
+        // would keep a submit handler parked for the full timeout after the
+        // page it belongs to is gone.
+        settle('');
         const id = widgetIdRef.current;
         if (id && window.turnstile) window.turnstile.remove(id);
         widgetIdRef.current = null;
       };
     }, [action]);
 
-    // The server fails open when Turnstile is unreachable, so a load failure
-    // must not present as a blocked form. Same for a missing sitekey.
+    // Render nothing rather than an error box: whether this actually blocks
+    // the user depends on the route's mode and on server config this component
+    // cannot see (a missing TURNSTILE_SECRET_KEY lets everything through -
+    // which is why local dev works), so a warning here would often be a false
+    // alarm. The form handles it at submit time, where the answer is known.
     if (failed || !SITEKEY) return null;
 
     return <div ref={containerRef} className="my-3" />;

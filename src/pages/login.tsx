@@ -7,6 +7,7 @@ import { Loader2, Eye, EyeOff } from 'lucide-react';
 import { API_BASE } from '@/api/client';
 import { PublicNav } from '@/components/public-nav';
 import { TurnstileWidget, type TurnstileHandle } from '@/components/turnstile-widget';
+import { resolveTurnstileToken, turnstileFailureMessage, isTurnstileRejection } from '@/lib/turnstile-submit';
 import { LegalNotice } from '@/components/legal-notice';
 import { pendingPostAuthPath } from '@/lib/redemption-claim';
 import { Logo } from "@/components/brand/logo";
@@ -74,12 +75,13 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
+      const challengeToken = await resolveTurnstileToken(turnstileRef.current);
       const res = await fetch(`${API_BASE}/api/auth/login`, {
         method: 'POST',
         credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
-          'X-Turnstile-Token': turnstileRef.current?.getToken() ?? '',
+          'X-Turnstile-Token': challengeToken,
         },
         body: JSON.stringify({ email, password }),
       });
@@ -89,6 +91,8 @@ export default function LoginPage() {
       turnstileRef.current?.reset();
       if (res.ok && data.ok) {
         navigate(pendingPostAuthPath() ?? data.redirect ?? '/');
+      } else if (isTurnstileRejection(data)) {
+        setError(turnstileFailureMessage(turnstileRef.current));
       } else {
         setError(data.error ?? 'Sign-in failed');
       }

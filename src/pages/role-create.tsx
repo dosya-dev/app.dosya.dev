@@ -1,7 +1,9 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import { api, apiErrorMessage } from '@/api/client';
 import { useWorkspace } from '@/stores/workspace';
+import { usePermissions } from '@/hooks/use-permissions';
+import { permissionsNamedInRefusal } from '@/lib/role-grant';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -56,7 +58,6 @@ const PERM_INFO: PermInfo[] = [
   { key: 'manage_roles', label: 'Manage roles', hint: 'Create, edit, and delete custom roles and assign permissions.', category: 'Team' },
   { key: 'change_workspace_name', label: 'Change workspace name', hint: 'Rename the workspace shown in the switcher.', category: 'Workspace identity' },
   { key: 'change_workspace_icon', label: 'Change workspace icon', hint: 'Update the initials and color of the workspace icon.', category: 'Workspace identity' },
-  { key: 'change_workspace_region', label: 'Change workspace location', hint: 'Legacy: a workspace\'s location is fixed when it is created and cannot be changed.', category: 'Workspace identity' },
   { key: 'change_max_file_size', label: 'Change max upload file size', hint: 'Set the maximum size for a single file upload.', category: 'Workspace limits' },
   { key: 'change_storage_per_member', label: 'Change storage per member', hint: 'Set the max storage any single member can consume.', category: 'Workspace limits' },
   { key: 'change_total_storage_cap', label: 'Change total workspace storage cap', hint: 'Set the hard ceiling on total storage.', category: 'Workspace limits' },
@@ -76,9 +77,11 @@ const PERM_INFO: PermInfo[] = [
   { key: 'access_settings', label: 'Access Settings', hint: 'Open the workspace settings page.', category: 'Page access' },
   { key: 'access_webdav', label: 'Use WebDAV', hint: 'Mount the workspace over WebDAV in Finder, Explorer or a WebDAV client.', category: 'Protocol access' },
   { key: 'access_s3', label: 'Use the S3 gateway', hint: 'Access the workspace with S3 tools such as rclone or the AWS CLI.', category: 'Protocol access' },
+  { key: 'access_sftp', label: 'SFTP access', hint: 'Connect to the workspace over SFTP with an API key', category: 'Protocol access' },
 ];
 
 const ROLE_COLORS: Record<string, string> = { owner: '#16A34A', admin: '#4338CA', member: '#706E69', viewer: '#92400E' };
+const CUSTOM_ROLE_COLOR = '#BE123C';
 
 interface ExistingRole {
   id: string; name: string; is_builtin: boolean; is_custom: boolean;
@@ -115,7 +118,15 @@ export default function RoleCreatePage() {
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  // The rows a ceiling refusal named, so they can be marked in a form long
+  // enough that the error text alone sits several screens away from them.
+  const [offending, setOffending] = useState<Set<string>>(new Set());
+  const errorRef = useRef<HTMLParagraphElement>(null);
   const [existingRoles, setExistingRoles] = useState<ExistingRole[]>([]);
+  // The ceiling, browser-side: POST/PUT /api/roles refuse any grant the
+  // caller does not hold themselves (apps/api/src/lib/role-rank.ts). Fails
+  // open while loading, as the hook does; the server still decides.
+  const { can, roleId: myRoleId } = usePermissions();
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; name: string } | null>(null);
 
   // Access conditions (migration 0097). Blank/disabled means unrestricted -
@@ -196,14 +207,33 @@ export default function RoleCreatePage() {
     }).catch(() => {});
   }, [roleId, wsId]);
 
+  /**
+   * A permission the caller lacks may be switched OFF if the role already has
+   * it (PUT only counts newly added grants) but never ON. Expressed on the
+   * current state rather than the loaded one: once off, it stays off.
+   */
+  const isLocked = (key: string) => !can(key) && !permState[key];
+
   const togglePerm = (key: string) => {
-    if (isViewMode) return;
+    if (isViewMode || isLocked(key)) return;
     setPermState((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  // The error renders below a long form; bring it into view rather than let
+  // a failed save look like nothing happened.
+  useEffect(() => {
+    if (error) errorRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
+  }, [error]);
+
+  const failSave = (msg: string) => {
+    setError(msg);
+    setOffending(new Set(permissionsNamedInRefusal(msg)));
   };
 
   const handleSave = async () => {
     if (!roleName.trim()) { setError('Role name is required.'); return; }
     setError('');
+    setOffending(new Set());
     setSaving(true);
     // Access conditions. Unlike the API-key create form (profile.tsx), this
     // page ALSO edits an existing role - so blank must be sent EXPLICITLY,
@@ -239,15 +269,15 @@ export default function RoleCreatePage() {
           method: 'PUT', body: JSON.stringify({ name: roleName.trim(), permissions: permState, ...conditions }),
         });
         if (res.ok) { toast.success('Role updated', 'The role and its permissions have been saved.'); window.location.href = '/settings#roles'; }
-        else setError(res.error ?? 'Failed');
+        else failSave(res.error ?? 'Failed');
       } else {
         const res = await api<{ ok: boolean; error?: string }>('/api/roles', {
           method: 'POST', body: JSON.stringify({ workspace_id: wsId, name: roleName.trim(), permissions: permState, ...conditions }),
         });
         if (res.ok) { toast.success('Role created', 'Your new role is ready to assign.'); window.location.href = '/settings#roles'; }
-        else setError(res.error ?? 'Failed');
+        else failSave(res.error ?? 'Failed');
       }
-    } catch (err) { setError(apiErrorMessage(err, "Can't reach the server. Check your connection and try again.")); }
+    } catch (err) { failSave(apiErrorMessage(err, "Can't reach the server. Check your connection and try again.")); }
     setSaving(false);
   };
 
@@ -255,7 +285,7 @@ export default function RoleCreatePage() {
     try {
       await api(`/api/roles/${id}`, { method: 'DELETE' });
       toast.success('Role deleted', 'The role has been removed.'); loadRoles();
-    } catch { toast.error('Delete failed', 'The role could not be deleted.'); }
+    } catch (err) { toast.error('Delete failed', apiErrorMessage(err, 'The role could not be deleted.')); }
     setDeleteConfirm(null);
   };
 
@@ -303,11 +333,20 @@ export default function RoleCreatePage() {
                   <div className="px-5 py-2 bg-muted/30">
                     <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">{cat}</span>
                   </div>
-                  {PERM_INFO.filter((p) => p.category === cat).map((p) => (
-                    <div key={p.key} className="flex items-center justify-between px-5 py-3 border-b last:border-b-0">
+                  {PERM_INFO.filter((p) => p.category === cat).map((p) => {
+                    const locked = !isViewMode && isLocked(p.key);
+                    const flagged = offending.has(p.key);
+                    return (
+                    <div
+                      key={p.key}
+                      className={`flex items-center justify-between px-5 py-3 border-b last:border-b-0 ${flagged ? 'border-l-2 border-l-destructive bg-destructive/5' : ''}`}
+                      title={locked ? "You don't hold this permission" : undefined}
+                    >
                       <div className="min-w-0">
-                        <p className="text-sm font-medium">{p.label}</p>
+                        <p className={`text-sm font-medium ${flagged ? 'text-destructive' : locked ? 'text-muted-foreground' : ''}`}>{p.label}</p>
                         <p className="text-xs text-muted-foreground mt-0.5">{p.hint}</p>
+                        {locked && <p className="text-[11px] text-muted-foreground/80 mt-0.5">You don't hold this permission, so you can't grant it.</p>}
+                        {flagged && <p className="text-[11px] text-destructive mt-0.5">The server refused this grant.</p>}
                       </div>
                       {isViewMode ? (
                         <div className="flex items-center gap-1.5 shrink-0">
@@ -319,14 +358,18 @@ export default function RoleCreatePage() {
                         </div>
                       ) : (
                         <button
-                          className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${permState[p.key] ? 'bg-green-600' : 'bg-muted'}`}
+                          className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${permState[p.key] ? 'bg-green-600' : 'bg-muted'} disabled:opacity-40 disabled:cursor-not-allowed`}
                           onClick={() => togglePerm(p.key)}
+                          disabled={locked}
+                          aria-disabled={locked || undefined}
+                          title={locked ? "You don't hold this permission" : undefined}
                         >
                           <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-all ${permState[p.key] ? 'left-4.5' : 'left-0.5'}`} />
                         </button>
                       )}
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               ))}
             </div>
@@ -463,7 +506,7 @@ export default function RoleCreatePage() {
             </div>
           )}
 
-          {error && <p className="text-sm text-destructive bg-destructive/10 border border-destructive/20 rounded-lg px-4 py-3 mb-6">{error}</p>}
+          {error && <p ref={errorRef} className="text-sm text-destructive bg-destructive/10 border border-destructive/20 rounded-lg px-4 py-3 mb-6">{error}</p>}
 
           {/* Existing roles */}
           <Card className="gap-0 py-0 mb-8">
@@ -476,7 +519,13 @@ export default function RoleCreatePage() {
               {existingRoles.map((r) => {
                 const permCount = Object.values(r.permissions).filter(Boolean).length;
                 const totalPerms = Object.keys(r.permissions).length;
-                const dotColor = ROLE_COLORS[r.name.toLowerCase()] ?? (r.is_custom ? '#BE123C' : '#706E69');
+                // Colour by tier, never by name: a custom role called "Admin"
+                // is still a custom role.
+                const dotColor = r.is_builtin ? (ROLE_COLORS[r.name.toLowerCase()] ?? '#706E69') : CUSTOM_ROLE_COLOR;
+                // PUT /api/roles/:id refuses the role the caller holds, so
+                // it gets View like a built-in; deleting it fails the same
+                // way (a role someone still holds cannot be deleted).
+                const isMine = r.id === myRoleId;
                 return (
                   <div key={r.id} className="flex items-center gap-3 px-5 py-3">
                     <div className="flex items-center gap-2 flex-1 min-w-0">
@@ -485,10 +534,11 @@ export default function RoleCreatePage() {
                       <Badge variant={r.is_builtin ? 'secondary' : 'outline'} className="text-[9px]">
                         {r.is_builtin ? 'built-in' : 'custom'}
                       </Badge>
+                      {isMine && <Badge variant="secondary" className="text-[9px]">your role</Badge>}
                     </div>
                     <span className="text-xs text-muted-foreground shrink-0">{permCount}/{totalPerms} permissions</span>
                     <div className="flex gap-1 shrink-0">
-                      {r.is_custom ? (
+                      {r.is_custom && !isMine ? (
                         <>
                           <Link to={`/role-create?edit=${r.id}`}>
                             <Button variant="outline" size="sm" className="h-7 text-xs gap-1"><Pencil className="size-3" /> Edit</Button>
@@ -517,7 +567,7 @@ export default function RoleCreatePage() {
         <DialogContent className="max-w-sm">
           <DialogHeader><DialogTitle>Delete role?</DialogTitle></DialogHeader>
           <p className="text-sm text-muted-foreground">
-            Delete the "<span className="font-semibold text-foreground">{deleteConfirm?.name}</span>" role? Members assigned this role will need to be reassigned.
+            Delete the "<span className="font-semibold text-foreground">{deleteConfirm?.name}</span>" role? Members must be moved to another role first.
           </p>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteConfirm(null)}>Cancel</Button>

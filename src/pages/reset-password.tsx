@@ -9,6 +9,7 @@ import { PublicNav } from '@/components/public-nav';
 import { PasswordStrengthMeter } from '@/components/password-strength-meter';
 import { validatePassword } from '@/lib/validation-policy.generated';
 import { TurnstileWidget, type TurnstileHandle } from '@/components/turnstile-widget';
+import { resolveTurnstileToken, turnstileFailureMessage, isTurnstileRejection } from '@/lib/turnstile-submit';
 import { Logo } from "@/components/brand/logo";
 
 /**
@@ -56,12 +57,13 @@ export default function ResetPasswordPage() {
     if (passwordError) { setError(passwordError); return; }
     setLoading(true);
     try {
+      const challengeToken = await resolveTurnstileToken(turnstileRef.current);
       const res = await fetch(`${API_BASE}/api/auth/reset-password`, {
         method: 'POST',
         credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
-          'X-Turnstile-Token': turnstileRef.current?.getToken() ?? '',
+          'X-Turnstile-Token': challengeToken,
         },
         body: JSON.stringify({ token, new_password: newPw }),
       });
@@ -70,6 +72,7 @@ export default function ResetPasswordPage() {
       // retry fails verification instead.
       turnstileRef.current?.reset();
       if (res.ok && data.ok) navigate('/login?reset=1');
+      else if (isTurnstileRejection(data)) setError(turnstileFailureMessage(turnstileRef.current));
       else setError(data.error ?? 'Could not reset password');
     } catch {
       turnstileRef.current?.reset();

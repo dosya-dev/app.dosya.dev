@@ -148,8 +148,8 @@ export function MembersPanel({
           <div className="flex items-start gap-2 rounded-lg border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
             <ShieldAlert className="mt-0.5 size-3.5 shrink-0" />
             <p>
-              Revoking removes future access. Content a member already downloaded - or not yet
-              re-keyed - may remain readable to them until key rotation, coming soon.
+              Revoking re-keys this Space so future content is unreadable to them. Anything they
+              already downloaded stays with them. Re-keying a large Space can take a while.
             </p>
           </div>
           <DialogFooter>

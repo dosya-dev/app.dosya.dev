@@ -26,6 +26,8 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { SelectCheckbox } from '@/components/select-checkbox';
 import { FilePreviewImage } from '@/components/file-preview-image';
+import { LiveBadge } from '@/components/live-badge';
+import { isLiveStill } from '@/lib/live-photos';
 import { extOf, colorFor, humanSize, fileIconSrc } from '@/lib/helpers';
 import type { ColumnDef } from '@/lib/file-columns';
 import { formatItemDate, takenIsWallClockOf, LIBRARY_PAGE_SIZE, KIND_COPY, plural, type MonthGroup, type LibraryItem, type LibraryKind, type LibraryLayout } from '@/lib/library-request';
@@ -281,6 +283,8 @@ function PhotoTile({ file, selected, anySelected, active, isFavourite, unlockTok
           className={`absolute top-2 left-2 z-20 size-5 rounded-full border-white/70 bg-black/30 backdrop-blur-sm transition-opacity data-[state=checked]:bg-primary data-[state=checked]:border-primary ${selected || anySelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
         />
       )}
+
+      {isLiveStill(file) && <LiveBadge size="tile" className="absolute top-2 left-9 z-20" />}
 
       <button
         type="button"

@@ -29,6 +29,7 @@ function renderOpts() {
   return api.render.mock.calls[0][1] as {
     callback: (t: string) => void;
     'expired-callback': () => void;
+    'error-callback': () => void;
   };
 }
 
@@ -78,6 +79,57 @@ describe('TurnstileWidget', () => {
     act(() => renderOpts().callback('tok-abc'));
     act(() => renderOpts()['expired-callback']());
     expect(ref.current?.getToken()).toBe('');
+  });
+
+  // The bug this exists for: a user who types a 6-digit code and hits Enter
+  // beats the challenge, getToken() returns '', and an enforcing route 403s a
+  // legitimate person. waitForToken() has to park until the callback lands.
+  it('resolves waitForToken with a token that only arrives after the call', async () => {
+    const ref = createRef<TurnstileHandle>();
+    await mount(<TurnstileWidget action="verify" ref={ref} />);
+
+    let resolved: string | undefined;
+    const pending = ref.current!.waitForToken().then((t) => { resolved = t; });
+    expect(resolved).toBeUndefined();
+    expect(ref.current?.status()).toBe('waiting');
+
+    await act(async () => { renderOpts().callback('tok-late'); await pending; });
+    expect(resolved).toBe('tok-late');
+    expect(ref.current?.status()).toBe('ready');
+  });
+
+  it('resolves waitForToken immediately when a token is already held', async () => {
+    const ref = createRef<TurnstileHandle>();
+    await mount(<TurnstileWidget action="login" ref={ref} />);
+    act(() => renderOpts().callback('tok-early'));
+    await expect(ref.current!.waitForToken()).resolves.toBe('tok-early');
+  });
+
+  // Turnstile reporting an error means no token is ever coming. Waiting out
+  // the full 8s before telling the user would be its own bug.
+  it('releases waiters at once when Turnstile errors, and reports unavailable', async () => {
+    const ref = createRef<TurnstileHandle>();
+    await mount(<TurnstileWidget action="login" ref={ref} />);
+
+    const pending = ref.current!.waitForToken();
+    await act(async () => { renderOpts()['error-callback'](); });
+    await expect(pending).resolves.toBe('');
+    expect(ref.current?.status()).toBe('unavailable');
+    // And a later caller must not park for a token that cannot arrive.
+    await expect(ref.current!.waitForToken()).resolves.toBe('');
+  });
+
+  it('gives up on waitForToken after the timeout', async () => {
+    vi.useFakeTimers();
+    try {
+      const ref = createRef<TurnstileHandle>();
+      await mount(<TurnstileWidget action="login" ref={ref} />);
+      const pending = ref.current!.waitForToken(500);
+      await act(async () => { await vi.advanceTimersByTimeAsync(500); });
+      await expect(pending).resolves.toBe('');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   // Router transitions mount and unmount these pages repeatedly. Leaking a

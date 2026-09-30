@@ -7,6 +7,7 @@ import { Loader2 } from 'lucide-react';
 import { API_BASE } from '@/api/client';
 import { PublicNav } from '@/components/public-nav';
 import { TurnstileWidget, type TurnstileHandle } from '@/components/turnstile-widget';
+import { resolveTurnstileToken, turnstileFailureMessage, isTurnstileRejection } from '@/lib/turnstile-submit';
 import { pendingPostAuthPath } from '@/lib/redemption-claim';
 import { Logo } from "@/components/brand/logo";
 
@@ -27,12 +28,15 @@ export default function VerifyPage() {
     if (!/^\d{6}$/.test(code)) { setError('Enter the 6-digit code from your email.'); return; }
     setLoading(true);
     try {
+      // Awaited, not read: typing six digits and hitting Enter is fast enough
+      // to beat the challenge, and /api/auth/verify enforces.
+      const challengeToken = await resolveTurnstileToken(turnstileRef.current);
       const res = await fetch(`${API_BASE}/api/auth/verify`, {
         method: 'POST',
         credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
-          'X-Turnstile-Token': turnstileRef.current?.getToken() ?? '',
+          'X-Turnstile-Token': challengeToken,
         },
         body: JSON.stringify(email ? { email, code } : { code }),
       });
@@ -41,6 +45,7 @@ export default function VerifyPage() {
       // retry after a wrong code fails verification instead.
       turnstileRef.current?.reset();
       if (res.ok && data.ok) navigate(pendingPostAuthPath() ?? data.redirect ?? '/create-workspace');
+      else if (isTurnstileRejection(data)) setError(turnstileFailureMessage(turnstileRef.current));
       else setError(data.error ?? 'Verification failed');
     } catch {
       turnstileRef.current?.reset();
@@ -53,12 +58,13 @@ export default function VerifyPage() {
     setError(''); setInfo('');
     setResending(true);
     try {
+      const challengeToken = await resolveTurnstileToken(turnstileRef.current);
       const res = await fetch(`${API_BASE}/api/auth/resend-verification`, {
         method: 'POST',
         credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
-          'X-Turnstile-Token': turnstileRef.current?.getToken() ?? '',
+          'X-Turnstile-Token': challengeToken,
         },
         body: JSON.stringify(email ? { email } : {}),
       });
@@ -69,6 +75,7 @@ export default function VerifyPage() {
       // verify-your-email flow for the same user.
       turnstileRef.current?.reset();
       if (res.ok && data.ok) setInfo('A new code has been sent to your email.');
+      else if (isTurnstileRejection(data)) setError(turnstileFailureMessage(turnstileRef.current));
       else setError(data.error ?? 'Could not resend code');
     } catch {
       turnstileRef.current?.reset();

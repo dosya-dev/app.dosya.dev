@@ -101,6 +101,26 @@ describe('SharedPage', () => {
     });
   }
 
+  // A failed /api/shares used to fall into the bare `catch { }` and render the
+  // "no links yet" empty state over a real failure - which for a role without
+  // access_shared read as "you have no shares", not "you were refused".
+  it('renders an error card, not the empty state, when /api/shares fails', async () => {
+    const { ApiError } = await import('@/api/client');
+    apiMock.mockImplementation(async (path: string) => {
+      if (String(path).includes('/with-me')) return { ok: true, links: [], email_verified: true };
+      throw new ApiError(403, JSON.stringify({ error: "You don't have permission to view shared links" }));
+    });
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    await act(async () => {
+      root!.render(<MemoryRouter><SharedPage /></MemoryRouter>);
+      await Promise.resolve();
+    });
+    expect(container!.textContent).toContain("You don't have permission to view shared links");
+    expect(container!.textContent).not.toContain('No shared links');
+  });
+
   it('renders a folder share row using display_name, not the null file_name', async () => {
     await render();
     expect(container!.textContent).toContain('Vacation Photos');

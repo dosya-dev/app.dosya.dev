@@ -13,7 +13,7 @@
  * and new-device WK sync is a documented follow-up (no P1a endpoint for it
  * yet, same caveat as the plan's Global Constraints).
  */
-import { type Op, type FolderState, type RootManifestFields } from "@dosya-dev/e2ee-core";
+import { type Op, type FolderState, type RootManifestFields, type Conflict } from "@dosya-dev/e2ee-core";
 import type { ApiClient, CommitBody } from "./api.js";
 import type { Session } from "./session.js";
 export type Workspace = {
@@ -89,6 +89,28 @@ export type Workspace = {
      */
     selfFounded: boolean;
 };
+/**
+ * The longest Space name this engine will store.
+ *
+ * A bound is not cosmetic here: the root index is fetched and parsed by every
+ * device that opens the Space, so an unbounded name is a cost every reader
+ * pays forever. 100 is far past any label a person types and far short of
+ * anything that matters in a payload.
+ */
+export declare const MAX_SPACE_NAME_LENGTH = 100;
+/**
+ * The one transformation applied to a Space name, on the way in AND on the
+ * way out: NFC, invisible characters removed, whitespace collapsed and
+ * trimmed, length bounded. Nothing here changes what a name LOOKS like.
+ *
+ * It runs on READ as well as on write because a name read back arrived from
+ * another device and is about to be rendered: a client that stored a name
+ * this engine would refuse is not a reason to show it.
+ *
+ * Returns `null` for a name with nothing visible left in it, which is the
+ * same state as a Space that was never named.
+ */
+export declare function normaliseSpaceName(raw: string): string | null;
 /** Reverse of `encodeSignedRoot` - exported so callers/tests can independently `verifyRootManifest` a fetched head. */
 export declare function decodeSignedRoot(signedRoot: string): {
     fields: RootManifestFields;
@@ -100,7 +122,9 @@ export declare function decodeSignedRoot(signedRoot: string): {
  * write an empty signed root at version 1 (an empty "root" folder index
  * encrypted under WK), and commit it with `expectedPrev: null`.
  */
-export declare function createWorkspace(api: ApiClient, session: Session, workspaceId: string): Promise<Workspace>;
+export declare function createWorkspace(api: ApiClient, session: Session, workspaceId: string, opts?: {
+    name?: string;
+}): Promise<Workspace>;
 /**
  * Re-open a personal workspace this identity already created: fetch the
  * self-grant `createWorkspace` stored, HPKE-open it (reflexive -- grantee
@@ -426,6 +450,35 @@ export declare function computeRotation(api: ApiClient, session: Session, ws: Wo
 /** Decrypt the head's `folderId` folder index -> the current `FolderState`. Empty if the folder (or the workspace's head) doesn't exist yet. */
 export declare function listFolder(api: ApiClient, session: Session, ws: Workspace, folderId: string): Promise<FolderState>;
 /**
+ * `listFolder` plus the head version the state was derived from - what a
+ * caller that goes on to `commitFolderOps` passes back as `base`, so the
+ * commit can tell whether the workspace moved on in between.
+ */
+export declare function listFolderAt(api: ApiClient, session: Session, ws: Workspace, folderId: string): Promise<{
+    state: FolderState;
+    headVersion: number | null;
+    spaceName: string | null;
+}>;
+/**
+ * The Space's own name, as every device that opens it sees it, or `null` if
+ * nobody has named it.
+ *
+ * It lives in the root folder index (see the folder-index serialization
+ * comment above), so reading it costs the same head fetch + decrypt a folder
+ * listing does. A caller drawing a LIST of Spaces should cache what this
+ * returns rather than call it per Space per render.
+ */
+export declare function readWorkspaceName(api: ApiClient, session: Session, ws: Workspace): Promise<string | null>;
+/**
+ * Set (or, with `null`, clear) the Space's name.
+ *
+ * A rename is an ordinary root commit carrying no entry ops, so it takes the
+ * same optimistic-commit path as everything else: it can lose a race, and it
+ * retries against the new head. Two devices renaming at once resolve
+ * last-writer-wins, which is what a single-valued label can do.
+ */
+export declare function renameWorkspace(api: ApiClient, session: Session, ws: Workspace, name: string | null): Promise<void>;
+/**
  * File-layer artifacts (P1b Task 3, `file.ts`) that ride along with a folder
  * commit: the encrypted `FileManifest` blob(s) a caller wants persisted to
  * `e2ee_file_manifests`, plus the chunk-refcount deltas for whatever ciphertext
@@ -447,6 +500,75 @@ export type CommitFileExtras = {
         added: string[];
         removed: string[];
     }[];
+    /**
+     * The folder state the caller computed its ops AGAINST, with the head
+     * version it came from (see `listFolderAt`). When the workspace has moved
+     * on by the time the commit starts - another device saved while this one
+     * was still uploading chunks - the first attempt is a real 3-way rebase
+     * against that base instead of a plain apply on top of the newer remote.
+     * Without it a slow edit lands verbatim over the other device's edit and
+     * commits cleanly, no 409, no conflicted copy: silent data loss.
+     */
+    base?: {
+        state: FolderState;
+        headVersion: number | null;
+    };
+};
+/**
+ * Resolve which chunk-ref deltas actually apply given THIS attempt's real
+ * merged outcome (`merged`/`conflicts`, from either `applyOps` on the first
+ * attempt or a real `rebase()` on a retry), rather than blindly reapplying
+ * whatever was computed once against a base that may no longer reflect what
+ * is actually being committed. For each `{ entryId, added, removed }`:
+ *
+ *  - the corresponding local `put` landed UNCHANGED at its original id in
+ *    `merged` (the common case: no conflict, or this write cleanly won) ->
+ *    the full `added` + `removed` delta applies.
+ *  - `entryId` shows up in `conflicts` as `"conflicted-copy"` (this write
+ *    survived under a FRESH id - e2ee-core's rebase.ts
+ *    `insertConflictedCopy`) -> only `added` applies. The new chunks are now
+ *    referenced by the conflicted-copy entry, but `removed` is DROPPED:
+ *    whatever remains at `entryId` (the other writer's version) may still
+ *    reference those chunks, and removing them is that OTHER commit's
+ *    responsibility (exactly once), not this one's.
+ *  - neither (e.g. `"lww-remote-wins"`: this attempt's whole edit was
+ *    dropped) -> neither applies - nothing this attempt uploaded ended up
+ *    referenced by `merged`, so there is nothing to credit or debit.
+ *  - a delta whose `entryId` has a local `{ type: "del" }` op (no local
+ *    `put` - `deleteEntry` in `file.ts`) -> `removed` (and `added`, normally
+ *    empty for a delete) applies iff `remote.has(entryId) && !merged.has(entryId)`:
+ *    THIS attempt's own delete is what removed the entry from the head it
+ *    was committed against. That is exactly e2ee-core's rebase.ts "clean
+ *    delete" branch (`!changed(r, b)` -> `merged.delete(id)`, reached when
+ *    the remote never touched the id since `base`), so the manifest
+ *    `deleteEntry` decrypted from ITS base is exactly the one still live at
+ *    `remote`, and its chunk list is the right thing to release. The other
+ *    two rebase.ts outcomes for a local `del` both mean "don't apply": a
+ *    `delete-edit` conflict keeps the remote's (edited) entry at `id`
+ *    (`merged.has(id)` stays true - the remote's own put already accounts
+ *    for its current chunks, unrelated to what this stale local delete
+ *    computed), and "both sides deleted" (`!remote.has(id)`) means the
+ *    OTHER side's delete already released these refs once - reapplying here
+ *    would double-decrement.
+ *
+ * This is what makes chunk-ref accounting safe to recompute on EVERY rebase
+ * retry: a losing attempt whose write becomes a conflicted copy never
+ * re-reports the removal a DIFFERENT (winning) commit already applied once,
+ * so a chunk shared by both the old and the winning version is never
+ * double-decremented (refcount -> negative), and a conflicted copy's own new
+ * chunks are never left un-added (orphaned). The same non-double-decrement
+ * property holds for a `del`'s removal: `remote.has(entryId)` is only true
+ * on the attempt that still sees the entry live, so a losing "both deleted"
+ * retry (`!remote.has(id)`) never re-reports what the winning delete already
+ * released.
+ */
+export declare function resolveChunkRefDeltas(localOps: Op[], remote: FolderState, merged: FolderState, conflicts: Conflict[], chunkRefDeltas: {
+    entryId: string;
+    added: string[];
+    removed: string[];
+}[]): {
+    added: string[];
+    removed: string[];
 };
 /**
  * Signal thrown by `commitFolderOps` when a concurrent workspace-key
@@ -510,4 +632,6 @@ export declare class WorkspaceRekeyedError extends Error {
  * new chunks un-added. See `resolveChunkRefDeltas`'s doc comment for the
  * full case analysis.
  */
-export declare function commitFolderOps(api: ApiClient, session: Session, ws: Workspace, folderId: string, localOps: Op[], fileExtras?: CommitFileExtras): Promise<void>;
+export declare function commitFolderOps(api: ApiClient, session: Session, ws: Workspace, folderId: string, localOps: Op[], fileExtras?: CommitFileExtras, opts?: {
+    spaceName?: string | null;
+}): Promise<void>;

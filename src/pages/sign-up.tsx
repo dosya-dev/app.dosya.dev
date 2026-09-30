@@ -10,6 +10,7 @@ import { PublicNav } from '@/components/public-nav';
 import { PasswordStrengthMeter } from '@/components/password-strength-meter';
 import { validateEmail, validatePassword } from '@/lib/validation-policy.generated';
 import { TurnstileWidget, type TurnstileHandle } from '@/components/turnstile-widget';
+import { resolveTurnstileToken, turnstileFailureMessage, isTurnstileRejection } from '@/lib/turnstile-submit';
 import { LegalLinks, LegalNotice } from '@/components/legal-notice';
 import { Logo } from "@/components/brand/logo";
 
@@ -52,12 +53,13 @@ export default function SignUpPage() {
     setLoading(true);
     try {
       const ref = searchParams.get('ref') ?? sessionStorage.getItem('dosya_ref') ?? undefined;
+      const challengeToken = await resolveTurnstileToken(turnstileRef.current);
       const res = await fetch(`${API_BASE}/api/auth/signup`, {
         method: 'POST',
         credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
-          'X-Turnstile-Token': turnstileRef.current?.getToken() ?? '',
+          'X-Turnstile-Token': challengeToken,
         },
         // `terms` is required by the API, which records it against the new
         // user row. Submitting is gated on the checkbox above, so this is
@@ -72,6 +74,8 @@ export default function SignUpPage() {
       if (res.ok && data.ok) {
         try { sessionStorage.removeItem('dosya_ref'); } catch { /* */ }
         navigate(data.redirect ?? '/verify');
+      } else if (isTurnstileRejection(data)) {
+        setError(turnstileFailureMessage(turnstileRef.current));
       } else {
         setError(data.error ?? 'Sign-up failed');
       }

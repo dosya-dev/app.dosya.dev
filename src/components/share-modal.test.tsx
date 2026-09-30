@@ -198,6 +198,72 @@ describe('ShareModal "Never"', () => {
  * it, and the CLI has always sent it as `--lock`. This dialog never sent the
  * field, so the only way to create a view-only link was from a terminal.
  */
+/**
+ * "Remove photo metadata" (migration 0183). The box sends `strip_metadata:
+ * true`; untouched, the field is absent so an ordinary link is byte-for-byte
+ * what it was before the option existed.
+ */
+describe('ShareModal remove photo metadata', () => {
+  const bodyOf = (path: string) => {
+    const call = apiMock.mock.calls.find(([p, init]) => String(p).includes(path) && (init as RequestInit | undefined)?.method === 'POST');
+    expect(call, `POST to ${path}`).toBeTruthy();
+    return JSON.parse((call![1] as RequestInit).body as string) as Record<string, unknown>;
+  };
+
+  async function openAdvanced() {
+    const toggle = [...document.body.querySelectorAll('button')]
+      .find((b) => b.textContent?.trim() === 'Advanced options')!;
+    await act(async () => { toggle.click(); await Promise.resolve(); });
+  }
+
+  async function submit() {
+    const button = [...document.body.querySelectorAll('button')]
+      .find((b) => ['Send', 'Generate link'].includes(b.textContent?.trim() ?? ''))!;
+    await act(async () => { button.click(); await Promise.resolve(); await Promise.resolve(); });
+  }
+
+  async function tickStrip() {
+    const box = document.body.querySelector('[data-testid="share-strip-metadata"]') as HTMLInputElement;
+    expect(box, 'strip-metadata checkbox').toBeTruthy();
+    await act(async () => { box.click(); await Promise.resolve(); });
+  }
+
+  it('sends strip_metadata: true on a link when the box is ticked', async () => {
+    await render(7);
+    const byLink = [...document.body.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'By link')!;
+    await act(async () => { byLink.click(); await Promise.resolve(); });
+    await openAdvanced();
+    await tickStrip();
+    await submit();
+    expect(bodyOf('/api/files/f1/share').strip_metadata).toBe(true);
+  });
+
+  it('sends no strip_metadata when the box is untouched', async () => {
+    await render(7);
+    const byLink = [...document.body.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'By link')!;
+    await act(async () => { byLink.click(); await Promise.resolve(); });
+    await openAdvanced();
+    await submit();
+    expect(bodyOf('/api/files/f1/share')).not.toHaveProperty('strip_metadata');
+  });
+
+  it('carries the option on a share by email too', async () => {
+    await render(7);
+    const input = document.body.querySelector('input[type="email"], input[placeholder*="mail" i]') as HTMLInputElement;
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!;
+    await act(async () => {
+      setter.call(input, 'someone@example.com');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      await Promise.resolve();
+    });
+    await openAdvanced();
+    await tickStrip();
+    await submit();
+    expect(bodyOf('/api/files/f1/share-email').strip_metadata).toBe(true);
+  });
+});
+
 describe('ShareModal view-only', () => {
   const bodyOf = (path: string) => {
     const call = apiMock.mock.calls.find(([p, init]) => String(p).includes(path) && (init as RequestInit | undefined)?.method === 'POST');

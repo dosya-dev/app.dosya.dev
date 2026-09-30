@@ -10,6 +10,8 @@ import { useDebouncedValue } from '@/hooks/use-debounced-value';
 import { useFilesListing, fetchFilesListing } from '@/hooks/use-files-listing';
 import { useLibrary } from '@/hooks/use-library';
 import { LibraryView, KIND_ICON, type TileSize } from '@/components/library/library-view';
+import { collapseLiveTwins, twinsUnderStills, isLiveStill, isLiveTwin, liveTwinIds, liveTwinOf, twinDeleteEndpoint } from '@/lib/live-photos';
+import { LiveBadge } from '@/components/live-badge';
 import {
   kindForFilter, sortOptionsFor, plural, KIND_COPY, LIBRARY_QUERY_ROOT,
   loadLibraryLayouts, saveLibraryLayout, type LibrarySort, type LibraryLayout,
@@ -317,7 +319,7 @@ export default function FilesPage() {
   const [newFolderName, setNewFolderName] = useState('');
   const [creatingFolder, setCreatingFolder] = useState(false);
   /** `permanent`/`fileCount` are only set for the Deleted view's row-level purge, which reuses this same dialog. */
-  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string; type: 'file' | 'folder'; permanent?: boolean; fileCount?: number } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string; type: 'file' | 'folder'; permanent?: boolean; fileCount?: number; twin?: { id: string; name: string } | null; withTwin?: boolean } | null>(null);
   /** True while the single-item delete confirm's request is in flight. Keeps
    * the confirm button (and the rest of the dialog) locked so a second click
    * can't send a follow-up DELETE that lands on the now-trashed item and
@@ -439,6 +441,19 @@ export default function FilesPage() {
   // merge - and no consumer below has to know which one it is reading.
   const folders = isLibraryView ? EMPTY_FOLDERS : listing.folders;
   const files: FileItem[] = isLibraryView ? library.files : listing.files;
+  // Grids collapse a Live Photo's twin video under its still; list view keeps
+  // the twin as a row right under the still. Counts and selection use `files`.
+  const gridFiles = useMemo(() => collapseLiveTwins(files), [files]);
+  const listFiles = useMemo(() => twinsUnderStills(files), [files]);
+  // Deleting a Live Photo still offers to take its twin video along - the
+  // twin may already be out of view (paged, filtered, collapsed under the
+  // still in the grid), so this always names it by id from `files`, not from
+  // whatever happens to be on screen.
+  const fileDeleteTarget = (f: FileItem, permanent: boolean = isDeletedView) => ({
+    id: f.id, name: f.name, type: 'file' as const, permanent,
+    twin: isLiveStill(f) ? { id: f.live_video_id!, name: liveTwinOf(files, f)?.name ?? 'its Live Photo video' } : null,
+    withTwin: true,
+  });
   const breadcrumbs = isLibraryView ? EMPTY_BREADCRUMBS : listing.breadcrumbs;
   const pagination = isLibraryView ? null : listing.pagination;
   const canLock = isLibraryView ? library.canLock : listing.canLock;
@@ -765,7 +780,17 @@ export default function FilesPage() {
         else toast.info(message.title, message.body);
       } else {
         await api(ep, { method: 'DELETE' });
-        toast.success('Deleted', deleteTarget.permanent ? `${deleteTarget.name} was permanently deleted.` : `${deleteTarget.name} was deleted.`);
+        // The twin gets its OWN try: by the time it runs the still is already
+        // gone, so letting it throw into the outer catch left the dialog open
+        // over a row that no longer exists and the listing unrefreshed. A twin
+        // that refuses to follow is a leftover video, not a failed delete.
+        const twinEp = twinDeleteEndpoint(deleteTarget);
+        let twinFailed = false;
+        if (twinEp) {
+          try { await api(twinEp, { method: 'DELETE' }); } catch { twinFailed = true; }
+        }
+        if (twinFailed) toast.info('Deleted', 'Photo deleted, but its video could not be deleted.');
+        else toast.success('Deleted', deleteTarget.permanent ? `${deleteTarget.name} was permanently deleted.` : `${deleteTarget.name} was deleted.`);
       }
       // The deleted row can be part of the current bulk selection even though
       // this is the single-item delete path - clear explicitly so a stale id
@@ -878,6 +903,20 @@ export default function FilesPage() {
   const handleCopy = async (fileId: string) => {
     try {
       await api(`/api/files/${fileId}/copy`, { method: 'POST', body: JSON.stringify({ folder_id: currentFolderId }) });
+      // A Live Photo copies as a pair, the same rule move follows: the copy of
+      // the still would otherwise land beside a video it no longer claims, and
+      // the pair would look broken in the destination. Its own try, because
+      // the still's copy has already happened and cannot be taken back.
+      const still = files.find((f) => f.id === fileId);
+      if (still && isLiveStill(still)) {
+        try {
+          await api(`/api/files/${still.live_video_id}/copy`, { method: 'POST', body: JSON.stringify({ folder_id: currentFolderId }) });
+        } catch {
+          toast.info('Copied', 'The photo was copied, but its video could not be.');
+          loadFiles();
+          return;
+        }
+      }
       toast.success('Copied', 'A copy has been added to this folder.'); loadFiles();
     } catch { toast.error('Copy failed', 'The file could not be copied.'); }
   };
@@ -888,6 +927,12 @@ export default function FilesPage() {
       const ep = moveOpen.type === 'file' ? `/api/files/${moveOpen.id}/move` : `/api/folders/${moveOpen.id}/move`;
       const body = moveOpen.type === 'file' ? { folder_id: folderId } : { parent_id: folderId };
       await api(ep, { method: 'PUT', body: JSON.stringify(body) });
+      if (moveOpen.type === 'file') {
+        const moved = files.find((f) => f.id === moveOpen.id);
+        if (moved && isLiveStill(moved)) {
+          await api(`/api/files/${moved.live_video_id}/move`, { method: 'PUT', body: JSON.stringify({ folder_id: folderId }) });
+        }
+      }
       toast.success('Moved', 'The file has been moved.');
       // The moved row leaves the current folder - clear explicitly so a stale
       // id for it can't linger in the bulk selection.
@@ -969,6 +1014,10 @@ export default function FilesPage() {
 
   const clearSelection = () => { setSelected(new Set()); setSelectedFolders(new Set()); };
   const totalSelected = selected.size + selectedFolders.size;
+  // The Live Photo videos a bulk action would carry along. Derived once: the
+  // bulk-delete dialog named it three times in a single line, walking the whole
+  // page's rows on every render of an open dialog to answer the same question.
+  const selectedTwinIds = useMemo(() => liveTwinIds(files, selected), [files, selected]);
   // The bulk bar collapses instead of unmounting (see its render below), so the
   // count has to survive the collapse - otherwise the label reads "0 selected"
   // for the 140ms it spends shrinking.
@@ -1007,7 +1056,7 @@ export default function FilesPage() {
     // progress, so the selection is chunked and sent sequentially - each chunk
     // that lands moves the bar. Soft delete stays non-cancelable: the modal
     // blocks until every chunk settles, matching the old all-or-nothing feel.
-    const fileIds = Array.from(selected);
+    const fileIds = [...Array.from(selected), ...selectedTwinIds];
     const folderIds = Array.from(selectedFolders);
     const total = fileIds.length + folderIds.length;
     let done = 0;
@@ -1052,8 +1101,14 @@ export default function FilesPage() {
   // made these actions feel hung.
   const applyBulkMove = async (destFolderId: string | null) => {
     setBulkBusy(true);
-    const fileRes = await runBulk(Array.from(selected), (id) =>
-      api(`/api/files/${id}/move`, { method: 'PUT', body: JSON.stringify({ folder_id: destFolderId }) }));
+    const moveFile = (id: string) =>
+      api(`/api/files/${id}/move`, { method: 'PUT', body: JSON.stringify({ folder_id: destFolderId }) });
+    const fileRes = await runBulk(Array.from(selected), moveFile);
+    // Move takes a Live Photo's twin along, exactly as the single-file move
+    // and the bulk delete do. The twin's own row is often not selected (the
+    // grid collapses it under the still), so it is added by the same rule -
+    // and kept out of the counts, which report the selection the user made.
+    await runBulk(selectedTwinIds, moveFile);
     // circular-move / already-here errors land in `fail`
     const folderRes = await runBulk(Array.from(selectedFolders), (id) =>
       api(`/api/folders/${id}/move`, { method: 'PUT', body: JSON.stringify({ parent_id: destFolderId }) }));
@@ -1224,7 +1279,7 @@ export default function FilesPage() {
           // `selectedFile` can no longer be set while isDeletedView is true -
           // openFileWithLockCheck gates every "open the detail panel" call
           // site - so this branch is already inert in the trash view.
-          setDeleteTarget({ id: selectedFile.id, name: selectedFile.name, type: 'file' });
+          setDeleteTarget(fileDeleteTarget(selectedFile));
         }
       }
       if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
@@ -1259,7 +1314,7 @@ export default function FilesPage() {
       return [
         { label: 'Restore', icon: <RotateCcw />, onClick: () => handleRestoreFile(f), disabled: restoringIds.has(f.id) },
         { label: '', separator: true, onClick: () => {}, icon: null },
-        { label: 'Delete permanently', icon: <Trash2 />, onClick: () => setDeleteTarget({ id: f.id, name: f.name, type: 'file', permanent: true }), danger: true },
+        { label: 'Delete permanently', icon: <Trash2 />, onClick: () => setDeleteTarget(fileDeleteTarget(f, true)), danger: true },
       ];
     }
     // Every `hidden` below mirrors the permission the matching endpoint
@@ -1287,7 +1342,7 @@ export default function FilesPage() {
       { label: f.lock_mode !== 'none' ? 'Unlock' : 'Lock', icon: <Lock />, hidden: !canLock, onClick: () => setLockTarget({ id: f.id, name: f.name, type: 'file', size_bytes: f.size_bytes, extension: f.extension, lock_mode: f.lock_mode }) },
       { label: f.is_hidden ? 'Unhide' : 'Hide', icon: f.is_hidden ? <Eye /> : <EyeOff />, hidden: !canHide, onClick: () => setHideTarget({ id: f.id, name: f.name, type: 'file' }) },
       { label: '', separator: true, onClick: () => {}, icon: null },
-      { label: 'Delete', icon: <Trash2 />, hidden: !canDeleteFile(f), onClick: () => setDeleteTarget({ id: f.id, name: f.name, type: 'file' }), danger: true },
+      { label: 'Delete', icon: <Trash2 />, hidden: !canDeleteFile(f), onClick: () => setDeleteTarget(fileDeleteTarget(f)), danger: true },
     ];
   };
 
@@ -1539,8 +1594,10 @@ export default function FilesPage() {
           <>
             {/* A folder made from the library view would land nowhere the view
                 can show, so only Upload survives there. */}
-            {!isLibraryView && <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={() => setCreateFolderOpen(true)}><FolderPlus className="size-3.5" /> New folder</Button>}
-            <Link to={uploadHref}><Button size="sm" className="h-8 text-xs gap-1.5"><Upload className="size-3.5" /> Upload</Button></Link>
+            {/* Same gates as the right-click menu's New folder / Upload files
+                entries: these two were shown to every role. */}
+            {!isLibraryView && can('create_folders') && <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={() => setCreateFolderOpen(true)}><FolderPlus className="size-3.5" /> New folder</Button>}
+            {can('access_upload') && can('upload_files') && <Link to={uploadHref}><Button size="sm" className="h-8 text-xs gap-1.5"><Upload className="size-3.5" /> Upload</Button></Link>}
           </>
         )}
       </div>
@@ -1682,9 +1739,11 @@ export default function FilesPage() {
                   </Button>
                 ) : (!isDeletedView && !search && !currentGroup && !filterEmptyLabel) ? (
                   <>
-                    <Link to={uploadHref}>
-                      <Button size="sm" className="h-7 text-xs"><Upload className="size-3 mr-1" /> Upload files</Button>
-                    </Link>
+                    {can('access_upload') && can('upload_files') && (
+                      <Link to={uploadHref}>
+                        <Button size="sm" className="h-7 text-xs"><Upload className="size-3 mr-1" /> Upload files</Button>
+                      </Link>
+                    )}
                     <Link to="/integrations/google">
                       <Button variant="outline" size="sm" className="h-7 text-xs">Import from Drive</Button>
                     </Link>
@@ -1718,7 +1777,7 @@ export default function FilesPage() {
                 <div>
                   <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">Files</p>
                   <div className={`grid grid-cols-2 md:grid-cols-3 ${selectedFile ? 'lg:grid-cols-3' : 'lg:grid-cols-4'} gap-3`}>
-                    {files.map((f) => (
+                    {gridFiles.map((f) => (
                       <FileCard key={f.id} file={f} view="grid"
                         domId={`file-${f.id}`}
                         selected={selected.has(f.id)}
@@ -1734,7 +1793,7 @@ export default function FilesPage() {
                         onDownload={() => handleDownload(f.id)}
                         onShare={() => openShare(f.id, f.name)}
                         onRename={() => { setRenameTarget({ id: f.id, name: f.name, type: 'file' }); setRenameName(f.name); }}
-                        onDelete={() => setDeleteTarget({ id: f.id, name: f.name, type: 'file', permanent: isDeletedView })}
+                        onDelete={() => setDeleteTarget(fileDeleteTarget(f))}
                         onCopy={() => handleCopy(f.id)}
                         onMove={() => openMoveModal(f.id, 'file')}
                         onFavourite={() => toggleFavourite(f.id)}
@@ -1824,14 +1883,14 @@ export default function FilesPage() {
                       </div>
                   ))}
                   {/* Table rows */}
-                  {files.map((f) => {
+                  {listFiles.map((f) => {
                     const isActive = selectedFile?.id === f.id || highlightId === f.id;
                     const isSel = selected.has(f.id);
                     return (
                       <div
                         key={f.id}
                         id={`file-${f.id}`}
-                        className={`flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-muted/50 cursor-pointer group ${highlightId === f.id ? 'animate-upload-flash ' : ''}${isActive ? 'bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-900' : isSel ? 'bg-primary/10' : ''}`}
+                        className={`flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-muted/50 cursor-pointer group ${isLiveTwin(f) ? 'pl-9 ' : ''}${highlightId === f.id ? 'animate-upload-flash ' : ''}${isActive ? 'bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-900' : isSel ? 'bg-primary/10' : ''}`}
                         onClick={(e) => { e.stopPropagation(); if (e.ctrlKey || e.metaKey) toggleSelect(f.id); else openFileWithLockCheck(f, 'detail'); }}
                         onContextMenu={(e) => onContextMenu(e, 'file', f)}
                       >
@@ -1846,6 +1905,8 @@ export default function FilesPage() {
                             return (
                               <div key="name" className="flex-1 min-w-40 flex items-center gap-2">
                                 <button className="text-sm font-medium truncate hover:underline text-left" onClick={(e) => { e.stopPropagation(); openFileWithLockCheck(f, 'view'); }}>{f.name}</button>
+                                {isLiveStill(f) && <LiveBadge size="pill" />}
+                                {isLiveTwin(f) && <span className="text-[10px] text-muted-foreground">Live Photo video</span>}
                                 {favourites.has(f.id) && <Star className="size-3 text-orange-400 fill-orange-400 shrink-0" />}
                               </div>
                             );
@@ -1857,7 +1918,7 @@ export default function FilesPage() {
                             <FileDropdown
                               onRestore={() => handleRestoreFile(f)}
                               restoreDisabled={restoringIds.has(f.id)}
-                              onDelete={() => setDeleteTarget({ id: f.id, name: f.name, type: 'file', permanent: true })}
+                              onDelete={() => setDeleteTarget(fileDeleteTarget(f, true))}
                               deleteLabel="Delete permanently"
                             />
                           ) : (
@@ -1865,7 +1926,7 @@ export default function FilesPage() {
                               onDownload={() => handleDownload(f.id)}
                               onShare={() => openShare(f.id, f.name)}
                               onRename={() => { setRenameTarget({ id: f.id, name: f.name, type: 'file' }); setRenameName(f.name); }}
-                              onDelete={() => setDeleteTarget({ id: f.id, name: f.name, type: 'file' })}
+                              onDelete={() => setDeleteTarget(fileDeleteTarget(f))}
                               onCopy={() => handleCopy(f.id)}
                               onMove={() => openMoveModal(f.id, 'file')}
                               onAddToGroup={() => openAddToGroup(f.id, f.name, 'file')}
@@ -1893,10 +1954,12 @@ export default function FilesPage() {
           <FileDetailPanel
             file={selectedFile}
             onClose={() => setSelectedFile(null)}
-            onDownload={handleDownload}
-            onCopy={handleCopy}
-            onDelete={(id, name) => setDeleteTarget({ id, name, type: 'file' })}
-            onShare={(id, name) => openShare(id, name)}
+            // Same predicates as the viewer overlay's `actions` below: the
+            // panel hides a button whose callback is absent.
+            onDownload={can('download_files') ? handleDownload : undefined}
+            onCopy={can('upload_files') ? handleCopy : undefined}
+            onDelete={canDeleteFile(selectedFile) ? () => setDeleteTarget(fileDeleteTarget(selectedFile)) : undefined}
+            onShare={can('create_share_links') ? (id, name) => openShare(id, name) : undefined}
             onView={(id) => { const f = files.find((x) => x.id === id); if (f) openFileWithLockCheck(f, 'view'); }}
             onRefresh={loadFiles}
           />
@@ -1951,6 +2014,12 @@ export default function FilesPage() {
           {!deleteTarget?.permanent && (
             <p className="text-xs text-muted-foreground">It moves to the trash and keeps using storage until it's permanently deleted.</p>
           )}
+          {deleteTarget?.type === 'file' && deleteTarget.twin && (
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={deleteTarget.withTwin !== false} onChange={(e) => setDeleteTarget({ ...deleteTarget, withTwin: e.target.checked })} />
+              Also delete {deleteTarget.twin.name}
+            </label>
+          )}
           {/* A big folder is emptied over several passes; say what has gone so
               far rather than leaving a spinner with nothing behind it. */}
           {purgeProgress !== null && purgeProgress > 0 && (
@@ -2002,6 +2071,7 @@ export default function FilesPage() {
                 </>
               )}
             </p>
+            {selectedTwinIds.length > 0 && <p className="text-xs text-muted-foreground">Includes {selectedTwinIds.length} Live Photo video{selectedTwinIds.length === 1 ? '' : 's'}.</p>}
             {selectedFolders.size > 0 && (
               <p>
                 {bulkDeleteConfirm?.permanent
@@ -2243,7 +2313,7 @@ export default function FilesPage() {
             onRename: can('rename_files') ? (f) => { setRenameTarget({ id: f.id, name: f.name, type: 'file' }); setRenameName(f.name); } : undefined,
             onMove: can('upload_files') ? (f) => openMoveModal(f.id, 'file') : undefined,
             onLock: canLock ? (f) => setLockTarget({ id: f.id, name: f.name, type: 'file', size_bytes: f.size_bytes, extension: f.extension, lock_mode: f.lock_mode }) : undefined,
-            onDelete: canDeleteFile(viewerFile) ? (f) => setDeleteTarget({ id: f.id, name: f.name, type: 'file' }) : undefined,
+            onDelete: canDeleteFile(viewerFile) ? (f) => setDeleteTarget(fileDeleteTarget(f)) : undefined,
           }}
         />
       )}
@@ -2305,7 +2375,7 @@ function FileCard({ file, view, selected, anySelected, active, highlight, domId,
 
   if (view === 'list') {
     return (
-      <div id={domId} className={`flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-muted/50 cursor-pointer group ${highlight ? 'animate-upload-flash ' : ''}${active ? 'bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-900' : selected ? 'bg-primary/10' : ''}`} onClick={onClick} onContextMenu={onContextMenu}>
+      <div id={domId} className={`flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-muted/50 cursor-pointer group ${isLiveTwin(file) ? 'pl-9 ' : ''}${highlight ? 'animate-upload-flash ' : ''}${active ? 'bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-900' : selected ? 'bg-primary/10' : ''}`} onClick={onClick} onContextMenu={onContextMenu}>
         <SelectCheckbox
           checked={selected}
           onCheckedChange={() => onSelect()}
@@ -2313,6 +2383,8 @@ function FileCard({ file, view, selected, anySelected, active, highlight, domId,
         />
         <img src={fileIconSrc(file.name)} alt={ext} className="w-7 h-7 shrink-0" />
         <button className="text-sm font-medium flex-1 truncate text-left hover:underline" onClick={(e) => { e.stopPropagation(); onNameClick(); }}>{file.name}</button>
+        {isLiveStill(file) && <LiveBadge size="pill" />}
+        {isLiveTwin(file) && <span className="text-[10px] text-muted-foreground">Live Photo video</span>}
         {file.current_version > 1 && <Badge variant="secondary" className="text-[9px]">v{file.current_version}</Badge>}
         {file.comment_count > 0 && <Badge variant="secondary" className="text-[9px]"><MessageSquare className="size-2.5 mr-1" />{file.comment_count}</Badge>}
         <span className="text-xs text-muted-foreground">{humanSize(file.size_bytes)}</span>
@@ -2336,6 +2408,7 @@ function FileCard({ file, view, selected, anySelected, active, highlight, domId,
       {/* Legibility scrims: top for the pills, bottom for filename + actions */}
       <div className="absolute inset-x-0 top-0 h-14 bg-linear-to-b from-black/55 to-transparent pointer-events-none" />
       <div className="absolute inset-x-0 bottom-0 h-3/5 bg-linear-to-t from-black/85 via-black/40 to-transparent pointer-events-none" />
+      {isLiveStill(file) && <LiveBadge size="tile" className="absolute top-2 left-9 z-10" />}
 
       {/* Top-left: multi-select checkbox (hidden for fully-locked files) */}
       {file.lock_mode !== 'full_lock' && (

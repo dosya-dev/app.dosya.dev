@@ -120,3 +120,42 @@ describe('FileDetailPanel - text preview fetch', () => {
     expect(rawCall![1]).toMatchObject({ credentials: 'include' });
   });
 });
+
+// The panel used to render Download, Share, Copy and Delete to every role and
+// let the server answer with a 403. Each is now passed only when the role can
+// perform it, and the panel hides the button when the callback is absent -
+// the same contract the viewer overlay already has.
+describe('FileDetailPanel - action buttons follow the callbacks', () => {
+  const buttonLabels = () => [...document.querySelectorAll('button')].map((b) => b.textContent?.trim() ?? '');
+
+  async function renderWith(callbacks: Record<string, (() => void) | undefined>) {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    await act(async () => {
+      root!.render(createElement(FileDetailPanel, {
+        file: testFile(), onClose: noop, onView: noop, onRefresh: noop, ...callbacks,
+      }));
+      await flush();
+    });
+  }
+
+  it('hides Download, Share, Copy and Delete when their callbacks are absent', async () => {
+    await renderWith({});
+    const labels = buttonLabels();
+    expect(labels).toContain('View file');
+    expect(labels).not.toContain('Download');
+    expect(labels).not.toContain('Share');
+    expect(labels).not.toContain('Copy file');
+    expect(labels).not.toContain('Delete file');
+  });
+
+  it('shows exactly the actions whose callbacks are present', async () => {
+    await renderWith({ onDownload: noop, onDelete: noop });
+    const labels = buttonLabels();
+    expect(labels).toContain('Download');
+    expect(labels).toContain('Delete file');
+    expect(labels).not.toContain('Share');
+    expect(labels).not.toContain('Copy file');
+  });
+});

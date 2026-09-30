@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { api } from '@/api/client';
+import { api, apiErrorMessage } from '@/api/client';
 import { useWorkspace } from '@/stores/workspace';
 // card unused for now but may be needed later
 import { Button } from '@/components/ui/button';
@@ -15,7 +15,7 @@ import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from '@/components/ui/table';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Search, X, Share2, Folder, Lock, Users, Eye, Mail } from 'lucide-react';
+import { Search, X, Share2, Folder, Lock, Users, Eye, Mail, AlertCircle } from 'lucide-react';
 import { CopyCheck } from '@/components/ui/copy-check';
 import { humanSize, timeAgo, colorFor, labelFor } from '@/lib/helpers';
 import { toast } from '@/lib/toast';
@@ -84,6 +84,8 @@ export default function SharedPage() {
   const wsId = useWorkspace((s: { activeId: string }) => s.activeId);
   const [links, setLinks] = useState<ShareLink[]>([]);
   const [loading, setLoading] = useState(true);
+  /** Set when /api/shares fails. A refusal is not "nothing shared yet". */
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [filter, setFilter] = useState<Filter>('all');
   const [search, setSearch] = useState('');
   const [revokeTarget, setRevokeTarget] = useState<ShareLink | null>(null);
@@ -95,10 +97,15 @@ export default function SharedPage() {
 
   const load = useCallback(async () => {
     if (!wsId) return;
+    setLoadError(null);
     try {
       const data = await api<{ ok: boolean; links: ShareLink[] }>(`/api/shares?workspace_id=${wsId}`);
       if (data.ok) setLinks(data.links);
-    } catch { /* */ }
+    } catch (err) {
+      // Swallowing this rendered the empty state over a 403, so a role
+      // without access_shared read "nothing shared yet" instead of the truth.
+      setLoadError(apiErrorMessage(err, 'Shared links could not be loaded.'));
+    }
     setLoading(false);
   }, [wsId]);
 
@@ -200,6 +207,13 @@ export default function SharedPage() {
         <div className="flex-1 overflow-y-auto px-8 pb-6">
           {loading ? (
             <div className="space-y-2 mt-4">{[1,2,3,4].map((i) => <Skeleton key={i} className="h-14 w-full" />)}</div>
+          ) : loadError ? (
+            <div className="flex flex-col items-center justify-center py-16 text-center">
+              <AlertCircle className="size-8 text-destructive/40 mb-3" />
+              <p className="text-sm font-medium mb-1">Could not load shared links</p>
+              <p className="text-xs text-muted-foreground max-w-80 mb-3">{loadError}</p>
+              <Button variant="outline" size="sm" className="h-7 text-xs" onClick={load}>Try again</Button>
+            </div>
           ) : filtered.length === 0 ? (
             links.length === 0 ? (
               <EmptyState

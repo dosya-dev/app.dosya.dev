@@ -3,6 +3,7 @@ import { useLocation } from 'react-router-dom';
 import { api, API_BASE } from '@/api/client';
 import { req, type OkResult } from '@/api/req';
 import { ApiKeysSection, type ApiKey } from '@/components/api-keys/api-keys-section';
+import { PrivacySection } from '@/components/account/privacy-section';
 import { useSession } from '@/stores/session';
 import {
   CODE_LENGTH, normaliseCode, isCompleteCode, cooldownRemaining,
@@ -75,7 +76,8 @@ const NAV = [
   { id: 'notifications', label: 'Notifications', icon: Bell, group: 'Profile' },
   { id: 'integrations', label: 'Integrations', icon: Plug, group: 'Profile' },
   { id: 'workspaces', label: 'My workspaces', icon: Building2, group: 'Workspaces' },
-  { id: 'delete', label: 'Delete account', icon: Trash2, group: 'Danger', danger: true },
+  { id: 'privacy', label: 'Privacy and your data', icon: ShieldCheck, group: 'Your data' },
+  { id: 'delete', label: 'Delete account', icon: Trash2, group: 'Your data', danger: true },
 ];
 
 // ── Page ───────────────────────────────────────────────────
@@ -149,14 +151,14 @@ export default function ProfilePage() {
     <div className="flex h-full overflow-hidden">
       {/* Side nav */}
       <nav className="w-48 shrink-0 border-r p-4 overflow-y-auto hidden md:block">
-        {['Profile', 'Workspaces', 'Danger'].map((group) => (
+        {['Profile', 'Workspaces', 'Your data'].map((group) => (
           <div key={group} className="mb-4">
             <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">{group}</p>
             {NAV.filter((n) => n.group === group).map((n) => (
               <button
                 key={n.id}
                 onClick={() => { setActiveSection(n.id); document.getElementById(`section-${n.id}`)?.scrollIntoView({ behavior: 'smooth' }); }}
-                className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium transition-colors mb-0.5 ${
+                className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium text-left transition-colors mb-0.5 ${
                   activeSection === n.id
                     ? n.danger ? 'bg-destructive text-destructive-foreground' : 'bg-accent text-accent-foreground'
                     : n.danger ? 'text-destructive hover:bg-destructive/10' : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
@@ -183,6 +185,7 @@ export default function ProfilePage() {
         <NotificationsSection />
         <IntegrationsSection accounts={driveAccounts} providers={cloudProviders} onChanged={loadDrive} />
         <WorkspacesSection workspaces={workspaces} />
+        <PrivacySection />
         <DeleteAccountSection />
       </div>
     </div>
@@ -1165,7 +1168,18 @@ function WorkspacesSection({ workspaces }: { workspaces: Workspace[] }) {
 
 // ── Delete Account ─────────────────────────────────────────
 
-function DeleteAccountSection() {
+function plural(n: number, noun: string): string {
+  return `${n} ${noun}${n === 1 ? '' : 's'}`;
+}
+
+function describeDeletion(preview: DeletePreview | null): string {
+  const days = preview?.window_days ?? 30;
+  const workspaces = plural(preview?.workspaces.length ?? 0, 'workspace');
+  const files = plural(preview?.file_count ?? 0, 'file');
+  return `Scheduled for ${days} days later, so you can cancel. Deletes ${workspaces} and ${files}.`;
+}
+
+export function DeleteAccountSection() {
   const [preview, setPreview] = useState<DeletePreview | null>(null);
   const [step, setStep] = useState<'idle' | 'code'>('idle');
   const [code, setCode] = useState('');
@@ -1250,10 +1264,12 @@ function DeleteAccountSection() {
         <CardContent className="divide-y divide-destructive/20">
           <div className="flex items-center justify-between py-4">
             <div>
-              <p className="text-sm font-medium">Export your data</p>
-              <p className="text-xs text-muted-foreground">Download all your files, links and activity before leaving.</p>
+              <p className="text-sm font-medium">Take a copy of your data first</p>
+              <p className="text-xs text-muted-foreground">Everything is destroyed at the end of the countdown. Take a copy before you start.</p>
             </div>
-            <Button variant="outline" size="sm" className="text-xs" onClick={() => toast.info('Not available yet', 'Data export is not available yet.')}>Request export</Button>
+            <Button variant="outline" size="sm" className="text-xs" onClick={() => document.getElementById('section-privacy')?.scrollIntoView({ behavior: 'smooth' })}>
+              Get a copy
+            </Button>
           </div>
 
           <div className="py-4 space-y-3">
@@ -1298,7 +1314,7 @@ function DeleteAccountSection() {
                   </Button>
                   {remaining > 0 ? (
                     <span className="text-xs text-muted-foreground" data-testid="resend-countdown">
-                      Resend in {remaining}s
+                      {`Resend in ${remaining}s`}
                     </span>
                   ) : (
                     <button className="text-xs underline text-muted-foreground hover:text-foreground" onClick={requestCode} data-testid="resend">
@@ -1311,10 +1327,15 @@ function DeleteAccountSection() {
               <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0">
                   <p className="text-sm font-medium">Delete account</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    Scheduled for {preview?.window_days ?? 30} days later, so you can cancel. Deletes{' '}
-                    {preview?.workspaces.length ?? 0} workspace{(preview?.workspaces.length ?? 0) === 1 ? '' : 's'}
-                    {' '}and {preview?.file_count ?? 0} file{(preview?.file_count ?? 0) === 1 ? '' : 's'}.
+                  {/* One string, not a run of sibling text nodes. Chrome's page
+                      translation detaches text nodes and drops <font> elements
+                      in their place; when the preview arrived and the plural
+                      "s" went away, React removed a node the browser had
+                      already moved and the router's error page replaced the
+                      profile. A single text child is set as textContent
+                      instead, which survives the rewrite. */}
+                  <p className="text-xs text-muted-foreground mt-0.5" data-testid="delete-summary">
+                    {describeDeletion(preview)}
                   </p>
                   {blockers.length > 0 && (
                     <ul className="mt-2 space-y-1" data-testid="delete-blockers">

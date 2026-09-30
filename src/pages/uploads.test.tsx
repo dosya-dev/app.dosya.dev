@@ -20,6 +20,13 @@ vi.mock('@/api/client', async (importOriginal) => ({
   API_BASE: '',
 }));
 
+// UploadsPage reads the caller's permission map to decide whether to offer the
+// dropzone at all. Resolved and permissive unless a test says otherwise.
+let perms: { can: (p: string) => boolean; isResolved: boolean } = { can: () => true, isResolved: true };
+vi.mock('@/hooks/use-permissions', () => ({
+  usePermissions: () => perms,
+}));
+
 const uploadFromPicker = vi.fn();
 vi.mock('@/lib/upload-drop', () => ({
   uploadFromDrop: () => {},
@@ -44,6 +51,7 @@ afterEach(() => {
   retry.mockReset();
   uploadFromPicker.mockReset();
   retryable = true;
+  perms = { can: () => true, isResolved: true };
 });
 
 function item(over: Partial<UploadItem>): UploadItem {
@@ -125,5 +133,30 @@ describe('Uploads page - no per-upload location choice', () => {
     act(() => { input.dispatchEvent(new Event('change', { bubbles: true })); });
     expect(uploadFromPicker).toHaveBeenCalledTimes(1);
     expect(uploadFromPicker.mock.calls[0][1]).not.toHaveProperty('region');
+  });
+});
+
+// A role without upload_files could reach this page (the route gate fails open
+// while the map loads) and was handed a dropzone whose every drop 403'd.
+describe('Uploads page without upload_files', () => {
+  function renderPage() {
+    useWorkspace.setState({ activeId: 'ws' });
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    act(() => { root!.render(<MemoryRouter><UploadsPage /></MemoryRouter>); });
+  }
+
+  it('replaces the dropzone with a notice once the map resolves without upload_files', () => {
+    perms = { can: (p) => p !== 'upload_files', isResolved: true };
+    renderPage();
+    expect(container!.textContent).toContain("Your role can't upload files");
+    expect(container!.textContent).not.toContain('Drop files or folders here to upload');
+  });
+
+  it('keeps the dropzone while the map is still loading (fails open, like the hook)', () => {
+    perms = { can: () => true, isResolved: false };
+    renderPage();
+    expect(container!.textContent).toContain('Drop files or folders here to upload');
   });
 });

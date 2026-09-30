@@ -1,12 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { api, API_BASE } from '@/api/client';
+import { api, apiErrorMessage, API_BASE } from '@/api/client';
 import { useWorkspace } from '@/stores/workspace';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
-  ChevronLeft, ChevronRight, ChevronDown,
+  ChevronLeft, ChevronRight, ChevronDown, AlertCircle,
 } from 'lucide-react';
 import {
   DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger,
@@ -64,6 +64,8 @@ export default function ActivityPage() {
   const [members, setMembers] = useState<Member[]>([]);
   const [pagination, setPagination] = useState<Pagination | null>(null);
   const [loading, setLoading] = useState(true);
+  /** Set when /api/activity fails. Without view_activity it answers 403 outright. */
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
 
   // Filters
@@ -81,6 +83,7 @@ export default function ActivityPage() {
   const loadActivity = useCallback(async () => {
     if (!wsId) return;
     setLoading(true);
+    setLoadError(null);
     const params = new URLSearchParams({ workspace_id: wsId, page: String(page), per_page: '30' });
     if (selCategories.size > 0) params.set('category', [...selCategories].join(','));
     if (selActions.size > 0) params.set('action', [...selActions].join(','));
@@ -98,7 +101,11 @@ export default function ActivityPage() {
         setPagination(data.pagination);
         if (data.members && members.length === 0) setMembers(data.members);
       }
-    } catch {}
+    } catch (err) {
+      // A bare catch here showed "No activity found" over a 403 - an empty
+      // state where the server had in fact refused the whole page.
+      setLoadError(apiErrorMessage(err, 'The activity log could not be loaded.'));
+    }
     setLoading(false);
   }, [wsId, page, selCategories, selActions, selMembers]);
 
@@ -113,7 +120,7 @@ export default function ActivityPage() {
 
   const sub = pagination
     ? `${pagination.total} activit${pagination.total === 1 ? 'y' : 'ies'}${hasFilters ? ' (filtered)' : ''}`
-    : 'Loading...';
+    : loadError ? 'Unavailable' : 'Loading...';
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
@@ -167,6 +174,13 @@ export default function ActivityPage() {
                   </div>
                 </div>
               ))}
+            </div>
+          ) : loadError ? (
+            <div className="flex flex-col items-center justify-center py-16 text-center">
+              <AlertCircle className="size-8 text-destructive/40 mb-3" />
+              <p className="text-sm font-medium mb-1">Could not load the activity log</p>
+              <p className="text-xs text-muted-foreground max-w-80 mb-3">{loadError}</p>
+              <Button variant="outline" size="sm" className="h-7 text-xs" onClick={loadActivity}>Try again</Button>
             </div>
           ) : activities.length === 0 ? (
             <div className="text-center py-16">

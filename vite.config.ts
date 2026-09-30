@@ -55,7 +55,10 @@ export default defineConfig({
       // scripts/vendor-e2ee.mjs) - a self-contained, bundled ESM index.js each
       // (all third-party deps - libsodium-wrappers-sumo, @hpke/core,
       // @hpke/chacha20poly1305, @cloudflare/voprf-ts - inlined by esbuild;
-      // e2ee-client also inlines e2ee-core). They MUST live inside apps/web:
+      // e2ee-client imports e2ee-core rather than inlining it, so BOTH aliases
+      // below are load-bearing - a client with no core alias resolves to a
+      // second copy of the registry and the installed backend is not found).
+      // They MUST live inside apps/web:
       // CI (sync-public-repos.yml → sync-web) pushes only apps/web/ to the
       // deploy repo Cloudflare Pages builds, so any ../../packages/* reference
       // escapes that repo and fails to resolve. Alias to the in-tree vendor copy

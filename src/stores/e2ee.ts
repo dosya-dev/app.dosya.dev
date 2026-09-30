@@ -7,6 +7,8 @@ import {
   createWorkspace as engineCreateWorkspace,
   openWorkspace as engineOpenWorkspace,
   listFolder as engineListFolder,
+  readWorkspaceName as engineReadWorkspaceName,
+  renameWorkspace as engineRenameWorkspace,
   uploadFile as engineUploadFile,
   downloadFile as engineDownloadFile,
   grantAccess as engineGrantAccess,
@@ -17,7 +19,6 @@ import {
   type Workspace,
   type FileDeps,
 } from '@dosya-dev/e2ee-client';
-import { toHex } from '@dosya-dev/e2ee-core';
 import { api as restApi, apiErrorMessage } from '@/api/client';
 import { buildE2eeClient, normalizeRecoveryKey } from '@/lib/e2ee/client';
 import { saveBytes } from '@/lib/e2ee/save';
@@ -37,10 +38,22 @@ export type EncryptedEntry = { id: string; name: string; kind: 'file' | 'folder'
  */
 export type KnownWorkspace = {
   id: string;
+  /**
+   * What this browser shows. The Space carries its own name now (sealed in
+   * its root index), and `openWorkspace` reconciles the two.
+   */
   name: string;
   selfFounded: boolean;
   globalWorkspaceId: string | null;
   shared: boolean;
+  /**
+   * True when `name` is a placeholder this browser invented for a Space it
+   * discovered rather than created. A placeholder is never written into the
+   * Space; a real name is. An entry persisted before this field existed has
+   * no `stub`, and is treated as real - which it was, something a person
+   * typed here.
+   */
+  stub?: boolean;
 };
 export type WorkspaceMember = { userId: string; email: string; ed25519Pub: string; x25519Pub: string };
 
@@ -70,7 +83,21 @@ export interface E2eeEngine {
    */
   destroyIdentity(password: string, totpCode?: string): Promise<void>;
   lock(): void;
-  createWorkspace(id: string): Promise<void>;
+  /**
+   * `name` is sealed INTO the Space (its root index), not merely stored in
+   * this browser, so every other device reads the same label.
+   */
+  createWorkspace(id: string, name?: string): Promise<void>;
+  /** The open Space's own name, or null for a Space made before names existed. */
+  readWorkspaceName(): Promise<string | null>;
+  /**
+   * The name of a Space that is NOT the open one, without disturbing the open
+   * one. Used to fill in a list of Spaces whose labels this browser has never
+   * seen, so they do not all read "Space" until each is clicked into.
+   */
+  readWorkspaceNameById(id: string): Promise<string | null>;
+  /** Write a name into the open Space. `null` clears it. */
+  renameWorkspace(name: string | null): Promise<void>;
   /**
    * P2e: records that `workspaceId` belongs to `globalWorkspaceId` (the
    * active global storage workspace at creation time) via
@@ -137,6 +164,16 @@ function vendoredRecoveryUnlock(): RecoveryUnlock | null {
 }
 
 /**
+ * Hex of a byte string. Local rather than imported from @dosya-dev/e2ee-core:
+ * e2ee-client already inlines its own copy of e2ee-core, and importing the
+ * separate bundle for one helper shipped a second 3 MB copy (and a second
+ * libsodium WebAssembly instantiation) on the Vault page.
+ */
+function toHex(bytes: Uint8Array): string {
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
  * The real engine: wraps `buildE2eeClient()` and holds the in-memory
  * `Session`/`Workspace` in closure - neither is ever exposed to callers.
  */
@@ -193,9 +230,29 @@ export function defaultEngine(): E2eeEngine {
       ws = null;
     },
 
-    async createWorkspace(id) {
+    async createWorkspace(id, name) {
       if (!session) throw new Error('e2ee: locked');
-      ws = await engineCreateWorkspace(api, session, id);
+      ws = await engineCreateWorkspace(api, session, id, name === undefined ? undefined : { name });
+    },
+
+    async readWorkspaceName() {
+      if (!session || !ws) throw new Error('e2ee: no active workspace');
+      return engineReadWorkspaceName(api, session, ws);
+    },
+
+    async readWorkspaceNameById(id) {
+      if (!session) throw new Error('e2ee: locked');
+      // A SEPARATE handle, deliberately not assigned to `ws`: reading a label
+      // must not close whatever Space the person is looking at. selfFounded
+      // stays false (TOFU) exactly as `openWorkspace`'s doc comment requires
+      // for a Space this client did not itself create.
+      const other = await engineOpenWorkspace(api, session, id, { selfFounded: false });
+      return engineReadWorkspaceName(api, session, other);
+    },
+
+    async renameWorkspace(name) {
+      if (!session || !ws) throw new Error('e2ee: no active workspace');
+      await engineRenameWorkspace(api, session, ws, name);
     },
 
     async setWorkspaceScope(workspaceId, globalWorkspaceId) {
@@ -283,6 +340,15 @@ interface E2eeState {
   lock(): void;
   createWorkspace(name: string): Promise<void>;
   openWorkspace(id: string): Promise<void>;
+  /** Make this browser's label and the Space's own name agree. Best effort. */
+  reconcileWorkspaceName(id: string): Promise<void>;
+  /**
+   * Fill in the labels for Spaces this browser only knows as placeholders, so
+   * a list of them does not read as a column of identical "Space" rows.
+   */
+  resolveSpaceNames(): Promise<void>;
+  /** Set (or with `null` clear) the open Space's name, everywhere. */
+  renameWorkspace(id: string, name: string): Promise<void>;
   /**
    * Discover every workspace this account is a member of (P2c), extended by
    * P2e's scope metadata, and merge any not already known - a
@@ -455,7 +521,7 @@ export const useE2ee = create<E2eeState>()(
         const gw = useWorkspace.getState().activeId;
         const id = crypto.randomUUID();
         try {
-          await get().engine.createWorkspace(id);
+          await get().engine.createWorkspace(id, name);
           // P2e: record the workspace→global-workspace association right
           // after creation - plaintext metadata, not crypto (see
           // `setWorkspaceScope`'s doc comment). This is DISPLAY-ONLY: it
@@ -465,7 +531,7 @@ export const useE2ee = create<E2eeState>()(
             // SECURITY: this account created `id` - it is hard-anchored,
             // selfFounded:true, forever (persisted below via `partialize`).
             // A later `refreshMyWorkspaces()` must never downgrade this.
-            workspaces: [...s.workspaces, { id, name, selfFounded: true, shared: false, globalWorkspaceId: gw }],
+            workspaces: [...s.workspaces, { id, name, selfFounded: true, shared: false, globalWorkspaceId: gw, stub: false }],
             activeWorkspaceId: id,
             busy: false,
           }));
@@ -486,8 +552,75 @@ export const useE2ee = create<E2eeState>()(
           const known = get().workspaces.find((w) => w.id === id);
           await get().engine.openWorkspace(id, known?.selfFounded ?? false);
           set({ activeWorkspaceId: id, members: [], busy: false });
+          void get().reconcileWorkspaceName(id);
         } catch (e) {
           set({ busy: false, error: errorMessage(e, 'Could not open Space.') });
+        }
+      },
+
+      /**
+       * Both directions, and neither of them worth an error message:
+       *
+       *  - the Space has a name -> show it. This is what stops a Space made
+       *    on a phone reading as "Space" in every browser.
+       *  - the Space has none and this browser holds a real one -> write it
+       *    in, so a Space made before names existed acquires one without
+       *    anybody retyping anything.
+       *
+       * Deliberately not awaited by `openWorkspace`: it is housekeeping, and
+       * somebody waiting to see their files should not wait on a label.
+       */
+      async reconcileWorkspaceName(id) {
+        try {
+          const remote = await get().engine.readWorkspaceName();
+          if (get().activeWorkspaceId !== id) return;
+          const known = get().workspaces.find((w) => w.id === id);
+          if (!known) return;
+
+          if (remote !== null) {
+            if (remote === known.name && known.stub !== true) return;
+            set((st) => ({
+              workspaces: st.workspaces.map((w) => (w.id === id ? { ...w, name: remote, stub: false } : w)),
+            }));
+            return;
+          }
+
+          if (known.stub === true) return;
+          await get().engine.renameWorkspace(known.name);
+        } catch {
+          // A label is not worth an error over a Space that opened.
+        }
+      },
+
+      async resolveSpaceNames() {
+        // Only the placeholders, and only once each: every one costs a grant
+        // fetch, a head fetch and a decrypt. Sequential on purpose - this is
+        // background housekeeping behind a list that already renders.
+        const pending = get().workspaces.filter((w) => w.stub === true);
+        for (const w of pending) {
+          try {
+            const name = await get().engine.readWorkspaceNameById(w.id);
+            if (name === null) continue;
+            set((st) => ({
+              workspaces: st.workspaces.map((x) => (x.id === w.id ? { ...x, name, stub: false } : x)),
+            }));
+          } catch {
+            // Leave the placeholder. A label is not worth an error.
+          }
+        }
+      },
+
+      async renameWorkspace(id, name) {
+        set({ busy: true, error: null });
+        try {
+          if (get().activeWorkspaceId !== id) await get().openWorkspace(id);
+          await get().engine.renameWorkspace(name);
+          set((st) => ({
+            workspaces: st.workspaces.map((w) => (w.id === id ? { ...w, name, stub: false } : w)),
+            busy: false,
+          }));
+        } catch (e) {
+          set({ busy: false, error: errorMessage(e, 'Could not rename Space.') });
         }
       },
 
@@ -508,13 +641,19 @@ export const useE2ee = create<E2eeState>()(
               .filter((m) => !known.has(m.workspaceId))
               .map((m) => ({
                 id: m.workspaceId,
+                // A placeholder, and marked as one: this browser has never
+                // seen the Space's real name. Opening it reads the name the
+                // Space itself carries and replaces this.
                 name: m.createdByMe ? 'Space' : 'Shared Space',
                 globalWorkspaceId: m.globalWorkspaceId,
                 shared: !m.createdByMe,
                 selfFounded: false,
+                stub: true,
               }));
             return discovered.length > 0 ? { workspaces: [...s.workspaces, ...discovered] } : {};
           });
+          // The list is already on screen; the labels arrive behind it.
+          void get().resolveSpaceNames();
         } catch (e) {
           set({ error: errorMessage(e, 'Could not check for shared Spaces.') });
         }

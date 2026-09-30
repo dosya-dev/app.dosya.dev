@@ -47,10 +47,13 @@ interface ShareLink {
 interface FileDetailPanelProps {
   file: FileItem | null;
   onClose: () => void;
-  onDownload: (id: string) => void;
-  onCopy: (id: string) => void;
-  onDelete: (id: string, name: string) => void;
-  onShare: (id: string, name: string) => void;
+  // Each of these is passed only when the role can perform it, and the button
+  // is hidden when it is absent - the same contract the viewer overlay's
+  // `actions` has. Before, every role saw all four and learned from the 403.
+  onDownload?: (id: string) => void;
+  onCopy?: (id: string) => void;
+  onDelete?: (id: string, name: string) => void;
+  onShare?: (id: string, name: string) => void;
   onView: (id: string, name: string) => void;
   onRefresh: () => void;
 }
@@ -337,23 +340,31 @@ export function FileDetailPanel({ file, onClose, onDownload, onCopy, onDelete, o
                 <Button variant="outline" size="sm" className="w-full justify-start gap-2 h-10 text-xs" onClick={() => onView(file.id, file.name)}>
                   <Eye className="size-3.5 text-muted-foreground" /> View file
                 </Button>
-                <Button size="sm" className="w-full justify-start gap-2 h-10 text-xs bg-green-500 hover:bg-green-600 text-white" onClick={() => onDownload(file.id)}>
-                  <Download className="size-3.5" /> Download
-                </Button>
+                {onDownload && (
+                  <Button size="sm" className="w-full justify-start gap-2 h-10 text-xs bg-green-500 hover:bg-green-600 text-white" onClick={() => onDownload(file.id)}>
+                    <Download className="size-3.5" /> Download
+                  </Button>
+                )}
                 {isOfficeFile(file.name) && (
                   <Button variant="outline" size="sm" className="w-full justify-start gap-2 h-10 text-xs" onClick={() => window.open(`/editor/${file.id}`, '_blank')}>
                     <SquarePen className="size-3.5 text-muted-foreground" /> Open in editor
                   </Button>
                 )}
-                <Button variant="outline" size="sm" className="w-full justify-start gap-2 h-10 text-xs" onClick={() => onShare(file.id, file.name)}>
-                  <Share2 className="size-3.5 text-muted-foreground" /> Share
-                </Button>
-                <Button variant="outline" size="sm" className="w-full justify-start gap-2 h-10 text-xs" onClick={() => onCopy(file.id)}>
-                  <Copy className="size-3.5 text-muted-foreground" /> Copy file
-                </Button>
-                <Button variant="outline" size="sm" className="w-full justify-start gap-2 h-10 text-xs text-destructive border-destructive/30 hover:bg-destructive/5" onClick={() => onDelete(file.id, file.name)}>
-                  <Trash2 className="size-3.5" /> Delete file
-                </Button>
+                {onShare && (
+                  <Button variant="outline" size="sm" className="w-full justify-start gap-2 h-10 text-xs" onClick={() => onShare(file.id, file.name)}>
+                    <Share2 className="size-3.5 text-muted-foreground" /> Share
+                  </Button>
+                )}
+                {onCopy && (
+                  <Button variant="outline" size="sm" className="w-full justify-start gap-2 h-10 text-xs" onClick={() => onCopy(file.id)}>
+                    <Copy className="size-3.5 text-muted-foreground" /> Copy file
+                  </Button>
+                )}
+                {onDelete && (
+                  <Button variant="outline" size="sm" className="w-full justify-start gap-2 h-10 text-xs text-destructive border-destructive/30 hover:bg-destructive/5" onClick={() => onDelete(file.id, file.name)}>
+                    <Trash2 className="size-3.5" /> Delete file
+                  </Button>
+                )}
               </div>
             </div>
           </div>

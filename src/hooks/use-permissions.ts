@@ -45,10 +45,11 @@ export function usePermissions() {
     queryFn: () => api<MyPermissions>(`/api/me/permissions?workspace_id=${wsId}`),
     enabled: !!wsId,
     // Permissions change when an owner edits a role or moves someone between
-    // roles - rare, but it must not need a hard reload to take effect. The
-    // server-side KV cache already has a 30 min TTL of its own; this is the
-    // browser's much shorter window on top of it.
-    staleTime: 60_000,
+    // roles - rare, but it must not need a hard reload to take effect. After
+    // a demotion the server-side window is already bounded to about a minute
+    // by the edge cache, so the browser must not add another minute on top:
+    // keep this well under that so the two together stay near one minute.
+    staleTime: 15_000,
   });
 
   const permissions = data?.permissions;

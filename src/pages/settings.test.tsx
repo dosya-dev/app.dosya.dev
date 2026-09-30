@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterEach, vi } from 'vitest';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { MemoryRouter } from 'react-router-dom';
 
 const apiMock = vi.fn();
 vi.mock('@/api/client', async (importOriginal) => {
@@ -9,9 +10,10 @@ vi.mock('@/api/client', async (importOriginal) => {
   return { ...actual, api: (...args: unknown[]) => apiMock(...args) };
 });
 
-const { SecuritySection, WorkspaceInfoSection } = await import('./settings');
+const { SecuritySection, WorkspaceInfoSection, RolesSection } = await import('./settings');
 const { ShareModal } = await import('@/components/share-modal');
 const { clearShareDefaultsCache } = await import('@/lib/share-defaults');
+const { useWorkspace } = await import('@/stores/workspace');
 type WsData = Parameters<typeof SecuritySection>[0]['data'];
 type WsSettings = NonNullable<WsData['settings']>;
 
@@ -135,7 +137,7 @@ describe('WorkspaceInfoSection - location', () => {
   async function renderInfo(ws: WsData = located) {
     // Every permission this section knows about, so nothing is disabled and a
     // Save that should not exist cannot hide behind a greyed-out button.
-    apiMock.mockResolvedValue({ ok: true, user_id: 'u1', role_id: 'r', role_name: 'Owner', is_builtin: true, root_folder_id: null, root_folder_name: null, permissions: { manage_settings: true, change_workspace_name: true, change_workspace_icon: true, change_workspace_region: true } });
+    apiMock.mockResolvedValue({ ok: true, user_id: 'u1', role_id: 'r', role_name: 'Owner', is_builtin: true, root_folder_id: null, root_folder_name: null, permissions: { manage_settings: true, change_workspace_name: true, change_workspace_icon: true } });
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     container = document.createElement('div');
     document.body.appendChild(container);
@@ -185,5 +187,64 @@ describe('WorkspaceInfoSection - location', () => {
     expect(bodies.some((b) => b.includes('icon_initials'))).toBe(true);
     expect(bodies.some((b) => b.includes('default_region'))).toBe(false);
     expect(bodies.some((b) => b.includes('available_regions'))).toBe(false);
+  });
+});
+
+// RolesSection decided built-in vs custom by NAME: a custom role called
+// "Viewer" got a View link and no way to edit it, and a built-in renamed by a
+// future migration would have grown an Edit link the server refuses. /api/roles
+// carries is_builtin / is_custom; the section now reads those. It also shows
+// View rather than Edit for the caller's own role, which PUT refuses outright.
+describe('RolesSection', () => {
+  async function renderRoles() {
+    // usePermissions keys its query on the active workspace; without one the
+    // query is disabled and roleId never arrives.
+    useWorkspace.setState({ activeId: 'ws1' });
+    apiMock.mockResolvedValue({ ok: true, user_id: 'u1', role_id: 'role_c_mine', role_name: 'Ops', is_builtin: false, root_folder_id: null, root_folder_name: null, permissions: { manage_roles: true } });
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const data: WsData = {
+      ...wsData,
+      roles: [
+        { id: 'role_owner', name: 'Owner', is_default: 0, is_builtin: true, is_custom: false },
+        // A custom role that happens to share a built-in's name.
+        { id: 'role_c_viewer', name: 'Viewer', is_default: 0, is_builtin: false, is_custom: true },
+        { id: 'role_c_mine', name: 'Ops', is_default: 0, is_builtin: false, is_custom: true },
+      ],
+      permissions: {},
+    };
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    await act(async () => {
+      root!.render(
+        <QueryClientProvider client={qc}>
+          <MemoryRouter><RolesSection data={data} wsId="ws1" onSaved={() => {}} /></MemoryRouter>
+        </QueryClientProvider>,
+      );
+      await Promise.resolve();
+    });
+    // The own-role check waits on the permissions query, whose result lands
+    // in a later macrotask than the render - a separate act per hop, bounded,
+    // the way files.test.tsx waits for the same hook.
+    for (let i = 0; i < 10 && !container!.querySelector('a[href="/role-create?view=role_c_mine"]'); i++) {
+      await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+    }
+  }
+
+  const linkFor = (roleId: string, kind: 'edit' | 'view') =>
+    container!.querySelector(`a[href="/role-create?${kind}=${roleId}"]`);
+
+  it('uses the is_builtin flag, not the name, to decide Edit vs View', async () => {
+    await renderRoles();
+    expect(linkFor('role_owner', 'view')).toBeTruthy();
+    expect(linkFor('role_owner', 'edit')).toBeNull();
+    expect(linkFor('role_c_viewer', 'edit')).toBeTruthy();
+    expect(linkFor('role_c_viewer', 'view')).toBeNull();
+  });
+
+  it('offers View, never Edit, for the role the caller holds', async () => {
+    await renderRoles();
+    expect(linkFor('role_c_mine', 'view')).toBeTruthy();
+    expect(linkFor('role_c_mine', 'edit')).toBeNull();
   });
 });
