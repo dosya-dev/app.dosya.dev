@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { api, API_BASE } from '@/api/client';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -52,8 +53,8 @@ const RIGHTS: { id: string; label: string; body: React.ReactNode }[] = [
       effect 30 days later and you can cancel in the meantime. Some things deliberately survive it - the security audit
       trail, billing records we are required to keep, and files you put in someone else's workspace, which are that
       workspace's to delete. Your report's retention section says what and for how long.{' '}
-      <a href="#section-delete" className="underline underline-offset-2">Delete account</a> is at the bottom of this
-      page.</>,
+      <Link to="/profile/delete" className="underline underline-offset-2">Delete account</Link> is its own page, under
+      Your data.</>,
   },
   {
     id: 'restriction',

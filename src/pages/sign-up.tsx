@@ -7,6 +7,8 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Loader2, Eye, EyeOff } from 'lucide-react';
 import { API_BASE } from '@/api/client';
 import { PublicNav } from '@/components/public-nav';
+import { AlreadySignedInDialog } from '@/components/already-signed-in-dialog';
+import { useSessionAccount } from '@/hooks/use-session-probe';
 import { PasswordStrengthMeter } from '@/components/password-strength-meter';
 import { validateEmail, validatePassword } from '@/lib/validation-policy.generated';
 import { TurnstileWidget, type TurnstileHandle } from '@/components/turnstile-widget';
@@ -30,6 +32,8 @@ export default function SignUpPage() {
     try { return localStorage.getItem('dosya_last_login_method'); } catch { return null; }
   });
   const turnstileRef = useRef<TurnstileHandle>(null);
+  // One probe for the page; see the same line in login.tsx.
+  const account = useSessionAccount();
 
   useEffect(() => {
     const r = searchParams.get('ref');
@@ -111,8 +115,9 @@ export default function SignUpPage() {
   return (
     <div className="min-h-screen bg-background flex flex-col" style={{ backgroundImage: 'url(/grid.svg)', backgroundRepeat: 'repeat' }}>
       <div className="p-4 sm:p-6 lg:p-8">
-        <PublicNav cta="login" />
+        <PublicNav cta="login" account={account} />
       </div>
+      <AlreadySignedInDialog purpose="signup" account={account} suppressed={Boolean(error)} />
       <main className="flex-1 flex items-center justify-center p-4">
         <div className="w-full max-w-md">
           <Card>

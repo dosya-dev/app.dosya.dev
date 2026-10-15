@@ -20,7 +20,8 @@ import { toast } from '@/lib/toast';
 import { LIMITS, validateTicketSubject, validateTicketBody } from '@/lib/validation-policy.generated';
 import { timeAgo } from '@/lib/helpers';
 import { useDocumentTitle } from '@/lib/page-title';
-import { Plus, ExternalLink, MessageSquare } from 'lucide-react';
+import { Plus, ExternalLink, MessageSquare, Bug } from 'lucide-react';
+import { openReport } from '@/stores/report-problem';
 
 type Tab = 'open' | 'closed';
 
@@ -100,9 +101,14 @@ export default function SupportPage() {
                 </a>
               </p>
             </div>
-            <Button onClick={() => { setSubject(''); setCategory('technical'); setBody(''); setFiles([]); setDialogOpen(true); }}>
-              <Plus className="size-3.5 mr-1.5" /> New ticket
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" className="gap-2" onClick={() => openReport()}>
+                <Bug className="size-4" /> Report a bug
+              </Button>
+              <Button onClick={() => { setSubject(''); setCategory('technical'); setBody(''); setFiles([]); setDialogOpen(true); }}>
+                <Plus className="size-3.5 mr-1.5" /> New ticket
+              </Button>
+            </div>
           </div>
 
           <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)}>

@@ -1,12 +1,16 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { getBillingStatus, syncBilling, createPortalSession, type BillingStatus, resumeSubscription } from '@/api/billing';
+import { getFamily } from '@/api/family';
+import { toast } from '@/lib/toast';
+import { RefundDialog } from '@/components/billing/refund-dialog';
 import { api, apiErrorMessage } from '@/api/client';
 import { formatBytes, formatCents, formatGigabytes } from '@/lib/billing/cart-math';
 import { PlanChooser } from '@/components/billing/plan-chooser';
 import { Button } from '@/components/ui/button';
 import { CancelSubscriptionDialog } from '@/components/billing/cancel-dialog';
 import { Card } from '@/components/ui/card';
+import { FamilyCard } from '@/components/billing/family-card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
@@ -14,6 +18,7 @@ import {
 } from 'lucide-react';
 import { licenseIntervalLabel, licenseProviderLabel, licenseTimeline, formatLicenseDate } from '@/lib/license-timeline';
 import { cn } from '@/lib/utils';
+import { useSession } from '@/stores/session';
 
 /** A colour per storage source, used by both the ledger dots and the bar. */
 const SOURCE_COLORS = {
@@ -36,6 +41,9 @@ function shortDate(unix: number): string {
 
 export default function BillingPage() {
   const navigate = useNavigate();
+  // A family member draws on the payer's pool and must leave it before buying
+  // a plan of their own (the API refuses with 409 in_family otherwise).
+  const isFamilyMember = useSession((st) => st.user?.family?.role === 'member');
   const [data, setData] = useState<BillingStatus | null>(null);
   const [loading, setLoading] = useState(true);
   // ?upgrade=1 opens the plan chooser straight away, so "Upgrade now" elsewhere
@@ -50,11 +58,21 @@ export default function BillingPage() {
   const [portalOpening, setPortalOpening] = useState(false);
   const [portalError, setPortalError] = useState<string | null>(null);
   const [showCancel, setShowCancel] = useState(false);
+  const [showRefund, setShowRefund] = useState(false);
+  const [familyMembers, setFamilyMembers] = useState(0);
   const [resuming, setResuming] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
   // Card digits are the one fact /api/billing/status does not carry. Quiet extra:
   // the payment line is simply left out when it cannot be read.
   const [card, setCard] = useState<{ brand?: string; last4?: string } | null>(null);
+
+  const openRefund = () => {
+    setFamilyMembers(0);
+    setShowRefund(true);
+    getFamily()
+      .then((f) => setFamilyMembers((f.members ?? []).filter((m) => m.status === 'active').length))
+      .catch(() => {});
+  };
 
   const reload = () => getBillingStatus().then((d) => setData(d)).catch(() => {});
 
@@ -130,13 +148,19 @@ export default function BillingPage() {
   const overBytes = usage.used_bytes - usage.limit_bytes;
   const overLimit = overBytes > 0;
   const usedShare = usage.limit_bytes > 0 ? Math.min(1, usage.used_bytes / usage.limit_bytes) : 0;
-  const price = interval === 'year' && plan.price_yearly != null ? plan.price_yearly : plan.price_monthly;
+  // The headline is what Stripe charges for the plan, mirrored per item. The
+  // plans table holds the CURRENT list price, which a legacy, promotional or
+  // custom subscription does not pay; it is only the fallback for a mirror
+  // written before the unit price was recorded.
+  const planItem = data.items.find((i) => i.kind === 'plan');
+  const listPrice = interval === 'year' && plan.price_yearly != null ? plan.price_yearly : plan.price_monthly;
+  const price = planItem?.unit_amount ?? listPrice;
   const upcoming = data.invoices.find((invoice) => invoice.status === 'upcoming') ?? null;
 
   // One row per thing that adds storage, in the order they stack.
   const ledger: LedgerRow[] = [];
   ledger.push({ key: 'plan', kind: 'plan', label: `${plan.name} plan`, bytes: plan.storage_bytes });
-  for (const item of data.items.filter((i) => i.kind !== 'plan')) {
+  for (const item of data.items.filter((i) => i.kind !== 'plan' && i.addon_kind !== 'family_places')) {
     ledger.push({
       key: `${item.kind}-${item.ref_id}`,
       kind: 'addon',
@@ -173,7 +197,7 @@ export default function BillingPage() {
           bar={<><span className="h-full bg-primary" style={{ width: '96%' }} /><span className="h-full bg-destructive" style={{ width: '4%' }} /></>}
           actions={(
             <>
-              <Button size="sm" onClick={() => openChooser('addons')}>Add storage</Button>
+              {!isFamilyMember && <Button size="sm" onClick={() => openChooser('addons')}>Add storage</Button>}
               <Link to="/files" className="text-sm font-medium text-muted-foreground underline underline-offset-2">Free up space</Link>
             </>
           )}
@@ -232,28 +256,46 @@ export default function BillingPage() {
                   : <Badge variant="outline" className="text-[10px] text-muted-foreground">{hasSubscription ? sub.status ?? 'Inactive' : 'No subscription'}</Badge>}
             </div>
 
+            {isFamilyMember ? (
+              <p className="mt-4 text-xs text-muted-foreground">
+                You are on a family plan. Leave it from the Family section to buy a plan of your own.
+              </p>
+            ) : (
             <div className="mt-4 grid gap-2">
-                <Button size="sm" onClick={() => openChooser('plan')}>
-                  {hasSubscription ? 'Change plan' : 'Choose a plan'}
-                </Button>
-                {hasSubscription && (
-                  <Button size="sm" variant="outline" onClick={() => openChooser('addons')}>Add storage</Button>
-                )}
-                {hasSubscription && (
-                  <Button size="sm" variant="outline" onClick={openPortal} disabled={portalOpening}>
-                    {portalOpening ? 'Opening…' : 'Manage payment method'}
+                  <Button size="sm" onClick={() => openChooser('plan')}>
+                    {hasSubscription ? 'Change plan' : 'Choose a plan'}
                   </Button>
+                  {hasSubscription && (
+                    <Button size="sm" variant="outline" onClick={() => openChooser('addons')}>Add storage</Button>
+                  )}
+                  {hasSubscription && (
+                    <Button size="sm" variant="outline" onClick={openPortal} disabled={portalOpening}>
+                      {portalOpening ? 'Opening…' : 'Manage payment method'}
+                    </Button>
+                  )}
+                {hasSubscription && (
+                  <div className="flex flex-wrap items-center gap-3">
+                    {!sub.cancel_at_period_end && (
+                      <button
+                        type="button"
+                        onClick={() => setShowCancel(true)}
+                        className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+                      >
+                        Cancel subscription
+                      </button>
+                    )}
+                    {data.refund?.eligible && (
+                      <Button size="sm" variant="destructive" onClick={openRefund}>Request refund</Button>
+                    )}
+                    {data.refund?.reason === 'already_used' && (data.refund.window_ends_at ?? 0) * 1000 > Date.now() && (
+                      <a href="/contact" className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground">
+                        Contact support for a refund
+                      </a>
+                    )}
+                  </div>
                 )}
-              {hasSubscription && !sub.cancel_at_period_end && (
-                <button
-                  type="button"
-                  onClick={() => setShowCancel(true)}
-                  className="justify-self-start text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
-                >
-                  Cancel subscription
-                </button>
-              )}
-            </div>
+              </div>
+            )}
             {portalError && <p className="mt-2 text-xs text-red-600">{portalError}</p>}
           </div>
 
@@ -301,7 +343,7 @@ export default function BillingPage() {
         </div>
       </Card>
 
-      {showChooser && (
+      {showChooser && !isFamilyMember && (
         <PlanChooser
           hasSubscription={hasSubscription}
           usedBytes={usage.used_bytes}
@@ -317,6 +359,8 @@ export default function BillingPage() {
           onClose={() => setShowChooser(false)}
         />
       )}
+
+      <FamilyCard onChanged={reload} billing={data} />
 
       <Card className="gap-0 overflow-hidden py-0">
         <div className="flex items-center justify-between gap-4 border-b px-5 py-3">
@@ -415,6 +459,20 @@ export default function BillingPage() {
             );
           })}
         </Card>
+      )}
+
+      {showRefund && (
+        <RefundDialog
+          data={data}
+          familyMembers={familyMembers}
+          onClose={() => setShowRefund(false)}
+          onRefunded={() => {
+            toast.success('Refund issued. Your account is on the free plan now.');
+            void reload();
+            void useSession.getState().fetchMe();
+          }}
+          onStale={() => { void reload(); }}
+        />
       )}
 
       {showCancel && (

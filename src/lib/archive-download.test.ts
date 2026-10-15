@@ -131,6 +131,32 @@ describe('startArchiveDownload', () => {
   });
 });
 
+// Field report (2026-10-14): every folder and multi-select download arrived
+// TWICE, as two identical ZIPs. The single-part path opened the URL with
+// window.open(..., 'noopener') and treated a null return as "popup blocked",
+// falling back to location.assign. The HTML spec makes window.open return
+// null whenever noopener is set, so the fallback ran on every click.
+describe('a single-part download starts exactly one navigation', () => {
+  it('opens the archive once, through an anchor, and never falls back to the page itself', async () => {
+    const open = vi.spyOn(window, 'open').mockReturnValue(null);
+    const clicks: string[] = [];
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+      clicks.push(this.href);
+      expect(this.target).toBe('_blank');
+      expect(this.rel).toContain('noopener');
+    });
+
+    const { parts } = await startArchiveDownload({ folderIds: ['fld_1'] }, { base: 'https://api.dosya.dev' });
+
+    expect(parts).toBe(1);
+    expect(clicks).toEqual(['https://api.dosya.dev/api/files/download-archive?folder_ids=fld_1']);
+    expect(open).not.toHaveBeenCalled();
+    expect(frames()).toHaveLength(0);
+    // The anchor is a vehicle for the click, not something left in the page.
+    expect(document.body.querySelector('a')).toBeNull();
+  });
+});
+
 describe('chunkSelection', () => {
   it('keeps folders and files together up to the cap and preserves order', () => {
     const chunks = chunkSelection({ fileIds: ['f1', 'f2', 'f3'], folderIds: ['d1', 'd2'] }, 2);

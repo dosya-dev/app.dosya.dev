@@ -19,6 +19,14 @@ vi.mock('@/api/client', async (importOriginal) => {
   return { ...actual, api: (...args: unknown[]) => apiMock(...args) };
 });
 
+// The viewer itself is covered elsewhere; here it only records the deep-link
+// props the page hands it.
+const viewerProps = vi.fn();
+vi.mock('@/components/file-viewer', () => ({
+  FileViewer: (props: Record<string, unknown>) => { viewerProps(props); return <div data-testid="viewer" />; },
+  default: (props: Record<string, unknown>) => { viewerProps(props); return <div data-testid="viewer" />; },
+}));
+
 const { default: FilesPage } = await import('./files');
 const { useWorkspace } = await import('@/stores/workspace');
 
@@ -617,5 +625,110 @@ describe('FilesPage library layout toggle', () => {
     expect(container!.querySelector('[data-testid="library-row-v1"]')).not.toBeNull();
     expect(container!.querySelector('[data-testid="video-v1"]')).toBeNull();
     expect(savedLayouts()).toEqual({ photos: 'grid', videos: 'list', documents: 'list' });
+  });
+});
+
+describe('FilesPage viewer deep link', () => {
+  let root: Root | null = null;
+  let container: HTMLDivElement | null = null;
+
+  afterEach(() => {
+    if (root) act(() => root!.unmount());
+    container?.remove();
+    root = null;
+    container = null;
+    apiMock.mockReset();
+    viewerProps.mockReset();
+    localStorage.clear();
+  });
+
+  let listed: ReturnType<typeof mkFile>[] = [];
+  const mkFile = (id: string) => ({
+    id, name: `${id}.mp4`, size_bytes: 1, mime_type: 'video/mp4', extension: 'mp4',
+    created_at: 1_700_000_000, updated_at: 1_700_000_000, lock_mode: 'none', is_hidden: 0,
+  });
+
+  async function renderDeepLink(initial: ReturnType<typeof mkFile>[], extra: Record<string, ReturnType<typeof mkFile>> = {}) {
+    listed = initial;
+    useWorkspace.setState({ activeId: 'ws_1' });
+    apiMock.mockImplementation((path: unknown) => {
+      const p = typeof path === 'string' ? path : '';
+      if (p.startsWith('/api/cloud/imports')) return Promise.resolve({ ok: true, jobs: [] });
+      const direct = /^\/api\/files\/([^/?]+)$/.exec(p);
+      if (direct && p === `/api/files/${direct[1]}` && extra[direct[1]]) return Promise.resolve({ ok: true, file: extra[direct[1]] });
+      return Promise.resolve({ ok: true, folders: [], files: listed, breadcrumbs: [], pagination: { page: 1, per_page: 100, total_files: 0, total_pages: 1 } });
+    });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    await act(async () => {
+      root!.render(
+        <QueryClientProvider client={queryClient}>
+          <MemoryRouter initialEntries={['/files?view=f9&tab=comments&comment=c1&t=42000']}><FilesPage /></MemoryRouter>
+        </QueryClientProvider>,
+      );
+      await new Promise((r) => setTimeout(r, 50));
+    });
+  }
+  const lastProps = () => viewerProps.mock.calls.at(-1)?.[0] as Record<string, any>;
+
+  it('opens the viewer on the Comments tab at the linked anchor, once', async () => {
+    await renderDeepLink([mkFile('f9')]);
+    expect(container!.querySelector('[data-testid="viewer"]')).not.toBeNull();
+    expect(lastProps().initialTab).toBe('comments');
+    expect(lastProps().initialAnchor).toEqual({ ms: 42000 });
+    expect(lastProps().initialCommentId).toBe('c1');
+  });
+
+  it('keeps the viewer open for a deep-linked file that is not in the listing', async () => {
+    await renderDeepLink([mkFile('other')], { f9: mkFile('f9') });
+    expect(container!.querySelector('[data-testid="viewer"]')).not.toBeNull();
+    expect(lastProps().file.id).toBe('f9');
+    expect(lastProps().initialTab).toBe('comments');
+    expect(lastProps().initialAnchor).toEqual({ ms: 42000 });
+  });
+
+  it('does not hand the anchor to the next file the viewer shows', async () => {
+    const other = mkFile('f10');
+    await renderDeepLink([mkFile('f9'), other]);
+    expect(lastProps().initialTab).toBe('comments');
+    await act(async () => { lastProps().onNavigate(other); await new Promise((r) => setTimeout(r, 20)); });
+    expect(lastProps().file.id).toBe('f10');
+    expect(lastProps().initialTab).toBeUndefined();
+    expect(lastProps().initialAnchor).toBeNull();
+    expect(lastProps().initialCommentId).toBeNull();
+    // ...and stepping back to the deep-linked file does not replay it either.
+    await act(async () => { lastProps().onNavigate(mkFile('f9')); await new Promise((r) => setTimeout(r, 20)); });
+    expect(lastProps().file.id).toBe('f9');
+    expect(lastProps().initialTab).toBeUndefined();
+  });
+
+  it('closes a deep-linked outside-listing file once it is deleted from the viewer', async () => {
+    await renderDeepLink([mkFile('other')], { f9: mkFile('f9') });
+    expect(container!.querySelector('[data-testid="viewer"]')).not.toBeNull();
+    apiMock.mockImplementation((path: unknown) => {
+      const p = typeof path === 'string' ? path : '';
+      if (p.startsWith('/api/cloud/imports')) return Promise.resolve({ ok: true, jobs: [] });
+      return Promise.resolve({ ok: true, folders: [], files: [mkFile('other')], breadcrumbs: [], pagination: { page: 1, per_page: 100, total_files: 0, total_pages: 1 } });
+    });
+    await act(async () => { lastProps().actions.onDelete(lastProps().file); await Promise.resolve(); });
+    const confirm = ([...document.querySelectorAll('[role="dialog"] button')] as HTMLElement[]).find((b) => b.textContent?.trim() === 'Delete');
+    expect(confirm).toBeTruthy();
+    await act(async () => { confirm!.click(); await new Promise((r) => setTimeout(r, 50)); });
+    expect(apiMock).toHaveBeenCalledWith('/api/files/f9', { method: 'DELETE' });
+    expect(container!.querySelector('[data-testid="viewer"]')).toBeNull();
+  });
+
+  it('applies the normal sync once the deep-linked file has been in the listing', async () => {
+    await renderDeepLink([mkFile('other')], { f9: mkFile('f9') });
+    expect(container!.querySelector('[data-testid="viewer"]')).not.toBeNull();
+    // The file shows up in the listing (adopted), then disappears: viewer closes.
+    listed = [mkFile('f9')];
+    await act(async () => { lastProps().onRefresh(); await new Promise((r) => setTimeout(r, 50)); });
+    expect(container!.querySelector('[data-testid="viewer"]')).not.toBeNull();
+    listed = [mkFile('other')];
+    await act(async () => { lastProps().onRefresh(); await new Promise((r) => setTimeout(r, 50)); });
+    expect(container!.querySelector('[data-testid="viewer"]')).toBeNull();
   });
 });

@@ -17,6 +17,11 @@ const createPortalSession = vi.fn();
 const resumeSubscription = vi.fn();
 const api = vi.fn();
 
+vi.mock('@/api/family', () => ({
+  getFamily: vi.fn(async () => ({ ok: true, role: 'none', limit: 5, eligible: false, ineligible_reason: 'free_plan', pool: { used_bytes: 0, limit_bytes: 1, used_label: '0 B', limit_label: '5 GB' }, plan: { id: 'free', name: 'Free' }, payer: null, members: [] })),
+  inviteFamilyMember: vi.fn(), revokeFamilyInvite: vi.fn(), removeFamilyMember: vi.fn(), leaveFamily: vi.fn(),
+}));
+
 vi.mock('@/api/billing', () => ({
   getBillingStatus: () => getBillingStatus(),
   syncBilling: () => syncBilling(),
@@ -38,6 +43,7 @@ vi.mock('@/components/billing/cancel-dialog', () => ({
 }));
 
 import BillingPage from './billing';
+import { useSession } from '@/stores/session';
 
 const GB = 1024 ** 3;
 const TB = 1024 ** 4;
@@ -59,6 +65,7 @@ afterEach(() => {
   createPortalSession.mockReset();
   resumeSubscription.mockReset();
   api.mockReset();
+  useSession.setState({ user: null });
   window.history.replaceState({}, '', '/billing');
 });
 
@@ -207,5 +214,62 @@ describe('billing statement', () => {
     expect(text).toContain('No invoices yet');
     expect(text).not.toContain('Cancel subscription');
     expect(api).not.toHaveBeenCalled();
+  });
+
+  it('leaves family places out of the storage ledger', async () => {
+    getBillingStatus.mockResolvedValue(status({
+      items: [
+        { kind: 'plan', ref_id: 'pro', quantity: 1, storage_bytes: TB, total_bytes: TB, total_label: '1 TB', interval: 'month', unit_amount: 999, addon_kind: null },
+        { kind: 'addon', ref_id: 'addon_1tb', quantity: 1, storage_bytes: TB, total_bytes: TB, total_label: '1 TB', interval: 'month', unit_amount: 500, addon_kind: 'storage' },
+        { kind: 'addon', ref_id: 'family_places', quantity: 3, storage_bytes: 0, total_bytes: 0, total_label: '0 B', interval: 'month', unit_amount: 100, addon_kind: 'family_places' },
+      ],
+    }));
+    api.mockResolvedValue({ card: null });
+    await render();
+    const text = container!.textContent!;
+    expect(text).toContain('addon_1tb × 1');
+    expect(text).not.toContain('family_places');
+  });
+
+  it('quotes the price Stripe charges for the plan, not the list price', async () => {
+    // A $19.99 legacy Pro shown as "$24.99/mo" (today's list price) is a lie
+    // about the customer's own money; production did exactly this on 2026-10-05.
+    getBillingStatus.mockResolvedValue(status({
+      items: [{ kind: 'plan', ref_id: 'pro', quantity: 1, storage_bytes: 2 * TB, total_bytes: 2 * TB, total_label: '2 TB', interval: 'month', unit_amount: 1999 }],
+      invoices: [],
+    }));
+    api.mockResolvedValue({ card: null });
+
+    await render();
+    const text = container!.textContent!;
+
+    expect(text).toContain('$19.99');
+    expect(text).not.toContain('$24.99');
+  });
+
+  it('falls back to the list price while the mirror has no unit price yet', async () => {
+    getBillingStatus.mockResolvedValue(status({
+      items: [{ kind: 'plan', ref_id: 'pro', quantity: 1, storage_bytes: 2 * TB, total_bytes: 2 * TB, total_label: '2 TB', interval: 'month', unit_amount: null }],
+      invoices: [],
+    }));
+    api.mockResolvedValue({ card: null });
+
+    await render();
+    expect(container!.textContent).toContain('$24.99');
+  });
+
+  it('shows no plan controls to a family member, only the leave-first line', async () => {
+    useSession.setState({ user: { id: 'u1', name: 'M', email: 'm@x.test', avatar_url: null, deletion_scheduled_for: null, family: { role: 'member' } } });
+    getBillingStatus.mockResolvedValue(status({
+      subscription: { status: null, current_period_end: null, has_subscription: false, cancel_at_period_end: false, grace_period_end: null },
+    }));
+    api.mockResolvedValue({ card: null });
+
+    await render();
+    const labels = [...container!.querySelectorAll('button')].map((b) => b.textContent);
+    expect(labels).not.toContain('Choose a plan');
+    expect(labels).not.toContain('Add storage');
+    expect(labels).not.toContain('Cancel subscription');
+    expect(container!.textContent).toContain('You are on a family plan. Leave it from the Family section to buy a plan of your own.');
   });
 });

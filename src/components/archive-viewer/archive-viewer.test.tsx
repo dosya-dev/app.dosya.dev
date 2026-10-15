@@ -14,10 +14,26 @@ vi.mock('@/api/client', async () => {
   return { ...actual, api: (...a: unknown[]) => apiMock(...a) };
 });
 
+// The folder picker is its own component with its own tests; here it is a
+// stub that records it was opened and picks one destination on click.
+const pickerCalls: { title?: string }[] = [];
+vi.mock('@/components/folder-picker-dialog', () => ({
+  FolderPickerDialog: (p: { open: boolean; title?: string; onSelect: (id: string | null, name: string) => void; onClose: () => void }) => {
+    if (!p.open) return null;
+    pickerCalls.push({ title: p.title });
+    return createElement('button', {
+      'data-testid': 'pick-dest',
+      onClick: () => { p.onSelect('fld_dest', 'Dest'); p.onClose(); },
+    }, 'pick');
+  },
+}));
+
 const { ArchiveViewer } = await import('./archive-viewer');
+const { useWorkspace } = await import('@/stores/workspace');
 
 beforeAll(() => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  useWorkspace.setState({ activeId: 'ws_1' });
 });
 
 let root: Root | null = null;
@@ -29,6 +45,7 @@ afterEach(() => {
   root = null;
   container = null;
   apiMock.mockReset();
+  pickerCalls.length = 0;
   vi.unstubAllGlobals();
 });
 
@@ -115,6 +132,34 @@ const SMALL_TEXT_INDEX = {
   ],
 };
 
+/** An api() double that answers the index on GET and records every POST. */
+function postAware(index: unknown, onPost: (path: string, body: Record<string, unknown>) => unknown) {
+  const posts: { path: string; body: Record<string, unknown> }[] = [];
+  apiMock.mockImplementation(async (path: string, init?: { method?: string; body?: string }) => {
+    if (init?.method === 'POST') {
+      const body = JSON.parse(init.body ?? '{}') as Record<string, unknown>;
+      posts.push({ path, body });
+      return onPost(path, body);
+    }
+    return index;
+  });
+  return posts;
+}
+// The shape POST /api/folders/batch really answers: `folders`, not `results`
+// (apps/api/src/pages/api/folders/batch.ts, its final `json({ ok, folders })`).
+const batchAnswer = (body: Record<string, unknown>) => ({
+  ok: true,
+  folders: (body.folders as { name: string; parent_id: string | null }[]).map((f) => ({
+    name: f.name, parent_id: f.parent_id, id: `fld_${f.name}`, created: true,
+  })),
+});
+const click = async (sel: string) => {
+  await act(async () => {
+    (container!.querySelector(sel) as HTMLButtonElement).click();
+    await flush(40);
+  });
+};
+
 describe('ArchiveViewer', () => {
   it('lists the archive as a tree', async () => {
     apiMock.mockResolvedValue(INDEX);
@@ -122,6 +167,30 @@ describe('ArchiveViewer', () => {
     const text = container!.textContent ?? '';
     expect(text).toContain('assets');
     expect(text).toContain('README.md');
+  });
+
+  it('opens a disk image and labels it as one', async () => {
+    apiMock.mockResolvedValue({ ...INDEX, kind: 'iso' });
+    await render(zipFile({ name: 'disc.iso', extension: 'iso', mime_type: 'application/x-iso9660-image' }));
+    expect(container!.textContent).toContain('disk image');
+    expect(container!.textContent).not.toContain('archive ·');
+  });
+
+  it('labels a zip as an archive', async () => {
+    apiMock.mockResolvedValue({ ...INDEX, kind: 'zip' });
+    await render(zipFile());
+    expect(container!.querySelector('[data-testid="archive-kind"]')?.textContent).toBe('archive');
+  });
+
+  it('shows the API sentence when a .img is not an ISO image, under a heading that names disk images', async () => {
+    const { ApiError } = await import('@/api/client');
+    apiMock.mockRejectedValue(new ApiError(422, JSON.stringify({
+      error: 'This file is not an ISO 9660 disk image. Raw disk images (FAT, ext4, NTFS) are not supported yet.',
+    })));
+    await render(zipFile({ name: 'floppy.img', extension: 'img' }));
+    expect(container!.textContent).toContain("This file isn't a valid disk image");
+    expect(container!.textContent).toContain('Raw disk images');
+    expect(container!.querySelectorAll('[data-testid="archive-skeleton-row"]')).toHaveLength(0);
   });
 
   it('shows a skeleton, not a spinner, while loading', async () => {
@@ -339,5 +408,88 @@ describe('ArchiveViewer', () => {
     const row = container!.querySelector('[data-testid="archive-entry-6"]') as HTMLButtonElement;
     await act(async () => { row.click(); await flush(); });
     expect(container!.textContent).toMatch(/200,000/);
+  });
+  it('offers Save beside Download for an openable entry and not for an encrypted one', async () => {
+    apiMock.mockResolvedValue(INDEX);
+    await render(zipFile());
+    await click('[data-testid="archive-entry-7"]');
+    expect(container!.querySelector('[data-testid="archive-save-entry"]')).not.toBeNull();
+    expect(container!.querySelector('[data-testid="archive-save-entry"]')?.getAttribute('data-index')).toBe('7');
+    // The encrypted row refuses selection, so the selected entry stays README.md.
+    await click('[data-testid="archive-entry-9"]');
+    expect(container!.querySelector('[data-testid="archive-save-entry"]')?.getAttribute('data-index')).toBe('7');
+  });
+
+  it('saves the selected entry into the picked folder and reports the saved name', async () => {
+    const posts = postAware(INDEX, () => ({ ok: true, file_id: 'file_9', name: 'README (2).md', size_bytes: 30 }));
+    await render(zipFile());
+    await click('[data-testid="archive-entry-7"]');
+    await click('[data-testid="archive-save-entry"]');
+    expect(pickerCalls).toEqual([{ title: 'Save to folder' }]);
+    await click('[data-testid="pick-dest"]');
+    // The tree's CLEANED name travels as the override, so a spoofed entry name
+    // (bidi controls) is persisted as the row the user actually clicked.
+    expect(posts).toEqual([{ path: '/api/files/f1/archive/save', body: { i: 7, folder_id: 'fld_dest', name: 'README.md' } }]);
+    expect(document.body.textContent).toContain('README (2).md');
+  });
+
+  it('saves a folder: creates it, then its files, showing progress in the pane', async () => {
+    const posts = postAware(INDEX, (path, body) =>
+      path === '/api/folders/batch' ? batchAnswer(body) : { ok: true, file_id: 'file_x', name: 'hero.png', size_bytes: 1 });
+    await render(zipFile());
+    await click('[data-testid="archive-save-dir-assets"]');
+    await click('[data-testid="pick-dest"]');
+    expect(posts[0]).toEqual({
+      path: '/api/folders/batch',
+      body: { workspace_id: 'ws_1', folders: [{ name: 'assets', parent_id: 'fld_dest' }] },
+    });
+    expect(posts[1]).toEqual({ path: '/api/files/f1/archive/save', body: { i: 4, folder_id: 'fld_assets', name: 'hero.png' } });
+    expect(document.body.textContent).toContain('Saved 1 file');
+  });
+
+  it('offers Save all in the header and names the archive for the wrapping folder', async () => {
+    const posts = postAware(INDEX, (path, body) =>
+      path === '/api/folders/batch' ? batchAnswer(body) : { ok: true, file_id: 'file_x', name: 'x', size_bytes: 1 });
+    await render(zipFile({ name: 'bundle.zip' }));
+    await click('[data-testid="archive-save-all"]');
+    await click('[data-testid="pick-dest"]');
+    expect((posts[0]!.body.folders as { name: string }[])[0]!.name).toBe('bundle');
+    // Two openable entries (the encrypted one is skipped), one folder beneath.
+    expect(posts.filter((p) => p.path.endsWith('/archive/save'))).toHaveLength(2);
+    expect(document.body.textContent).toContain('1 skipped');
+  });
+
+  it('disables every Save control while a folder save is running', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => { release = r; });
+    postAware(INDEX, async (path, body) => {
+      if (path === '/api/folders/batch') return batchAnswer(body);
+      await gate;
+      return { ok: true, file_id: 'file_x', name: 'hero.png', size_bytes: 1 };
+    });
+    await render(zipFile());
+    await click('[data-testid="archive-save-dir-assets"]');
+    await click('[data-testid="pick-dest"]');
+    expect(container!.querySelector('[role="status"]')?.textContent).toContain('Saving 0 of 1');
+    expect((container!.querySelector('[data-testid="archive-save-dir-assets"]') as HTMLButtonElement).disabled).toBe(true);
+    expect((container!.querySelector('[data-testid="archive-save-all"]') as HTMLButtonElement).disabled).toBe(true);
+    await act(async () => { release(); await flush(40); });
+    expect(container!.querySelector('[role="status"]')).toBeNull();
+    expect((container!.querySelector('[data-testid="archive-save-dir-assets"]') as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('refuses a folder over the cap before any request', async () => {
+    const many = {
+      archiveSize: 1, totalEntries: 501, truncated: false,
+      entries: Array.from({ length: 501 }, (_, i) => ({
+        i, name: `big/f${i}.txt`, size: 1, csize: 1, method: 0, dir: false, encrypted: false, mtime: null,
+      })),
+    };
+    const posts = postAware(many, () => ({ ok: true }));
+    await render(zipFile());
+    await click('[data-testid="archive-save-dir-big"]');
+    expect(pickerCalls).toHaveLength(0);
+    expect(posts).toHaveLength(0);
+    expect(document.body.textContent).toContain('501 files');
   });
 });

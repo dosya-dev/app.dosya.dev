@@ -17,6 +17,7 @@ import {
   reportRouteError,
   resolveDsn,
   scrubEvent,
+  IGNORED_ERRORS,
   setSentryUser,
   shouldReportRouteError,
 } from './sentry';
@@ -98,6 +99,16 @@ describe('shouldReportRouteError', () => {
   });
 });
 
+describe('IGNORED_ERRORS', () => {
+  it('matches the Outlook link-scanner rejection and nothing of ours', () => {
+    const matches = (m: string) => IGNORED_ERRORS.some((r) => r.test(m));
+    expect(matches('Non-Error promise rejection captured with value: Object Not Found Matching Id:1, MethodName:update, ParamCount:4')).toBe(true);
+    expect(matches('Object Not Found Matching Id:3, MethodName:simulateEvent, ParamCount:21')).toBe(true);
+    expect(matches('Object not found')).toBe(false);
+    expect(matches("TypeError: Cannot read properties of undefined (reading 'id')")).toBe(false);
+  });
+});
+
 describe('init and user wiring', () => {
   it('initialises once with the privacy options and the router integration', () => {
     initSentry({}, false);
@@ -109,6 +120,7 @@ describe('init and user wiring', () => {
     expect(options.environment).toBe('production');
     expect(options.dataCollection).toEqual({ userInfo: false, httpBodies: [] });
     expect(options.beforeSend).toBe(scrubEvent);
+    expect(options.ignoreErrors).toBe(IGNORED_ERRORS);
     expect(options.integrations).toEqual([{ name: 'ReactRouterV7' }]);
   });
 

@@ -7,8 +7,11 @@ export type CatalogPlan = {
     price_monthly_label: string; price_yearly_label: string | null;
     features: string[]; has_monthly: boolean; has_yearly: boolean;
 };
+export type AddonKind = "storage" | "family_places";
 export type CatalogAddon = {
     id: string; name: string;
+    /** What it sells. Older API builds omit it; treat missing as storage. */
+    kind?: AddonKind;
     storage_bytes: number; storage_label: string;
     price_monthly: number; price_yearly: number | null;
     price_monthly_label: string; price_yearly_label: string | null;
@@ -19,6 +22,10 @@ export type Catalog = { plans: CatalogPlan[]; addons: CatalogAddon[] };
 export type SubscriptionItemView = {
     kind: "plan" | "addon" | "custom"; ref_id: string; quantity: number;
     storage_bytes: number; total_bytes: number; total_label: string; interval: "month" | "year";
+    /** Cents Stripe charges per unit of this item; null until mirrored from Stripe. */
+    unit_amount?: number | null;
+    /** For add-on items: storage or family places. Null for plan and custom items; older API builds omit it. */
+    addon_kind?: AddonKind | null;
 };
 export type ExternalLicenseGrantView = {
     id: string;
@@ -45,6 +52,16 @@ export type BillingStatus = {
     referral_bonus_bytes: number;
     invoices: { id: string; period_start: number; period_end: number; amount: number; status: string; pdf_url: string | null }[];
     license_grants: ExternalLicenseGrantView[];
+    refund?: RefundView;
+};
+
+export type RefundView = {
+    eligible: boolean;
+    reason: "ok" | "no_subscription" | "no_recent_payment" | "already_used";
+    amount: number;
+    currency: string | null;
+    window_ends_at: number | null;
+    charges: { id: string; amount: number; created: number; description: string }[];
 };
 
 export type CartPayload = {
@@ -105,3 +122,11 @@ export const cancelSubscription = () =>
 /** Undo a scheduled cancellation. */
 export const resumeSubscription = () =>
     api<CancelResult>("/api/billing/cancel", { method: "POST", body: JSON.stringify({ resume: true }) });
+
+/**
+ * Self-serve 14-day refund: refunds the recent charges and ends the plan now.
+ * `chargeIds` are the charges the dialog showed; the server answers 409
+ * `amount_changed` when they no longer match what it would refund.
+ */
+export const requestRefund = (chargeIds: string[]) =>
+    api<{ ok: true; amount: number; currency: string }>("/api/billing/refund", { method: "POST", body: JSON.stringify({ charge_ids: chargeIds }) });

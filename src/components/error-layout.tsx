@@ -1,11 +1,11 @@
 import { Button } from '@/components/ui/button';
-import { Home, ArrowLeft } from 'lucide-react';
+import { Home, ArrowLeft, Bug } from 'lucide-react';
 import { Logo } from "@/components/brand/logo";
 
 // Shared full-page layout for 404 / 500 / error states.
 // `code` is optional: states like the post-deploy reload are not an HTTP
 // status, and a giant empty number would just leave a hole above the title.
-export function ErrorLayout({ code, title, message }: { code?: string; title: string; message: string }) {
+export function ErrorLayout({ code, title, message, onReport }: { code?: string; title: string; message: string; onReport?: () => void }) {
   return (
     <div className="min-h-screen bg-background flex flex-col items-center justify-center text-center px-4" style={{ backgroundImage: 'url(/grid.svg)', backgroundRepeat: 'repeat' }}>
       <a href="/" className="inline-flex items-center gap-2 font-mono italic font-semibold text-lg mb-10">
@@ -24,6 +24,11 @@ export function ErrorLayout({ code, title, message }: { code?: string; title: st
         <Button variant="outline" className="gap-2" onClick={() => window.history.back()}>
           <ArrowLeft className="size-4" /> Go back
         </Button>
+        {onReport && (
+          <Button variant="outline" className="gap-2" onClick={onReport}>
+            <Bug className="size-4" /> Report this
+          </Button>
+        )}
       </div>
 
       <p className="mt-10 text-sm text-muted-foreground">

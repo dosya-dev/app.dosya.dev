@@ -13,6 +13,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
@@ -306,6 +307,9 @@ function CreateRequestDialog({ workspaceId, onClose, onCreated }: {
   const [allowedExts, setAllowedExts] = useState('');
   const [maxSizeMb, setMaxSizeMb] = useState('');
   const [maxFiles, setMaxFiles] = useState('');
+  // On by default for new requests: a class or a team sending files almost
+  // always wants them kept apart per person.
+  const [uploaderFolders, setUploaderFolders] = useState(true);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -348,6 +352,7 @@ function CreateRequestDialog({ workspaceId, onClose, onCreated }: {
       if (tab === 'email' && emails.length > 0) body.emails = emails;
       if (pw) body.password = pw;
       if (folderId) body.folder_id = folderId;
+      body.uploader_folders = uploaderFolders;
       const days = Number(expiry);
       if (days > 0) body.expires_in_days = days;
       if (allowedExts.trim()) body.allowed_extensions = allowedExts.trim();
@@ -493,6 +498,22 @@ function CreateRequestDialog({ workspaceId, onClose, onCreated }: {
                   )}
                   <ChevronDown className="size-3 text-muted-foreground shrink-0" />
                 </button>
+                <label className="mt-2 flex items-start gap-2 text-xs cursor-pointer">
+                  <Checkbox
+                    checked={uploaderFolders}
+                    onCheckedChange={(v) => setUploaderFolders(v === true)}
+                    className="mt-0.5"
+                    data-testid="uploader-folders"
+                  />
+                  <span>
+                    <span className="font-medium">Put each uploader in their own folder</span>
+                    <span className="block text-muted-foreground">
+                      {title.trim()
+                        ? <>Files go to <span className="font-medium text-foreground">{title.trim()}/</span> with a folder per person, named after them.</>
+                        : 'Files go into a folder per person, named after them.'}
+                    </span>
+                  </span>
+                </label>
               </div>
 
               {/* Advanced options */}
@@ -609,14 +630,20 @@ function RecipientsDialog({ requestId, onClose }: { requestId: string; onClose: 
     const pending = recipients.filter((r) => !r.uploaded_at);
     if (pending.length === 0) return;
     setResendingAll(true);
+    // Reminders are rate limited per recipient, so some of these can be
+    // refused; report what actually went out rather than what was asked for.
+    let sent = 0;
+    let lastError = '';
     for (const r of pending) {
       try {
         await api(`/api/file-requests/${requestId}/resend`, {
           method: 'POST', body: JSON.stringify({ recipient_id: r.id }),
         });
-      } catch {}
+        sent++;
+      } catch (err) { lastError = apiErrorMessage(err); }
     }
-    toast.success('Invites resent', `Resent to ${pending.length} recipient${pending.length === 1 ? '' : 's'}`);
+    if (sent > 0) toast.success('Reminders sent', `Sent to ${sent} of ${pending.length} recipient${pending.length === 1 ? '' : 's'}`);
+    else toast.error('No reminders sent', lastError || 'Try again later');
     load();
     setResendingAll(false);
   };
@@ -679,9 +706,9 @@ function RecipientRow({ recipient: r, requestId, onUpdate }: {
       await api(`/api/file-requests/${requestId}/resend`, {
         method: 'POST', body: JSON.stringify({ recipient_id: r.id }),
       });
-      toast.success('Invite resent', `Resent to ${r.email}`);
+      toast.success('Reminder sent', `Sent to ${r.email}`);
       onUpdate();
-    } catch {}
+    } catch (err) { toast.error('Reminder not sent', apiErrorMessage(err)); }
     setResending(false);
   };
 

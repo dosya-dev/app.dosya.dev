@@ -10,6 +10,12 @@ vi.mock('@/api/client', async (importOriginal) => {
   return { ...actual, api: (...args: unknown[]) => apiMock(...args) };
 });
 
+// Comments are fetched at viewer level; keep every case offline.
+vi.mock('@/components/comments/api', () => ({
+  listComments: vi.fn().mockResolvedValue([]), postComment: vi.fn(), deleteComment: vi.fn(),
+  editComment: vi.fn(), searchMentionable: vi.fn().mockResolvedValue([]),
+}));
+
 // The PDF branch must NOT pull real pdf.js into this test - the stub records
 // the props the branch hands over.
 vi.mock('@/components/pdf-viewer/pdf-viewer', () => {
@@ -578,5 +584,139 @@ describe('FileViewer stage navigation', () => {
     expect(zoomIn, 'expected image zoom controls').toBeTruthy();
     await click(zoomIn);
     expect(container!.textContent).toContain('125%');
+  });
+});
+
+describe('Comments tab', () => {
+  it('initialTab comments selects the tab and the label shows the count', async () => {
+    const { listComments } = await import('@/components/comments/api');
+    (listComments as ReturnType<typeof vi.fn>).mockResolvedValueOnce([
+      { id: 'c1', file_id: 'f1', folder_id: null, workspace_id: 'w1', user_id: 'u1', parent_id: null, body: 'hi', is_edited: 0,
+        created_at: 1, updated_at: 1, user_name: 'U', user_email: 'u@x', user_avatar: null, anchor_ms: null, anchor_page: null,
+        anchor_version: null, mention_user_ids: null, mentions: [] },
+    ]);
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    const file = txtFile();
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, arrayBuffer: async () => new TextEncoder().encode('x').buffer }));
+    await act(async () => {
+      root!.render(createElement(FileViewer, {
+        file: file as never, files: [file] as never, workspaceId: 'w1',
+        onClose: () => {}, onNavigate: () => {}, onRefresh: () => {}, initialTab: 'comments',
+      }));
+      await flush();
+    });
+    const sel = container.querySelector('[role="tab"][aria-selected="true"]');
+    expect(sel?.textContent).toContain('Comments');
+    expect(sel?.textContent).toContain('1');
+  });
+});
+
+describe('Comments tab layout and navigation', () => {
+  it('renders the panel (not the empty versions message) when versions are empty', async () => {
+    container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container);
+    const file = txtFile();
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, arrayBuffer: async () => new TextEncoder().encode('x').buffer }));
+    await act(async () => {
+      root!.render(createElement(FileViewer, {
+        file: file as never, files: [file] as never, workspaceId: 'w1',
+        onClose: () => {}, onNavigate: () => {}, onRefresh: () => {}, initialTab: 'comments',
+      }));
+      await flush();
+    });
+    const insp = container.querySelector('[data-testid="viewer-inspector"]')!;
+    expect(insp.querySelector('textarea')).not.toBeNull();
+    expect(insp.textContent).not.toContain('No version history');
+    // The panel fills the body (flex column), it is not inside an overflow scroller.
+    expect(insp.querySelector('.overflow-y-auto.px-4.py-4')).toBeNull();
+  });
+
+  it('navigating to another file drops the previous file comments and pending anchor', async () => {
+    const { listComments } = await import('@/components/comments/api');
+    (listComments as ReturnType<typeof vi.fn>).mockImplementation(async (id: string) => id === 'f1' ? [
+      { id: 'c1', file_id: 'f1', folder_id: null, workspace_id: 'w1', user_id: 'u1', parent_id: null, body: 'only on A', is_edited: 0,
+        created_at: 1, updated_at: 1, user_name: 'U', user_email: 'u@x', user_avatar: null, anchor_ms: null, anchor_page: null,
+        anchor_version: null, mention_user_ids: null, mentions: [] }] : []);
+    container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container);
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, arrayBuffer: async () => new TextEncoder().encode('x').buffer }));
+    const a = txtFile(); const b = { ...txtFile(), id: 'f2', name: 'b.txt' };
+    const render = (file: ReturnType<typeof txtFile>) => createElement(FileViewer, {
+      file: file as never, files: [a, b] as never, workspaceId: 'w1', onClose: () => {}, onNavigate: () => {},
+      onRefresh: () => {}, initialTab: 'comments', initialAnchor: { ms: 5000 }, initialCommentId: 'c1',
+    });
+    await act(async () => { root!.render(render(a)); await flush(); });
+    expect(container.textContent).toContain('only on A');
+    await act(async () => { root!.render(render(b)); await flush(); });
+    expect(container.textContent).not.toContain('only on A');
+    expect(container.querySelector('.ring-2')).toBeNull();
+  });
+});
+
+describe('Video comment markers', () => {
+  it('draws a marker strip positioned from anchor_ms / duration once metadata loads', async () => {
+    const { listComments } = await import('@/components/comments/api');
+    (listComments as ReturnType<typeof vi.fn>).mockImplementation(async () => [
+      { id: 'c1', file_id: 'f1', folder_id: null, workspace_id: 'w1', user_id: 'u1', parent_id: null, body: 'at twenty five', is_edited: 0,
+        created_at: 1, updated_at: 1, user_name: 'U', user_email: 'u@x', user_avatar: null, anchor_ms: 25_000, anchor_page: null,
+        anchor_version: 1, mention_user_ids: null, mentions: [] }]);
+    container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container);
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network disabled in test')));
+    const file = { ...htmlFile(), name: 'clip.mp4', mime_type: 'video/mp4', extension: 'mp4' };
+    await act(async () => {
+      root!.render(createElement(FileViewer, {
+        file: file as never, files: [file] as never, workspaceId: 'w1',
+        onClose: () => {}, onNavigate: () => {}, onRefresh: () => {},
+      }));
+      await flush();
+    });
+    const video = container.querySelector('video')!;
+    expect(video).not.toBeNull();
+    expect(container.querySelector('[data-testid="video-marker-strip"]')).toBeNull();
+    Object.defineProperty(video, 'duration', { configurable: true, value: 100 });
+    await act(async () => { video.dispatchEvent(new Event('loadedmetadata')); await flush(); });
+    const strip = container.querySelector('[data-testid="video-marker-strip"]');
+    expect(strip).not.toBeNull();
+    const dot = strip!.querySelector<HTMLButtonElement>('button')!;
+    expect(dot.style.left).toBe('25%');
+  });
+
+  it('clicking a marker left on an older version says so, once, like the panel chip', async () => {
+    const { toast } = await import('@/lib/toast');
+    const info = vi.spyOn(toast, 'info').mockImplementation(() => {});
+    const { listComments } = await import('@/components/comments/api');
+    (listComments as ReturnType<typeof vi.fn>).mockImplementation(async () => [
+      { id: 'c1', file_id: 'f1', folder_id: null, workspace_id: 'w1', user_id: 'u1', parent_id: null, body: 'old take', is_edited: 0,
+        created_at: 1, updated_at: 1, user_name: 'U', user_email: 'u@x', user_avatar: null, anchor_ms: 25_000, anchor_page: null,
+        anchor_version: 1, mention_user_ids: null, mentions: [] }]);
+    container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container);
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network disabled in test')));
+    const file = { ...htmlFile(), name: 'clip.mp4', mime_type: 'video/mp4', extension: 'mp4', current_version: 2 };
+    await act(async () => {
+      root!.render(createElement(FileViewer, {
+        file: file as never, files: [file] as never, workspaceId: 'w1',
+        onClose: () => {}, onNavigate: () => {}, onRefresh: () => {},
+      }));
+      await flush();
+    });
+    const video = container.querySelector('video')!;
+    Object.defineProperty(video, 'duration', { configurable: true, value: 100 });
+    await act(async () => { video.dispatchEvent(new Event('loadedmetadata')); await flush(); });
+    await click(container.querySelector<HTMLButtonElement>('[data-testid="video-marker-strip"] button')!);
+    expect(info).toHaveBeenCalledTimes(1);
+    expect(info).toHaveBeenCalledWith('Comment was left on v1');
+    // The panel opened on the comment; its chip goes through the same path.
+    // Opening the inspector re-lays the stage, so give the (possibly new)
+    // <video> its metadata again before the chip can seek it.
+    info.mockClear();
+    const video2 = container.querySelector('video')!;
+    Object.defineProperty(video2, 'duration', { configurable: true, value: 100 });
+    await act(async () => { video2.dispatchEvent(new Event('loadedmetadata')); await flush(); });
+    const chip = [...container.querySelectorAll<HTMLButtonElement>('[data-testid="viewer-inspector"] button')]
+      .find((b) => b.textContent?.includes('0:25'))!;
+    await click(chip);
+    expect(info).toHaveBeenCalledTimes(1);
+    expect(info).toHaveBeenCalledWith('Comment was left on v1');
+    info.mockRestore();
   });
 });

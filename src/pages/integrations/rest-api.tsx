@@ -11,7 +11,7 @@ export default function RestApiSetup() {
       <Step n={1} title="Create a token">
         <p>
           Generate a <code>dos_…</code> token in{' '}
-          <Link to="/profile#section-api" className="underline underline-offset-2 hover:text-foreground">
+          <Link to="/profile/api" className="underline underline-offset-2 hover:text-foreground">
             Profile → API keys
           </Link>{' '}
           with the scope you need (read, upload or full).

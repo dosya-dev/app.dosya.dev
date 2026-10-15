@@ -1,6 +1,7 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
+import { MemoryRouter } from 'react-router-dom';
 
 const apiMock = vi.fn();
 vi.mock('@/api/client', async (importOriginal) => {
@@ -267,7 +268,8 @@ describe('DeleteAccountSection', () => {
     document.body.appendChild(container);
     root = createRoot(container, { onUncaughtError: (e) => { uncaught.push(e); } });
     await act(async () => {
-      root!.render(<DeleteAccountSection />);
+      // The section links to the privacy page, so it needs a router around it.
+      root!.render(<MemoryRouter><DeleteAccountSection /></MemoryRouter>);
       await Promise.resolve();
     });
     const summary = container.querySelector('[data-testid="delete-summary"]');

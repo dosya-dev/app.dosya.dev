@@ -191,10 +191,24 @@ function runPartsInFrames(urls: string[], onError?: (message: string) => void): 
  * Same shape the single-file Download action uses (`window.open(..., '_blank')`
  * in files.tsx): an `attachment` response closes the new tab straight into the
  * downloads shelf, and a refusal shows there rather than replacing the app
- * itself, which `location.assign` would do. Popup blockers only interfere when
- * the call is not inside a user gesture; if one does, the tab itself navigates.
+ * itself, which `location.assign` would do.
+ *
+ * An anchor click rather than `window.open`. This used to call
+ * `window.open(url, '_blank', 'noopener')` and fall back to
+ * `location.assign(url)` when it returned null, reading null as "popup
+ * blocked". The HTML spec makes window.open return null WHENEVER noopener is
+ * set, so the fallback ran on every click and each folder download arrived as
+ * two identical ZIPs. A click on a `target=_blank` anchor inside the user
+ * gesture is not subject to the popup blocker and needs no return value, so
+ * there is nothing to fall back from.
  */
 function openInTab(url: string): void {
-  const tab = window.open(url, '_blank', 'noopener');
-  if (!tab) window.location.assign(url);
+  const a = document.createElement('a');
+  a.href = url;
+  a.target = '_blank';
+  a.rel = 'noopener';
+  a.hidden = true;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
 }

@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Lock, Loader2, ArrowLeft } from 'lucide-react';
 import { pendingPostAuthPath } from '@/lib/redemption-claim';
+import { consumePostAuthPath } from '@/lib/post-auth-path';
 
 export default function Login2faPage() {
   const navigate = useNavigate();
@@ -27,7 +28,7 @@ export default function Login2faPage() {
         body: JSON.stringify(showRecovery ? { code: value, is_recovery: true } : { code: value }),
       });
       if (res.ok) {
-        navigate(pendingPostAuthPath() ?? res.redirect ?? '/');
+        navigate(pendingPostAuthPath() ?? consumePostAuthPath() ?? res.redirect ?? '/');
       } else {
         setError(res.error ?? 'Verification failed');
       }

@@ -56,6 +56,17 @@ export function timeUntil(ts: number, now: number = Math.floor(Date.now() / 1000
   return `${m[d.getMonth()]} ${d.getDate()}${suffix}`;
 }
 
+/**
+ * The "Expires ..." line under an invite or share link. Built on timeUntil, not
+ * timeAgo: timeAgo turns every future expiry into "just now", which made live
+ * invite links read as already lapsed.
+ */
+export function expiryLabel(ts: number | null | undefined, now: number = Math.floor(Date.now() / 1000)): string {
+  if (!ts) return 'No expiry';
+  const until = timeUntil(ts, now);
+  return until === 'Expired' ? 'Expired' : `Expires ${until}`;
+}
+
 export function humanSize(b: number): string {
   if (b < 1024) return b + ' B';
   if (b < 1048576) return (b / 1024).toFixed(0) + ' KB';
@@ -155,7 +166,9 @@ export function isBook(name: string): boolean {
 // Deliberately narrow. `.cbz` and `.epub` are zips too, but both already route
 // to the book reader, and claiming them here would take a working experience
 // away and replace it with a file tree.
-const ARCHIVE_EXTS = new Set(['zip']);
+// `iso` and `img` open in the same pane: the API lists an ISO 9660 image the
+// way it lists a zip, and refuses a raw .img with a sentence the pane shows.
+const ARCHIVE_EXTS = new Set(['zip', 'iso', 'img']);
 export function isArchive(name: string): boolean {
   return ARCHIVE_EXTS.has(extOf(name));
 }

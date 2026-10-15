@@ -2,6 +2,7 @@ import { Badge } from '@/components/ui/badge';
 import type { TicketCategory } from '@/api/support';
 
 export const CATEGORY_OPTIONS: { value: TicketCategory; label: string }[] = [
+  { value: 'bug', label: 'Bug report' },
   { value: 'technical', label: 'Technical issue' },
   { value: 'billing', label: 'Billing' },
   { value: 'account', label: 'Account' },

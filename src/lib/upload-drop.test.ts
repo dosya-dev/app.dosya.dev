@@ -1,14 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const enqueue = vi.fn();
-const enqueueByFolder = vi.fn<(groups: Map<string | null, File[]>, input: unknown) => number>();
+const enqueueByFolder = vi.fn<(groups: Map<string | null, File[]>, input: unknown, pathOf?: (f: File) => string) => number>();
 const enqueueRejected = vi.fn<(rejected: { file: File; reason: string }[], input: unknown) => void>();
 const apiMock = vi.fn<(path: string, init: RequestInit) => Promise<unknown>>();
 const toasts: { kind: string; title: string; body?: string }[] = [];
 
 vi.mock('@/lib/upload-runner', () => ({
   enqueue: (...a: unknown[]) => enqueue(...a),
-  enqueueByFolder: (...a: [Map<string | null, File[]>, unknown]) => enqueueByFolder(...a),
+  enqueueByFolder: (...a: [Map<string | null, File[]>, unknown, ((f: File) => string)?]) => enqueueByFolder(...a),
   enqueueRejected: (...a: [{ file: File; reason: string }[], unknown]) => enqueueRejected(...a),
 }));
 vi.mock('@/api/client', async (importOriginal) => ({
@@ -104,6 +104,20 @@ describe('uploadTree', () => {
     expect([...groups.keys()]).toEqual(['fld_1', 'fld_2', null]);
     expect(groups.get('fld_2')?.map((f: File) => f.name)).toEqual(['b.jpg']);
     expect(res).toMatchObject({ queued: 3, folders: 2, skipped: 0 });
+  });
+
+  it('tells the runner which folder path each file came from', async () => {
+    await uploadTree(
+      tree([['Photos', 'a.jpg'], ['Photos/2024', 'b.jpg'], ['', 'loose.txt']],
+        ['Photos', 'Photos/2024']),
+      input,
+    );
+    const groups = enqueueByFolder.mock.calls[0][0];
+    const pathOf = enqueueByFolder.mock.calls[0][2] as (f: File) => string;
+    const files = [...groups.values()].flat();
+    expect(files.map((f: File) => [f.name, pathOf(f)])).toEqual([
+      ['a.jpg', 'Photos'], ['b.jpg', 'Photos/2024'], ['loose.txt', ''],
+    ]);
   });
 
   it('creates the tree under the folder being viewed, not the workspace root', async () => {

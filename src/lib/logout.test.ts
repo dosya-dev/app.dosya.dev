@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 const cancelAll = vi.fn();
 vi.mock('./upload-runner', () => ({ cancelAll: () => cancelAll() }));
 
-const { logoutAndRedirect } = await import('./logout');
+const { logoutAndRedirect, logoutAndRedirectTo } = await import('./logout');
 const { rememberShareDefault, readShareDefault } = await import('./share-defaults');
 const { useUploads } = await import('@/stores/uploads');
 
@@ -48,5 +48,27 @@ describe('logoutAndRedirect', () => {
     expect(cancelAll).toHaveBeenCalledTimes(1);
     expect(useUploads.getState().items).toEqual([]);
     expect(hrefs).toEqual(['/login']);
+  });
+
+  // logoutAndRedirect is passed by reference as a click handler
+  // (MaintenanceScreen's onSignOut, create-workspace's footer button), so React
+  // calls it with the event. An optional destination parameter would have
+  // swallowed that event as the destination, and no typecheck would have caught
+  // it: `(to?: string) => Promise<void>` is assignable to `() => void`.
+  it('ignores whatever a click handler passes it', async () => {
+    await (logoutAndRedirect as unknown as (e: unknown) => Promise<void>)(
+      new MouseEvent('click'),
+    );
+
+    expect(hrefs).toEqual(['/login']);
+  });
+});
+
+describe('logoutAndRedirectTo', () => {
+  it('lands on the page it was given', async () => {
+    await logoutAndRedirectTo('/sign-up');
+
+    expect(cancelAll).toHaveBeenCalledTimes(1);
+    expect(hrefs).toEqual(['/sign-up']);
   });
 });

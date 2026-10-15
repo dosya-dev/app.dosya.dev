@@ -113,7 +113,7 @@ export const API_KEY_SURFACES = ["webdav", "sftp", "s3", "api"] as const;
 export type ApiKeySurface = (typeof API_KEY_SURFACES)[number];
 
 export const TICKET_CATEGORIES = [
-    "billing", "technical", "account", "feature_request", "other",
+    "bug", "billing", "technical", "account", "feature_request", "other",
 ] as const;
 export type TicketCategory = (typeof TICKET_CATEGORIES)[number];
 
@@ -362,15 +362,23 @@ export function isValidEntityName(name: unknown): name is string {
  * most and the one place it was absent, which is what a copy-pasted invariant
  * eventually does.
  *
+ * Only a WHOLE name of "." or ".." is neutralised. It used to replace every
+ * "..", which stored "...rclonelink" as "_.rclonelink" and failed rclone's
+ * TestDirLinksInvalidName in the upstream nightly.
+ *
  * Returns "" for an unusable name so the caller can apply its own fallback.
  */
 export function sanitizeIngestName(raw: string | null | undefined): string {
-    return (raw ?? "")
+    const name = (raw ?? "")
         .trim()
-        .replace(/\.\./g, "_")
         .replace(/[\/\\]/g, "_")
         // eslint-disable-next-line no-control-regex
         .replace(/[\x00-\x1f\x7f]/g, "");
+    // With every separator gone, a single name can only address another
+    // directory by BEING "." or "..". A ".." inside a name ("notes..txt", or
+    // rclone's "...rclonelink" for a symlink called "..") is just characters,
+    // and rewriting it renamed the user's file.
+    return name === "." || name === ".." ? "_" : name;
 }
 
 /** `PUT /api/files/:id/rename`. */

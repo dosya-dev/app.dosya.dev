@@ -25,7 +25,7 @@ import {
   Settings, Plus, Users, Clock, Share2, Send, AlertCircle, RefreshCw, Folder,
 } from 'lucide-react';
 import { FolderPickerDialog } from '@/components/folder-picker-dialog';
-import { timeAgo, avatarColor, initials, actionLabel } from '@/lib/helpers';
+import { timeAgo, expiryLabel, avatarColor, initials, actionLabel } from '@/lib/helpers';
 import { toast } from '@/lib/toast';
 
 // ── Avatar with guaranteed initials fallback ───────────────
@@ -464,7 +464,7 @@ export default function TeamsPage() {
                   <div className="flex-1 min-w-0">
                     <p className="text-xs font-mono truncate">{l.url}</p>
                     <p className="text-[11px] text-muted-foreground">
-                      {roleName(l.role_id) || l.role_name} · {l.max_uses ? `${l.use_count}/${l.max_uses} used` : `${l.use_count} used`} · {l.expires_at ? `Expires ${timeAgo(l.expires_at)}` : 'No expiry'}
+                      {roleName(l.role_id) || l.role_name} · {l.max_uses ? `${l.use_count}/${l.max_uses} used` : `${l.use_count} used`} · {expiryLabel(l.expires_at)}
                     </p>
                   </div>
                   <CopyButton text={l.url} />

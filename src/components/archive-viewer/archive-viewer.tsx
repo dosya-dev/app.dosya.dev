@@ -1,7 +1,7 @@
 // apps/web/src/components/archive-viewer/archive-viewer.tsx
 //
-// Browsing what is inside a stored zip - nothing is downloaded to list an
-// archive, and nothing is downloaded to open one entry from it.
+// Browsing what is inside a stored zip or disk image - nothing is downloaded
+// to list an archive, and nothing is downloaded to open one entry from it.
 //
 // The pane is two columns: the entry tree on the app's own surface, and the
 // preview on the dark stage every other media type uses. The tree is chrome,
@@ -17,10 +17,14 @@
 // rail belongs to FileViewer and already shows the .zip's own details, so the
 // entry's facts go in the caption strip under the preview instead - which the
 // artboard also shows.
-import { useCallback, useEffect, useMemo, useState, Suspense } from 'react';
-import { ChevronDown, ChevronRight, Folder, Lock, Ban, Search, Download, Loader2 } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState, Suspense } from 'react';
+import { ChevronDown, ChevronRight, Folder, Lock, Ban, Search, Download, Loader2, Save, X } from 'lucide-react';
 import { api, API_BASE, ApiError, apiErrorMessage } from '@/api/client';
 import { buildArchiveTree, type ArchiveEntry, type TreeNode } from '@/lib/archive-tree';
+import { planFolderSave, runFolderSave, MAX_FOLDER_SAVE_FILES, type SavePlan } from '@/lib/archive-save';
+import { FolderPickerDialog } from '@/components/folder-picker-dialog';
+import { useWorkspace } from '@/stores/workspace';
+import { toast } from '@/lib/toast';
 import { colorFor, labelFor, humanSize, extOf, isImage, isVideo, isAudio } from '@/lib/helpers';
 import { isTextReadable } from '@/lib/text-detect';
 import { lazyChunkNamed } from '@/lib/chunk-reload';
@@ -38,10 +42,21 @@ function isPdf(name: string): boolean {
 }
 
 interface ArchiveIndex {
+  /** What the API opened it as. Older cached responses may omit it. */
+  kind?: 'zip' | 'iso';
   archiveSize: number;
   totalEntries: number;
   truncated: boolean;
   entries: ArchiveEntry[];
+}
+
+const DISK_IMAGE_EXTS = new Set(['iso', 'img']);
+
+/** The noun for the summary line: what the API says it opened, else what the
+ *  extension suggests (the API is the authority once it has answered). */
+function kindLabel(index: ArchiveIndex | null, name: string): string {
+  if (index?.kind === 'iso' || (!index?.kind && DISK_IMAGE_EXTS.has(extOf(name)))) return 'disk image';
+  return 'archive';
 }
 
 /** Compression methods the server will actually stream (store and deflate). */
@@ -139,6 +154,77 @@ export function ArchiveViewer({ file, version }: { file: FileItem; version?: num
     });
   }, []);
 
+  // Saving INTO dosya. The server saves one entry per request (see
+  // archive/save.ts); a folder is planned and driven from here, one file at a
+  // time, through lib/archive-save.ts. `pending` is what the folder picker is
+  // deciding a destination for.
+  const workspaceId = useWorkspace((s: { activeId: string }) => s.activeId);
+  const [pending, setPending] = useState<{ kind: 'entry'; node: TreeNode } | { kind: 'folder'; plan: SavePlan } | null>(null);
+  const [progress, setProgress] = useState<{ done: number; total: number; root: string } | null>(null);
+  const cancelRef = useRef(false);
+
+  // `name` is the TREE's cleaned segment (archive-tree.ts neutralises control
+  // and bidi characters for display). Sent as the override so the file that
+  // lands carries the name the user clicked, not a spoofed raw entry name.
+  const saveEntry = useCallback((entryIndex: number, folderId: string | null, name: string) =>
+    api<{ ok: boolean; file_id: string; name: string; size_bytes: number }>(`/api/files/${file.id}/archive/save`, {
+      method: 'POST', body: JSON.stringify({ i: entryIndex, folder_id: folderId, name }),
+    }), [file.id]);
+
+  // POST /api/folders/batch answers `folders` (apps/api/src/pages/api/folders/
+  // batch.ts), one row per requested folder, existing or new, with its id.
+  const createFolders = useCallback(async (parentId: string | null, names: string[]) => {
+    const res = await api<{ ok: boolean; folders: { name: string; parent_id: string | null; id: string }[] }>('/api/folders/batch', {
+      method: 'POST',
+      body: JSON.stringify({ workspace_id: workspaceId, folders: names.map((name) => ({ name, parent_id: parentId })) }),
+    });
+    return new Map(res.folders.map((r) => [r.name, r.id]));
+  }, [workspaceId]);
+
+  const startFolderSave = (nodes: TreeNode[], rootName: string) => {
+    const plan = planFolderSave(nodes, rootName);
+    if ('tooMany' in plan) {
+      toast.error(
+        'Too many files to save at once',
+        `This folder has ${plan.tooMany.toLocaleString()} files. Save smaller folders (up to ${MAX_FOLDER_SAVE_FILES}), or download the archive.`,
+      );
+      return;
+    }
+    setPending({ kind: 'folder', plan });
+  };
+
+  const onPicked = async (folderId: string | null) => {
+    const job = pending;
+    setPending(null);
+    if (!job) return;
+    if (job.kind === 'entry') {
+      if (job.node.index === null) return;
+      try {
+        const out = await saveEntry(job.node.index, folderId, job.node.name);
+        toast.success('Saved to dosya', out.name);
+      } catch (err) {
+        toast.error('Could not save this file', apiErrorMessage(err));
+      }
+      return;
+    }
+    cancelRef.current = false;
+    setProgress({ done: 0, total: job.plan.files.length, root: job.plan.rootName });
+    const out = await runFolderSave(job.plan, folderId, {
+      createFolders,
+      saveEntry,
+      onProgress: (done, total) => setProgress({ done, total, root: job.plan.rootName }),
+      isCancelled: () => cancelRef.current,
+    });
+    setProgress(null);
+    const parts = [`Saved ${out.saved} ${out.saved === 1 ? 'file' : 'files'}`];
+    if (out.skipped) parts.push(`${out.skipped} skipped`);
+    if (out.failed.length) parts.push(`${out.failed.length} failed`);
+    if (out.cancelled) parts.push('cancelled');
+    const summary = parts.join(', ');
+    if (out.failed.length) toast.error(summary, `${out.failed[0]!.name}: ${out.failed[0]!.message}`);
+    else toast.success(summary, job.plan.rootName);
+  };
+
   if (error) {
     // 422 is the one shape that means "this file itself is not a valid zip";
     // 413 means the opposite - a perfectly valid archive the server declined to
@@ -146,7 +232,8 @@ export function ArchiveViewer({ file, version }: { file: FileItem; version?: num
     // (404/403/a network failure) is a request problem, not a claim about the
     // archive, so it keeps a heading that cannot contradict a body like
     // "Network error. Please try again."
-    const heading = error.status === 422 ? "This file isn't a valid zip"
+    const noun = DISK_IMAGE_EXTS.has(extOf(file.name)) ? 'disk image' : 'zip';
+    const heading = error.status === 422 ? `This file isn't a valid ${noun}`
       : error.status === 413 ? 'This archive is too large to list'
       : 'This archive could not be opened';
     return (
@@ -174,6 +261,8 @@ export function ArchiveViewer({ file, version }: { file: FileItem; version?: num
                 <span className="font-mono">{index.totalEntries.toLocaleString()} entries</span>
                 <span aria-hidden="true">&middot;</span>
                 <span className="font-mono">{humanSize(index.archiveSize)}</span>
+                <span aria-hidden="true">&middot;</span>
+                <span data-testid="archive-kind">{kindLabel(index, file.name)}</span>
               </>
             ) : <span className="font-mono">Opening&hellip;</span>}
           </div>
@@ -191,7 +280,32 @@ export function ArchiveViewer({ file, version }: { file: FileItem; version?: num
               className="min-w-0 flex-1 bg-transparent text-xs outline-none placeholder:text-muted-foreground"
             />
           </label>
+          <button
+            type="button"
+            data-testid="archive-save-all"
+            disabled={!index || !!progress || tree.length === 0}
+            onClick={() => startFolderSave(tree, file.name.replace(/\.[^.]+$/, '') || file.name)}
+            className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md border text-[11px] font-medium hover:bg-muted disabled:text-muted-foreground disabled:cursor-not-allowed disabled:hover:bg-transparent self-start"
+          >
+            <Save className="size-3.5 text-muted-foreground" aria-hidden="true" /> Save all to dosya
+          </button>
         </div>
+
+        {progress && (
+          <div role="status" className="px-3 py-2 border-b text-[11px] flex items-center gap-2">
+            <Loader2 className="size-3.5 animate-spin text-muted-foreground shrink-0" aria-hidden="true" />
+            <span className="flex-1 truncate">
+              Saving {progress.done} of {progress.total} into {progress.root}
+            </span>
+            <button
+              type="button"
+              onClick={() => { cancelRef.current = true; }}
+              className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground shrink-0"
+            >
+              <X className="size-3" aria-hidden="true" /> Cancel
+            </button>
+          </div>
+        )}
 
         {/* Not role="tree": nothing below carries role="treeitem"/"group" or
             the aria-level/setsize/posinset the tree pattern requires, which
@@ -220,7 +334,8 @@ export function ArchiveViewer({ file, version }: { file: FileItem; version?: num
 
           {index && tree.map((node) => (
             <Row key={node.index ?? node.name} node={node} path={node.name} depth={0} filter={filter}
-                 openDirs={openDirs} onToggle={toggleDir} selected={selected} onSelect={setSelected} />
+                 openDirs={openDirs} onToggle={toggleDir} selected={selected} onSelect={setSelected}
+                 onSaveDir={(n) => startFolderSave(n.children, n.name)} saving={!!progress} />
           ))}
 
           {index?.truncated && (
@@ -238,16 +353,28 @@ export function ArchiveViewer({ file, version }: { file: FileItem; version?: num
       </div>
 
       <div className="flex-1 min-w-0 bg-[oklch(0.135_0.018_238.9)] relative flex flex-col">
-        <EntryPreview file={file} node={selected} version={version} />
+        <EntryPreview file={file} node={selected} version={version} onSave={(n) => setPending({ kind: 'entry', node: n })} />
       </div>
+
+      <FolderPickerDialog
+        open={pending !== null}
+        onClose={() => setPending(null)}
+        workspaceId={workspaceId}
+        onSelect={(id) => { void onPicked(id); }}
+        title="Save to folder"
+        confirmLabel="Save here"
+      />
     </div>
   );
 }
 
-function Row({ node, path, depth, filter, openDirs, onToggle, selected, onSelect }: {
+function Row({ node, path, depth, filter, openDirs, onToggle, selected, onSelect, onSaveDir, saving }: {
   node: TreeNode; path: string; depth: number; filter: string;
   openDirs: Set<string>; onToggle: (p: string) => void;
   selected: TreeNode | null; onSelect: (n: TreeNode) => void;
+  onSaveDir: (n: TreeNode) => void;
+  /** A folder save is running: one at a time, since they share the progress strip. */
+  saving: boolean;
 }) {
   const q = filter.trim().toLowerCase();
   const matches = q === '' || node.name.toLowerCase().includes(q);
@@ -258,16 +385,22 @@ function Row({ node, path, depth, filter, openDirs, onToggle, selected, onSelect
   if (node.kind === 'dir') {
     const kids = node.children.map((c) => (
       <Row key={c.index ?? `${path}/${c.name}`} node={c} path={`${path}/${c.name}`} depth={depth + 1}
-           filter={filter} openDirs={openDirs} onToggle={onToggle} selected={selected} onSelect={onSelect} />
+           filter={filter} openDirs={openDirs} onToggle={onToggle} selected={selected} onSelect={onSelect}
+           onSaveDir={onSaveDir} saving={saving} />
     ));
     return (
       <>
-        <button
-          type="button"
+        {/* A div with role="button", not a <button>: the row carries its own
+            Save control, and a button inside a button is invalid markup that
+            browsers split unpredictably. Enter and Space toggle like a button. */}
+        <div
+          role="button"
+          tabIndex={0}
           data-testid={`archive-dir-${path}`}
           onClick={() => onToggle(path)}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle(path); } }}
           aria-expanded={open}
-          className="flex items-center gap-2 h-[30px] w-full px-2 rounded-md hover:bg-muted text-left"
+          className="group flex items-center gap-2 h-[30px] w-full px-2 rounded-md hover:bg-muted text-left cursor-pointer"
           style={{ paddingLeft: `${8 + depth * 22}px` }}
         >
           {open ? <ChevronDown className="size-3.5 text-muted-foreground shrink-0" />
@@ -275,7 +408,18 @@ function Row({ node, path, depth, filter, openDirs, onToggle, selected, onSelect
           <Folder className="size-[15px] text-muted-foreground shrink-0" aria-hidden="true" />
           <span className="text-[13px] font-medium truncate">{node.name}</span>
           <span className="font-mono text-[11px] text-muted-foreground ml-auto shrink-0">{node.fileCount}</span>
-        </button>
+          <button
+            type="button"
+            data-testid={`archive-save-dir-${path}`}
+            aria-label={`Save folder ${node.name} to dosya`}
+            title="Save folder to dosya"
+            disabled={saving}
+            onClick={(e) => { e.stopPropagation(); onSaveDir(node); }}
+            className="inline-flex items-center justify-center size-6 rounded-md text-muted-foreground hover:text-foreground hover:bg-background shrink-0 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
+          >
+            <Save className="size-3.5" aria-hidden="true" />
+          </button>
+        </div>
         {open && kids}
       </>
     );
@@ -351,7 +495,9 @@ function DownloadCard({ fileId, node, note, version }: { fileId: string; node: T
   );
 }
 
-function EntryPreview({ file, node, version }: { file: FileItem; node: TreeNode | null; version?: number }) {
+function EntryPreview({ file, node, version, onSave }: {
+  file: FileItem; node: TreeNode | null; version?: number; onSave: (n: TreeNode) => void;
+}) {
   if (!node || node.index === null) {
     return (
       <div className="flex-1 flex items-center justify-center p-6">
@@ -361,6 +507,25 @@ function EntryPreview({ file, node, version }: { file: FileItem; node: TreeNode 
   }
 
   const url = entryUrl(file.id, node.index, false, version);
+
+  // Download and Save for the selected entry, above whatever the stage shows.
+  // On the dark stage, so literal stage colors rather than theme tokens (see
+  // STAGE_TEXT above).
+  const actions = (
+    <div className={`h-10 shrink-0 flex items-center justify-between gap-3 px-3 border-b border-white/10 ${STAGE_TEXT}`}>
+      <span className="text-[12px] truncate">{node.name}</span>
+      <div className="flex items-center gap-1.5 shrink-0">
+        <a href={entryUrl(file.id, node.index, true, version)} download
+           className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md border border-white/15 text-[11px] font-medium hover:bg-white/10">
+          <Download className="size-3.5" aria-hidden="true" /> Download
+        </a>
+        <button type="button" data-testid="archive-save-entry" data-index={node.index} onClick={() => onSave(node)}
+           className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md border border-white/15 text-[11px] font-medium hover:bg-white/10">
+          <Save className="size-3.5" aria-hidden="true" /> Save to dosya
+        </button>
+      </div>
+    </div>
+  );
 
   // PDF brings its own toolbar and scroller (see file-viewer.tsx's stage,
   // which drops the same centering for it) - centering it here would just
@@ -372,9 +537,12 @@ function EntryPreview({ file, node, version }: { file: FileItem; node: TreeNode 
   if (isPdf(node.name)) {
     return (
       <div className="absolute inset-0 flex flex-col">
-        <Suspense fallback={<div className="flex-1 flex items-center justify-center"><Loader2 className={`size-6 animate-spin ${STAGE_MUTED_TEXT}`} /></div>}>
-          <PdfViewer key={url} fileName={node.name} rawUrl={url} downloadUrl={entryUrl(file.id, node.index, true, version)} />
-        </Suspense>
+        {actions}
+        <div className="flex-1 min-h-0 flex flex-col">
+          <Suspense fallback={<div className="flex-1 flex items-center justify-center"><Loader2 className={`size-6 animate-spin ${STAGE_MUTED_TEXT}`} /></div>}>
+            <PdfViewer key={url} fileName={node.name} rawUrl={url} downloadUrl={entryUrl(file.id, node.index, true, version)} />
+          </Suspense>
+        </div>
       </div>
     );
   }
@@ -403,11 +571,14 @@ function EntryPreview({ file, node, version }: { file: FileItem; node: TreeNode 
   }
 
   return (
-    <div className="flex-1 flex items-center justify-center overflow-auto p-6 relative">
-      {body}
-      <p className={`absolute bottom-3 left-1/2 -translate-x-1/2 font-mono text-[11px] ${STAGE_TEXT} ${STAGE_CAPTION_BG} rounded px-2 py-0.5`}>
-        {caption}
-      </p>
+    <div className="flex-1 flex flex-col min-h-0">
+      {actions}
+      <div className="flex-1 flex items-center justify-center overflow-auto p-6 relative">
+        {body}
+        <p className={`absolute bottom-3 left-1/2 -translate-x-1/2 font-mono text-[11px] ${STAGE_TEXT} ${STAGE_CAPTION_BG} rounded px-2 py-0.5`}>
+          {caption}
+        </p>
+      </div>
     </div>
   );
 }

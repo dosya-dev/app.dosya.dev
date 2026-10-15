@@ -90,6 +90,15 @@ export function shouldReportRouteError(err: unknown): boolean {
   return true;
 }
 
+/**
+ * Errors that are not ours. "Object Not Found Matching Id:N, MethodName:update"
+ * is a promise rejection raised by Microsoft's link scanner (Outlook Safe
+ * Links) driving the page in a headless Chrome after an email containing the
+ * link is delivered; no person is on the other end. It hit /sign-up in
+ * Sentry 152752478 with no user and no app frames.
+ */
+export const IGNORED_ERRORS: RegExp[] = [/Object Not Found Matching Id:\d+, MethodName:/];
+
 let initialised = false;
 
 /** Idempotent; called from src/instrument.ts. */
@@ -111,6 +120,7 @@ export function initSentry(env: SentryEnv = import.meta.env, dev: boolean = impo
         matchRoutes,
       }),
     ],
+    ignoreErrors: IGNORED_ERRORS,
     beforeSend: scrubEvent,
   });
 }
@@ -120,12 +130,15 @@ export function setSentryUser(userId: string | null): void {
   Sentry.setUser(userId ? { id: userId } : null);
 }
 
-/** Report an error the app caught itself (boundaries, swallowed catches). */
-export function reportError(error: unknown, extra?: Record<string, unknown>): void {
-  Sentry.captureException(error, extra ? { extra } : undefined);
+/** Report an error the app caught itself (boundaries, swallowed catches).
+ *  Returns the id Sentry gave this specific event. */
+export function reportError(error: unknown, extra?: Record<string, unknown>): string {
+  return Sentry.captureException(error, extra ? { extra } : undefined);
 }
 
-/** The router's errorElement calls this; applies `shouldReportRouteError`. */
-export function reportRouteError(err: unknown): void {
-  if (shouldReportRouteError(err)) reportError(err, { source: 'router' });
+/** The router's errorElement calls this; applies `shouldReportRouteError`.
+ *  Returns this error's event id, or null when it was filtered (never sent). */
+export function reportRouteError(err: unknown): string | null {
+  if (!shouldReportRouteError(err)) return null;
+  return reportError(err, { source: 'router' });
 }

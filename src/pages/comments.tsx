@@ -2,10 +2,15 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import { api, API_BASE } from '@/api/client';
 import { useWorkspace } from '@/stores/workspace';
-import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import type { Comment } from '@/components/comments/types';
+import { CommentBody } from '@/components/comments/comment-body';
+import { MentionComposer } from '@/components/comments/mention-composer';
+import { listComments, postComment } from '@/components/comments/api';
+import { anchorLabel } from '@/components/comments/format';
+import { viewerHref } from '@/components/comments/deep-link';
 import {
-  ChevronLeft, Send, CornerDownRight, Pencil, Trash2, X,
+  ChevronLeft, CornerDownRight, Pencil, Trash2, X,
   Loader2, MessageSquare,
 } from 'lucide-react';
 import { FilePreviewImage } from '@/components/file-preview-image';
@@ -14,33 +19,9 @@ import {
   avatarColor, initials,
 } from '@/lib/helpers';
 import { toast } from '@/lib/toast';
-import { LIMITS, validateCommentBody } from '@/lib/validation-policy.generated';
-
-/**
- * Show the character counter only once the body is within 10% of the cap.
- * A counter that is always visible on a one-line comment is noise; a cap you
- * only learn about from a rejected 6000-character paste is worse.
- */
-const COMMENT_COUNTER_FROM = Math.floor(LIMITS.COMMENT_BODY_MAX * 0.9);
-
+import { validateCommentBody } from '@/lib/validation-policy.generated';
 
 // ── Types ─────────────────────────────────────────────────
-
-interface Comment {
-  id: string;
-  file_id: string | null;
-  folder_id: string | null;
-  workspace_id: string;
-  user_id: string;
-  parent_id: string | null;
-  body: string;
-  is_edited: number;
-  created_at: number;
-  updated_at: number;
-  user_name: string;
-  user_email: string;
-  user_avatar: string | null;
-}
 
 interface CurrentUser {
   id: string;
@@ -91,21 +72,21 @@ export default function CommentsPage() {
 
   const fileId = searchParams.get('file_id');
   const fileName = searchParams.get('name') || 'File';
+  const highlightId = searchParams.get('comment');
 
   const [comments, setComments] = useState<Comment[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [fileInfo, setFileInfo] = useState<FileInfo | null>(null);
 
-  const [body, setBody] = useState('');
-  const [submitting, setSubmitting] = useState(false);
-  const overCommentLimit = body.length > LIMITS.COMMENT_BODY_MAX;
   const [replyTo, setReplyTo] = useState<Comment | null>(null);
   const [editId, setEditId] = useState<string | null>(null);
   const [editBody, setEditBody] = useState('');
 
   const chatEndRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  // The linked comment is scrolled to once; later posts scroll to the newest.
+  const scrolledToHighlight = useRef(false);
 
   // Load current user
   useEffect(() => {
@@ -130,49 +111,32 @@ export default function CommentsPage() {
     if (!fileId || !wsId) return;
     setLoading(true);
     try {
-      const data = await api<{ ok: boolean; comments: Comment[] }>(
-        `/api/comments?file_id=${fileId}&workspace_id=${wsId}`
-      );
-      if (data.ok) setComments(data.comments || []);
+      setComments(await listComments(fileId, wsId));
     } catch {}
     setLoading(false);
   }, [fileId, wsId]);
 
   useEffect(() => { loadComments(); }, [loadComments]);
 
-  // Scroll to bottom on new comments
+  // Scroll to the linked comment when there is one, else to the newest.
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [comments]);
+    const target = highlightId && !scrolledToHighlight.current ? document.getElementById(`comment-${highlightId}`) : null;
+    if (target) { scrolledToHighlight.current = true; target.scrollIntoView?.({ block: 'center' }); }
+    else if (!highlightId || scrolledToHighlight.current) chatEndRef.current?.scrollIntoView?.({ behavior: 'smooth' });
+  }, [comments, highlightId]);
 
-  // Submit comment
-  const handleSubmit = async () => {
-    if (!body.trim() || !fileId) return;
-    // A pasted essay used to be uploaded in full and then refused at 5000. The
-    // counter below the field warns first; this is the stop.
-    const bodyError = validateCommentBody(body);
-    if (bodyError) { toast.error('Comment failed', bodyError); return; }
-    setSubmitting(true);
+  // Submit comment (the composer owns the draft and the length cap)
+  const handleSubmit = async (body: string, mentionIds: string[]): Promise<boolean> => {
+    if (!fileId) return false;
     try {
-      const payload: Record<string, unknown> = {
-        file_id: fileId,
-        workspace_id: wsId,
-        body: body.trim(),
-      };
-      if (replyTo) payload.parent_id = replyTo.id;
-      const res = await api<{ ok: boolean }>('/api/comments', {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      });
-      if (res.ok) {
-        setBody('');
-        setReplyTo(null);
-        loadComments();
-      }
+      await postComment({ workspaceId: wsId, fileId, body, parentId: replyTo?.id ?? null, mentionIds });
+      setReplyTo(null);
+      loadComments();
+      return true;
     } catch {
       toast.error('Comment failed', 'Your comment could not be posted.');
+      return false;
     }
-    setSubmitting(false);
   };
 
   const handleEdit = async (id: string) => {
@@ -264,6 +228,7 @@ export default function CommentsPage() {
                 comments={sorted}
                 allComments={comments}
                 currentUser={currentUser}
+                highlightId={highlightId}
                 editId={editId}
                 editBody={editBody}
                 onReply={(c) => { setReplyTo(c); inputRef.current?.focus(); }}
@@ -300,42 +265,16 @@ export default function CommentsPage() {
               </div>
               {/* Input */}
               <div className="flex-1 min-w-0">
-                <Textarea
-                  ref={inputRef}
-                  value={body}
-                  onChange={(e) => setBody(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-                      e.preventDefault();
-                      handleSubmit();
-                    }
-                  }}
-                  placeholder="Write a message..."
-                  className="w-full min-h-10 max-h-32 rounded-lg px-3 py-2.5 text-sm bg-background resize-none"
-                  rows={1}
-                  aria-describedby={body.length > COMMENT_COUNTER_FROM ? 'comment-length' : undefined}
-                />
-                {/* Silent until the cap is close, so it is information rather
-                    than pressure. Turns destructive once it is actually over. */}
-                {body.length > COMMENT_COUNTER_FROM && (
-                  <p
-                    id="comment-length"
-                    aria-live="polite"
-                    className={`mt-1 text-xs tabular-nums ${overCommentLimit ? 'text-destructive' : 'text-muted-foreground'}`}
-                  >
-                    {body.length.toLocaleString()} / {LIMITS.COMMENT_BODY_MAX.toLocaleString()}
-                  </p>
+                {fileId && (
+                  <MentionComposer
+                    workspaceId={wsId}
+                    fileId={fileId}
+                    placeholder="Write a message..."
+                    onSubmit={handleSubmit}
+                    inputRef={inputRef}
+                  />
                 )}
               </div>
-              {/* Send */}
-              <Button
-                size="sm"
-                className="size-10 p-0 shrink-0 rounded-full"
-                onClick={handleSubmit}
-                disabled={submitting || !body.trim() || overCommentLimit}
-              >
-                {submitting ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
-              </Button>
             </div>
           </div>
         </div>
@@ -435,10 +374,11 @@ function CommentAvatar({ comment, displayName, bgColor }: { comment: Comment; di
   );
 }
 
-function ChatMessages({ comments, allComments, currentUser, editId, editBody, onReply, onStartEdit, onCancelEdit, onSaveEdit, onEditBodyChange, onDelete }: {
+function ChatMessages({ comments, allComments, currentUser, highlightId, editId, editBody, onReply, onStartEdit, onCancelEdit, onSaveEdit, onEditBodyChange, onDelete }: {
   comments: Comment[];
   allComments: Comment[];
   currentUser: CurrentUser | null;
+  highlightId: string | null;
   editId: string | null;
   editBody: string;
   onReply: (c: Comment) => void;
@@ -482,7 +422,11 @@ function ChatMessages({ comments, allComments, currentUser, editId, editBody, on
         const isEditing = editId === c.id;
 
         return (
-          <div key={c.id}>
+          <div
+            key={c.id}
+            id={`comment-${c.id}`}
+            className={highlightId === c.id ? 'ring-2 ring-primary/40 rounded-lg' : ''}
+          >
             {/* Date separator */}
             {showDateSep && (
               <div className="flex items-center justify-center my-4">
@@ -505,6 +449,12 @@ function ChatMessages({ comments, allComments, currentUser, editId, editBody, on
               <div className={`max-w-[70%] min-w-0 ${isMine ? 'items-end' : 'items-start'}`}>
                 {showName && (
                   <p className="text-[11px] font-semibold text-muted-foreground mb-0.5 px-1">{displayName}</p>
+                )}
+
+                {anchorLabel(c) && c.file_id && (
+                  <Link to={viewerHref(c.file_id, c)} className="mb-0.5 inline-block rounded-full bg-primary/10 px-1.5 font-mono text-[11px] text-primary hover:bg-primary/20">
+                    {c.anchor_ms != null ? `\u25B6 ${anchorLabel(c)}` : anchorLabel(c)}
+                  </Link>
                 )}
 
                 <div className="relative group/bubble">
@@ -552,7 +502,7 @@ function ChatMessages({ comments, allComments, currentUser, editId, editBody, on
                         ? `bg-primary text-primary-foreground ${isFirstInGroup ? 'rounded-2xl rounded-br-md' : isLastInGroup ? 'rounded-2xl rounded-tr-md' : 'rounded-r-md rounded-l-2xl'}`
                         : `bg-muted ${isFirstInGroup ? 'rounded-2xl rounded-bl-md' : isLastInGroup ? 'rounded-2xl rounded-tl-md' : 'rounded-l-md rounded-r-2xl'}`
                     } ${parent ? 'rounded-t-none' : ''}`}>
-                      {c.body}
+                      <CommentBody body={c.body} mentions={c.mentions ?? []} />
                     </div>
                   )}
                 </div>

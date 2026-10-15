@@ -20,7 +20,7 @@ export default function GoogleSetup() {
     <IntegrationLayout icon={meta.icon} iconSrc={meta.iconSrc} title={meta.title} description={meta.description}>
       <CloudConnectNotice />
       <Step n={1} title="Connect your Google account">
-        <p>Grant dosya read access to your Google Drive so you can import files from it:</p>
+        <p>Connect your Google account, then choose the files and folders to copy into dosya:</p>
         <a
           href={`${API_BASE}/api/cloud/connect/google`}
           className="mt-1 inline-flex items-center gap-2 rounded-lg border bg-card px-3 py-2 text-sm font-medium transition-colors hover:bg-muted/50"
@@ -36,7 +36,7 @@ export default function GoogleSetup() {
         <p>
           Once connected, import files straight from Drive into any workspace. Manage or disconnect your
           Google accounts anytime in{' '}
-          <Link to="/profile#section-integrations" className="underline underline-offset-2 hover:text-foreground">
+          <Link to="/profile/integrations" className="underline underline-offset-2 hover:text-foreground">
             Profile → Integrations
           </Link>
           .

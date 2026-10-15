@@ -138,6 +138,36 @@ describe('checkout thank-you page', () => {
     expect(text).toContain('Stripe adds the prorated difference to your next invoice.');
   });
 
+  it('calls a change that added no storage a subscription update', async () => {
+    rememberPlanChange();
+    rememberStorageBeforePurchase(TB);
+    script({
+      '/api/billing/sync': { ok: true },
+      '/api/billing/status': status({ limit: TB }),
+      '/api/billing/receipt': { ok: true, kind: 'change', next_amount: 300, currency: 'usd', next_invoice_at: 1_802_000_000, email: 'me@example.test', card: null },
+    });
+    await render('/checkout/success?change=1');
+    const text = container!.textContent!;
+    expect(text).toContain('Subscription updated');
+    expect(text).not.toContain('Storage added');
+    expect(text).toContain('Your storage stays at 1,024 GB');
+  });
+
+  it('does not claim storage stayed when a plan change reduced it', async () => {
+    rememberPlanChange();
+    rememberStorageBeforePurchase(2 * TB);
+    script({
+      '/api/billing/sync': { ok: true },
+      '/api/billing/status': status({ limit: TB }),
+      '/api/billing/receipt': { ok: true, kind: 'change', next_amount: 300, currency: 'usd', next_invoice_at: 1_802_000_000, email: 'me@example.test', card: null },
+    });
+    await render('/checkout/success?change=1');
+    const text = container!.textContent!;
+    expect(text).toContain('Subscription updated');
+    expect(text).toContain('Your account now has 1,024 GB of storage');
+    expect(text).not.toContain('stays at');
+  });
+
   it('still reads as a thank-you when Stripe itself cannot be reached', async () => {
     script({
       '/api/billing/sync': { ok: true },
@@ -175,7 +205,13 @@ describe('checkout thank-you page', () => {
       'https://dosya.dev/developer/s3/',
       'https://dosya.dev/developer/rclone/',
       'https://dosya.dev/desktop/',
-      'https://dosya.dev/mobile/',
+      // The iPhone badge goes to the App Store listing (live 2026-10-14), not
+      // to /mobile/ the way it did while the app was in review.
+      'https://apps.apple.com/app/id6796702157',
+      // The Mac badge goes to the listing, not to our own download page the
+      // way it did before the app was published to the Mac App Store.
+      'https://apps.apple.com/app/id6818700723?mt=12',
+      'https://play.google.com/store/apps/details?id=dev.dosya',
     ]) {
       expect(hrefs).toContain(url);
     }

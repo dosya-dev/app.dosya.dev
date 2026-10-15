@@ -131,3 +131,19 @@ describe('ShareAnalyticsPage country', () => {
     expect(countryCells()).toEqual(['-']);
   });
 });
+
+/**
+ * Sentry dosya-web 150873631 (2026-10-02, Firefox): `can't access property
+ * "display_name", A.link is undefined` thrown from render on /shared/:id,
+ * right after the analytics request itself answered 200. The API's only
+ * success shape carries `link`, so whatever produced that body is outside
+ * this page - but a page that crashes the whole app on one field it did not
+ * get is still this page's bug. A body without `link` is the same dead end
+ * as an error response.
+ */
+describe('ShareAnalyticsPage with a success body that carries no link', () => {
+  it('shows the not-available state instead of throwing', async () => {
+    await render({ ok: true });
+    expect(container!.textContent).toContain('This share link is not available');
+  });
+});

@@ -48,9 +48,11 @@ interface Props {
   duration: number;
   loop: { a: number; b: number } | null;
   onSeek: (seconds: number) => void;
+  markers?: { id: string; ratio: number; dim: boolean; initial: string; excerpt: string }[];
+  onMarker?: (id: string) => void;
 }
 
-export function Waveform({ peaks, position, duration, loop, onSeek }: Props) {
+export function Waveform({ peaks, position, duration, loop, onSeek, markers, onMarker }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const tipRef = useRef<HTMLSpanElement>(null);
@@ -159,6 +161,26 @@ export function Waveform({ peaks, position, duration, loop, onSeek }: Props) {
 
   return (
     <div className="mt-[22px]">
+      {/* Above the seek surface, not inside it, so a marker click never
+          reaches the wrapper's pointer handlers and seeks twice. */}
+      {markers && markers.length > 0 && (
+        <div className="relative mb-1 h-4" aria-label="Comment markers">
+          {markers.map((m) => (
+            <button
+              key={m.id}
+              type="button"
+              data-testid="waveform-marker"
+              title={m.excerpt}
+              aria-label={`Comment: ${m.excerpt}`}
+              onClick={() => onMarker?.(m.id)}
+              className="absolute top-0 flex size-4 -translate-x-1/2 items-center justify-center rounded-full bg-primary text-[9px] font-bold text-primary-foreground shadow-sm hover:scale-110 transition-transform"
+              style={{ left: `${Math.min(1, Math.max(0, m.ratio)) * 100}%`, opacity: m.dim ? 0.45 : 1 }}
+            >
+              {m.initial}
+            </button>
+          ))}
+        </div>
+      )}
       <div
         ref={wrapRef}
         className="relative h-[78px] cursor-pointer touch-none rounded focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--ring)]"

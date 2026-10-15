@@ -67,7 +67,7 @@ export function NotificationBell() {
               <button className="text-muted-foreground hover:text-foreground" onClick={() => { setOpen(false); navigate("/notifications"); }}>
                 See all
               </button>
-              <button className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1" onClick={() => { setOpen(false); navigate("/profile#section-notifications"); }}>
+              <button className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1" onClick={() => { setOpen(false); navigate("/profile/notifications"); }}>
                 <Settings className="size-3.5" /> Settings
               </button>
             </div>

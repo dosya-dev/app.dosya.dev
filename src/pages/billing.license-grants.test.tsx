@@ -9,6 +9,11 @@ const syncBilling = vi.fn();
 const createPortalSession = vi.fn();
 const resumeSubscription = vi.fn();
 
+vi.mock('@/api/family', () => ({
+  getFamily: vi.fn(async () => ({ ok: true, role: 'none', limit: 5, eligible: false, ineligible_reason: 'free_plan', pool: { used_bytes: 0, limit_bytes: 1, used_label: '0 B', limit_label: '5 GB' }, plan: { id: 'free', name: 'Free' }, payer: null, members: [] })),
+  inviteFamilyMember: vi.fn(), revokeFamilyInvite: vi.fn(), removeFamilyMember: vi.fn(), leaveFamily: vi.fn(),
+}));
+
 vi.mock('@/api/billing', () => ({
   getBillingStatus: () => getBillingStatus(),
   syncBilling: () => syncBilling(),

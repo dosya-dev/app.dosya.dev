@@ -54,6 +54,18 @@ describe('PublicNav session probe', () => {
     expect(container!.textContent).toContain('Sign Up');
   });
 
+  it('trusts the account the page already probed instead of fetching again', async () => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    await act(async () => {
+      root!.render(<PublicNav cta="signup" account={{ status: 'in', user: null }} />);
+      await Promise.resolve();
+    });
+    expect(api).not.toHaveBeenCalled();
+    expect(container!.textContent).toContain('Open dashboard');
+  });
+
   it('reserves the slot while the probe is pending', async () => {
     api.mockReturnValueOnce(new Promise(() => {}));
     await render();

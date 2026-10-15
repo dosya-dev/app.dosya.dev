@@ -14,6 +14,7 @@ const DashboardPage = lazyChunk(() => import('@/pages/dashboard'));
 const FileRequestsPage = lazyChunk(() => import('@/pages/file-requests'));
 const UploadsPage = lazyChunk(() => import('@/pages/uploads'));
 const SettingsPage = lazyChunk(() => import('@/pages/settings'));
+const BrandingPage = lazyChunk(() => import('@/pages/settings/branding'));
 const ProfilePage = lazyChunk(() => import('@/pages/profile'));
 const ApiAnalyticsPage = lazyChunk(() => import('@/pages/api-analytics'));
 const FilesPage = lazyChunk(() => import('@/pages/files'));
@@ -41,6 +42,11 @@ const S3Setup = lazyChunk(() => import('@/pages/integrations/s3'));
 const DesktopSetup = lazyChunk(() => import('@/pages/integrations/desktop'));
 const CliSetup = lazyChunk(() => import('@/pages/integrations/cli'));
 const RestApiSetup = lazyChunk(() => import('@/pages/integrations/rest-api'));
+const ExtensionSetup = lazyChunk(() => import('@/pages/integrations/extension'));
+const ZapierSetup = lazyChunk(() => import('@/pages/integrations/zapier'));
+const WordPressSetup = lazyChunk(() => import('@/pages/integrations/wordpress'));
+const N8nSetup = lazyChunk(() => import('@/pages/integrations/n8n'));
+const LightroomSetup = lazyChunk(() => import('@/pages/integrations/lightroom'));
 const GoogleSetup = lazyChunk(() => import('@/pages/integrations/google'));
 const OneDriveSetup = lazyChunk(() => import('@/pages/integrations/onedrive'));
 const DropboxSetup = lazyChunk(() => import('@/pages/integrations/dropbox'));
@@ -54,11 +60,17 @@ const Login2faPage = lazyChunk(() => import('@/pages/login-2fa'));
 const SignUpPage = lazyChunk(() => import('@/pages/sign-up'));
 const VerifyPage = lazyChunk(() => import('@/pages/verify'));
 const RedeemPage = lazyChunk(() => import('@/pages/redeem'));
+const FamilyJoinPage = lazyChunk(() => import('@/pages/family-join'));
 const ForgotPasswordPage = lazyChunk(() => import('@/pages/forgot-password'));
 const ResetPasswordPage = lazyChunk(() => import('@/pages/reset-password'));
 const NotFoundPage = lazyChunk(() => import('@/pages/not-found'));
 const WelcomePage = lazyChunk(() => import('@/pages/welcome'));
 const EditorPage = lazyChunk(() => import('@/pages/editor'));
+const ConnectExtensionPage = lazyChunk(() => import('@/pages/connect/extension'));
+const ConnectLightroomPage = lazyChunk(() => import('@/pages/connect/lightroom'));
+const ConnectWordPressPage = lazyChunk(() => import('@/pages/connect/wordpress'));
+const ConnectAiPage = lazyChunk(() => import('@/pages/connect/ai'));
+const ConnectExtensionDonePage = lazyChunk(() => import('@/pages/connect/extension-done'));
 
 // Navigation spans and route names for crash reports. Requires Sentry.init to
 // have run already - main.tsx imports instrument.ts before this module.
@@ -93,7 +105,9 @@ export const router = createBrowserRouter([
           </RequirePermission>
         ),
       },
-      { path: '/profile', element: <ProfilePage /> },
+      { path: '/settings/branding', element: <RequirePermission perm="manage_branding"><BrandingPage /></RequirePermission> },
+      // One page per section; the layout handles the old ?section= deep links.
+      { path: '/profile/:section?', element: <ProfilePage /> },
       { path: '/api-analytics', element: <ApiAnalyticsPage /> },
       { path: '/teams', element: <RequirePermission perm="access_team"><TeamsPage /></RequirePermission> },
       { path: '/integrations', element: <IntegrationsPage /> },
@@ -104,6 +118,11 @@ export const router = createBrowserRouter([
       { path: '/integrations/desktop', element: <DesktopSetup /> },
       { path: '/integrations/cli', element: <CliSetup /> },
       { path: '/integrations/rest-api', element: <RestApiSetup /> },
+      { path: '/integrations/extension', element: <ExtensionSetup /> },
+      { path: '/integrations/zapier', element: <ZapierSetup /> },
+      { path: '/integrations/wordpress', element: <WordPressSetup /> },
+      { path: '/integrations/n8n', element: <N8nSetup /> },
+      { path: '/integrations/lightroom', element: <LightroomSetup /> },
       { path: '/integrations/google', element: <GoogleSetup /> },
       { path: '/integrations/onedrive', element: <OneDriveSetup /> },
       { path: '/integrations/dropbox', element: <DropboxSetup /> },
@@ -130,6 +149,14 @@ export const router = createBrowserRouter([
     ],
   },
   { path: '/login', element: <LoginPage /> },
+  // Outside DashboardLayout, on purpose: the browser extension opens these
+  // in a popup window with no session guarantee; the page itself sends a
+  // signed-out visitor through /login and back (lib/post-auth-path.ts).
+  { path: '/connect/extension', element: <ConnectExtensionPage /> },
+  { path: '/connect/wordpress', element: <ConnectWordPressPage /> },
+  { path: '/connect/lightroom', element: <ConnectLightroomPage /> },
+  { path: '/connect/ai', element: <ConnectAiPage /> },
+  { path: '/connect/extension/done', element: <ConnectExtensionDonePage /> },
   // Outside DashboardLayout, on purpose: bootDashboard redirects tour-less
   // users here, and the boot gate lives inside DashboardLayout. Nesting this
   // route under it would put the gate above the route it redirects to - the
@@ -145,6 +172,7 @@ export const router = createBrowserRouter([
   // Public shell: captures Gumroad links before sign-in and resumes here
   // afterward. The API gates preview and activation with a cookie session.
   { path: '/redeem', element: <RedeemPage /> },
+  { path: '/family/join/:token', element: <FamilyJoinPage /> },
   { path: '/forgot-password', element: <ForgotPasswordPage /> },
   { path: '/reset-password', element: <ResetPasswordPage /> },
   { path: '/dashboard', element: <Navigate to="/" replace /> },

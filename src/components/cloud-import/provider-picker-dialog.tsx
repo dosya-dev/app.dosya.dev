@@ -142,7 +142,7 @@ export function ProviderPickerDialog({
           </div>
         ) : browser.reconnectRequired ? (
           <div className="py-8 text-center text-sm text-muted-foreground">
-            <p>This account needs to be reconnected with read permission.</p>
+            <p>This account needs to be reconnected before you can import.</p>
             <Button className="mt-3" nativeButton={false} render={<a href={connectUrl} />}>
               Reconnect
             </Button>

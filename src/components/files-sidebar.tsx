@@ -18,6 +18,7 @@ import {
 import { toast } from '@/lib/toast';
 import { SwatchPicker } from '@/components/brand/swatch-picker';
 import { SWATCHES } from '@/lib/palette';
+import { usePermissions } from '@/hooks/use-permissions';
 
 interface FavFile { file_id: string; file_name: string }
 interface GroupFolder { folder_id: string; folder_name: string }
@@ -44,6 +45,11 @@ interface FilesSidebarProps {
 
 export function FilesSidebar({ onFilterChange, onFavouriteClick, onGroupClick }: FilesSidebarProps) {
   const wsId = useWorkspace((s: { activeId: string }) => s.activeId);
+  // The Deleted row opens GET /api/files?deleted=1, which the server refuses
+  // to a role holding neither delete permission - nothing such a role could
+  // restore or purge in there. Optimistic while the map loads (see the hook).
+  const { can } = usePermissions();
+  const canSeeTrash = can('delete_own_files') || can('delete_any_file');
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const location = useLocation();
@@ -178,7 +184,7 @@ export function FilesSidebar({ onFilterChange, onFavouriteClick, onGroupClick }:
 
         {/* Navigation */}
         <nav className="px-1.5 space-y-0.5">
-          {NAV_ITEMS.map((item) => (
+          {NAV_ITEMS.filter((item) => item.value !== 'deleted' || canSeeTrash).map((item) => (
             <button
               key={item.value}
               onClick={() => onFilterChange(item.value === 'all' ? '' : item.value)}

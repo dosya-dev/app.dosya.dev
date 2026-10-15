@@ -23,6 +23,11 @@ export interface UploadItem {
    * up in the view the user actually dropped it on.
    */
   group_id?: string | null;
+  /**
+   * Folder path inside a folder upload ("Photos/2024"), only for showing the
+   * queue as a tree. Absent for loose files and for rows saved before it existed.
+   */
+  relativePath?: string;
   status: UploadStatus;
   progress: number;        // 0..100
   bytesUploaded: number;

@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterEach, vi } from 'vitest';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { MemoryRouter } from 'react-router-dom';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 const apiMock = vi.fn();
 vi.mock('@/api/client', async (importOriginal) => {
@@ -33,20 +34,57 @@ describe('FilesSidebar active states', () => {
     apiMock.mockReset();
   });
 
-  async function render(path: string) {
-    apiMock.mockResolvedValue({ ok: true });
+  async function render(path: string, permissions?: Record<string, boolean>) {
+    // The sidebar asks /api/me/permissions to decide whether to show the
+    // Deleted row. With no map given, usePermissions answers optimistically
+    // (every door open), which keeps the active-state cases below unchanged.
+    apiMock.mockImplementation((p: unknown) => {
+      if (permissions && typeof p === 'string' && p.startsWith('/api/me/permissions')) {
+        return Promise.resolve({
+          ok: true, user_id: 'u1', role_id: 'role_under_test', role_name: 'Role', is_builtin: false,
+          root_folder_id: null, root_folder_name: null, permissions,
+        });
+      }
+      return Promise.resolve({ ok: true });
+    });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
     await act(async () => {
       root!.render(
-        <MemoryRouter initialEntries={[path]}>
-          <FilesSidebar onFilterChange={() => {}} onFavouriteClick={() => {}} onGroupClick={() => {}} />
-        </MemoryRouter>,
+        <QueryClientProvider client={queryClient}>
+          <MemoryRouter initialEntries={[path]}>
+            <FilesSidebar onFilterChange={() => {}} onFavouriteClick={() => {}} onGroupClick={() => {}} />
+          </MemoryRouter>
+        </QueryClientProvider>,
       );
       await Promise.resolve();
     });
+    if (permissions) await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
   }
+
+  const hasNavButton = (label: string) =>
+    [...container!.querySelectorAll('button')].some((b) => b.textContent?.trim().startsWith(label));
+
+  // The Deleted row opens GET /api/files?deleted=1, which the server refuses
+  // to a role holding neither delete permission (there is nothing such a role
+  // could do in the trash). The row follows the same split.
+  it('hides Deleted from a role with neither delete permission', async () => {
+    await render('/files', {});
+    expect(hasNavButton('All')).toBe(true);
+    expect(hasNavButton('Deleted')).toBe(false);
+  });
+
+  it('shows Deleted to a role with delete_own_files', async () => {
+    await render('/files', { delete_own_files: true });
+    expect(hasNavButton('Deleted')).toBe(true);
+  });
+
+  it('shows Deleted to a role with delete_any_file', async () => {
+    await render('/files', { delete_any_file: true });
+    expect(hasNavButton('Deleted')).toBe(true);
+  });
 
   function navButton(label: string): HTMLButtonElement {
     const btn = [...container!.querySelectorAll('button')].find(

@@ -9,6 +9,7 @@ import { humanSize, extOf, isImage, isVideo, isAudio, fileIconSrc, isOfficeFile,
 import { FilePreviewImage } from '@/components/file-preview-image';
 import { ArchiveViewer } from '@/components/archive-viewer/archive-viewer';
 import { toast } from '@/lib/toast';
+import { openReport } from '@/stores/report-problem';
 import { lazyChunk } from '@/lib/chunk-reload';
 import { decodeTextBytes, isTextReadable, langFromExtension, looksBinary } from '@/lib/text-detect';
 import { parseCsvTable } from '@/lib/csv-table';
@@ -25,6 +26,10 @@ import { collapseLiveTwins, isLiveStill, isLiveTwin, liveTwinOf } from '@/lib/li
 import { LivePhotoStage } from './live-photo-stage';
 import { LiveBadge } from './live-badge';
 import type { FileItem } from '@/lib/file-types';
+import { AnchorProvider, useRegisterAnchorTarget, useAnchorMarkers, type AnchorTarget, type PendingAnchor } from '@/components/comments/anchor-context';
+import { CommentsPanel } from '@/components/comments/comments-panel';
+import { useFileComments, markersFrom } from '@/components/comments/use-file-comments';
+import { olderVersionNote } from '@/components/comments/format';
 
 // pdf.js is ~350KB gzipped plus a worker - loaded only when a PDF is opened.
 const PdfViewer = lazyChunk(() => import('@/components/pdf-viewer/pdf-viewer'));
@@ -66,6 +71,10 @@ interface FileViewerProps {
   onNavigate: (file: FileItem) => void;
   onRefresh: () => void;
   actions?: FileViewerActions;
+  /** Deep links (a mention notification) open straight onto the Comments tab. */
+  initialTab?: 'details' | 'versions' | 'comments';
+  initialAnchor?: { ms: number } | { page: number } | null;
+  initialCommentId?: string | null;
 }
 
 // ── Helpers ───────────────────────────────────────────────
@@ -141,7 +150,7 @@ function applyEditorTheme(container: HTMLElement, attempt = 0): void {
 
 // ── Component ─────────────────────────────────────────────
 
-export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRefresh, actions }: FileViewerProps) {
+export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRefresh, actions, initialTab, initialAnchor, initialCommentId }: FileViewerProps) {
   const [versions, setVersions] = useState<Version[]>([]);
   const [activeVersion, setActiveVersion] = useState(-1);
   const [closing, setClosing] = useState(false);
@@ -149,9 +158,9 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
   // Rail on desktop, bottom sheet on mobile - one state, CSS decides which.
   // Starts open on desktop, closed on small screens (jsdom has no matchMedia).
   const [inspectorOpen, setInspectorOpen] = useState(
-    () => typeof window.matchMedia !== 'function' || window.matchMedia('(min-width: 768px)').matches,
+    () => initialTab === 'comments' || typeof window.matchMedia !== 'function' || window.matchMedia('(min-width: 768px)').matches,
   );
-  const [inspectorTab, setInspectorTab] = useState<'details' | 'versions'>('details');
+  const [inspectorTab, setInspectorTab] = useState<'details' | 'versions' | 'comments'>(initialTab ?? 'details');
   const [menuOpen, setMenuOpen] = useState(false);
   const [stripCollapsed, setStripCollapsed] = useState(false);
   const [zoom, setZoom] = useState(100);
@@ -191,11 +200,16 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
   const setPdfSlotCenter = useCallback((el: HTMLDivElement | null) => setPdfSlots((s) => (s.center === el ? s : { ...s, center: el })), []);
 
   // Load versions
+  const currentFileIdRef = useRef(file.id);
+  currentFileIdRef.current = file.id;
   const loadVersions = useCallback(async () => {
+    const forId = file.id;
     try {
       const data = await api<{ ok: boolean; current_version: number; versions: Version[] }>(
         `/api/files/${file.id}/versions`
       );
+      // A slow response for the previous file must not repaint this one.
+      if (currentFileIdRef.current !== forId) return;
       if (data.ok && data.versions?.length) {
         setVersions(data.versions);
         setActiveVersion(data.versions[0].version_number);
@@ -204,7 +218,7 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
         setActiveVersion(-1);
       }
     } catch {
-      setVersions([]);
+      if (currentFileIdRef.current === forId) setVersions([]);
     }
   }, [file.id]);
 
@@ -292,6 +306,39 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
     activeVersion > 0 && versions.length > 0 && activeVersion !== versions[0].version_number
       ? activeVersion
       : undefined;
+
+  // Comments live at viewer level so players can draw markers (and a deep link
+  // can seek) even while the Comments tab is closed.
+  const thread = useFileComments(file.id, workspaceId);
+  const currentVersion = versions[0]?.version_number ?? file.current_version ?? null;
+  const markers = useMemo(() => markersFrom(thread.comments, currentVersion), [thread.comments, currentVersion]);
+  const [pendingAnchor, setPendingAnchor] = useState<PendingAnchor>(initialAnchor ?? null);
+  const [activeCommentId, setActiveCommentId] = useState<string | null>(initialCommentId ?? null);
+  // Stable: the provider's effects depend on these.
+  // Navigating with the viewer mounted: drop everything that belonged to the
+  // previous file so a deep-link anchor, a highlighted comment or the old
+  // version list can never leak onto the next one (adjusted during render).
+  const [commentsFileId, setCommentsFileId] = useState(file.id);
+  if (commentsFileId !== file.id) {
+    setCommentsFileId(file.id);
+    setPendingAnchor(null);
+    setActiveCommentId(null);
+    setVersions([]);
+  }
+  const onPendingApplied = useCallback(() => setPendingAnchor(null), []);
+  // Read through a ref so onSelectComment stays stable while the thread loads.
+  const selectFacts = useRef({ comments: thread.comments, currentVersion });
+  selectFacts.current = { comments: thread.comments, currentVersion };
+  const onSelectComment = useCallback((id: string) => {
+    setActiveCommentId(id);
+    setInspectorOpen(true);
+    setInspectorTab('comments');
+    // Every way of selecting an anchored comment (panel chip, waveform, video
+    // strip, page marker) lands here, so "left on vN" is said once, here.
+    const c = selectFacts.current.comments.find((x) => x.id === id);
+    const note = c ? olderVersionNote(c, selectFacts.current.currentVersion) : null;
+    if (note) toast.info(note);
+  }, []);
 
   // Navigate version
   const navigateVersion = useCallback((dir: number) => {
@@ -416,7 +463,9 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
               }),
             });
             if (!initRes.ok || !initRes.session_id) {
-              toast.error('Upload failed', initRes.error ?? 'Could not start upload');
+              toast.error('Upload failed', initRes.error ?? 'Could not start upload', {
+                action: { label: 'Report', onClick: () => openReport({ errorMessage: initRes.error ?? 'Could not start upload' }) },
+              });
               return;
             }
             const uploadRes = await fetch(`${API_BASE}/api/upload/${initRes.session_id}`, {
@@ -597,6 +646,7 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
         </div>
 
         {/* Body: stage + inspector */}
+        <AnchorProvider markers={markers} pending={pendingAnchor} onPendingApplied={onPendingApplied} onSelectComment={onSelectComment}>
         <div className="flex-1 flex min-h-0">
           {/* Stage. Its own closed dark scale in both themes - a media stage
               stays dark in a light OS theme the way every other media viewer
@@ -678,10 +728,21 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
                       Versions
                       <span className="font-mono text-[10px] text-muted-foreground">{versions.length}</span>
                     </button>
+                    <button
+                      role="tab"
+                      aria-selected={inspectorTab === 'comments'}
+                      className={`flex-1 h-7 rounded-md text-xs font-medium transition-colors flex items-center justify-center gap-1.5 ${inspectorTab === 'comments' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                      onClick={() => setInspectorTab('comments')}
+                    >
+                      Comments
+                      <span className="font-mono text-[10px] text-muted-foreground">{thread.comments.length}</span>
+                    </button>
                   </div>
                 </div>
 
-                <div className="flex-1 overflow-y-auto px-4 py-4 min-h-0">
+                {/* Comments owns its own scroll (list) and pins the composer, so the
+                    scroller becomes a flex column that the panel fills. */}
+                <div className={`flex-1 min-h-0 px-4 py-4 ${inspectorTab === 'comments' ? 'flex flex-col' : 'overflow-y-auto'}`}>
                   {inspectorTab === 'details' ? (
                     <>
                       <dl>
@@ -740,6 +801,9 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
                         )}
                       </div>
                     </>
+                  ) : inspectorTab === 'comments' ? (
+                    <CommentsPanel key={file.id} fileId={file.id} workspaceId={workspaceId} currentVersion={currentVersion}
+                      viewingVersion={previewVersion ?? currentVersion} thread={thread} activeCommentId={activeCommentId} />
                   ) : versions.length === 0 ? (
                     <div className="text-center py-7">
                       <Clock className="size-5 text-muted-foreground/60 mx-auto mb-2.5" />
@@ -804,6 +868,7 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
             </>
           )}
         </div>
+        </AnchorProvider>
 
         {/* Thumbnail strip footer */}
         <div className={`flex items-center gap-2 px-3 border-t shrink-0 ${stripCollapsed ? 'py-0.5 justify-end' : 'py-2 justify-center'}`}>
@@ -1212,6 +1277,19 @@ function OversizeFallback({ file, downloadUrl, note, action }: { file: FileItem;
 function VideoPlayer({ file, rawUrl, downloadUrl }: { file: FileItem; rawUrl: string; downloadUrl: string }) {
   const [failed, setFailed] = useState(false);
   const ext = extOf(file.name);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [duration, setDuration] = useState(0);
+  const { markers, selectComment } = useAnchorMarkers();
+  const videoMarkers = markers.filter((m) => m.ms != null);
+  // Stable until the duration is known (or decoding fails): the functions
+  // read the element, never state, so timeupdate cannot churn registration.
+  const anchorTarget = useMemo<AnchorTarget | null>(() => (duration > 0 && !failed ? {
+    kind: 'time',
+    now: () => Math.round((videoRef.current?.currentTime ?? 0) * 1000),
+    seek: (ms) => { if (videoRef.current) videoRef.current.currentTime = Math.min(duration, Math.max(0, ms / 1000)); },
+    pause: () => videoRef.current?.pause(),
+  } : null), [duration, failed]);
+  useRegisterAnchorTarget(anchorTarget);
 
   if (failed) {
     return (
@@ -1228,7 +1306,34 @@ function VideoPlayer({ file, rawUrl, downloadUrl }: { file: FileItem; rawUrl: st
     );
   }
 
-  return <video src={rawUrl} controls autoPlay className="max-w-full max-h-full rounded-md bg-black" onError={() => setFailed(true)} />;
+  return (
+    <div className="flex max-h-full max-w-full flex-col items-stretch">
+      <video
+        ref={videoRef}
+        src={rawUrl}
+        controls
+        autoPlay
+        className="max-h-full max-w-full rounded-md bg-black"
+        onError={() => setFailed(true)}
+        onLoadedMetadata={(e) => setDuration(Number.isFinite(e.currentTarget.duration) ? e.currentTarget.duration : 0)}
+      />
+      {duration > 0 && videoMarkers.length > 0 && (
+        <div data-testid="video-marker-strip" className="relative mt-1 h-1.5 rounded-full bg-muted">
+          {videoMarkers.map((m) => (
+            <button
+              key={m.id}
+              type="button"
+              title={m.excerpt}
+              aria-label={`Comment: ${m.excerpt}`}
+              className="absolute top-1/2 size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary"
+              style={{ left: `${Math.min(1, m.ms! / 1000 / duration) * 100}%`, opacity: m.dim ? 0.45 : 1 }}
+              onClick={() => { if (videoRef.current) videoRef.current.currentTime = Math.min(duration, m.ms! / 1000); selectComment(m.id); }}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ── CSV / Markdown ────────────────────────────────────────

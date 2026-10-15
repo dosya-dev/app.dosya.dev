@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { sentryVitePlugin } from '@sentry/vite-plugin'
 import path from 'path'
+import { execSync } from 'node:child_process'
 
 // Source maps go to Sentry only when SENTRY_AUTH_TOKEN is set (a hand deploy
 // from a machine holding the token, or CI) - never from a stray
@@ -13,7 +14,18 @@ import path from 'path'
 // SHA and debug ids do the matching.
 const SENTRY_UPLOAD = Boolean(process.env.SENTRY_AUTH_TOKEN)
 
+// The build the user is running, for bug reports. Cloudflare Pages exposes the
+// commit; a local `vite build` asks git; vitest and odd environments get 'dev'.
+function buildSha(): string {
+  if (process.env.CF_PAGES_COMMIT_SHA) return process.env.CF_PAGES_COMMIT_SHA.slice(0, 8);
+  try { return execSync('git rev-parse --short=8 HEAD', { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim() || 'dev'; }
+  catch { return 'dev'; }
+}
+
 export default defineConfig({
+  define: {
+    __BUILD_SHA__: JSON.stringify(buildSha()),
+  },
   plugins: [
     react(),
     tailwindcss(),

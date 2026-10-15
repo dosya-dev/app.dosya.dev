@@ -1,7 +1,7 @@
 import { api, API_BASE, ApiError } from './client';
 
 export type TicketStatus = 'open' | 'answered' | 'closed';
-export type TicketCategory = 'billing' | 'technical' | 'account' | 'feature_request' | 'other';
+export type TicketCategory = 'bug' | 'billing' | 'technical' | 'account' | 'feature_request' | 'other';
 
 export interface TicketSummary {
   id: string;
@@ -41,6 +41,11 @@ export interface TicketDetail {
   last_message_at: number;
   closed_at: number | null;
   closed_by: 'user' | 'staff' | null;
+  diagnostics?: {
+    v: 1; client: 'web' | 'desktop' | 'mobile'; app_version: string; build: string | null; platform: string;
+    locale: string | null; workspace_id: string | null; page: string | null; error_ref: string | null;
+    error_message: string | null; extra: Record<string, string>; captured_at: number;
+  } | null;
 }
 
 export function fetchTickets(status?: 'open' | 'closed') {
@@ -79,6 +84,7 @@ export function createTicket(fields: {
   category: TicketCategory;
   body: string;
   workspaceId?: string;
+  diagnostics?: string;
   images: File[];
 }) {
   const fd = new FormData();
@@ -86,6 +92,7 @@ export function createTicket(fields: {
   fd.append('category', fields.category);
   fd.append('body', fields.body);
   if (fields.workspaceId) fd.append('workspace_id', fields.workspaceId);
+  if (fields.diagnostics) fd.append('diagnostics', fields.diagnostics);
   for (const f of fields.images) fd.append('images', f);
   return postMultipart<{ ok: boolean; ticket: TicketSummary }>('/api/support/tickets', fd);
 }

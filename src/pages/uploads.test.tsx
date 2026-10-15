@@ -160,3 +160,71 @@ describe('Uploads page without upload_files', () => {
     expect(container!.textContent).toContain('Drop files or folders here to upload');
   });
 });
+
+// "pick a folder" clicked the hidden folder input, whose click bubbled to the
+// dropzone and fired the plain file picker too - so users got a files-only
+// picker and their folder arrived flat.
+describe('Uploads page pickers and queue tree', () => {
+  async function renderPage() {
+    useWorkspace.setState({ activeId: 'ws' });
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    await act(async () => {
+      root!.render(<MemoryRouter><UploadsPage /></MemoryRouter>);
+    });
+  }
+
+  function button(label: string): HTMLButtonElement {
+    const found = [...container!.querySelectorAll('button')].find((b) => b.textContent?.trim() === label);
+    if (!found) throw new Error(`no "${label}" button`);
+    return found as HTMLButtonElement;
+  }
+
+  function clickedInputs(run: () => void): string[] {
+    const clicked: string[] = [];
+    const original = HTMLInputElement.prototype.click;
+    const spy = vi.spyOn(HTMLInputElement.prototype, 'click').mockImplementation(function (this: HTMLInputElement) {
+      clicked.push(this.dataset.testid ?? '?');
+      original.call(this);
+    });
+    try { act(run); } finally { spy.mockRestore(); }
+    return clicked;
+  }
+
+  it('Select folder opens only the folder picker', async () => {
+    await renderPage();
+    expect(clickedInputs(() => button('Select folder').click())).toEqual(['upload-folder-input']);
+    const folderInput = container!.querySelector('[data-testid="upload-folder-input"]')!;
+    expect(folderInput.hasAttribute('webkitdirectory')).toBe(true);
+  });
+
+  it('Select files opens only the file picker', async () => {
+    await renderPage();
+    expect(clickedInputs(() => button('Select files').click())).toEqual(['upload-files-input']);
+  });
+
+  it('shows queued files from a folder upload under their folders', async () => {
+    const { useUploads } = await import('@/stores/uploads');
+    useUploads.setState({
+      items: [
+        item({ id: 'a', fileName: 'top.txt', workspace_id: 'ws', relativePath: 'Photos' }),
+        item({ id: 'b', fileName: 'nested.txt', workspace_id: 'ws', relativePath: 'Photos/2024' }),
+        item({ id: 'c', fileName: 'loose.txt', workspace_id: 'ws' }),
+      ],
+    });
+    await renderPage();
+    const rows = [...container!.querySelectorAll('[role="treeitem"]')].map((r) =>
+      r.getAttribute('aria-label') ?? r.textContent);
+    expect(rows[0]).toBe('Photos');
+    expect(rows[1]).toBe('2024');
+    expect(rows.slice(2).map((r) => r?.includes('nested.txt') || r?.includes('top.txt') || r?.includes('loose.txt'))).toEqual([true, true, true]);
+
+    // Collapsing Photos hides everything inside it.
+    const photos = container!.querySelector('[role="treeitem"][aria-label="Photos"] button') as HTMLButtonElement;
+    act(() => photos.click());
+    expect(container!.textContent).not.toContain('nested.txt');
+    expect(container!.textContent).toContain('loose.txt');
+    useUploads.setState({ items: [] });
+  });
+});

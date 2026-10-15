@@ -1,19 +1,21 @@
 import {
   ArrowRight, RefreshCw, HardDrive, Server, Cloud, Monitor, Terminal,
-  Code2, Webhook, CloudDownload, type LucideIcon,
+  Code2, Webhook, CloudDownload, Zap, Puzzle, type LucideIcon,
 } from 'lucide-react';
 import { useDemo } from '../engine/demoState';
 
 // Mirrors apps/web integrations page (INTEGRATIONS list) so visitors see
 // exactly which tools connect to dosya.
 const INTEGRATIONS: { title: string; description: string; tag: string; icon: LucideIcon; iconSrc?: string }[] = [
-  { title: 'rclone', description: 'Copy, sync and mount your files from the command line with rclone.', tag: 'Sync & mount', icon: RefreshCw },
+  { title: 'rclone', description: 'Copy, sync and mount your files from the command line with rclone.', tag: 'Sync & mount', icon: RefreshCw, iconSrc: '/rclone-color.svg' },
   { title: 'WebDAV', description: 'Mount your workspace as a network drive on macOS, Windows or Linux.', tag: 'Mount as drive', icon: HardDrive },
   { title: 'SFTP', description: 'Upload and manage files with any SFTP client - FileZilla, WinSCP, Cyberduck or the terminal.', tag: 'Secure transfer', icon: Server },
   { title: 'S3', description: 'Point any S3-compatible tool or SDK at your workspace.', tag: 'S3 API', icon: Cloud },
   { title: 'Desktop apps', description: 'Download the desktop app for macOS, Windows and Linux.', tag: 'Apps', icon: Monitor },
   { title: 'CLI', description: 'Script uploads, downloads and folder sync from your terminal with the dosya CLI.', tag: 'Terminal', icon: Terminal },
   { title: 'REST API', description: 'Automate everything with the dosya REST API and bearer tokens.', tag: 'HTTP API', icon: Code2 },
+  { title: 'Browser extension', description: 'Right-click any image, selection or page and save it straight into dosya, with no download and re-upload.', tag: 'Browser', icon: Puzzle },
+  { title: 'Zapier', description: 'Connect dosya to thousands of other apps without writing code. A new file can start a Zap, and other apps can upload, share and request files.', tag: 'No-code', icon: Zap, iconSrc: '/zapier-color.svg' },
   { title: 'Google Drive', description: 'Import files directly from your Google Drive into a workspace.', tag: 'Import', icon: HardDrive, iconSrc: '/google-color.svg' },
   { title: 'Webhooks', description: 'Get realtime HTTP notifications when files are uploaded, deleted, or shares are accessed.', tag: 'Events', icon: Webhook },
   { title: 'Remote download', description: 'Paste a direct file link and dosya downloads it into your workspace server-side - ideal on slow connections.', tag: 'Import', icon: CloudDownload },

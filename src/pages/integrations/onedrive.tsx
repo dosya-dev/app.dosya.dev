@@ -36,7 +36,7 @@ export default function OneDriveSetup() {
         <p>
           Once connected, import files straight from OneDrive into any workspace. Manage or disconnect your
           Microsoft accounts anytime in{' '}
-          <Link to="/profile#section-integrations" className="underline underline-offset-2 hover:text-foreground">
+          <Link to="/profile/integrations" className="underline underline-offset-2 hover:text-foreground">
             Profile → Integrations
           </Link>
           .

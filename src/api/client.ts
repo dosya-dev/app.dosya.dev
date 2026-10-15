@@ -6,6 +6,7 @@ export const API_BASE = import.meta.env.VITE_API_URL
 
 import { humanizeApiError } from './error-copy';
 import { notifyMaintenance } from '@/lib/maintenance-signal';
+import { notifyUnauthorized } from '@/lib/session-expiry';
 
 export class ApiError extends Error {
   status: number;
@@ -98,6 +99,10 @@ export async function api<T>(
         }
       } catch { /* non-JSON body */ }
     }
+    // A signed-out session (logout in another tab, expiry) must not leave the
+    // page on an error state no retry can fix; session-expiry.ts confirms it
+    // and sends the tab to /login.
+    if (res.status === 401) notifyUnauthorized(path);
     throw new ApiError(res.status, text || res.statusText);
   }
 

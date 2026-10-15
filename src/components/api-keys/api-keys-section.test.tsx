@@ -132,6 +132,16 @@ describe('ApiKeysSection', () => {
     expect($$('[data-testid="key-row"]').map((r) => r.dataset.keyId)).toEqual(['a']);
   });
 
+  it('labels a wp_site key, hides Duplicate settings, keeps Revoke and explains where to disconnect', async () => {
+    await render([key({ id: 'wp', name: 'My Blog', scope: 'wp_site', surfaces: 'api', workspace_id: 'ws_1', root_folder_id: 'fo_1' })]);
+    await expand('wp');
+    const text = expanded('wp').textContent!;
+    expect(text).toContain('WordPress site');
+    expect($$('[data-testid="duplicate"]', expanded('wp'))).toHaveLength(0);
+    expect($('[data-testid="revoke"]', expanded('wp'))).toBeTruthy();
+    expect($('[data-testid="wp-site-note"]', expanded('wp')).textContent).toContain('Disconnect the site from its WordPress admin');
+  });
+
   it('expands a row into its full configuration instead of truncating it', async () => {
     await render([key({
       id: 'k', name: 'reporting', scope: 'read', surfaces: 'webdav,s3', workspace_id: 'ws_1', root_folder_id: 'f_1',

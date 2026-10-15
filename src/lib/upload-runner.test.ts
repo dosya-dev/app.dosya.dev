@@ -221,6 +221,14 @@ describe('buildQueueItems', () => {
     expect(new Set(items.map((i) => i.id)).size).toBe(50);
   });
 
+  it('records the folder path each file came from, so the queue can show it as a tree', () => {
+    const items = buildQueueItems([
+      { file: f('a.txt'), folder_id: 'fld_photos', relativePath: 'Photos' },
+      { file: f('b.txt'), folder_id: null },
+    ], input);
+    expect(items.map((i) => i.relativePath)).toEqual(['Photos', undefined]);
+  });
+
   it('carries group and status defaults onto every row', () => {
     const [item] = buildQueueItems([{ file: f('a.txt'), folder_id: 'fld_x' }], {
       ...input, group_id: 'grp_1',

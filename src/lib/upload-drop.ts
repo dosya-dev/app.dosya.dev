@@ -129,7 +129,8 @@ export async function uploadTree(
 
   const plan = await createFolderTree(dirs, input.folder_id, createFolderVia(input.workspace_id));
   const { groups, skipped } = groupByFolder(tree.entries, plan, input.folder_id);
-  const queued = enqueueByFolder(groups, input);
+  const paths = new Map(tree.entries.map((e) => [e.file, e.path]));
+  const queued = enqueueByFolder(groups, input, (file) => paths.get(file) ?? '');
 
   if (plan.failed.length > 0) {
     toast.error(

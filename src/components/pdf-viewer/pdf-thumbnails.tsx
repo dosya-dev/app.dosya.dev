@@ -9,24 +9,27 @@ interface PdfThumbnailsProps {
   current: number;
   baseSize: { width: number; height: number } | null;
   onSelect: (page: number) => void;
+  /** page -> comment count */
+  badges?: Record<number, number>;
 }
 
-export function PdfThumbnails({ doc, numPages, current, baseSize, onSelect }: PdfThumbnailsProps) {
+export function PdfThumbnails({ doc, numPages, current, baseSize, onSelect, badges }: PdfThumbnailsProps) {
   return (
     <div data-testid="pdf-thumbs" className="w-40 shrink-0 border-r bg-background overflow-y-auto p-3 flex flex-col gap-3">
       {Array.from({ length: numPages }, (_, i) => (
-        <Thumb key={i + 1} doc={doc} page={i + 1} active={current === i + 1} baseSize={baseSize} onSelect={onSelect} />
+        <Thumb key={i + 1} doc={doc} page={i + 1} active={current === i + 1} baseSize={baseSize} onSelect={onSelect} badge={badges?.[i + 1]} />
       ))}
     </div>
   );
 }
 
-function Thumb({ doc, page, active, baseSize, onSelect }: {
+function Thumb({ doc, page, active, baseSize, onSelect, badge }: {
   doc: PDFDocumentProxy;
   page: number;
   active: boolean;
   baseSize: { width: number; height: number } | null;
   onSelect: (page: number) => void;
+  badge?: number;
 }) {
   // Render lazily as thumbs scroll into view; environments without
   // IntersectionObserver (jsdom) just render immediately.
@@ -73,7 +76,7 @@ function Thumb({ doc, page, active, baseSize, onSelect }: {
       ref={btnRef}
       data-thumb={page}
       onClick={() => onSelect(page)}
-      className={`group flex flex-col items-center gap-1 rounded-md p-1 ${active ? 'bg-muted' : 'hover:bg-muted/60'}`}
+      className={`group relative flex flex-col items-center gap-1 rounded-md p-1 ${active ? 'bg-muted' : 'hover:bg-muted/60'}`}
       title={`Page ${page}`}
     >
       <canvas
@@ -81,6 +84,11 @@ function Thumb({ doc, page, active, baseSize, onSelect }: {
         style={{ aspectRatio: aspect }}
         className={`w-full bg-white rounded-sm ring-1 ${active ? 'ring-ring' : 'ring-border'}`}
       />
+      {badge ? (
+        <span data-testid="pdf-thumb-badge" className="absolute right-1 top-1 rounded-full bg-primary px-1.5 text-[10px] font-semibold text-primary-foreground">
+          {badge}
+        </span>
+      ) : null}
       <span className={`text-[11px] tabular-nums ${active ? 'text-foreground font-medium' : 'text-muted-foreground'}`}>{page}</span>
     </button>
   );

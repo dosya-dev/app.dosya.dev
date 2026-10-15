@@ -1,20 +1,46 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouteError, isRouteErrorResponse } from 'react-router-dom';
+import * as Sentry from '@sentry/react';
 import { ErrorLayout } from '@/components/error-layout';
 import { isChunkLoadError, recoverFromChunkErrorInBrowser } from '@/lib/chunk-reload';
 import { reportRouteError } from '@/lib/sentry';
+import { ReportProblemDialog } from '@/components/support/report-problem-dialog';
+import { openReport } from '@/stores/report-problem';
+
+// Fallback only: used when reportRouteError's own result (in eventIdRef) is
+// null, which happens before the effect below has run, or when the SDK is
+// off. `lastEventId()` is the LAST event reported by anything, not
+// necessarily this error, and is undefined in dev and for filtered errors;
+// the report then carries null, never the string "undefined".
+function fallbackErrorRef(): string | null {
+  const id = Sentry.lastEventId();
+  return typeof id === 'string' && id.length > 0 ? id : null;
+}
+
+function errorText(err: unknown): string | null {
+  if (err instanceof Error) return err.message;
+  if (isRouteErrorResponse(err)) return `${err.status} ${err.statusText}`;
+  return null;
+}
 
 // Router errorElement - renders for thrown render/loader errors (and 404 route responses).
 export default function ErrorPage() {
   const err = useRouteError();
   const staleChunk = isChunkLoadError(err);
   const [recovering, setRecovering] = useState(staleChunk);
+  // A ref, not state: it is only read inside the Report click handler below,
+  // never rendered, so there is nothing for a re-render to show and no need
+  // to pay for one. (A state setter here would also be a second
+  // setState-in-effect alongside the chunk-recovery effect below - this
+  // avoids piling a second one on top of it.)
+  const eventIdRef = useRef<string | null>(null);
 
   // The router catches these before the SDK's global handler can see them,
   // so this is what makes the "We've been notified" line below true. 404s and
-  // stale chunks are filtered inside reportRouteError.
+  // stale chunks are filtered inside reportRouteError, which then returns
+  // null; the id it does return is THIS error's, unlike Sentry.lastEventId().
   useEffect(() => {
-    reportRouteError(err);
+    eventIdRef.current = reportRouteError(err);
   }, [err]);
 
   // A deploy replaces every hashed chunk filename, so a tab opened before it
@@ -56,10 +82,14 @@ export default function ErrorPage() {
   }
 
   return (
-    <ErrorLayout
-      code="500"
-      title="Something went wrong"
-      message="An unexpected error occurred. We've been notified and are looking into it - please try again."
-    />
+    <>
+      <ErrorLayout
+        code="500"
+        title="Something went wrong"
+        message="An unexpected error occurred. We've been notified and are looking into it - please try again."
+        onReport={() => openReport({ errorRef: eventIdRef.current ?? fallbackErrorRef(), errorMessage: errorText(err) })}
+      />
+      <ReportProblemDialog />
+    </>
   );
 }

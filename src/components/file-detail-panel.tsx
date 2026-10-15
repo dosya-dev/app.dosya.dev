@@ -7,7 +7,7 @@ import {
   X, Download, Copy, Trash2, Eye, Share2, Lock,
   RotateCcw, Loader2, SquarePen,
 } from 'lucide-react';
-import { humanSize, timeAgo, extOf, isImage, isVideo, isText, isAudio, fileIconSrc, regionLabel, colorFor, isOfficeFile } from '@/lib/helpers';
+import { humanSize, timeAgo, expiryLabel, extOf, isImage, isVideo, isText, isAudio, fileIconSrc, regionLabel, colorFor, isOfficeFile } from '@/lib/helpers';
 import { FilePreviewImage } from '@/components/file-preview-image';
 import { OfficePreview } from '@/components/office-preview';
 import { toast } from '@/lib/toast';
@@ -304,7 +304,6 @@ export function FileDetailPanel({ file, onClose, onDownload, onCopy, onDelete, o
                   <div className="space-y-2">
                     {shareLinks.map((link) => {
                       const now = Math.floor(Date.now() / 1000);
-                      const expired = link.expires_at ? link.expires_at < now : false;
                       return (
                         <div key={link.id} className="bg-muted/30 border rounded-md px-2.5 py-2 space-y-1.5">
                           <div className="flex items-center gap-1.5">
@@ -317,7 +316,7 @@ export function FileDetailPanel({ file, onClose, onDownload, onCopy, onDelete, o
                           <div className="flex items-center gap-1.5 flex-wrap">
                             <Badge variant="secondary" className="text-[8px] h-4">{link.view_count} views</Badge>
                             <Badge variant="secondary" className="text-[8px] h-4">
-                              {expired ? 'Expired' : link.expires_at ? `Expires ${timeAgo(link.expires_at)}` : 'No expiry'}
+                              {expiryLabel(link.expires_at, now)}
                             </Badge>
                             {link.is_password_protected === 1 && <Badge variant="secondary" className="text-[8px] h-4">Password</Badge>}
                           </div>

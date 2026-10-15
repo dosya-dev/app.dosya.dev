@@ -105,7 +105,7 @@ export const STEP_SETS: Record<Purpose | 'generic', OnboardingStep[]> = {
       title: 'Create an API key',
       why: 'One key authenticates the CLI, rclone, WebDAV and the REST API.',
       cta: 'Create a key',
-      href: '/profile?section=api',
+      href: '/profile/api',
     },
     CLIENT_USED,
     SHARE,

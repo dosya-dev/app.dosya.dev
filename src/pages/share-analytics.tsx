@@ -102,7 +102,11 @@ export default function ShareAnalyticsPage() {
     enabled: !!id,
   });
 
-  const data = query.data;
+  // A 200 whose body carries no `link` is treated like an error response
+  // below. The API's only success shape has one, but this page once crashed
+  // the whole app on exactly that (Sentry dosya-web 150873631), and a dead
+  // end it can name beats a blank screen it cannot.
+  const data = query.data?.link ? query.data : undefined;
   useDocumentTitle(data ? `${data.link.display_name} - Shared` : 'Shared');
 
   const copyUrl = async () => {

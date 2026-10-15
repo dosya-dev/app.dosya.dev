@@ -123,3 +123,16 @@ describe('classifyDeleteError', () => {
     }
   });
 });
+
+describe('classifyDeleteError: the proofs delete-now adds', () => {
+  it('reads a 403 as a wrong password, not as a signed-out session', () => {
+    const f = classifyDeleteError({ status: 403, message: 'API 403: {"error":"Password is incorrect"}' });
+    expect(f.kind).toBe('wrong_password');
+    expect(f.message).toMatch(/password/i);
+  });
+
+  it('tells the user to reload when the deletion is no longer scheduled', () => {
+    const f = classifyDeleteError({ status: 400, message: 'API 400: {"error":"No deletion is scheduled for this account."}' });
+    expect(f.kind).toBe('not_scheduled');
+  });
+});

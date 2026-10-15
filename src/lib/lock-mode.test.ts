@@ -53,13 +53,17 @@ describe('canApplyLock', () => {
   });
 
   it('needs a password of at least the minimum length for a password lock', () => {
-    expect(MIN_LOCK_PASSWORD_LENGTH).toBe(4);
+    expect(MIN_LOCK_PASSWORD_LENGTH).toBe(8);
     expect(canApplyLock({ selected: 'full_lock', current: 'none', password: 'abc' })).toBe(false);
-    expect(canApplyLock({ selected: 'full_lock', current: 'none', password: '   abc ' })).toBe(false);
-    expect(canApplyLock({ selected: 'full_lock', current: 'none', password: 'abcd' })).toBe(true);
+    // Seven characters, and trimmed before it is measured: the floor rose to
+    // eight in 2026-10, so the four-character password this case used to
+    // accept is now refused on the client as well as by the api.
+    expect(canApplyLock({ selected: 'full_lock', current: 'none', password: 'abcdefg' })).toBe(false);
+    expect(canApplyLock({ selected: 'full_lock', current: 'none', password: '   abcdefg ' })).toBe(false);
+    expect(canApplyLock({ selected: 'full_lock', current: 'none', password: 'abcdefgh' })).toBe(true);
     // Re-choosing Password on a password-locked item is a password change, so it still needs one.
     expect(canApplyLock({ selected: 'full_lock', current: 'full_lock', password: '' })).toBe(false);
-    expect(canApplyLock({ selected: 'full_lock', current: 'full_lock', password: 'new-one' })).toBe(true);
+    expect(canApplyLock({ selected: 'full_lock', current: 'full_lock', password: 'new-one-long' })).toBe(true);
   });
 
   it('is off while loading, whatever is selected', () => {
@@ -73,8 +77,8 @@ describe('password field copy', () => {
     expect(passwordFieldLabel('none')).toBe('Password');
     expect(passwordFieldLabel('view_only')).toBe('Password');
     expect(passwordFieldLabel('full_lock')).toBe('New password');
-    expect(passwordHint('none')).toBe('At least 4 characters.');
-    expect(passwordHint('full_lock')).toBe('At least 4 characters. Replaces the current one.');
+    expect(passwordHint('none')).toBe('At least 8 characters.');
+    expect(passwordHint('full_lock')).toBe('At least 8 characters. Replaces the current one.');
   });
 });
 

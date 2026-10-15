@@ -71,7 +71,8 @@ export function daysRemaining(scheduledFor: number, nowSeconds: number): number 
   return Math.max(0, Math.floor((scheduledFor - nowSeconds) / 86400));
 }
 
-export type DeleteFailureKind = 'wrong_code' | 'rate_limited' | 'code_burned' | 'blocked' | 'unknown';
+export type DeleteFailureKind =
+  | 'wrong_code' | 'wrong_password' | 'rate_limited' | 'code_burned' | 'blocked' | 'not_scheduled' | 'unknown';
 
 export interface DeleteFailure {
   kind: DeleteFailureKind;
@@ -114,6 +115,17 @@ export function classifyDeleteError(err: unknown): DeleteFailure {
 
   if (status === 400 && /other members|transfer/i.test(raw)) {
     return { kind: 'blocked', message: raw };
+  }
+
+  // delete-now on an account whose deletion was cancelled in another tab.
+  if (status === 400 && /no deletion is scheduled/i.test(raw)) {
+    return { kind: 'not_scheduled', message: 'No deletion is scheduled any more. Reload the page.' };
+  }
+
+  // 403 is the password proof failing: the caller IS signed in, it just
+  // typed the wrong thing (see apps/api/src/lib/account/proof.ts).
+  if (status === 403) {
+    return { kind: 'wrong_password', message: 'That password is not correct.' };
   }
 
   if (status === 400) {

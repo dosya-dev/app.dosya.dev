@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, Suspense } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, useCallback, Suspense } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { SidebarProvider, SidebarInset } from '@/components/ui/sidebar';
 import { DashboardSidebar } from './dashboard-sidebar';
@@ -11,16 +11,23 @@ import { NotificationPoller } from '../notifications/notification-poller';
 import { applyTheme, writeCache, readCache, initSystemListener } from '@/lib/theme';
 import { bootDashboard } from '@/lib/boot';
 import { pendingPostAuthPath } from '@/lib/redemption-claim';
+import { consumePostAuthPath, rememberPostAuthPath } from '@/lib/post-auth-path';
 import { queryClient } from '@/lib/query-client';
 import { prefetchDashboard } from '@/lib/dashboard-query';
 import { MaintenanceScreen } from '@/components/maintenance-screen';
-import { logoutAndRedirect } from '@/lib/logout';
+import { clearClientSession, logoutAndRedirect } from '@/lib/logout';
+import { watchSessionExpiry } from '@/lib/session-expiry';
 import type { MaintenanceInfo } from '@/lib/maintenance-signal';
+import { beginLoading } from '@/lib/loading-bar';
+import { Hairline } from '@/components/ui/hairline';
+import { SealLoader } from '@/components/ui/seal-loader';
+import { ReportProblemDialog } from '@/components/support/report-problem-dialog';
 
 export function DashboardLayout() {
   const navigate = useNavigate();
   const location = useLocation();
   const initialPathname = useRef(location.pathname);
+  const initialSearch = useRef(location.search);
   const [authed, setAuthed] = useState<boolean | null>(null);
   const [wsReady, setWsReady] = useState(false);
   const [bootMaintenance, setBootMaintenance] = useState<MaintenanceInfo | null>(null);
@@ -49,11 +56,14 @@ export function DashboardLayout() {
     // prefetch is simply never read.
     if (initialPathname.current === '/') prefetchDashboard(queryClient, persistedWorkspaceId);
     const session = useSession.getState();
+    // The boot gate shows the hairline above the seal; this is what drives it.
+    const endBootLoading = beginLoading();
     bootDashboard({
       fetchMe: session.fetchMe,
       fetchWorkspaces: session.fetchWorkspaces,
       currentActiveId: persistedWorkspaceId,
     }).then((boot) => {
+      endBootLoading();
       if (cancelled) return;
       if (boot.maintenance) {
         setBootMaintenance(boot.maintenance);
@@ -68,13 +78,19 @@ export function DashboardLayout() {
       }
       setAuthed(boot.authed);
       if (boot.authed && initialPathname.current === '/') {
-        const next = pendingPostAuthPath();
+        const next = pendingPostAuthPath() ?? consumePostAuthPath();
         if (next) {
           navigate(next, { replace: true });
           return;
         }
       }
       if (boot.redirect) {
+        // A signed-out deep link (the "Sign in and manage settings" button on
+        // dosya.dev/unsubscribe, a bookmark, a link in an email) comes back to
+        // where it was going once the login completes, instead of the dashboard.
+        if (boot.redirect === '/login' && initialPathname.current !== '/') {
+          rememberPostAuthPath(`${initialPathname.current}${initialSearch.current}`);
+        }
         navigate(boot.redirect, { replace: true });
         return;
       }
@@ -82,9 +98,34 @@ export function DashboardLayout() {
     });
     return () => {
       cancelled = true;
+      endBootLoading();
       stopListener();
     };
   }, [navigate, bootKey]);
+
+  // The boot gate asks about the session once. After that, a 401 from any
+  // request or a logout in another tab re-asks, and a session that is gone
+  // sends the tab to /login instead of leaving the page on a "Try again" error
+  // no retry can fix. The page is remembered so signing back in returns here.
+  useEffect(() => {
+    if (!authed) return;
+    return watchSessionExpiry({
+      verify: async () => (await useSession.getState().fetchMe()).status,
+      onExpired: () => {
+        rememberPostAuthPath(`${window.location.pathname}${window.location.search}`);
+        clearClientSession();
+        window.location.href = '/login';
+      },
+    });
+  }, [authed]);
+
+  // The content area is a stable scroll container now (see below), so a
+  // navigation no longer resets its scroll by remounting it. Done here, in a
+  // layout effect, so the new page is never painted mid-scroll.
+  const mainRef = useRef<HTMLElement>(null);
+  useLayoutEffect(() => {
+    mainRef.current?.scrollTo({ top: 0 });
+  }, [location.pathname]);
 
   const maintenance = bootMaintenance ?? storeMaintenance;
 
@@ -113,8 +154,9 @@ export function DashboardLayout() {
 
   if (authed === null || (authed && !wsReady)) {
     return (
-      <div className="h-screen flex items-center justify-center">
-        <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+      <div className="relative h-screen flex items-center justify-center">
+        <Hairline />
+        <SealLoader size="xl" label="Loading dosya" />
       </div>
     );
   }
@@ -140,28 +182,44 @@ export function DashboardLayout() {
       <SidebarInset className="min-h-0 overflow-hidden">
         <NotificationPoller />
         <DashboardTopbar />
+        <ReportProblemDialog />
         {/* Above the scroll container on purpose: a pending deletion must stay
             visible while the user scrolls, not scroll away with the page. */}
         <DeletionBanner />
-        {/* key={pathname} remounts the content area on navigation so the
-            fade/rise animation replays - the page's skeleton fades in first,
-            then its data pops in. Remount also resets scroll to the top. */}
-        <main
-          key={location.pathname}
-          className="relative flex-1 min-h-0 overflow-y-auto animate-in fade-in slide-in-from-bottom-1 duration-300"
-        >
-          {/* Pages are lazy chunks (see router.tsx); keep the sidebar/topbar
-              painted while a page's code is still downloading. */}
-          <Suspense
-            fallback={
-              <div className="h-full flex items-center justify-center">
-                <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+        {/* The hairline pins to this wrapper's top edge, just under the topbar,
+            and stays there while the content area below scrolls. */}
+        <div className="relative flex-1 min-h-0 flex flex-col">
+          <Hairline />
+          <main ref={mainRef} className="relative flex-1 min-h-0 overflow-y-auto">
+            {/* Pages are lazy chunks (see router.tsx). The Suspense boundary
+                sits OUTSIDE the keyed wrapper on purpose: the router wraps
+                every navigation in a React transition, and a transition only
+                keeps the previous page on screen while the next chunk downloads
+                if the boundary it suspends inside is one that is already
+                mounted. A boundary keyed by pathname would be new on every
+                navigation, and React shows a new boundary's fallback at once.
+                So: a cached chunk swaps pages instantly, a cold one holds the
+                old page under the hairline, and the seal below is only ever
+                seen on the very first route (nothing to keep yet). */}
+            <Suspense
+              fallback={
+                <div className="h-full flex items-center justify-center">
+                  <SealLoader size="lg" delay />
+                </div>
+              }
+            >
+              {/* key={pathname} remounts the page on navigation so the
+                  fade/rise animation replays - the page's skeleton fades in
+                  first, then its data pops in. */}
+              <div
+                key={location.pathname}
+                className="h-full animate-in fade-in slide-in-from-bottom-1 duration-300"
+              >
+                <Outlet />
               </div>
-            }
-          >
-            <Outlet />
-          </Suspense>
-        </main>
+            </Suspense>
+          </main>
+        </div>
         <UploadDock />
       </SidebarInset>
     </SidebarProvider>

@@ -210,6 +210,9 @@ export default function CheckoutSuccessPage() {
   const total = status?.usage.limit_bytes ?? 0;
   const added = status && entry.before !== null ? total - entry.before : null;
   const showsAdded = added !== null && added > 0;
+  // A change that bought places, or swapped add-ons of equal size, added no
+  // storage; calling it "Storage added" would be a lie on the thank-you page.
+  const unchanged = isChange && added !== null && added <= 0;
   const target = showsAdded ? added! : total;
   const counted = useCountUp(entry.before ?? 0, target, !!status);
   const [figure, unit] = splitSize(counted);
@@ -333,10 +336,10 @@ export default function CheckoutSuccessPage() {
             <Step
               state={settled ? 'done' : gaveUp ? 'failed' : 'current'}
               eyebrow={settled ? 'Done' : gaveUp ? 'Taking longer' : 'In progress'}
-              title={settled ? 'Storage added' : 'Adding your storage'}
+              title={settled ? (unchanged ? 'Subscription updated' : 'Storage added') : (unchanged ? 'Updating your subscription' : 'Adding your storage')}
             >
               {settled ? (
-                `Your account now has ${formatGigabytes(total)} of storage.`
+                added === 0 ? `Your storage stays at ${formatGigabytes(total)}.` : `Your account now has ${formatGigabytes(total)} of storage.`
               ) : gaveUp ? (
                 <span className="flex flex-col items-start gap-3">
                   <span>Stripe has not confirmed the subscription yet. It normally appears within a minute.</span>
@@ -711,14 +714,17 @@ function ConnectSection() {
 }
 
 /**
- * Static badges link to the product pages on the site, not to store listings.
+ * Static badges link straight to each store listing: the iPhone app on the App
+ * Store (live 2026-10-14, app id 6796702157), Google Play (Android shipped
+ * 2026-10-02) and the Mac App Store (the desktop app shipped there 2026-10-08,
+ * app id 6818700723 - mt=12 is what makes that id resolve as Mac software).
  * The Microsoft one is not here: it is the real <ms-store-badge> web component
  * now (see ../components/ms-store-badge), which goes to the Store itself.
  */
 const BADGES: Array<{ src: string; alt: string; href: string; width: number }> = [
-  { src: '/badges/appstore.svg', alt: 'Download on the App Store', href: 'https://dosya.dev/mobile/', width: 114 },
-  { src: '/badges/googleplay.svg', alt: 'Get it on Google Play', href: 'https://dosya.dev/mobile/', width: 129 },
-  { src: '/badges/mac-appstore.svg', alt: 'Download on the Mac App Store', href: 'https://dosya.dev/desktop/', width: 149 },
+  { src: '/badges/appstore.svg', alt: 'Download on the App Store', href: 'https://apps.apple.com/app/id6796702157', width: 114 },
+  { src: '/badges/googleplay.svg', alt: 'Get it on Google Play', href: 'https://play.google.com/store/apps/details?id=dev.dosya', width: 129 },
+  { src: '/badges/mac-appstore.svg', alt: 'Download on the Mac App Store', href: 'https://apps.apple.com/app/id6818700723?mt=12', width: 149 },
 ];
 
 function AppsSection() {

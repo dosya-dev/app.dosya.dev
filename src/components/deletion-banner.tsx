@@ -35,7 +35,7 @@ export function DeletionBanner() {
         {days > 0 ? ` - ${days} day${days === 1 ? '' : 's'} left.` : ' - today.'}
       </p>
       <Link
-        to="/profile?section=delete"
+        to="/profile/delete"
         className="text-xs font-medium underline text-destructive shrink-0 hover:no-underline"
       >
         Cancel deletion

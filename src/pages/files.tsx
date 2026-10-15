@@ -1,8 +1,10 @@
+import { readViewerIntent } from '@/components/comments/deep-link';
 import { useState, useEffect, useCallback, useMemo, useRef, memo, type MouseEvent as ReactMouseEvent } from 'react';
 import { useSearchParams, Link, useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { api, API_BASE, ApiError, apiErrorMessage } from '@/api/client';
 import { useDocumentTitle } from '@/lib/page-title';
+import { useLoadingBar } from '@/lib/loading-bar';
 import { folderNavParams, filterNavParams, groupNavParams } from '@/lib/files-params';
 import { enqueue } from '@/lib/upload-runner';
 import { uploadFromDrop } from '@/lib/upload-drop';
@@ -22,6 +24,8 @@ import { BulkProgressDialog, type BulkDeleteProgress } from '@/components/bulk-p
 import type { FileItem, FolderItem } from '@/lib/file-types';
 import { filesQueryKey, filesRequestPath, FILES_QUERY_ROOT, type FilesView } from '@/lib/files-request';
 import { useWorkspace } from '@/stores/workspace';
+import { useSession } from '@/stores/session';
+import { recordRecent } from '@/lib/search/recent';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Input } from '@/components/ui/input';
@@ -354,6 +358,14 @@ export default function FilesPage() {
   // Guards the one-shot restore of an open file/viewer from the URL on first load,
   // so the state→URL mirror effect doesn't wipe the param before it's been read.
   const openRestored = useRef(false);
+  // Read once: a refresh or a later file must not replay the anchor.
+  // Scoped to the deep-linked file id, so no other file (arrow-key navigation,
+  // a later open after any kind of close) ever inherits the anchor.
+  const viewerIntent = useRef({ fileId: searchParams.get('view'), ...readViewerIntent(searchParams) });
+  // A file opened by the URL restore that is not in the current listing (a
+  // subfolder file, or one past the first page). The render-time sync below
+  // would otherwise close it straight away for being absent from `files`.
+  const restoredOutsideListing = useRef<string | null>(null);
 
   const currentFolderId = searchParams.get('folder') || null;
   const deepLinkFileId = searchParams.get('file');
@@ -459,6 +471,9 @@ export default function FilesPage() {
   const canLock = isLibraryView ? library.canLock : listing.canLock;
   const canHide = isLibraryView ? library.canHide : listing.canHide;
   const loading = isLibraryView ? library.isLoading : listing.isLoading;
+  // The listing is the wait people feel most; the hairline covers it as well
+  // as the chunk, and the skeleton below still shapes the space.
+  useLoadingBar(loading);
   const isPlaceholder = isLibraryView ? library.isPlaceholder : listing.isPlaceholder;
   const loadError = isLibraryView ? library.error : listing.error;
   const loadErrorCode = isLibraryView ? null : listing.errorCode;
@@ -491,6 +506,10 @@ export default function FilesPage() {
    */
   const canDeleteFile = (f: FileItem): boolean =>
     can('delete_any_file') || (can('delete_own_files') && f.uploaded_by === currentUserId);
+  // Folders reuse the file delete keys on the server (restore and purge both
+  // ask them, judged on created_by), so the trash view asks the same question.
+  const canDeleteFolder = (f: FolderItem): boolean =>
+    can('delete_any_file') || (can('delete_own_files') && f.created_by === currentUserId);
 
   // Keep an open viewer honest against the refreshed listing: a rename from
   // the viewer's own menu updates its header, a delete closes it. Without
@@ -498,8 +517,24 @@ export default function FilesPage() {
   // during render on the listing change (the React-documented pattern).
   if (viewerFile) {
     const fresh = files.find((f) => f.id === viewerFile.id);
-    if (fresh !== viewerFile) setViewerFile(fresh ?? null);
+    if (fresh) {
+      // Now in the listing: the normal sync applies from here on.
+      restoredOutsideListing.current = null;
+      if (fresh !== viewerFile) setViewerFile(fresh);
+    } else if (restoredOutsideListing.current !== viewerFile.id) {
+      setViewerFile(null);
+    }
   }
+
+  // The search box's "Recent" list includes files opened here.
+  useEffect(() => {
+    // Only plain folder browsing: trash and filtered/library views would link to the wrong place.
+    if (!viewerFile || currentFilter) return;
+    recordRecent(useSession.getState().user?.id, wsId, {
+      id: `file:${viewerFile.id}`, kind: 'file', title: viewerFile.name,
+      href: `/files?${currentFolderId ? `folder=${currentFolderId}&` : ''}file=${viewerFile.id}`,
+    });
+  }, [viewerFile?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /**
    * Warm a folder's first page while the pointer is still travelling to it.
@@ -623,7 +658,10 @@ export default function FilesPage() {
     (async () => {
       try {
         const res = await api<{ ok: boolean; file?: FileItem }>(`/api/files/${id}`);
-        if (!cancelled && res.ok && res.file) openFileWithLockCheck(res.file, action);
+        if (!cancelled && res.ok && res.file) {
+          if (action === 'view') restoredOutsideListing.current = res.file.id;
+          openFileWithLockCheck(res.file, action);
+        }
       } catch { /* stale/deleted file - the mirror effect will drop the param */ }
       finally { if (!cancelled) openRestored.current = true; }
     })();
@@ -635,11 +673,17 @@ export default function FilesPage() {
   // if both are somehow set. Guarded until the initial restore has run.
   useEffect(() => {
     if (!openRestored.current) return;
+    // Both one-shots end with the deep-linked viewer: closed, or another file.
+    if (viewerFile?.id !== viewerIntent.current.fileId) {
+      viewerIntent.current = { fileId: null, tab: null, anchor: null, commentId: null };
+    }
+    if (viewerFile?.id !== restoredOutsideListing.current) restoredOutsideListing.current = null;
     setSearchParams((prev) => {
       const next = new URLSearchParams(prev);
       if (viewerFile) { next.set('view', viewerFile.id); next.delete('panel'); }
       else if (selectedFile) { next.set('panel', selectedFile.id); next.delete('view'); }
       else { next.delete('view'); next.delete('panel'); }
+      next.delete('tab'); next.delete('t'); next.delete('p'); next.delete('comment');
       return next.toString() === prev.toString() ? prev : next;
     }, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -796,6 +840,9 @@ export default function FilesPage() {
       // this is the single-item delete path - clear explicitly so a stale id
       // for a now-gone row doesn't linger in `selected`/`selectedFolders`.
       setPurgeProgress(null);
+      // A deep-linked file the listing never held would otherwise stay open
+      // on the viewer's exemption after being deleted from its own menu.
+      if (deleteTarget.id === restoredOutsideListing.current) restoredOutsideListing.current = null;
       setDeleteTarget(null); clearSelection(); loadFiles();
     } catch (err) {
       // A row-level permanent delete on a folder that isn't a trash root
@@ -1311,6 +1358,9 @@ export default function FilesPage() {
       // irreversible Delete permanently - not the routine "Delete" above,
       // and none of Rename/Copy/Move/Share/Download/Lock/Hide, which 404
       // against the is_deleted=0 predicate those routes filter on anyway.
+      // Both doors ask delete_own_files / delete_any_file on the server, so a
+      // role without them (a Viewer) is shown neither rather than a 403 toast.
+      if (!canDeleteFile(f)) return [{ label: 'Get info', icon: <Info />, onClick: () => setInfoTarget({ type: 'file', item: f }) }];
       return [
         { label: 'Restore', icon: <RotateCcw />, onClick: () => handleRestoreFile(f), disabled: restoringIds.has(f.id) },
         { label: '', separator: true, onClick: () => {}, icon: null },
@@ -1356,7 +1406,7 @@ export default function FilesPage() {
         { label: 'Open', icon: <FolderOpen />, onClick: () => navigateToFolder(f.id) },
         { label: 'Get info', icon: <Info />, onClick: () => setInfoTarget({ type: 'folder', item: f }) },
       ];
-      if (f.is_trash_root) {
+      if (f.is_trash_root && canDeleteFolder(f)) {
         items.push(
           { label: '', separator: true, onClick: () => {}, icon: null },
           { label: 'Restore', icon: <RotateCcw />, onClick: () => handleRestoreFolder(f), disabled: restoringIds.has(f.id) },
@@ -1798,7 +1848,7 @@ export default function FilesPage() {
                         onMove={() => openMoveModal(f.id, 'file')}
                         onFavourite={() => toggleFavourite(f.id)}
                         onComments={() => navigate(`/comments?file_id=${f.id}&workspace_id=${wsId}&name=${encodeURIComponent(f.name)}`)}
-                        onRestore={() => handleRestoreFile(f)}
+                        onRestore={canDeleteFile(f) ? () => handleRestoreFile(f) : undefined}
                         restoreDisabled={restoringIds.has(f.id)} />
                     ))}
                   </div>
@@ -1862,7 +1912,7 @@ export default function FilesPage() {
                         })}
                         <div className="w-8 shrink-0">
                           {isDeletedView ? (
-                            f.is_trash_root && (
+                            f.is_trash_root && canDeleteFolder(f) && (
                               <FileDropdown
                                 onRestore={() => handleRestoreFolder(f)}
                                 restoreDisabled={restoringIds.has(f.id)}
@@ -1915,12 +1965,14 @@ export default function FilesPage() {
                         })}
                         <div className="w-8 shrink-0">
                           {isDeletedView ? (
-                            <FileDropdown
-                              onRestore={() => handleRestoreFile(f)}
-                              restoreDisabled={restoringIds.has(f.id)}
-                              onDelete={() => setDeleteTarget(fileDeleteTarget(f, true))}
-                              deleteLabel="Delete permanently"
-                            />
+                            canDeleteFile(f) && (
+                              <FileDropdown
+                                onRestore={() => handleRestoreFile(f)}
+                                restoreDisabled={restoringIds.has(f.id)}
+                                onDelete={() => setDeleteTarget(fileDeleteTarget(f, true))}
+                                deleteLabel="Delete permanently"
+                              />
+                            )
                           ) : (
                             <FileDropdown
                               onDownload={() => handleDownload(f.id)}
@@ -2286,6 +2338,9 @@ export default function FilesPage() {
           file={viewerFile}
           files={files}
           workspaceId={wsId}
+          initialTab={viewerFile.id === viewerIntent.current.fileId ? viewerIntent.current.tab ?? undefined : undefined}
+          initialAnchor={viewerFile.id === viewerIntent.current.fileId ? viewerIntent.current.anchor : null}
+          initialCommentId={viewerFile.id === viewerIntent.current.fileId ? viewerIntent.current.commentId : null}
           onClose={() => setViewerFile(null)}
           onNavigate={(f) => {
             // Arrow-key / prev-next navigation has to clear the same lock gate
@@ -2392,7 +2447,9 @@ function FileCard({ file, view, selected, anySelected, active, highlight, domId,
         {file.share_count > 0 && <Badge variant="secondary" className="text-[9px]"><Share2 className="size-2.5 mr-1" />{file.share_count}</Badge>}
         {isFavourite && <Star className="size-3 text-orange-400 fill-orange-400 shrink-0" />}
         {trashed ? (
-          <FileDropdown onRestore={onRestore} restoreDisabled={restoreDisabled} onDelete={onDelete} deleteLabel="Delete permanently" />
+          // No onRestore = the row may not be acted on (see canDeleteFile); the
+          // permanent delete shares that gate, so the whole menu goes.
+          onRestore && <FileDropdown onRestore={onRestore} restoreDisabled={restoreDisabled} onDelete={onDelete} deleteLabel="Delete permanently" />
         ) : (
           <FileDropdown onDownload={onDownload} onShare={onShare} onRename={onRename} onDelete={onDelete} onCopy={onCopy} onMove={onMove} />
         )}

@@ -1,13 +1,26 @@
 import { useState } from 'react';
 import { ArrowRight, Sun, Moon } from 'lucide-react';
 import { withThemeSweep } from '@/lib/theme';
-import { useSessionProbe } from '@/hooks/use-session-probe';
+import { useSessionAccount, type SessionAccount } from '@/hooks/use-session-probe';
 import { Logo } from "@/components/brand/logo";
 
 // Marketing navbar for public pages (login, etc.), ported from the Astro site's Menu.
 // Centered rounded card, original logo + mono-italic wordmark, Pricing, CTA, theme toggle.
-export function PublicNav({ cta = 'login' }: { cta?: 'login' | 'signup' }) {
-  const session = useSessionProbe();
+export function PublicNav({
+  cta = 'login',
+  account,
+}: {
+  cta?: 'login' | 'signup';
+  /**
+   * The probe the page already ran, where it has one. The login and sign-up
+   * pages need the account for their already-signed-in dialog anyway, so they
+   * hand it over rather than let this probe the same endpoint a second time.
+   */
+  account?: SessionAccount;
+}) {
+  // Called unconditionally (hook rules); `enabled` is what skips the request.
+  const probed = useSessionAccount(account === undefined);
+  const session = (account ?? probed).status;
   const [dark, setDark] = useState(
     () => typeof document !== 'undefined' && document.documentElement.classList.contains('dark'),
   );

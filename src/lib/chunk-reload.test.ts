@@ -184,3 +184,57 @@ describe('resolveLazyModule', () => {
     }
   });
 });
+
+describe('lazyChunk loading signal', () => {
+  it('holds the loading counter from the first render until the chunk resolves, and releases on failure', async () => {
+    const { lazyChunk } = await import('./chunk-reload');
+    const { isLoadingPending, resetLoadingForTests } = await import('./loading-bar');
+    const { Suspense, act, createElement, Component } = await import('react');
+    // A failed chunk reaches the router's error boundary in the app; without
+    // one here the rejection would surface as an uncaught render error.
+    class Boundary extends Component<{ children: React.ReactNode }, { failed: boolean }> {
+      state = { failed: false };
+      static getDerivedStateFromError() { return { failed: true }; }
+      render() { return this.state.failed ? null : this.props.children; }
+    }
+    const { createRoot } = await import('react-dom/client');
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    resetLoadingForTests();
+
+    let resolveChunk: (mod: { default: () => null }) => void = () => {};
+    const Page = lazyChunk(() => new Promise<{ default: () => null }>((resolve) => { resolveChunk = resolve; }));
+    // Nothing is loading until something renders the chunk - a route that is
+    // never visited never costs a line.
+    expect(isLoadingPending()).toBe(false);
+
+    const container = document.createElement('div');
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(createElement(Suspense, { fallback: null }, createElement(Page)));
+    });
+    expect(isLoadingPending()).toBe(true);
+    await act(async () => {
+      resolveChunk({ default: () => null });
+    });
+    expect(isLoadingPending()).toBe(false);
+    act(() => root.unmount());
+
+    let rejectChunk: (err: Error) => void = () => {};
+    const Broken = lazyChunk(() => new Promise<{ default: () => null }>((_, reject) => { rejectChunk = reject; }));
+    const root2 = createRoot(document.createElement('div'));
+    const quiet = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      await act(async () => {
+        root2.render(createElement(Boundary, null, createElement(Suspense, { fallback: null }, createElement(Broken))));
+      });
+      expect(isLoadingPending()).toBe(true);
+      await act(async () => {
+        rejectChunk(new Error('ECONNRESET'));
+      });
+      expect(isLoadingPending()).toBe(false);
+    } finally {
+      quiet.mockRestore();
+      act(() => root2.unmount());
+    }
+  });
+});

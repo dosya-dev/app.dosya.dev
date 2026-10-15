@@ -12,7 +12,7 @@ import { useSearchParams } from 'react-router-dom';
  * cleanup.
  */
 const ERROR_COPY: Record<string, string> = {
-  denied: 'Connection cancelled - access was declined on the provider\'s consent screen.',
+  denied: 'Connection cancelled - the connection was declined on the provider\'s consent screen.',
   invalid_state: 'Connection failed - the sign-in attempt expired. Please try connecting again.',
   token_failed: 'Connection failed - the provider did not accept the sign-in. Please try again.',
   save_failed: 'Connection failed while saving the account. Please try again.',

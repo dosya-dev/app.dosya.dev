@@ -336,4 +336,34 @@ describe('auth pages - legal notices', () => {
 
     expect(navigate).not.toHaveBeenCalledWith('/redeem', { replace: true });
   });
+
+  // The "Sign in and manage settings" button on dosya.dev/unsubscribe opens
+  // /profile/notifications. Signed out, that lands on /login, and the login
+  // has to come back to the page it was going to rather than the dashboard.
+  it('remembers a signed-out deep link so the login returns to it', async () => {
+    bootDashboard.mockResolvedValueOnce({
+      authed: false,
+      redirect: '/login',
+      themePref: null,
+      activeWorkspaceId: null,
+    });
+
+    await renderDashboard('/files?view=grid');
+
+    expect(navigate).toHaveBeenCalledWith('/login', { replace: true });
+    expect(sessionStorage.getItem('dosya.postAuthPath')).toBe('/files?view=grid');
+  });
+
+  it('remembers nothing for a signed-out visit to the root', async () => {
+    bootDashboard.mockResolvedValueOnce({
+      authed: false,
+      redirect: '/login',
+      themePref: null,
+      activeWorkspaceId: null,
+    });
+
+    await renderDashboard('/');
+
+    expect(sessionStorage.getItem('dosya.postAuthPath')).toBeNull();
+  });
 });

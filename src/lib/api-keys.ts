@@ -30,7 +30,7 @@ export interface ApiKey {
 
 export interface WorkspaceRef { id: string; name: string }
 
-export const SCOPE_LABELS: Record<string, string> = { full: 'Full access', read: 'Read only', upload: 'Upload only' };
+export const SCOPE_LABELS: Record<string, string> = { full: 'Full access', read: 'Read only', upload: 'Upload only', wp_site: 'WordPress site' };
 
 // Order is the order of the radio cards in the create dialog.
 export const SCOPE_OPTIONS: { value: string; label: string; blurb: string; verb: string }[] = [

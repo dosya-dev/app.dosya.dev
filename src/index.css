@@ -534,6 +534,66 @@ body {
 }
 .animate-indeterminate { animation: indeterminate-slide 1.2s ease-in-out infinite; }
 
+/* ── Loading: the seal and the hairline ─────────────────────
+   The two loading signals the app has, replacing the bare grey ring that used
+   to sit in the boot gate, both route fallbacks and most inline waits.
+
+   The seal (components/ui/seal-loader.tsx): the dosya mark with its green
+   seal breathing and a ring pulsing out of it. Scale and opacity only, no
+   rotation, so it can loop for minutes without wearing on anyone. Both circles
+   transform about their own centre (transform-box), not the SVG origin. */
+.seal-loader-dot,
+.seal-loader-ping { transform-box: fill-box; transform-origin: center; }
+.seal-loader-dot { animation: seal-breathe 1.2s cubic-bezier(0.45, 0, 0.55, 1) infinite; }
+.seal-loader-ping {
+  fill: none;
+  stroke: #16a34a;
+  stroke-width: 1.2;
+  opacity: 0;
+  animation: seal-ping 1.2s cubic-bezier(0.2, 0.6, 0.3, 1) infinite;
+}
+.dark .seal-loader-ping { stroke: #22c55e; }
+@keyframes seal-breathe {
+  0%, 100% { transform: scale(1); }
+  50%      { transform: scale(1.3); }
+}
+@keyframes seal-ping {
+  0%        { transform: scale(1); opacity: 0.7; }
+  70%, 100% { transform: scale(3.2); opacity: 0; }
+}
+/* Suspense fallbacks hold the mark back for 150ms: a cached chunk resolves in
+   a frame, and a mark that flashes for one frame reads as a glitch. */
+.seal-loader-delayed { animation: fade-in-only 200ms var(--ease-out-strong) 150ms both; }
+
+/* The hairline (components/ui/hairline.tsx): a 2px line of the brand green
+   along the top edge of whatever is waiting. It eases most of the way across
+   and holds - it has no idea how long the wait is and does not pretend to -
+   then completes and fades when the counter in lib/loading-bar hits zero. A
+   translate, not a scaleX, so nothing drawn on it is ever squashed. The long
+   decelerating curve makes the first second feel fast and the hold feel
+   patient rather than stuck. */
+.hairline {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  z-index: 20;
+  pointer-events: none;
+  background: var(--brand);
+  transform: translateX(-100%);
+}
+.hairline[data-state="running"] {
+  transform: translateX(-15%);
+  transition: transform 6s cubic-bezier(0.1, 0.7, 0.2, 1);
+}
+@starting-style { .hairline[data-state="running"] { transform: translateX(-100%); } }
+.hairline[data-state="done"] {
+  transform: translateX(0);
+  opacity: 0;
+  transition: transform 150ms var(--ease-out-strong), opacity 250ms linear 150ms;
+}
+
 /* Skeleton → content bridge. Every list view cuts from grey blocks straight to
    real data; this fades the arriving content in instead. Opacity only and
    deliberately short: content the user is waiting to READ must not slide into
@@ -680,6 +740,10 @@ html[data-theme-sweep]::view-transition-new(root) {
   /* The underline still lands on the right tab, it just stops travelling. */
   .tabs-indicator-line { transition: none; }
   html[data-theme-sweep]::view-transition-new(root) { animation: none; }
+  /* The seal keeps breathing (it is the loading indicator) but its ping is an
+     expanding ring, which is movement, so that one stops. The hairline is a
+     progress indicator and keeps moving, like the indeterminate bar. */
+  .seal-loader-ping { animation: none; }
 }
 
 /* Integration setup code blocks: shiki dual-theme output (defaultColor:false).

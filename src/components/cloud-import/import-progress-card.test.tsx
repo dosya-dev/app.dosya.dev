@@ -38,11 +38,11 @@ describe('PROVIDER_LABELS', () => {
 });
 
 describe('describeJob', () => {
-  it('reports scanning while discovering, with no fake total', () => {
+  it('reports import preparation while discovering, with no fake total', () => {
     expect(describeJob({
       status: 'discovering', total_files: 12, completed_files: 0,
       failed_files: 0, skipped_files: 0,
-    })).toBe('Scanning - 12 files found so far');
+    })).toBe('Preparing import - 12 files found so far');
   });
 
   it('reports progress while running', () => {
@@ -144,7 +144,7 @@ describe('ImportProgressCard', () => {
   it('renders indeterminate progress (not 0 percent) while a job is discovering', async () => {
     await render([job({ status: 'discovering', total_files: 12, completed_files: 0 })]);
 
-    expect(document.body.textContent).toContain('Scanning - 12 files found so far');
+    expect(document.body.textContent).toContain('Preparing import - 12 files found so far');
     const progressRoot = container!.querySelector('[data-slot="progress"]');
     expect(progressRoot).not.toBeNull();
     // Indeterminate is signalled by Base UI's data-indeterminate attribute,

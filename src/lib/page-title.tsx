@@ -97,6 +97,7 @@ export function titleForPath(pathname: string): string {
   if (pathname.startsWith('/file-requests/')) return 'File request';
   if (pathname.startsWith('/integrations')) return 'Integrations';
   if (pathname.startsWith('/editor/')) return 'Editor';
+  if (pathname.startsWith('/family/join/')) return 'Family invitation';
   return '';
 }
 

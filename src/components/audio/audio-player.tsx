@@ -13,6 +13,7 @@ import { useLyrics } from './use-lyrics';
 import { Waveform } from './waveform';
 import { QueuePanel } from './queue-panel';
 import { LyricsPanel } from './lyrics-panel';
+import { useRegisterAnchorTarget, useAnchorMarkers, type AnchorTarget } from '@/components/comments/anchor-context';
 import { LOOP_OFF, nextLoopState, nextSpeed, SLEEP_OPTIONS, type LoopState } from './audio-modes';
 
 interface Props {
@@ -121,6 +122,26 @@ export function AudioPlayer({ file, files, rawUrl, version, onNavigate }: Props)
     setPosition(next);
   };
 
+  // The comments seam: "now" and "go there" in milliseconds. Built once the
+  // element knows its duration and rebuilt never after, so registration does
+  // not churn on every timeupdate; the functions read refs, not state.
+  const seekRef = useRef(seek);
+  seekRef.current = seek;
+  const ready = duration > 0 && !decodeFailed;
+  const anchorTarget = useMemo<AnchorTarget | null>(() => (ready ? {
+    kind: 'time',
+    now: () => Math.round((audioRef.current?.currentTime ?? 0) * 1000),
+    seek: (ms) => seekRef.current(ms / 1000),
+    pause: () => { audioRef.current?.pause(); setPlaying(false); },
+  } : null), [ready]);
+  useRegisterAnchorTarget(anchorTarget);
+
+  const { markers, selectComment } = useAnchorMarkers();
+  const waveMarkers = useMemo(() => markers
+    .filter((m) => m.ms != null)
+    .map((m) => ({ id: m.id, ratio: duration > 0 ? m.ms! / 1000 / duration : 0, dim: m.dim, initial: m.initial, excerpt: m.excerpt })),
+  [markers, duration]);
+
   const toggle = () => {
     const el = audioRef.current;
     if (!el) return;
@@ -209,7 +230,15 @@ export function AudioPlayer({ file, files, rawUrl, version, onNavigate }: Props)
             This browser can't decode this audio format. Download the file to play it in another app.
           </div>
         ) : waveState === 'ready' && peaks ? (
-          <Waveform peaks={peaks} position={position} duration={duration} loop={loopState.loop} onSeek={seek} />
+          <Waveform peaks={peaks} position={position} duration={duration} loop={loopState.loop}
+            onSeek={seek}
+            markers={waveMarkers}
+            onMarker={(id) => {
+              const m = markers.find((x) => x.id === id);
+              if (m?.ms != null) seek(m.ms / 1000);
+              selectComment(id);
+            }}
+          />
         ) : (
           <div className="mt-[22px] flex h-[78px] items-center">
             {waveState === 'decoding' ? (

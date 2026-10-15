@@ -2,6 +2,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import type { FileItem } from '@/lib/file-types';
+import { AnchorProvider, useAnchorTarget, type AnchorTarget } from '@/components/comments/anchor-context';
 
 // The peaks path needs a real OfflineAudioContext and a worker; neither exists
 // under jsdom, and neither is what these assertions are about.
@@ -179,5 +180,55 @@ describe('AudioPlayer queue', () => {
     expect(el.querySelector('[aria-label="Play"]')).not.toBeNull();
     act(() => { window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true })); });
     expect(el.querySelector('[aria-label="Pause"]')).not.toBeNull();
+  });
+});
+
+describe('AudioPlayer comment anchors', () => {
+  function Reader({ onTarget }: { onTarget: (t: AnchorTarget | null) => void }) {
+    const t = useAnchorTarget();
+    onTarget(t);
+    return null;
+  }
+
+  function mountWithProvider(onTarget: (t: AnchorTarget | null) => void) {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    act(() => {
+      root!.render(createElement(AnchorProvider, {
+        markers: [{ id: 'm1', ms: 300_000, page: null, dim: false, initial: 'A', excerpt: 'late' }],
+        pending: null, onPendingApplied: () => {}, onSelectComment: () => {},
+        children: [
+          createElement(AudioPlayer, {
+            key: 'p', file, files: [file], rawUrl: 'https://api.example.com/api/files/f1/raw',
+            downloadUrl: 'x', version: undefined, onNavigate: () => {},
+          }),
+          createElement(Reader, { key: 'r', onTarget }),
+        ],
+      }));
+    });
+    const audio = container.querySelector('audio')!;
+    Object.defineProperty(audio, 'duration', { configurable: true, value: 100 });
+    act(() => { audio.dispatchEvent(new Event('loadedmetadata')); });
+    return audio;
+  }
+
+  it('clamps a marker past the duration to the end of the waveform', () => {
+    mountWithProvider(() => {});
+    const m = container!.querySelector<HTMLButtonElement>('[data-testid="waveform-marker"]');
+    expect(m).not.toBeNull();
+    expect(m!.style.left).toBe('100%');
+  });
+
+  it('registers a time target whose seek moves the element, and keeps it stable across timeupdate', () => {
+    const seen: (AnchorTarget | null)[] = [];
+    const audio = mountWithProvider((t) => seen.push(t));
+    const target = seen[seen.length - 1];
+    expect(target?.kind).toBe('time');
+    act(() => { (target as Extract<AnchorTarget, { kind: 'time' }>).seek(42_000); });
+    expect(audio.currentTime).toBe(42);
+    act(() => { audio.dispatchEvent(new Event('timeupdate')); });
+    act(() => { audio.dispatchEvent(new Event('timeupdate')); });
+    expect(seen[seen.length - 1]).toBe(target);
   });
 });

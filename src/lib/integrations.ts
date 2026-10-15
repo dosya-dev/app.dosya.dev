@@ -1,5 +1,5 @@
 import {
-  RefreshCw, HardDrive, Server, Cloud, Monitor, Terminal, Code2, Webhook, CloudDownload, type LucideIcon,
+  RefreshCw, HardDrive, Server, Cloud, Monitor, Terminal, Code2, Webhook, CloudDownload, Zap, Puzzle, DatabaseBackup, Workflow, Aperture, type LucideIcon,
 } from 'lucide-react';
 
 export interface IntegrationCtx {
@@ -10,8 +10,8 @@ export interface IntegrationCtx {
 }
 
 export type IntegrationSlug =
-  | 'rclone' | 'webdav' | 'sftp' | 's3' | 'desktop' | 'cli' | 'rest-api' | 'google' | 'onedrive' | 'dropbox' | 'webhooks'
-  | 'remote-download';
+  | 'rclone' | 'webdav' | 'sftp' | 's3' | 'desktop' | 'cli' | 'rest-api' | 'extension' | 'zapier' | 'n8n' | 'lightroom' | 'wordpress' | 'google'
+  | 'onedrive' | 'dropbox' | 'webhooks' | 'remote-download';
 
 export interface IntegrationMeta {
   slug: IntegrationSlug;
@@ -26,6 +26,67 @@ export interface IntegrationMeta {
 }
 
 export const API_HOST = 'https://api.dosya.dev';
+
+/**
+ * Zapier invite link, from `zapier-platform users:links`.
+ *
+ * The integration is private while it waits for Zapier's directory review, so
+ * searching for dosya inside Zapier finds nothing and this link is the only
+ * way in. It covers every pushed version and works on any Zapier plan.
+ *
+ * It is duplicated from src/lib/zapier-integration.ts on the marketing site,
+ * which cannot be imported across the app seam. integrations.test.ts reads
+ * that file and fails if the two ever disagree, because a stale invite link
+ * is a dead end for anyone who follows it from here.
+ */
+export const ZAPIER_INVITE_URL =
+  'https://zapier.com/developer/public-invite/247442/f692cdfd82a0f6db941dab2e3aa8f952/';
+
+/**
+ * The WordPress plugin zip, served by the marketing site while the plugin
+ * waits for WordPress.org review. Duplicated from WORDPRESS_ZIP_PATH in
+ * src/lib/wordpress-integration.ts, which integrations.test.ts compares,
+ * because a download link that drifts is a 404 in the middle of a setup.
+ */
+export const WORDPRESS_ZIP_URL = 'https://dosya.dev/downloads/wordpress/dosya-backup.zip';
+
+/**
+ * Store listings for the desktop app.
+ *
+ * Two details in the Mac App Store URL are load-bearing and are copied, with
+ * the reasoning, from the marketing site's src/lib/store-links.ts: no locale
+ * segment, so each visitor lands on their own storefront rather than the US
+ * one, and mt=12, without which the same id resolves through the iOS
+ * storefront where a Mac-only app reads as unavailable.
+ *
+ * integrations.test.ts compares these against that file, because this app
+ * cannot import across the seam and a store link that drifts is a link into
+ * someone else's error page.
+ */
+/**
+ * The n8n community node (apps/n8n). Copied from the marketing site's
+ * src/lib/n8n-integration.ts, which integrations.test.ts compares, because
+ * the app cannot import across that seam. Flip N8N_NODE_PUBLISHED in both
+ * once n8n-nodes-dosya is on npm: until then the page never tells anyone to
+ * install a package that does not exist yet.
+ */
+export const N8N_NODE_PUBLISHED = true;
+export const N8N_PACKAGE_NAME = 'n8n-nodes-dosya';
+export const N8N_EXAMPLES_URL = 'https://github.com/dosya-dev/n8n-nodes-dosya/tree/main/examples';
+/** The name the page gives the keys it creates, and how it finds them again. */
+export const N8N_KEY_NAME = 'n8n';
+
+/**
+ * The Lightroom Classic plug-in (apps/lightroom). The marketing site hosts the
+ * zip at this address; until it is uploaded the link 404s. The key prefix is
+ * how the page finds the keys the plug-in's connect flow created.
+ */
+export const LIGHTROOM_PLUGIN_URL = 'https://dosya.dev/downloads/lightroom/dosya-lightroom.zip';
+export const LIGHTROOM_KEY_PREFIX = 'Lightroom Classic:';
+
+export const MAC_APP_STORE_URL = 'https://apps.apple.com/app/id6818700723?mt=12';
+export const MS_STORE_URL = 'https://apps.microsoft.com/store/detail/9p1q4pm856st';
+export const SNAP_STORE_URL = 'https://snapcraft.io/dosya';
 export const S3_REGION = 'us-east-1';
 export const WORKSPACE_PLACEHOLDER = 'ws_...';
 export const EMAIL_PLACEHOLDER = 'you@example.com';
@@ -37,6 +98,7 @@ export const INTEGRATIONS: IntegrationMeta[] = [
     description: 'Copy, sync and mount your files from the command line with rclone.',
     tag: 'Sync & mount',
     icon: RefreshCw,
+    iconSrc: '/rclone-color.svg',
     docsUrl: 'https://dosya.dev/developer/rclone',
   },
   {
@@ -86,6 +148,53 @@ export const INTEGRATIONS: IntegrationMeta[] = [
     tag: 'HTTP API',
     icon: Code2,
     docsUrl: 'https://dosya.dev/developer/api',
+  },
+  {
+    slug: 'extension',
+    title: 'Browser extension',
+    description: 'Right-click any image, selection or page and save it straight into dosya, with no download and re-upload.',
+    tag: 'Browser',
+    icon: Puzzle,
+    docsUrl: 'https://dosya.dev/browser-extension',
+  },
+  {
+    slug: 'zapier',
+    title: 'Zapier',
+    description: 'Connect dosya to thousands of other apps without writing code. A new file can start a Zap, and other apps can upload, share and request files.',
+    tag: 'No-code',
+    icon: Zap,
+    iconSrc: '/zapier-color.svg',
+    docsUrl: 'https://dosya.dev/integration/zapier',
+  },
+  {
+    slug: 'n8n',
+    title: 'n8n',
+    description: 'Save files from your n8n workflows into dosya, and create folders and share links, with ready-made workflows to import.',
+    tag: 'Automation',
+    icon: Workflow,
+    iconSrc: '/n8n-color.svg',
+    docsUrl: 'https://dosya.dev/integration/n8n',
+  },
+  {
+    slug: 'lightroom',
+    title: 'Lightroom Classic',
+    description: 'Publish albums from Lightroom Classic as client galleries on dosya, with selections coming back to your catalog.',
+    tag: 'Photography',
+    icon: Aperture,
+    iconSrc: '/lightroom-color.svg',
+    docsUrl: 'https://dosya.dev/integration/lightroom/',
+  },
+  {
+    slug: 'wordpress',
+    title: 'WordPress',
+    description: 'Back up your WordPress site into dosya with the free plugin, and restore or move it at any size.',
+    tag: 'Backups',
+    icon: DatabaseBackup,
+    // Not /wordpress-color.svg: the edge firewall blocks every root path
+    // starting with /wordpress or /wp- (scanner traffic), and served our
+    // 403 page in place of the icon.
+    iconSrc: '/logo-wordpress.svg',
+    docsUrl: 'https://dosya.dev/integration/wordpress',
   },
   {
     slug: 'google',

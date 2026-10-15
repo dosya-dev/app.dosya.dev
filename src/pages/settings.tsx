@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, Fragment } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { api, apiErrorMessage, API_BASE } from '@/api/client';
 import { useWorkspace } from '@/stores/workspace';
 import { Card, CardContent } from '@/components/ui/card';
@@ -17,8 +17,8 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
 import {
-  Info, Shield, Users, AlertTriangle, Check, Loader2, Save,
-  Lock, Trash2, LogOut, Upload, X, Plus, ArrowRightLeft,
+  Check, Loader2, Save,
+  Trash2, LogOut, Upload, X, Plus, ArrowRightLeft,
 } from 'lucide-react';
 import { toast } from '@/lib/toast';
 import { humanSize, regionLabel } from '@/lib/helpers';
@@ -26,6 +26,7 @@ import { DeleteWorkspaceDialog } from '@/components/delete-workspace-dialog';
 import { usePermissions } from '@/hooks/use-permissions';
 import { clearShareDefaultsCache } from '@/lib/share-defaults';
 import { SwatchPicker } from '@/components/brand/swatch-picker';
+import { SETTINGS_SECTIONS as NAV, sectionFromHash } from '@/lib/settings-sections';
 
 
 // ── Types ──────────────────────────────────────────────────
@@ -134,14 +135,6 @@ const PERM_GROUPS: { group: string; perms: [string, string][] }[] = [
   ] },
 ];
 
-const NAV = [
-  { id: 'info', label: 'Workspace info', icon: Info, group: 'General' },
-  { id: 'limits', label: 'Hard limits', icon: Shield, group: 'General' },
-  { id: 'security', label: 'Security', icon: Lock, group: 'General' },
-  { id: 'roles', label: 'Roles & permissions', icon: Users, group: 'Members' },
-  { id: 'danger', label: 'Danger zone', icon: AlertTriangle, group: 'Danger', danger: true },
-];
-
 // ── Page ───────────────────────────────────────────────────
 
 export default function SettingsPage() {
@@ -177,6 +170,18 @@ export default function SettingsPage() {
   }, [wsId]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Search's "Go to" rows link to /settings#section-<id>. The sections only
+  // exist after the first load, so wait for it, then scroll like a nav click.
+  const location = useLocation();
+  useEffect(() => {
+    if (loading) return;
+    const id = sectionFromHash(location.hash);
+    if (!id) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- syncs the nav highlight to the URL hash
+    setActiveSection(id);
+    document.getElementById(`section-${id}`)?.scrollIntoView({ behavior: 'smooth' });
+  }, [loading, location.hash, location.key]);
 
   if (loading) return <SettingsSkeleton />;
   if (!data) return <div className="p-6 text-center text-muted-foreground">Failed to load settings</div>;
@@ -323,10 +328,51 @@ export function WorkspaceInfoSection({ data, wsId, onSaved }: { data: WsData; ws
                 otherwise render as "weur (weur)". */}
             <span className="text-xs">{locationLabel}{locationLabel !== locationCode && <span className="text-muted-foreground"> ({locationCode})</span>}</span>
           </SettingRow>
+
+          <BrandingCard wsId={wsId} />
         </CardContent>
       </Card>
     </section>
   );
+}
+
+/**
+ * The entry point to /settings/branding. Deliberately a card row and not a
+ * SETTINGS_NAV entry. Three states: configure, "Starter and up" with a way to
+ * the plans, and disabled with the reason. While the state is unknown (loading,
+ * or the request failed) it offers Configure: the page itself shows the truth.
+ */
+const BRANDING_LINK = 'inline-flex h-7 items-center rounded-lg border border-border bg-background px-2.5 text-xs font-medium hover:bg-muted';
+
+export function BrandingCard({ wsId }: { wsId: string }) {
+  const [state, setState] = useState<{ enabled: boolean; revoked: boolean; canEdit: boolean } | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    api<{ enabled?: boolean; revoked?: boolean; can_edit?: boolean }>(`/api/workspaces/${wsId}/branding`)
+      .then((res) => {
+        if (live && typeof res?.enabled === 'boolean') setState({ enabled: res.enabled, revoked: !!res.revoked, canEdit: res.can_edit !== false });
+      })
+      .catch(() => { /* unknown state falls back to Configure */ });
+    return () => { live = false; };
+  }, [wsId]);
+
+  let action: React.ReactNode;
+  let desc = 'Your logo, name and colour on share pages and email.';
+  if (state?.revoked) {
+    desc = 'Branding is disabled for this workspace. Contact support.';
+    action = <Button variant="outline" size="sm" className="h-7 text-xs" disabled>Configure</Button>;
+  } else if (state && !state.enabled) {
+    desc = 'Branding is available on Starter and up.';
+    action = <Link to="/billing" className={BRANDING_LINK}>See plans</Link>;
+  } else if (state && !state.canEdit) {
+    desc = 'Your role cannot change branding.';
+    action = <Button variant="outline" size="sm" className="h-7 text-xs" disabled>Configure</Button>;
+  } else {
+    action = <Link to="/settings/branding" className={BRANDING_LINK}>Configure</Link>;
+  }
+
+  return <SettingRow label="Branding" desc={desc}>{action}</SettingRow>;
 }
 
 // ── Hard Limits ────────────────────────────────────────────

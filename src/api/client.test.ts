@@ -121,3 +121,18 @@ describe('responseErrorMessage (raw-fetch download handlers)', () => {
     expect(await responseErrorMessage(json({ ok: false, error: 42 }), 'fb')).toBe('fb');
   });
 });
+
+describe('api() on a 401', () => {
+  it('hands the path to the session-expiry check, still throwing for the page', async () => {
+    const { watchSessionExpiry } = await import('@/lib/session-expiry');
+    const verify = vi.fn(async () => 200);
+    const stop = watchSessionExpiry({ verify, onExpired: vi.fn() });
+    try {
+      mockFetchOnce(401, JSON.stringify({ ok: false, error: 'Unauthorized' }));
+      await expect(api('/api/files')).rejects.toBeInstanceOf(ApiError);
+      expect(verify).toHaveBeenCalledTimes(1);
+    } finally {
+      stop();
+    }
+  });
+});

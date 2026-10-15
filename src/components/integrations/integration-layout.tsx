@@ -33,7 +33,14 @@ export function IntegrationLayout({
   );
 }
 
-export function ApiKeyCallout() {
+/**
+ * `usage` names where the key is actually pasted. It defaults to the code
+ * snippets, which is true of every protocol page here, but not of a page whose
+ * walkthrough has none: Zapier asks for the key in its own connection dialog,
+ * and pointing that reader at "the snippets below" sends them looking for
+ * something that is not on the page.
+ */
+export function ApiKeyCallout({ usage }: { usage?: ReactNode } = {}) {
   return (
     <div className="mb-6 flex items-start gap-3 rounded-lg border bg-muted/30 p-3">
       <KeyRound className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
@@ -42,13 +49,17 @@ export function ApiKeyCallout() {
         <p className="mt-0.5 text-xs text-muted-foreground">
           Generate a <code className="text-[11px] text-foreground">dos_…</code> key in{' '}
           <Link
-            to="/profile#section-api"
+            to="/profile/api"
             className="underline underline-offset-2 hover:text-foreground"
           >
             Profile → API keys
           </Link>
-          , then use it where the snippets below say{' '}
-          <code className="text-[11px] text-foreground">dos_your_api_key</code>.
+          {usage ?? (
+            <>
+              , then use it where the snippets below say{' '}
+              <code className="text-[11px] text-foreground">dos_your_api_key</code>.
+            </>
+          )}
         </p>
       </div>
     </div>

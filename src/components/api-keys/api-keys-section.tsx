@@ -318,12 +318,18 @@ export function ApiKeysSection({ keys, workspaces, onChanged }: { keys: ApiKey[]
                                 <Link to={`/api-analytics?key=${k.id}`}>
                                   <Button variant="outline" size="sm"><ChartColumn className="size-3.5" /> Analytics</Button>
                                 </Link>
-                                <Button variant="outline" size="sm" data-testid="duplicate" onClick={() => duplicate(k)}><Copy className="size-3.5" /> Duplicate settings</Button>
+                                {k.scope !== 'wp_site' && (
+                                  <Button variant="outline" size="sm" data-testid="duplicate" onClick={() => duplicate(k)}><Copy className="size-3.5" /> Duplicate settings</Button>
+                                )}
                                 <Button variant="outline" size="sm" data-testid="revoke" className="text-destructive border-destructive/30 hover:bg-destructive/10" onClick={() => setPendingRevoke([k])}>
                                   <X className="size-3.5" /> Revoke
                                 </Button>
                               </div>
-                              <p className="text-[11px] text-muted-foreground">Keys can't be edited after creation. Duplicate opens the form pre-filled so you can replace this one.</p>
+                              {k.scope === 'wp_site' ? (
+                                <p data-testid="wp-site-note" className="text-[11px] text-muted-foreground">This key belongs to a connected WordPress site. Disconnect the site from its WordPress admin, or revoke the key here.</p>
+                              ) : (
+                                <p className="text-[11px] text-muted-foreground">Keys can't be edited after creation. Duplicate opens the form pre-filled so you can replace this one.</p>
+                              )}
                             </div>
                           </div>
                         </div>

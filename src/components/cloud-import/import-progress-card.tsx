@@ -13,7 +13,7 @@ type JobCounts = Pick<
 
 export function describeJob(job: JobCounts): string {
   if (job.status === 'discovering') {
-    return `Scanning - ${job.total_files} files found so far`;
+    return `Preparing import - ${job.total_files} files found so far`;
   }
   if (job.status === 'running') {
     return `Importing ${job.completed_files} of ${job.total_files} files`;

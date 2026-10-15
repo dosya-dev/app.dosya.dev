@@ -81,6 +81,8 @@ export interface FolderItem {
    * one. Only a trash root can be restored or purged.
    */
   is_trash_root?: boolean;
+  /** Who created the folder - decides whether `delete_own_files` covers it. Trash view rows carry it. */
+  created_by?: string | null;
 }
 
 export interface Breadcrumb {

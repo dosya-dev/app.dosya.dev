@@ -1,6 +1,7 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
+import { MemoryRouter } from 'react-router-dom';
 
 const apiMock = vi.fn();
 vi.mock('@/api/client', async (importOriginal) => {
@@ -75,7 +76,7 @@ async function render() {
   container = document.createElement('div');
   document.body.appendChild(container);
   root = createRoot(container);
-  await act(async () => { root!.render(<PrivacySection now={() => NOW} />); await Promise.resolve(); });
+  await act(async () => { root!.render(<MemoryRouter><PrivacySection now={() => NOW} /></MemoryRouter>); await Promise.resolve(); });
   await act(async () => { await Promise.resolve(); });
 }
 // Scoped to the document, not to `container`: two of this section's surfaces -
@@ -133,7 +134,7 @@ describe('PrivacySection', () => {
     expect(rights.map((r) => r.dataset.right))
       .toEqual(['access', 'portability', 'erasure', 'restriction', 'objection']);
     const erasure = rights[2];
-    const erasureLink = erasure.querySelector('a[href="#section-delete"]') as HTMLAnchorElement;
+    const erasureLink = erasure.querySelector('a[href="/profile/delete"]') as HTMLAnchorElement;
     expect(erasureLink.textContent).toContain('Delete account');
     const erasureText = text(erasure);
     // The product's own Article 15 disclosure says the audit trail, billing

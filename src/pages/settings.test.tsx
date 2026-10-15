@@ -145,7 +145,8 @@ describe('WorkspaceInfoSection - location', () => {
     await act(async () => {
       root!.render(
         <QueryClientProvider client={qc}>
-          <WorkspaceInfoSection data={ws} wsId="ws1" onSaved={() => {}} />
+          {/* The section now holds the branding card, which links. */}
+          <MemoryRouter><WorkspaceInfoSection data={ws} wsId="ws1" onSaved={() => {}} /></MemoryRouter>
         </QueryClientProvider>,
       );
       await Promise.resolve();

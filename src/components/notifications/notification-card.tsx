@@ -1,7 +1,8 @@
 import { useNavigate } from "react-router-dom";
 import { X } from "lucide-react";
-import { parseActions, relativeTime, isUnread, type NotificationItem } from "../../lib/notifications";
+import { parseActions, relativeTime, isUnread, openDestination, type NotificationItem } from "../../lib/notifications";
 import { useNotifications } from "../../stores/notifications";
+import { NotificationIcon } from "./notification-icon";
 
 export function NotificationCard({ item }: { item: NotificationItem }) {
   const navigate = useNavigate();
@@ -15,7 +16,7 @@ export function NotificationCard({ item }: { item: NotificationItem }) {
     if (!path) return;
     markItemRead(item.id);
     setOpen(false);
-    navigate(path);
+    openDestination(path, navigate);
   }
 
   return (
@@ -26,7 +27,7 @@ export function NotificationCard({ item }: { item: NotificationItem }) {
       onClick={() => goTo(item.link_path)}
       onKeyDown={(e) => { if (e.key === "Enter") goTo(item.link_path); }}
     >
-      <div className="text-lg leading-none pt-0.5 select-none">{item.icon ?? "🔔"}</div>
+      <NotificationIcon icon={item.icon} category={item.category} priority={item.priority} unread={isUnread(item)} />
       <div className="min-w-0 flex-1">
         <div className="flex items-start gap-2">
           <p className="text-sm font-medium truncate">{item.title}</p>

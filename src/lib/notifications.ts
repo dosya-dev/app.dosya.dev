@@ -36,6 +36,27 @@ export function parseActions(json: string | null): NotificationAction[] {
   }
 }
 
+/**
+ * Open a notification's destination.
+ *
+ * The server sends an app route as a bare path and anything the app does not
+ * serve as an absolute https URL: a workspace invitation lands on
+ * dosya.dev/invite/<token>, a marketing-site page. It used to arrive bare, and
+ * routing it in place opened app.dosya.dev/invite/<token>, a 404. The host now
+ * comes with it, and that cannot go through navigate() either: react-router
+ * treats an absolute URL as a relative path. An absolute URL is a document
+ * navigation, not a route change.
+ */
+export function openDestination(
+  path: string | null | undefined,
+  navigate: (path: string) => void,
+  assign: (url: string) => void = (url) => window.location.assign(url),
+): void {
+  if (!path) return;
+  if (path.startsWith("https://")) assign(path);
+  else navigate(path);
+}
+
 export function relativeTime(createdAt: number, now: number): string {
   const s = Math.max(0, now - createdAt);
   if (s < 60) return "just now";

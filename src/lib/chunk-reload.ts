@@ -1,4 +1,5 @@
 import { lazy, type ComponentType, type LazyExoticComponent } from 'react';
+import { beginLoading } from './loading-bar';
 
 /**
  * Recovery for the stale-chunk failure that follows every deploy.
@@ -124,7 +125,19 @@ export function resolveLazyModule<T>(mod: T | undefined): Promise<T> {
 export function lazyChunk<P>(
   factory: () => Promise<{ default: ComponentType<P> }>,
 ): LazyExoticComponent<ComponentType<P>> {
-  return lazy(() => factory().then(resolveLazyModule));
+  return lazy(() => trackChunk(factory).then(resolveLazyModule));
+}
+
+/**
+ * Hold the hairline (see lib/loading-bar) for as long as the chunk downloads.
+ * Wrapped around the factory, not the whole chain: the recovery bridge below
+ * can hold a promise open forever while a reload lands, and the line must not
+ * be the thing keeping that tab looking alive. Ends on failure too, so a
+ * genuinely missing chunk hands over to the error page with the line gone.
+ */
+function trackChunk<T>(factory: () => Promise<T>): Promise<T> {
+  const end = beginLoading();
+  return factory().finally(end);
 }
 
 /**
@@ -141,5 +154,5 @@ export function lazyChunkNamed<M, P>(
   factory: () => Promise<M>,
   pick: (mod: M) => ComponentType<P>,
 ): LazyExoticComponent<ComponentType<P>> {
-  return lazy(() => factory().then(resolveLazyModule).then((mod) => ({ default: pick(mod) })));
+  return lazy(() => trackChunk(factory).then(resolveLazyModule).then((mod) => ({ default: pick(mod) })));
 }

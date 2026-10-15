@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { humanSize, humanSizeShort, timeAgo, timeUntil, initials, extOf, isImage, isHeic, fileIconSrc, isOfficeFile, hiddenTitle, actionLabel } from "./helpers";
+import { humanSize, humanSizeShort, timeAgo, timeUntil, expiryLabel, initials, extOf, isImage, isHeic, fileIconSrc, isOfficeFile, hiddenTitle, actionLabel } from "./helpers";
 
 describe("actionLabel", () => {
   it("labels a redeemed coupon code", () => {
@@ -61,6 +61,20 @@ describe("timeAgo", () => {
     const label = timeAgo(march, now);
     expect(label).toMatch(/Mar/);
     expect(label).not.toMatch(/2026/);
+  });
+});
+
+describe("expiryLabel", () => {
+  const now = 1_800_000_000;
+  it("says when a future expiry lands instead of 'just now'", () => {
+    expect(expiryLabel(now + 7 * 86400, now)).toBe("Expires in 7 days");
+    expect(expiryLabel(now + 2 * 3600, now)).toBe("Expires in 2h");
+  });
+  it("says Expired once the time has passed", () => {
+    expect(expiryLabel(now - 10, now)).toBe("Expired");
+  });
+  it("says No expiry when there is none", () => {
+    expect(expiryLabel(null, now)).toBe("No expiry");
   });
 });
 

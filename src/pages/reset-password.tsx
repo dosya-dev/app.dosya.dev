@@ -71,7 +71,10 @@ export default function ResetPasswordPage() {
       // Single-use token: reset on every outcome, not just failures, or a
       // retry fails verification instead.
       turnstileRef.current?.reset();
-      if (res.ok && data.ok) navigate('/login?reset=1');
+      // An account with a second factor enrolled gets a 2FA challenge from the
+      // reset, not a session (same cookie and page as login). Sending them to
+      // /login would make them type the brand-new password straight back in.
+      if (res.ok && data.ok) navigate(data.requires_2fa ? '/login/2fa' : '/login?reset=1');
       else if (isTurnstileRejection(data)) setError(turnstileFailureMessage(turnstileRef.current));
       else setError(data.error ?? 'Could not reset password');
     } catch {

@@ -39,6 +39,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   quota: 'Not enough storage',
   source_changed: 'File changed on the source server',
   network: 'Connection to the source failed',
+  backup_locked: 'Destination is a locked backup',
 };
 
 function errorLabel(code: string | null): string {

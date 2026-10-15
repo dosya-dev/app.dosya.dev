@@ -169,7 +169,8 @@ export function PlanChooser({ hasSubscription, initial, usedBytes, limitBytes, c
                     <div>
                         <p className="mb-1 text-xs font-medium text-muted-foreground">Storage add-ons {isPaid <= 0 && "(select a paid plan first)"}</p>
                         <div className="rounded-lg border px-3">
-                            {catalog.addons.map((a) => {
+                            {/* Places are bought from the Family card; they stay in state.addonQty so a plan change keeps them. */}
+                            {catalog.addons.filter((a) => (a.kind ?? "storage") === "storage").map((a) => {
                                 const avail = state.interval === "year" ? a.has_yearly : a.has_monthly;
                                 return <AddonRow key={a.id} addon={a} interval={state.interval} qty={state.addonQty[a.id] ?? 0}
                                     disabled={isPaid <= 0 || !avail} onChange={(q) => setQty(a.id, q)} />;

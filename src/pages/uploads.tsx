@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, memo, type DragEvent, type ChangeEvent } from 'react';
+import { useState, useEffect, useRef, useMemo, memo, type DragEvent, type ChangeEvent } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { api } from '@/api/client';
 import { useWorkspace } from '@/stores/workspace';
@@ -15,10 +15,11 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
-import { Upload, Info, Check, AlertCircle, Loader2, Home, FolderOpen, Layers, RotateCw, Lock } from 'lucide-react';
+import { Upload, Info, Check, AlertCircle, Loader2, Home, FolderOpen, Layers, RotateCw, Lock, ChevronRight, FilePlus, FolderUp } from 'lucide-react';
 import { humanSize, folderIconSrc } from '@/lib/helpers';
 import { toast } from '@/lib/toast';
 import { FolderPickerDialog } from '@/components/folder-picker-dialog';
+import { buildUploadTree, visibleRows, type UploadFolderNode, type UploadLeaf } from '@/lib/upload-tree';
 
 export default function UploadsPage() {
   const wsId = useWorkspace((s: { activeId: string }) => s.activeId);
@@ -128,6 +129,15 @@ export default function UploadsPage() {
               <p className="text-xs">Ask a workspace owner or admin if you need to add files here.</p>
             </Card>
           ) : (
+          <>
+          {/* The pickers sit OUTSIDE the dropzone. A hidden input's click
+              bubbles, and inside the zone "pick a folder" also fired the zone's
+              own click - the plain file picker - so a folder arrived flat. */}
+          <input ref={fileInputRef} type="file" multiple hidden onChange={onFileChange} data-testid="upload-files-input" />
+          {/* webkitdirectory is set on the element rather than written as a JSX
+              prop: React types do not carry it, and setAttribute works the same
+              in every engine that supports folder picking. */}
+          <input ref={folderInputRef} type="file" multiple hidden onChange={onFileChange} data-testid="upload-folder-input" />
           <div
             className={`border-2 border-dashed rounded-xl bg-card p-12 text-center cursor-pointer transition-colors ${dragging ? 'border-green-500 bg-green-50/50 dark:bg-green-950/20' : 'border-border hover:border-muted-foreground/30'}`}
             onClick={() => fileInputRef.current?.click()}
@@ -135,23 +145,24 @@ export default function UploadsPage() {
             onDragLeave={() => setDragging(false)}
             onDrop={onDrop}
           >
-            <input ref={fileInputRef} type="file" multiple hidden onChange={onFileChange} />
-            {/* webkitdirectory is set on the element rather than written as a JSX
-                prop: React types do not carry it, and setAttribute works the same
-                in every engine that supports folder picking. */}
-            <input ref={folderInputRef} type="file" multiple hidden onChange={onFileChange} />
             <Upload className="size-10 text-muted-foreground mx-auto mb-4" />
             <p className="font-semibold text-sm mb-1">Drop files or folders here to upload</p>
             <p className="text-xs text-muted-foreground mb-4">
-              Drag and drop anything - folders keep their structure. Or{' '}
-              <button className="font-semibold text-foreground underline" onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}>browse for files</button>
-              {' '}or{' '}
-              <button className="font-semibold text-foreground underline" onClick={(e) => { e.stopPropagation(); folderInputRef.current?.click(); }}>pick a folder</button>. No file size limit on Pro.
+              Folders keep their subfolders. No file size limit on Pro.
             </p>
+            <div className="flex gap-2 justify-center mb-4">
+              <Button type="button" variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}>
+                <FilePlus className="size-3.5" /> Select files
+              </Button>
+              <Button type="button" variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={(e) => { e.stopPropagation(); folderInputRef.current?.click(); }}>
+                <FolderUp className="size-3.5" /> Select folder
+              </Button>
+            </div>
             <div className="flex gap-2 justify-center flex-wrap">
               {['Video', 'Images', 'Documents', 'Archives', 'Any format'].map((t) => <Badge key={t} variant="secondary" className="text-[10px]">{t}</Badge>)}
             </div>
           </div>
+          </>
           )}
 
           {queue.length > 0 && (
@@ -171,7 +182,7 @@ export default function UploadsPage() {
                 </div>
               </CardHeader>
               <CardContent className="space-y-0">
-                {queue.map((item) => <QueueRow key={item.id} item={item} />)}
+                <QueueTree queue={queue} />
               </CardContent>
             </Card>
           )}
@@ -227,6 +238,102 @@ export default function UploadsPage() {
           selectedName={folderName}
           onSelect={(id, name) => { setFolderId(id); setFolderName(name); setSelectFolderOpen(false); toast.success('Uploading here', `New files will go to "${name}".`); }}
         />
+      )}
+    </div>
+  );
+}
+
+/**
+ * Past this many rows only the top-level folders start open: a 2,000-file drop
+ * expanded in full is the flat list this view exists to replace.
+ */
+const OPEN_ALL_LIMIT = 50;
+const INDENT = 18;
+
+const LEAF_STATE: Record<UploadItem['status'], UploadLeaf['state']> = {
+  queued: 'pending', interrupted: 'pending', canceled: 'pending',
+  uploading: 'active', complete: 'done', error: 'error',
+};
+
+const toLeaf = (item: UploadItem): UploadLeaf => ({
+  path: item.relativePath ?? '',
+  size: item.fileSize,
+  bytesDone: item.bytesUploaded,
+  state: LEAF_STATE[item.status],
+});
+
+/** The queue grouped under the folders it was uploaded from. */
+function QueueTree({ queue }: { queue: UploadItem[] }) {
+  const tree = useMemo(() => buildUploadTree(queue, toLeaf), [queue]);
+  // Only what the user toggled is stored; everything else follows the default,
+  // so folders arriving later in a long upload pick up the right state.
+  const [toggled, setToggled] = useState<Map<string, boolean>>(new Map());
+  const openAll = useMemo(() => visibleRows(tree, () => true).length <= OPEN_ALL_LIMIT, [tree]);
+  const isOpen = (f: UploadFolderNode<UploadItem>) =>
+    toggled.get(f.path) ?? (openAll || !f.path.includes('/'));
+  const toggle = (f: UploadFolderNode<UploadItem>) =>
+    setToggled((prev) => new Map(prev).set(f.path, !isOpen(f)));
+
+  return (
+    <div role="tree" aria-label="Upload queue">
+      {visibleRows(tree, isOpen).map(({ node, depth }) =>
+        node.kind === 'folder' ? (
+          <QueueFolderRow key={`d:${node.path}`} folder={node} depth={depth} open={isOpen(node)} onToggle={() => toggle(node)} />
+        ) : (
+          // A file sits under its folder's name, past where the chevron would be.
+          <div key={node.item.id} role="treeitem" style={{ paddingLeft: depth > 0 ? depth * INDENT + 22 : 0 }}>
+            <QueueRow item={node.item} />
+          </div>
+        ),
+      )}
+    </div>
+  );
+}
+
+function QueueFolderRow({ folder, depth, open, onToggle }: {
+  folder: UploadFolderNode<UploadItem>;
+  depth: number;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  const pct = folder.totalBytes > 0 ? Math.round((folder.doneBytes / folder.totalBytes) * 100) : 0;
+  const finished = folder.doneCount === folder.fileCount;
+  const retryable = folder.items.filter((i) => i.status === 'error' && canRetry(i.id));
+  return (
+    <div
+      role="treeitem"
+      aria-expanded={open}
+      aria-label={folder.name}
+      className="flex items-center gap-2 py-2.5 border-b last:border-b-0"
+      style={{ paddingLeft: depth * INDENT }}
+    >
+      <button type="button" onClick={onToggle} className="flex items-center gap-2 flex-1 min-w-0 text-left">
+        <ChevronRight className={`size-3.5 shrink-0 text-muted-foreground transition-transform duration-150 ${open ? 'rotate-90' : ''}`} />
+        <img src={folderIconSrc(folder.fileCount)} alt="" className="size-5 shrink-0" />
+        <span className="flex-1 min-w-0">
+          <span className="flex items-center justify-between gap-2">
+            <span className="text-xs font-semibold truncate">{folder.name}</span>
+            <span className="text-[11px] text-muted-foreground shrink-0">
+              {folder.doneCount}/{folder.fileCount} files · {humanSize(folder.totalBytes)}
+              {folder.errorCount > 0 && <span className="text-destructive"> · {folder.errorCount} failed</span>}
+            </span>
+          </span>
+          {!finished && (
+            <Progress
+              value={pct}
+              className="mt-1.5 h-1 **:data-[slot=progress-indicator]:bg-(--bar-color) **:data-[slot=progress-indicator]:duration-300"
+              style={{ '--bar-color': folder.errorCount > 0 && folder.activeCount === 0 ? '#ef4444' : '#22c55e' } as React.CSSProperties}
+            />
+          )}
+        </span>
+      </button>
+      {retryable.length > 0 && (
+        <Button variant="outline" size="sm" className="h-7 text-xs gap-1 shrink-0" onClick={() => retryable.forEach((i) => retry(i.id))}>
+          <RotateCw className="size-3" /> Retry failed
+        </Button>
+      )}
+      {finished && (
+        <div className="w-5 h-5 shrink-0 rounded-full bg-green-100 dark:bg-green-950 flex items-center justify-center"><Check className="size-3 text-green-600" /></div>
       )}
     </div>
   );

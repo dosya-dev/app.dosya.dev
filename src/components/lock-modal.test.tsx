@@ -141,18 +141,18 @@ describe('LockModalBody', () => {
 
     await click(radio('full_lock'));
     expect(passwordInput()).not.toBeNull();
-    expect(container!.querySelector('[data-testid="lock-mode-full_lock"]')!.textContent).toContain('At least 4 characters.');
+    expect(container!.querySelector('[data-testid="lock-mode-full_lock"]')!.textContent).toContain('At least 8 characters.');
     expect(button('Lock with password')?.disabled).toBe(true);
 
-    await type(passwordInput(), 'abc');
+    await type(passwordInput(), 'abcdefg');
     expect(button('Lock with password')?.disabled).toBe(true);
-    await type(passwordInput(), 'abcd');
+    await type(passwordInput(), 'abcdefgh');
     expect(button('Lock with password')?.disabled).toBe(false);
 
     await click(button('Lock with password'));
     const post = apiMock.mock.calls.find((c) => (c[1] as { method?: string } | undefined)?.method === 'POST');
     expect(post?.[0]).toBe('/api/folders/fo1/lock');
-    expect(JSON.parse((post?.[1] as { body: string }).body)).toEqual({ lock_mode: 'full_lock', password: 'abcd' });
+    expect(JSON.parse((post?.[1] as { body: string }).body)).toEqual({ lock_mode: 'full_lock', password: 'abcdefgh' });
     expect(onDone).toHaveBeenCalled();
     expect(onClose).toHaveBeenCalled();
     expect(toastSuccess).toHaveBeenCalledWith('Locked with a password', expect.stringContaining('Q3 Reports'));
@@ -165,7 +165,7 @@ describe('LockModalBody', () => {
     expect(container!.textContent).toContain('Password lock · set by Firat Kaya, 2d ago');
     expect(radio('full_lock')?.getAttribute('aria-checked')).toBe('true');
     expect(container!.querySelector('label[for]')?.textContent).toBe('New password');
-    expect(container!.textContent).toContain('At least 4 characters. Replaces the current one.');
+    expect(container!.textContent).toContain('At least 8 characters. Replaces the current one.');
     expect(button('Update password')?.disabled).toBe(true);
 
     await click(radio('none'));
@@ -190,7 +190,7 @@ describe('LockModalBody', () => {
       passwordInput()!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
       await flush();
     });
-    expect(container!.textContent).toContain('Use at least 4 characters.');
+    expect(container!.textContent).toContain('Use at least 8 characters.');
     expect(passwordInput()?.getAttribute('aria-invalid')).toBe('true');
     expect(apiMock.mock.calls.some((c) => (c[1] as { method?: string } | undefined)?.method === 'POST')).toBe(false);
   });
@@ -199,7 +199,7 @@ describe('LockModalBody', () => {
     serve({ lock_mode: 'none' });
     await mount(file);
     await click(radio('full_lock'));
-    await type(passwordInput(), 'letmein');
+    await type(passwordInput(), 'letmein1');
     await act(async () => {
       passwordInput()!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
       await flush();

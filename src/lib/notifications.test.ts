@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
-import { parseActions, relativeTime, groupByDay, isUnread, type NotificationItem } from "./notifications";
+import { describe, it, expect, vi } from "vitest";
+import { parseActions, relativeTime, groupByDay, isUnread, openDestination, type NotificationItem } from "./notifications";
 
 const base: NotificationItem = {
   id: "ntf_1", kind: "personal", type: "files_downloaded", category: "files",
@@ -78,5 +78,34 @@ describe("isUnread", () => {
   it("is unread when read_at is null", () => {
     expect(isUnread(base)).toBe(true);
     expect(isUnread({ ...base, read_at: 123 })).toBe(false);
+  });
+});
+
+describe("openDestination", () => {
+  // An invitation lands on dosya.dev/invite/<token>, a page the marketing site
+  // serves. The server sends it as an absolute URL; handing that to the app
+  // router produced an in-app path on app.dosya.dev, a 404.
+  it("leaves the app for an absolute https URL", () => {
+    const navigate = vi.fn();
+    const assign = vi.fn();
+    openDestination("https://dosya.dev/invite/tok_abc", navigate, assign);
+    expect(assign).toHaveBeenCalledWith("https://dosya.dev/invite/tok_abc");
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it("routes an app path in place", () => {
+    const navigate = vi.fn();
+    const assign = vi.fn();
+    openDestination("/files/x", navigate, assign);
+    expect(navigate).toHaveBeenCalledWith("/files/x");
+    expect(assign).not.toHaveBeenCalled();
+  });
+
+  it("does nothing for an empty destination", () => {
+    const navigate = vi.fn();
+    const assign = vi.fn();
+    openDestination(null, navigate, assign);
+    expect(navigate).not.toHaveBeenCalled();
+    expect(assign).not.toHaveBeenCalled();
   });
 });

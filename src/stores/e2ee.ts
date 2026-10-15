@@ -23,6 +23,7 @@ import { api as restApi, apiErrorMessage } from '@/api/client';
 import { buildE2eeClient, normalizeRecoveryKey } from '@/lib/e2ee/client';
 import { saveBytes } from '@/lib/e2ee/save';
 import { toast } from '@/lib/toast';
+import { openReport } from '@/stores/report-problem';
 import { useWorkspace } from '@/stores/workspace';
 
 export type E2eeStatus = 'locked' | 'unlocking' | 'unlocked';
@@ -709,8 +710,9 @@ export const useE2ee = create<E2eeState>()(
           set({ busy: false });
           toast.success('Uploaded', files.length === 1 ? Array.from(files)[0].name : `${files.length} files`);
         } catch (e) {
-          set({ busy: false, error: errorMessage(e, 'Could not upload file.') });
-          toast.error('Upload failed', errorMessage(e, 'Could not upload file.'));
+          const msg = errorMessage(e, 'Could not upload file.');
+          set({ busy: false, error: msg });
+          toast.error('Upload failed', msg, { action: { label: 'Report', onClick: () => openReport({ errorMessage: msg }) } });
         }
       },
 

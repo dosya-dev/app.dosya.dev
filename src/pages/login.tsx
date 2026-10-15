@@ -6,10 +6,13 @@ import { Input } from '@/components/ui/input';
 import { Loader2, Eye, EyeOff } from 'lucide-react';
 import { API_BASE } from '@/api/client';
 import { PublicNav } from '@/components/public-nav';
+import { AlreadySignedInDialog } from '@/components/already-signed-in-dialog';
+import { useSessionAccount } from '@/hooks/use-session-probe';
 import { TurnstileWidget, type TurnstileHandle } from '@/components/turnstile-widget';
 import { resolveTurnstileToken, turnstileFailureMessage, isTurnstileRejection } from '@/lib/turnstile-submit';
 import { LegalNotice } from '@/components/legal-notice';
 import { pendingPostAuthPath } from '@/lib/redemption-claim';
+import { consumePostAuthPath } from '@/lib/post-auth-path';
 import { Logo } from "@/components/brand/logo";
 
 // OAuth callbacks redirect here as /login?error=<provider>_<reason> on failure.
@@ -68,6 +71,9 @@ export default function LoginPage() {
     try { return localStorage.getItem('dosya_last_login_method'); } catch { return null; }
   });
   const turnstileRef = useRef<TurnstileHandle>(null);
+  // One probe for the page: the navbar's CTA and the already-signed-in dialog
+  // both read it, rather than each fetching GET /api/me.
+  const account = useSessionAccount();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -90,7 +96,7 @@ export default function LoginPage() {
       // second attempt after a wrong password fails verification instead.
       turnstileRef.current?.reset();
       if (res.ok && data.ok) {
-        navigate(pendingPostAuthPath() ?? data.redirect ?? '/');
+        navigate(pendingPostAuthPath() ?? consumePostAuthPath() ?? data.redirect ?? '/');
       } else if (isTurnstileRejection(data)) {
         setError(turnstileFailureMessage(turnstileRef.current));
       } else {
@@ -116,8 +122,12 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen bg-background flex flex-col" style={{ backgroundImage: 'url(/grid.svg)', backgroundRepeat: 'repeat' }}>
       <div className="p-4 sm:p-6 lg:p-8">
-        <PublicNav cta="signup" />
+        <PublicNav cta="signup" account={account} />
       </div>
+      {/* Suppressed while the page has a banner of its own: an OAuth failure,
+          or the confirmation that a password reset went through. Both ask the
+          visitor to do something here, so neither gets covered. */}
+      <AlreadySignedInDialog purpose="login" account={account} suppressed={Boolean(error || notice)} />
       <main className="flex-1 flex items-center justify-center p-4">
       <div className="w-full max-w-md">
         <Card>

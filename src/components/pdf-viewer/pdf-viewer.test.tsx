@@ -37,6 +37,7 @@ vi.mock('pdfjs-dist', () => {
 vi.mock('pdfjs-dist/build/pdf.worker.min.mjs?url', () => ({ default: '/fake-worker.mjs' }));
 
 const { PdfViewer } = await import('./pdf-viewer');
+const { AnchorProvider } = await import('@/components/comments/anchor-context');
 const { getDocument } = await import('pdfjs-dist');
 
 beforeAll(() => {
@@ -385,5 +386,30 @@ describe('PdfViewer - search', () => {
     await mount();
     await openFind('zzz-not-here');
     expect(container!.textContent).toContain('No results');
+  });
+});
+
+describe('PdfViewer - comment anchors', () => {
+  it('badges thumbnails with the comment count per page', async () => {
+    const mk = (id: string, page: number) => ({ id, ms: null, page, dim: false, initial: 'A', excerpt: id });
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    await act(async () => {
+      root!.render(createElement(AnchorProvider, {
+        markers: [mk('a', 2), mk('b', 2), mk('c', 5)],
+        pending: null, onPendingApplied: () => {}, onSelectComment: () => {},
+        children: createElement(PdfViewer, { fileName: 'a.pdf', rawUrl: 'https://api.test/raw', downloadUrl: 'https://api.test/dl' }),
+      }));
+      await flush();
+    });
+    await act(async () => {
+      container!.querySelector<HTMLButtonElement>('button[title="Toggle sidebar"]')!.click();
+      await flush();
+    });
+    const badge = (n: number) => container!.querySelector(`[data-thumb="${n}"] [data-testid="pdf-thumb-badge"]`)?.textContent;
+    expect(badge(2)).toBe('2');
+    expect(badge(5)).toBe('1');
+    expect(badge(1)).toBeUndefined();
   });
 });

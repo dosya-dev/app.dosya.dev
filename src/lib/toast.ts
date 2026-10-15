@@ -49,8 +49,14 @@ function svgIcon(type: ToastType): HTMLElement {
 const ENTER_MS = 400;
 const LEAVE_MS = 300;
 
-function show(title: string, opts: { type?: ToastType; description?: string; duration?: number } = {}) {
-  const { type = 'info', description, duration = 4000 } = opts;
+export interface ToastAction { label: string; onClick: () => void }
+
+function show(title: string, opts: { type?: ToastType; description?: string; duration?: number; action?: ToastAction } = {}) {
+  const { type = 'info', description, action } = opts;
+  // An action toast needs to survive long enough for a keyboard or
+  // screen-reader user to reach the button; left at the plain 4s default it
+  // is gone before most people get there.
+  const duration = opts.duration ?? (action ? 8000 : 4000);
   const container = getContainer();
 
   // Two elements, not one. The row owns the HEIGHT and the toast owns the
@@ -80,6 +86,41 @@ function show(title: string, opts: { type?: ToastType; description?: string; dur
     el.appendChild(descEl);
   }
 
+  let dismissed = false;
+  const dismiss = () => {
+    if (dismissed) return;
+    dismissed = true;
+    // Lock the row's measured height before collapsing it - `height: auto` has
+    // nothing to animate from. offsetHeight includes the toast's own 8px
+    // bottom margin, because overflow:hidden makes the row a BFC, so the gap
+    // collapses along with the toast rather than being left behind.
+    row.style.height = `${row.offsetHeight}px`;
+    void row.offsetHeight; // force the locked height to take effect
+    el.dataset.state = 'leave';
+    row.style.height = '0px';
+    // The button is gone from the accessibility tree at once even though the
+    // row is still animating out.
+    el.querySelector('.dosya-toast__action')?.remove();
+
+    let removed = false;
+    const drop = () => { if (!removed) { removed = true; row.remove(); } };
+    row.addEventListener('transitionend', (e) => { if (e.propertyName === 'height') drop(); });
+    // Safety net: a display:none ancestor (or a browser that skips the
+    // transition) never fires transitionend, and the row must not linger.
+    setTimeout(drop, LEAVE_MS + 100);
+  };
+
+  // One action at most, and it dismisses the toast the moment it is used:
+  // a "Report" that stays would let a second click open a second dialog.
+  if (action) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'dosya-toast__action';
+    btn.textContent = action.label;
+    btn.addEventListener('click', () => { dismiss(); action.onClick(); });
+    el.appendChild(btn);
+  }
+
   row.appendChild(el);
   container.appendChild(row);
 
@@ -90,23 +131,7 @@ function show(title: string, opts: { type?: ToastType; description?: string; dur
     requestAnimationFrame(() => { delete el.dataset.state; });
   });
 
-  setTimeout(() => {
-    // Lock the row's measured height before collapsing it - `height: auto` has
-    // nothing to animate from. offsetHeight includes the toast's own 8px
-    // bottom margin, because overflow:hidden makes the row a BFC, so the gap
-    // collapses along with the toast rather than being left behind.
-    row.style.height = `${row.offsetHeight}px`;
-    void row.offsetHeight; // force the locked height to take effect
-    el.dataset.state = 'leave';
-    row.style.height = '0px';
-
-    let removed = false;
-    const drop = () => { if (!removed) { removed = true; row.remove(); } };
-    row.addEventListener('transitionend', (e) => { if (e.propertyName === 'height') drop(); });
-    // Safety net: a display:none ancestor (or a browser that skips the
-    // transition) never fires transitionend, and the row must not linger.
-    setTimeout(drop, LEAVE_MS + 100);
-  }, duration);
+  setTimeout(dismiss, duration);
 }
 
 // Inject the stylesheet once. These live here rather than in index.css because
@@ -139,6 +164,13 @@ if (typeof document !== 'undefined' && !document.getElementById('dosya-toast-sty
     .dosya-toast__title { grid-column: 2; grid-row: 1; font-size: 13px; font-weight: 600; line-height: 1.35; }
     .dosya-toast[data-type="error"] .dosya-toast__title { color: var(--destructive); }
     .dosya-toast__desc { grid-column: 2; grid-row: 2; font-size: 12px; line-height: 1.45; color: var(--muted-foreground); }
+    .dosya-toast__action {
+      grid-column: 2; grid-row: 3; justify-self: start; margin-top: 6px;
+      font: inherit; font-size: 12px; font-weight: 600; line-height: 1;
+      padding: 5px 9px; border-radius: 6px; border: 1px solid var(--border);
+      background: var(--background); color: var(--foreground); cursor: pointer;
+    }
+    .dosya-toast__action:hover { background: var(--muted); }
     @media (prefers-reduced-motion: reduce) {
       /* Keep the fade and keep the row collapse - the collapse is what stops
          the stack jumping, which is comprehension, not decoration. Only the
@@ -160,16 +192,16 @@ const DEFAULT_TITLE: Record<ToastType, string> = {
 //   toast.success('Name updated')            → title "Success",  description "Name updated"
 //   toast.success('Folder created', 'Assets') → title "Folder created", description "Assets"
 // Either way you always get a title + a description line.
-function emit(type: ToastType, message: string, description?: string) {
+function emit(type: ToastType, message: string, description?: string, opts?: { action?: ToastAction; duration?: number }) {
   if (description !== undefined) {
-    show(message, { type, description });
+    show(message, { type, description, ...opts });
   } else {
-    show(DEFAULT_TITLE[type], { type, description: message });
+    show(DEFAULT_TITLE[type], { type, description: message, ...opts });
   }
 }
 
 export const toast = {
-  success: (message: string, description?: string) => emit('success', message, description),
-  error: (message: string, description?: string) => emit('error', message, description),
-  info: (message: string, description?: string) => emit('info', message, description),
+  success: (message: string, description?: string, opts?: { action?: ToastAction; duration?: number }) => emit('success', message, description, opts),
+  error: (message: string, description?: string, opts?: { action?: ToastAction; duration?: number }) => emit('error', message, description, opts),
+  info: (message: string, description?: string, opts?: { action?: ToastAction; duration?: number }) => emit('info', message, description, opts),
 };

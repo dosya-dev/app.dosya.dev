@@ -23,6 +23,10 @@ export interface SessionUser {
   ui_theme?: string;
   ui_mode?: string;
   tour_completed?: boolean;
+  /** The effective (lapse-aware) plan, for the profile menu's chip. Older API builds omit it. */
+  plan?: { id: string; name: string } | null;
+  /** Family plan role (API 0401). Older API builds omit it. */
+  family?: { role: 'none' | 'payer' | 'member' } | null;
 }
 
 export interface SessionWorkspace {

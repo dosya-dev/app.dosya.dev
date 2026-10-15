@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist';
 import type { PDFDocumentProxy, RenderTask } from 'pdfjs-dist';
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { Download, Loader2, X, ChevronUp, ChevronDown } from 'lucide-react';
 import { PdfToolbar, type PdfZoom, type PdfToolbarSlots } from './pdf-toolbar';
 import { PdfThumbnails } from './pdf-thumbnails';
+import { useRegisterAnchorTarget, useAnchorMarkers, type AnchorTarget } from '@/components/comments/anchor-context';
 import { usePdfFind, type PdfFind } from '@/lib/use-pdf-find';
 
 GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
@@ -104,6 +105,27 @@ export function PdfViewer({ fileName, rawUrl, downloadUrl, toolbarSlots }: PdfVi
     pageRefs.current[clamped - 1]?.scrollIntoView?.({ block: 'start' });
   };
 
+  // The comments seam. Registered once the page count is known; the
+  // functions read refs so the target stays referentially stable while the
+  // reader scrolls (a new object per render would loop the provider).
+  const pageRef = useRef(page);
+  pageRef.current = page;
+  const jumpRef = useRef(jumpTo);
+  jumpRef.current = jumpTo;
+  const anchorTarget = useMemo<AnchorTarget | null>(() => (numPages > 0 ? {
+    kind: 'page',
+    now: () => pageRef.current,
+    goTo: (p) => jumpRef.current(p),
+  } : null), [numPages]);
+  useRegisterAnchorTarget(anchorTarget);
+
+  const { markers } = useAnchorMarkers();
+  const badges = useMemo(() => {
+    const out: Record<number, number> = {};
+    for (const m of markers) if (m.page != null) out[m.page] = (out[m.page] ?? 0) + 1;
+    return out;
+  }, [markers]);
+
   const find = usePdfFind(doc, jumpTo);
 
   const onScroll = () => {
@@ -197,7 +219,7 @@ export function PdfViewer({ fileName, rawUrl, downloadUrl, toolbarSlots }: PdfVi
       {merged ? (slots ? toolbar : null) : toolbar}
       <div className="flex-1 flex min-h-0">
         {sidebarOpen && doc && (
-          <PdfThumbnails doc={doc} numPages={numPages} current={page} baseSize={baseSize} onSelect={jumpTo} />
+          <PdfThumbnails doc={doc} numPages={numPages} current={page} baseSize={baseSize} onSelect={jumpTo} badges={badges} />
         )}
         <div ref={scrollerRef} onScroll={onScroll} className="flex-1 overflow-auto bg-muted/30">
           {error ? (

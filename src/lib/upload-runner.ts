@@ -428,10 +428,10 @@ const scheduler = createScheduler({
  * different folders can never collide on one.
  */
 export function buildQueueItems(
-  files: { file: File; folder_id: string | null }[],
+  files: { file: File; folder_id: string | null; relativePath?: string }[],
   input: UploadInput,
 ): UploadItem[] {
-  return files.map(({ file, folder_id }, i) => {
+  return files.map(({ file, folder_id, relativePath }, i) => {
     const id = newId(i);
     fileMap.set(id, file);
     return {
@@ -440,6 +440,7 @@ export function buildQueueItems(
       workspace_id: input.workspace_id, folder_id,
       file_id: input.file_id ?? null,
       group_id: input.group_id ?? null,
+      ...(relativePath ? { relativePath } : {}),
       status: 'queued', progress: 0, bytesUploaded: 0,
       part_size: null, total_parts: null, uploaded_parts: [],
     };
@@ -463,14 +464,16 @@ export function enqueue(files: File[] | FileList, input: UploadInput): void {
 /**
  * Queue a folder tree: one bucket of files per destination folder, as produced
  * by groupByFolder(). `input.folder_id` still applies to the root bucket.
+ * `pathOf` names each file's folder path in the upload, for the queue's tree.
  */
 export function enqueueByFolder(
   groups: Map<string | null, File[]>,
   input: UploadInput,
+  pathOf?: (file: File) => string,
 ): number {
-  const flat: { file: File; folder_id: string | null }[] = [];
+  const flat: { file: File; folder_id: string | null; relativePath?: string }[] = [];
   for (const [folder_id, files] of groups) {
-    for (const file of files) flat.push({ file, folder_id });
+    for (const file of files) flat.push({ file, folder_id, relativePath: pathOf?.(file) });
   }
   start(buildQueueItems(flat, input));
   return flat.length;
