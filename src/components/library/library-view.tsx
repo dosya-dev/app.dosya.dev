@@ -18,6 +18,7 @@
  * container (`.overflow-y-auto` with `p-5`), and bleeds across that padding
  * with -mx-5/px-5 so the blur backdrop covers the tiles edge to edge.
  */
+import { formatNumber } from '@/lib/format-locale';
 import { Link } from 'react-router-dom';
 import type { MouseEvent as ReactMouseEvent, KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { Image as ImageIcon, Lock, Search, Star, Upload, AlertCircle, RefreshCw, Loader2, Play, FileText } from 'lucide-react';
@@ -26,11 +27,13 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { SelectCheckbox } from '@/components/select-checkbox';
 import { FilePreviewImage } from '@/components/file-preview-image';
+import { VideoPoster } from '@/components/video-poster';
 import { LiveBadge } from '@/components/live-badge';
 import { isLiveStill } from '@/lib/live-photos';
 import { extOf, colorFor, humanSize, fileIconSrc } from '@/lib/helpers';
 import type { ColumnDef } from '@/lib/file-columns';
 import { formatItemDate, takenIsWallClockOf, LIBRARY_PAGE_SIZE, KIND_COPY, plural, type MonthGroup, type LibraryItem, type LibraryKind, type LibraryLayout } from '@/lib/library-request';
+import { useT } from '@/lib/i18n';
 
 export type TileSize = 'small' | 'large';
 
@@ -85,6 +88,7 @@ const SKELETON = { photos: 'aspect-square rounded-lg', videos: 'aspect-video rou
 const LIST_SKELETON = 'h-10 rounded-lg';
 
 export function LibraryView(props: LibraryViewProps) {
+  const t = useT();
   const {
     kind, months, total, loaded, hasMore, isLoading, isLoadingMore, error, search,
     selected, favourites, unlockedFiles, activeId, tileSize, layout, columns, uploadHref,
@@ -100,10 +104,10 @@ export function LibraryView(props: LibraryViewProps) {
     return (
       <div className="flex flex-col items-center justify-center py-20 text-center">
         <AlertCircle className="size-12 text-destructive/40 mb-4" />
-        <p className="text-sm font-medium text-foreground mb-1">Could not load your {copy.nounPlural}</p>
-        <p className="text-xs text-muted-foreground max-w-80 mb-3">{error}</p>
+        <p className="text-sm font-medium text-foreground mb-1">{t('files.error.couldNotLoadYourCopynounplural', { copyNounPlural: copy.nounPlural })}</p>
+        <p dir="auto" className="text-xs text-muted-foreground max-w-80 mb-3">{error}</p>
         <Button variant="outline" size="sm" className="h-7 text-xs" onClick={onRetry}>
-          <RefreshCw className="size-3 mr-1" /> Try again
+          <RefreshCw className="size-3 me-1" /> {t('common.action.tryAgain')}
         </Button>
       </div>
     );
@@ -121,13 +125,13 @@ export function LibraryView(props: LibraryViewProps) {
 
   if (months.length === 0) {
     return search ? (
-      <EmptyState icon={Search} title={`No ${copy.nounPlural} match "${search}"`} description={`Try a different name, or clear the search to see every ${copy.noun}.`} />
+      <EmptyState icon={Search} title={t('files.tooltip.noCopynounpluralMatchSearch', { copyNounPlural: copy.nounPlural, search })} description={t('files.description.tryADifferentNameOrClearTheSearchToSeeEvery', { copyNoun: copy.noun })} />
     ) : (
       <EmptyState
         icon={KIND_ICON[kind]}
         title={copy.emptyTitle}
         description={copy.emptyDescription}
-        actions={<Link to={uploadHref}><Button size="sm" className="h-7 text-xs"><Upload className="size-3 mr-1" /> Upload {copy.nounPlural}</Button></Link>}
+        actions={<Link to={uploadHref}><Button size="sm" className="h-7 text-xs"><Upload className="size-3 me-1" /> {t('files.action.uploadCopynounplural', { copyNounPlural: copy.nounPlural })}</Button></Link>}
       />
     );
   }
@@ -145,7 +149,7 @@ export function LibraryView(props: LibraryViewProps) {
       {list && columns.length > 0 && (
         <div
           data-testid="library-table-header"
-          title="Rows follow the sort menu's date order"
+          title={t('files.tooltip.rowsFollowTheSortMenuSDateOrder')}
           className="flex items-center gap-3 px-3 py-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider border-b mb-0.5"
         >
           {/* The row's two leading slots, to the pixel: the checkbox (size-4)
@@ -167,13 +171,13 @@ export function LibraryView(props: LibraryViewProps) {
             <div className="sticky top-0 z-10 -mx-5 px-5 flex items-baseline gap-2.5 pt-4 pb-2.5 bg-background/90 backdrop-blur-md">
               <h3 className="text-[15px] font-semibold tracking-tight">{m.label}</h3>
               <span className="text-xs text-muted-foreground tabular-nums">{plural(kind, m.count)}</span>
-              {partial && <span className="text-[11px] text-muted-foreground tabular-nums">· {m.files.length} loaded</span>}
+              {partial && <span className="text-[11px] text-muted-foreground tabular-nums">{t('files.label.filecountLoaded', { fileCount: m.files.length })}</span>}
               <button
                 type="button"
-                className="ml-auto text-[11px] text-muted-foreground rounded px-1.5 py-0.5 opacity-0 group-hover/month:opacity-100 focus-visible:opacity-100 hover:bg-muted hover:text-foreground transition-opacity"
+                className="ms-auto text-[11px] text-muted-foreground rounded px-1.5 py-0.5 opacity-0 group-hover/month:opacity-100 focus-visible:opacity-100 hover:bg-muted hover:text-foreground transition-opacity"
                 onClick={() => onSelectMany(selectable)}
               >
-                {partial ? `Select ${selectable.length} loaded` : 'Select all'}
+                {partial ? t('files.action.selectSelectableCountLoaded', { selectableCount: selectable.length }) : t('common.action.selectAll')}
               </button>
             </div>
             <div className={bodyClass}>
@@ -209,16 +213,16 @@ export function LibraryView(props: LibraryViewProps) {
       <div className="flex flex-col items-center gap-2.5 pt-8 pb-2">
         {hasMore ? (
           <>
-            <span className="text-xs text-muted-foreground tabular-nums">Showing {loaded.toLocaleString()} of {plural(kind, total)}</span>
+            <span className="text-xs text-muted-foreground tabular-nums">{t('files.label.showingLoadedtolocalestringOfKind', { loadedToLocaleString: formatNumber(loaded), kind: plural(kind, total) })}</span>
             <div className="h-0.75 w-50 rounded-full bg-muted overflow-hidden" aria-hidden="true">
               <div className="h-full bg-primary transition-[width] duration-300" style={{ width: `${pct}%` }} />
             </div>
             <Button variant="outline" size="sm" className="h-8.5 px-4 text-xs" disabled={isLoadingMore} onClick={onLoadMore}>
-              {isLoadingMore ? <><Loader2 className="size-3.5 mr-1.5 animate-spin" /> Loading</> : `Load ${Math.min(LIBRARY_PAGE_SIZE, remaining)} more`}
+              {isLoadingMore ? <><Loader2 className="size-3.5 me-1.5 animate-spin" /> {t('common.status.loading.loading2')}</> : t('files.action.loadLibraryPageSizeMore', { libraryPageSize: Math.min(LIBRARY_PAGE_SIZE, remaining) })}
             </Button>
           </>
         ) : (
-          <span className="text-xs text-muted-foreground">That's all {plural(kind, loaded)}.</span>
+          <span className="text-xs text-muted-foreground">{t('files.description.thatSAllKind', { kind: plural(kind, loaded) })}</span>
         )}
       </div>
     </div>
@@ -234,8 +238,9 @@ type TileProps = {
 type RowProps = Omit<TileProps, 'onFavourite'> & { kind: LibraryKind; columns: ColumnDef[] };
 
 function PhotoTile({ file, selected, anySelected, active, isFavourite, unlockToken, onOpen, onToggle, onFavourite, onContextMenu }: TileProps) {
+  const t = useT();
   const locked = file.lock_mode === 'full_lock' && !unlockToken;
-  const ext = extOf(file.name).toUpperCase() || 'FILE';
+  const ext = extOf(file.name).toUpperCase() || t('common.label.fileBadge');
   const onKey = (e: ReactKeyboardEvent) => {
     if (e.key === 'Enter') { e.preventDefault(); onOpen(); }
     if (e.key === ' ' && !locked) { e.preventDefault(); onToggle(); }
@@ -279,24 +284,24 @@ function PhotoTile({ file, selected, anySelected, active, isFavourite, unlockTok
         <SelectCheckbox
           checked={selected}
           onCheckedChange={() => onToggle()}
-          aria-label={`Select ${file.name}`}
-          className={`absolute top-2 left-2 z-20 size-5 rounded-full border-white/70 bg-black/30 backdrop-blur-sm transition-opacity data-[state=checked]:bg-primary data-[state=checked]:border-primary ${selected || anySelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
+          aria-label={t('common.accessibility.selectName', { name: file.name })}
+          className={`absolute top-2 inset-s-2 z-20 size-5 rounded-full border-white/70 bg-black/30 backdrop-blur-sm transition-opacity data-[state=checked]:bg-primary data-[state=checked]:border-primary ${selected || anySelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
         />
       )}
 
-      {isLiveStill(file) && <LiveBadge size="tile" className="absolute top-2 left-9 z-20" />}
+      {isLiveStill(file) && <LiveBadge size="tile" className="absolute top-2 inset-s-9 z-20" />}
 
       <button
         type="button"
-        title={isFavourite ? 'Remove from favourites' : 'Add to favourites'}
-        className={`absolute top-2 right-2 z-20 flex items-center justify-center size-6 rounded-full bg-black/35 hover:bg-black/55 backdrop-blur-sm transition-opacity ${isFavourite ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
+        title={isFavourite ? t('common.action.removeFromFavourites') : t('common.label.addToFavourites')}
+        className={`absolute top-2 inset-e-2 z-20 flex items-center justify-center size-6 rounded-full bg-black/35 hover:bg-black/55 backdrop-blur-sm transition-opacity ${isFavourite ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
         onClick={(e) => { e.stopPropagation(); onFavourite(); }}
       >
         <Star className={`size-3.5 ${isFavourite ? 'text-orange-400 fill-orange-400' : 'text-white'}`} />
       </button>
 
       <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 px-2 pb-1.5 pt-5 bg-linear-to-t from-black/75 to-transparent text-white opacity-0 group-hover:opacity-100 transition-opacity">
-        <p className="text-[11px] font-medium leading-tight truncate">{file.name}</p>
+        <p className="text-[11px] font-medium leading-tight truncate" dir="auto">{file.name}</p>
         <p className="text-[10px] opacity-80 tabular-nums">{formatItemDate(file.taken_at, { wallClock: takenIsWallClockOf(file, 'photos') })}</p>
       </div>
     </div>
@@ -304,8 +309,9 @@ function PhotoTile({ file, selected, anySelected, active, isFavourite, unlockTok
 }
 
 function VideoCard({ file, selected, anySelected, active, isFavourite, unlockToken, onOpen, onToggle, onFavourite, onContextMenu }: TileProps) {
+  const t = useT();
   const locked = file.lock_mode === 'full_lock' && !unlockToken;
-  const ext = extOf(file.name).toUpperCase() || 'VIDEO';
+  const ext = extOf(file.name).toUpperCase() || t('common.label.videoUppercase');
   const onKey = (e: ReactKeyboardEvent) => {
     if (e.key === 'Enter') { e.preventDefault(); onOpen(); }
     if (e.key === ' ' && !locked) { e.preventDefault(); onToggle(); }
@@ -316,22 +322,23 @@ function VideoCard({ file, selected, anySelected, active, isFavourite, unlockTok
       style={{ background: `linear-gradient(135deg, ${colorFor(file.name)}55, #0a0a0a)` }}
       onClick={(e) => { e.stopPropagation(); if (e.ctrlKey || e.metaKey || (anySelected && !locked)) onToggle(); else onOpen(); }}
       onKeyDown={onKey} onContextMenu={onContextMenu}>
+      {!locked && <VideoPoster file={file} unlockToken={unlockToken} />}
       <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center justify-center size-10 rounded-full bg-black/45 backdrop-blur-sm" data-testid={locked ? 'lock' : 'play'}>
-        {locked ? <Lock className="size-4" /> : <Play className="size-4 fill-white ml-0.5" />}
+        {locked ? <Lock className="size-4" /> : <Play className="size-4 fill-white ms-0.5" />}
       </span>
-      <span className="absolute top-2 right-2 z-10 px-2 py-0.5 rounded-full bg-black/45 backdrop-blur-sm text-[10px] font-mono font-semibold uppercase tracking-wider">{ext}</span>
+      <span className="absolute top-2 inset-e-2 z-10 px-2 py-0.5 rounded-full bg-black/45 backdrop-blur-sm text-[10px] font-mono font-semibold uppercase tracking-wider">{ext}</span>
       {!locked && (
-        <SelectCheckbox checked={selected} onCheckedChange={() => onToggle()} aria-label={`Select ${file.name}`}
-          className={`absolute top-2 left-2 z-20 size-5 rounded-full border-white/70 bg-black/30 backdrop-blur-sm transition-opacity ${selected || anySelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`} />
+        <SelectCheckbox checked={selected} onCheckedChange={() => onToggle()} aria-label={t('common.accessibility.selectName', { name: file.name })}
+          className={`absolute top-2 inset-s-2 z-20 size-5 rounded-full border-white/70 bg-black/30 backdrop-blur-sm transition-opacity ${selected || anySelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`} />
       )}
-      <button type="button" title={isFavourite ? 'Remove from favourites' : 'Add to favourites'} aria-label={isFavourite ? 'Remove from favourites' : 'Add to favourites'}
-        className={`absolute top-2 right-14 z-20 flex items-center justify-center size-6 rounded-full bg-black/35 hover:bg-black/55 backdrop-blur-sm transition-opacity ${isFavourite ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
+      <button type="button" title={isFavourite ? t('common.action.removeFromFavourites') : t('common.label.addToFavourites')} aria-label={isFavourite ? t('common.action.removeFromFavourites') : t('common.label.addToFavourites')}
+        className={`absolute top-2 inset-e-14 z-20 flex items-center justify-center size-6 rounded-full bg-black/35 hover:bg-black/55 backdrop-blur-sm transition-opacity ${isFavourite ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
         onClick={(e) => { e.stopPropagation(); onFavourite(); }}>
         <Star className={`size-3.5 ${isFavourite ? 'text-orange-400 fill-orange-400' : 'text-white'}`} />
       </button>
       <div className="pointer-events-none absolute inset-x-0 bottom-0 px-2.5 pb-2 pt-6 bg-linear-to-t from-black/80 to-transparent">
-        <p className="text-[12px] font-medium leading-tight truncate">{file.name}</p>
-        <p className="text-[10px] opacity-80 tabular-nums">{humanSize(file.size_bytes)} · {formatItemDate(file.taken_at, { wallClock: takenIsWallClockOf(file, 'videos') })}</p>
+        <p className="text-[12px] font-medium leading-tight truncate" dir="auto">{file.name}</p>
+        <p className="text-[10px] opacity-80 tabular-nums"><bdi>{humanSize(file.size_bytes)}</bdi> · <bdi>{formatItemDate(file.taken_at, { wallClock: takenIsWallClockOf(file, 'videos') })}</bdi></p>
       </div>
     </div>
   );
@@ -343,8 +350,9 @@ function VideoCard({ file, selected, anySelected, active, isFavourite, unlockTok
  * context menu behave exactly as a VideoCard.
  */
 function DocumentTile({ file, selected, anySelected, active, isFavourite, unlockToken, onOpen, onToggle, onFavourite, onContextMenu }: TileProps) {
+  const t = useT();
   const locked = file.lock_mode === 'full_lock' && !unlockToken;
-  const ext = extOf(file.name).toUpperCase() || 'FILE';
+  const ext = extOf(file.name).toUpperCase() || t('common.label.fileBadge');
   const onKey = (e: ReactKeyboardEvent) => {
     if (e.key === 'Enter') { e.preventDefault(); onOpen(); }
     if (e.key === ' ' && !locked) { e.preventDefault(); onToggle(); }
@@ -358,10 +366,10 @@ function DocumentTile({ file, selected, anySelected, active, isFavourite, unlock
         <img src={fileIconSrc(file.name)} alt={ext} className="size-12" />
       </div>
       {!locked && (
-        <SelectCheckbox checked={selected} onCheckedChange={() => onToggle()} aria-label={`Select ${file.name}`}
-          className={`absolute top-2 left-2 z-20 size-5 rounded-full bg-background/80 backdrop-blur-sm transition-opacity data-[state=checked]:bg-primary data-[state=checked]:border-primary ${selected || anySelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`} />
+        <SelectCheckbox checked={selected} onCheckedChange={() => onToggle()} aria-label={t('common.accessibility.selectName', { name: file.name })}
+          className={`absolute top-2 inset-s-2 z-20 size-5 rounded-full bg-background/80 backdrop-blur-sm transition-opacity data-[state=checked]:bg-primary data-[state=checked]:border-primary ${selected || anySelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`} />
       )}
-      <div className="absolute top-2 right-2 z-10 flex items-center gap-1">
+      <div className="absolute top-2 inset-e-2 z-10 flex items-center gap-1">
         {locked && (
           <span className="flex items-center justify-center size-5 rounded bg-background/80 text-muted-foreground" data-testid="lock">
             <Lock className="size-3" />
@@ -369,14 +377,14 @@ function DocumentTile({ file, selected, anySelected, active, isFavourite, unlock
         )}
         <span className="px-1.5 py-0.5 rounded bg-background/80 text-[10px] font-mono font-semibold uppercase">{ext}</span>
       </div>
-      <button type="button" title={isFavourite ? 'Remove from favourites' : 'Add to favourites'} aria-label={isFavourite ? 'Remove from favourites' : 'Add to favourites'}
-        className={`absolute right-2 bottom-11 z-20 flex items-center justify-center size-6 rounded-full bg-background/80 hover:bg-background backdrop-blur-sm transition-opacity ${isFavourite ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
+      <button type="button" title={isFavourite ? t('common.action.removeFromFavourites') : t('common.label.addToFavourites')} aria-label={isFavourite ? t('common.action.removeFromFavourites') : t('common.label.addToFavourites')}
+        className={`absolute inset-e-2 bottom-11 z-20 flex items-center justify-center size-6 rounded-full bg-background/80 hover:bg-background backdrop-blur-sm transition-opacity ${isFavourite ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
         onClick={(e) => { e.stopPropagation(); onFavourite(); }}>
         <Star className={`size-3.5 ${isFavourite ? 'text-orange-400 fill-orange-400' : 'text-muted-foreground'}`} />
       </button>
       <div className="absolute inset-x-0 bottom-0 px-2 py-1.5 bg-background/85 backdrop-blur-sm">
-        <p className="text-xs font-medium truncate">{file.name}</p>
-        <p className="text-[10px] text-muted-foreground tabular-nums">{humanSize(file.size_bytes)} · {formatItemDate(file.taken_at, { wallClock: takenIsWallClockOf(file, 'documents') })}</p>
+        <p className="text-xs font-medium truncate" dir="auto">{file.name}</p>
+        <p className="text-[10px] text-muted-foreground tabular-nums"><bdi>{humanSize(file.size_bytes)}</bdi> · <bdi>{formatItemDate(file.taken_at, { wallClock: takenIsWallClockOf(file, 'documents') })}</bdi></p>
       </div>
     </div>
   );
@@ -389,6 +397,7 @@ function DocumentTile({ file, selected, anySelected, active, isFavourite, unlock
  * only the name cell and the thumbnail are the library's own.
  */
 function LibraryListRow({ file, kind, columns, selected, anySelected, active, isFavourite, unlockToken, onOpen, onToggle, onContextMenu }: RowProps) {
+  const t = useT();
   const locked = file.lock_mode === 'full_lock' && !unlockToken;
   const icon = <img src={fileIconSrc(file.name)} alt="" className="w-7 h-7" />;
   const onKey = (e: ReactKeyboardEvent) => {
@@ -396,12 +405,12 @@ function LibraryListRow({ file, kind, columns, selected, anySelected, active, is
     if (e.key === ' ' && !locked) { e.preventDefault(); onToggle(); }
   };
   return (
-    <div role="button" tabIndex={0} aria-label={file.name} data-testid={`library-row-${file.id}`} data-kind={KIND_COPY[kind].noun}
+    <div role="button" tabIndex={0} aria-label={file.name} data-testid={`library-row-${file.id}`} data-kind={kind.slice(0, -1)}
       className={`flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-muted/50 cursor-pointer group outline-none focus-visible:ring-2 focus-visible:ring-primary ${selected ? 'bg-primary/10' : active ? 'bg-green-50 dark:bg-green-950/20' : ''}`}
       onClick={(e) => { e.stopPropagation(); if (e.ctrlKey || e.metaKey || (anySelected && !locked)) onToggle(); else onOpen(); }}
       onKeyDown={onKey} onContextMenu={onContextMenu}>
       {locked ? <span className="size-4 shrink-0" /> : (
-        <SelectCheckbox checked={selected} onCheckedChange={() => onToggle()} aria-label={`Select ${file.name}`}
+        <SelectCheckbox checked={selected} onCheckedChange={() => onToggle()} aria-label={t('common.accessibility.selectName', { name: file.name })}
           className={`size-4 shrink-0 transition-opacity ${selected || anySelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`} />
       )}
       <div className="w-7 h-7 shrink-0">
@@ -419,7 +428,7 @@ function LibraryListRow({ file, kind, columns, selected, anySelected, active, is
       </div>
       {columns.map((col) => col.key === 'name' ? (
         <div key="name" className="flex-1 min-w-40 flex items-center gap-2">
-          <span className="text-sm font-medium truncate">{file.name}</span>
+          <span className="text-sm font-medium truncate" dir="auto">{file.name}</span>
           {locked && <Lock className="size-3 text-muted-foreground" />}
           {isFavourite && <Star className="size-3 text-orange-400 fill-orange-400" />}
         </div>

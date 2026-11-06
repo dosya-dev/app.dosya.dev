@@ -1,3 +1,4 @@
+import { DATE_TIME_NUMERIC, formatDateWith } from '@/lib/format-locale';
 import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { api, apiErrorMessage, API_BASE } from '@/api/client';
@@ -14,9 +15,11 @@ import {
 import { timeAgo, avatarColor, initials, activityLink } from '@/lib/helpers';
 // Category, action and label tables are generated from
 // packages/shared/src/activity/catalog.ts - see scripts/gen-activity-catalog.mjs.
+// The web-owned mapper in lib/activity-labels.ts translates them.
 import {
-  ACTIVITY_CATEGORIES as CATEGORIES, CATEGORY_ACTIONS, actionPhrase, parseUA,
-} from '@/lib/activity-catalog.generated';
+  activityPhrase, describeDevice, localizedActionsFor, localizedCategories,
+} from '@/lib/activity-labels';
+import { useT } from '@/lib/i18n';
 import { activityColor } from '@/lib/palette';
 
 // ── Types ─────────────────────────────────────────────────
@@ -58,6 +61,7 @@ interface Pagination { page: number; per_page: number; total: number; total_page
 // ── Page ──────────────────────────────────────────────────
 
 export default function ActivityPage() {
+  const t = useT();
   const wsId = useWorkspace((s: { activeId: string }) => s.activeId);
 
   const [activities, setActivities] = useState<Activity[]>([]);
@@ -76,9 +80,7 @@ export default function ActivityPage() {
   const hasFilters = selCategories.size > 0 || selMembers.size > 0 || selActions.size > 0;
 
   // Available actions based on selected categories
-  const availableActions = selCategories.size > 0
-    ? [...selCategories].flatMap((cat) => CATEGORY_ACTIONS[cat] ?? [])
-    : Object.values(CATEGORY_ACTIONS).flat();
+  const availableActions = localizedActionsFor(selCategories);
 
   const loadActivity = useCallback(async () => {
     if (!wsId) return;
@@ -104,10 +106,10 @@ export default function ActivityPage() {
     } catch (err) {
       // A bare catch here showed "No activity found" over a 403 - an empty
       // state where the server had in fact refused the whole page.
-      setLoadError(apiErrorMessage(err, 'The activity log could not be loaded.'));
+      setLoadError(apiErrorMessage(err, t('activity.error.theActivityLogCouldNotBeLoaded')));
     }
     setLoading(false);
-  }, [wsId, page, selCategories, selActions, selMembers]);
+  }, [wsId, page, selCategories, selActions, selMembers, t]);
 
   useEffect(() => { loadActivity(); }, [loadActivity]);
 
@@ -119,8 +121,11 @@ export default function ActivityPage() {
   };
 
   const sub = pagination
-    ? `${pagination.total} activit${pagination.total === 1 ? 'y' : 'ies'}${hasFilters ? ' (filtered)' : ''}`
-    : loadError ? 'Unavailable' : 'Loading...';
+    ? t('activity.description.paginationtotalActivitPaginationtotalPluralOneYOtherIesHasfiltersSelectTrueFiltered', {
+      paginationTotal: pagination.total,
+      hasFilters: hasFilters ? 'true' : 'false',
+    })
+    : loadError ? t('activity.label.unavailable') : t('common.label.loading');
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
@@ -128,36 +133,36 @@ export default function ActivityPage() {
         <div className="max-w-2xl mx-auto">
           {/* Header */}
           <div className="mb-5">
-            <h1 className="text-xl font-bold">Activity log</h1>
+            <h1 className="text-xl font-bold">{t('activity.heading.activityLog')}</h1>
             <p className="text-sm text-muted-foreground mt-1">{sub}</p>
           </div>
 
           {/* Filters */}
           <div className="flex items-end gap-2.5 flex-wrap mb-4">
             <FilterDropdown
-              label="Category"
-              placeholder="All categories"
-              options={CATEGORIES}
+              label={t('activity.label.category')}
+              placeholder={t('activity.placeholder.allCategories')}
+              options={localizedCategories()}
               selected={selCategories}
               onChange={(v) => { setSelCategories(v); setSelActions(new Set()); setPage(1); }}
             />
             <FilterDropdown
-              label="Member"
-              placeholder="All members"
+              label={t('common.label.member')}
+              placeholder={t('activity.placeholder.allMembers')}
               options={members.map((m) => ({ value: m.id, label: m.name || m.email }))}
               selected={selMembers}
               onChange={(v) => { setSelMembers(v); setPage(1); }}
             />
             <FilterDropdown
-              label="Action"
-              placeholder="All actions"
+              label={t('common.label.action')}
+              placeholder={t('activity.placeholder.allActions')}
               options={availableActions}
               selected={selActions}
               onChange={(v) => { setSelActions(v); setPage(1); }}
             />
             {hasFilters && (
               <button onClick={clearFilters} className="h-9 px-3 rounded-lg bg-muted text-xs font-medium text-muted-foreground hover:bg-muted/80 hover:text-foreground whitespace-nowrap">
-                Clear filters
+                {t('common.action.clearFilters')}
               </button>
             )}
           </div>
@@ -178,14 +183,14 @@ export default function ActivityPage() {
           ) : loadError ? (
             <div className="flex flex-col items-center justify-center py-16 text-center">
               <AlertCircle className="size-8 text-destructive/40 mb-3" />
-              <p className="text-sm font-medium mb-1">Could not load the activity log</p>
-              <p className="text-xs text-muted-foreground max-w-80 mb-3">{loadError}</p>
-              <Button variant="outline" size="sm" className="h-7 text-xs" onClick={loadActivity}>Try again</Button>
+              <p className="text-sm font-medium mb-1">{t('activity.error.couldNotLoadTheActivityLog')}</p>
+              <p dir="auto" className="text-xs text-muted-foreground max-w-80 mb-3">{loadError}</p>
+              <Button variant="outline" size="sm" className="h-7 text-xs" onClick={loadActivity}>{t('common.action.tryAgain')}</Button>
             </div>
           ) : activities.length === 0 ? (
             <div className="text-center py-16">
-              <p className="text-sm font-medium text-muted-foreground">No activity found</p>
-              {hasFilters && <p className="text-xs text-muted-foreground mt-1">Try adjusting your filters</p>}
+              <p className="text-sm font-medium text-muted-foreground">{t('activity.label.noActivityFound')}</p>
+              {hasFilters && <p className="text-xs text-muted-foreground mt-1">{t('activity.label.tryAdjustingYourFilters')}</p>}
             </div>
           ) : (
             <div className="space-y-0 animate-content-in">
@@ -199,13 +204,13 @@ export default function ActivityPage() {
           {pagination && pagination.total_pages > 1 && (
             <div className="flex items-center justify-center gap-2 mt-6 pb-4">
               <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(page - 1)}>
-                <ChevronLeft className="size-4" />
+                <ChevronLeft className="size-4 rtl:-scale-x-100" />
               </Button>
               <span className="text-xs text-muted-foreground">
-                Page {page} of {pagination.total_pages}
+                {t('common.label.pagePageOfPaginationtotalPages', { page, pageCount: pagination.total_pages })}
               </span>
               <Button variant="outline" size="sm" disabled={page >= pagination.total_pages} onClick={() => setPage(page + 1)}>
-                <ChevronRight className="size-4" />
+                <ChevronRight className="size-4 rtl:-scale-x-100" />
               </Button>
             </div>
           )}
@@ -218,16 +223,17 @@ export default function ActivityPage() {
 // ── Activity row ──────────────────────────────────────────
 
 function ActivityRow({ activity: a }: { activity: Activity }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const [avatarFailed, setAvatarFailed] = useState(false);
-  const label = actionPhrase(a.action);
+  const label = activityPhrase(a.action);
   const color = activityColor(a.action);
   // `meta` is the parsed, possibly server-gated metadata (Task 3); fall back
   // to the legacy `metadata` field for rows/responses that predate it.
   const meta = a.meta ?? a.metadata;
   const bgColor = avatarColor(a.user_id ?? '');
   const failed = a.outcome === 'failure' || a.outcome === 'denied';
-  const device = parseUA(a.user_agent);
+  const device = describeDevice(a.user_agent);
   const geo = a.meta?.geo;
   const link = activityLink(a.entity_type, a.entity_id, a.action);
 
@@ -235,7 +241,7 @@ function ActivityRow({ activity: a }: { activity: Activity }) {
     <div className="border-b last:border-b-0">
       {/* div, not button: the resource name inside is a Link and interactive
           elements can't nest. Clicking the row toggles the detail. */}
-      <div role="button" tabIndex={0} onClick={() => setOpen((v) => !v)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpen((v) => !v); } }} className="w-full text-left flex items-start gap-3 py-3 cursor-pointer">
+      <div role="button" tabIndex={0} onClick={() => setOpen((v) => !v)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpen((v) => !v); } }} className="w-full text-start flex items-start gap-3 py-3 cursor-pointer">
         {/* Avatar */}
         <div
           className="size-8 rounded-full shrink-0 flex items-center justify-center text-[10px] font-bold text-white mt-0.5"
@@ -253,22 +259,22 @@ function ActivityRow({ activity: a }: { activity: Activity }) {
               onError={() => setAvatarFailed(true)}
             />
           ) : (
-            initials(a.user_name ?? 'Unknown')
+            initials(a.user_name ?? t('common.label.unknown'))
           )}
         </div>
 
         {/* Content */}
         <div className="flex-1 min-w-0">
           <p className="text-sm leading-snug">
-            <span className="font-semibold">{a.user_name ?? 'Unknown'}</span>{' '}
+            <span className="font-semibold"><bdi>{a.user_name ?? t('common.label.unknown')}</bdi></span>{' '}
             <span className="text-muted-foreground">{label}</span>
             {(a.resource_name || meta?.name) && (
               <>
                 {' '}
                 {link ? (
-                  <Link to={link} onClick={(e) => e.stopPropagation()} className="font-semibold hover:underline">{a.resource_name ?? meta?.name}</Link>
+                  <Link to={link} onClick={(e) => e.stopPropagation()} className="font-semibold hover:underline"><bdi>{a.resource_name ?? meta?.name}</bdi></Link>
                 ) : (
-                  <span className="font-semibold">{a.resource_name ?? meta?.name}</span>
+                  <span className="font-semibold"><bdi>{a.resource_name ?? meta?.name}</bdi></span>
                 )}
               </>
             )}
@@ -285,7 +291,7 @@ function ActivityRow({ activity: a }: { activity: Activity }) {
             )}
             {a.on_behalf_of && (
               <Badge variant="outline" className="text-[9px] h-4">
-                on behalf of {a.obo_name ?? a.on_behalf_of}
+                {t('activity.status.onBehalfOfAoboNamea', { aObo_nameA: a.obo_name ?? a.on_behalf_of })}
               </Badge>
             )}
             {a.source && a.source !== 'web' && (
@@ -293,17 +299,17 @@ function ActivityRow({ activity: a }: { activity: Activity }) {
             )}
             {meta?.old_name && meta?.new_name && (
               <Badge variant="outline" className="text-[9px] h-4 gap-1">
-                {meta.old_name} → {meta.new_name}
+                <span><bdi>{meta.old_name}</bdi> → <bdi>{meta.new_name}</bdi></span>
               </Badge>
             )}
             {meta?.email && (
-              <Badge variant="outline" className="text-[9px] h-4">{meta.email}</Badge>
+              <Badge variant="outline" className="text-[9px] h-4"><bdi dir="ltr">{meta.email}</bdi></Badge>
             )}
             {meta?.file_count && meta.file_count > 1 && (
-              <Badge variant="outline" className="text-[9px] h-4">{meta.file_count} files</Badge>
+              <Badge variant="outline" className="text-[9px] h-4">{t('activity.status.metafileCountFiles', { fileCount: meta.file_count })}</Badge>
             )}
             {meta?.via && (
-              <Badge variant="outline" className="text-[9px] h-4">via {meta.via}</Badge>
+              <Badge variant="outline" className="text-[9px] h-4">{t('activity.status.viaMetavia', { via: meta.via })}</Badge>
             )}
           </div>
         </div>
@@ -313,37 +319,37 @@ function ActivityRow({ activity: a }: { activity: Activity }) {
       </div>
 
       {open && (
-        <dl className="pl-11 pb-3 grid grid-cols-[80px_1fr] gap-x-3 gap-y-1 text-[11px]">
-          <dt className="text-muted-foreground">When</dt>
-          <dd>{new Date(a.created_at * 1000).toLocaleString()} · {timeAgo(a.created_at)}</dd>
+        <dl className="ps-11 pb-3 grid grid-cols-[80px_1fr] gap-x-3 gap-y-1 text-[11px]">
+          <dt className="text-muted-foreground">{t('common.label.when')}</dt>
+          <dd>{formatDateWith(a.created_at, DATE_TIME_NUMERIC)} · {timeAgo(a.created_at)}</dd>
 
           {a.source_ip && (
             <>
-              <dt className="text-muted-foreground">Where</dt>
+              <dt className="text-muted-foreground">{t('common.label.where')}</dt>
               <dd>{a.source_ip}{geo?.country ? ` · ${geo.city ? `${geo.city}, ` : ''}${geo.country}` : ''}</dd>
             </>
           )}
           {a.user_agent && (
             <>
-              <dt className="text-muted-foreground">Device</dt>
+              <dt className="text-muted-foreground">{t('common.label.device')}</dt>
               <dd title={a.user_agent}>{device.browser}{device.os ? ` · ${device.os}` : ''}</dd>
             </>
           )}
           {a.source && (
             <>
-              <dt className="text-muted-foreground">Source</dt>
+              <dt className="text-muted-foreground">{t('common.label.source')}</dt>
               <dd>{a.source}</dd>
             </>
           )}
           {a.outcome && (
             <>
-              <dt className="text-muted-foreground">Outcome</dt>
+              <dt className="text-muted-foreground">{t('common.label.outcome')}</dt>
               <dd>{a.outcome}{meta?.reason ? ` (${meta.reason})` : ''}</dd>
             </>
           )}
           {(a.resource_name || a.entity_type) && (
             <>
-              <dt className="text-muted-foreground">Resource</dt>
+              <dt className="text-muted-foreground">{t('common.label.resource')}</dt>
               <dd>
                 {link ? (
                   <Link to={link} className="hover:underline">{a.resource_name ?? `${a.entity_type} ${a.entity_id ?? ''}`}</Link>
@@ -355,7 +361,7 @@ function ActivityRow({ activity: a }: { activity: Activity }) {
           )}
           {a.session_id && (
             <>
-              <dt className="text-muted-foreground">Session</dt>
+              <dt className="text-muted-foreground">{t('activity.label.session')}</dt>
               <dd className="truncate">{a.session_id}</dd>
             </>
           )}
@@ -374,6 +380,7 @@ function FilterDropdown({ label, placeholder, options, selected, onChange }: {
   selected: Set<string>;
   onChange: (next: Set<string>) => void;
 }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
 
   const toggle = (value: string) => {
@@ -385,8 +392,8 @@ function FilterDropdown({ label, placeholder, options, selected, onChange }: {
   const displayText = selected.size === 0
     ? placeholder
     : selected.size === 1
-      ? options.find((o) => o.value === [...selected][0])?.label ?? '1 selected'
-      : `${selected.size} selected`;
+      ? options.find((o) => o.value === [...selected][0])?.label ?? t('activity.label.1Selected')
+      : t('common.label.totalselectedSelected', { totalSelected: selected.size });
 
   return (
     <div>
@@ -395,12 +402,12 @@ function FilterDropdown({ label, placeholder, options, selected, onChange }: {
         <DropdownMenuTrigger
           className={`h-9 min-w-36 max-w-52 px-3 border rounded-lg text-xs flex items-center gap-2 hover:bg-muted/50 ${open ? 'bg-muted' : 'bg-background'} ${selected.size > 0 ? 'text-foreground font-medium' : 'text-muted-foreground'}`}
         >
-          <span className="truncate flex-1 text-left">{displayText}</span>
+          <span className="truncate flex-1 text-start">{displayText}</span>
           <ChevronDown className={`size-3 shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="min-w-48 max-h-64 overflow-y-auto">
           {options.length === 0 ? (
-            <p className="text-xs text-muted-foreground text-center py-3">No options</p>
+            <p className="text-xs text-muted-foreground text-center py-3">{t('activity.label.noOptions')}</p>
           ) : (
             options.map((opt) => (
               <DropdownMenuCheckboxItem

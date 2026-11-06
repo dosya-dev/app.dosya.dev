@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { localDigits } from '@/lib/format-locale';
 import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist';
 import type { PDFDocumentProxy, RenderTask } from 'pdfjs-dist';
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
@@ -7,6 +8,7 @@ import { PdfToolbar, type PdfZoom, type PdfToolbarSlots } from './pdf-toolbar';
 import { PdfThumbnails } from './pdf-thumbnails';
 import { useRegisterAnchorTarget, useAnchorMarkers, type AnchorTarget } from '@/components/comments/anchor-context';
 import { usePdfFind, type PdfFind } from '@/lib/use-pdf-find';
+import { useT } from '@/lib/i18n';
 
 GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
@@ -32,6 +34,7 @@ interface PdfViewerProps {
 }
 
 export function PdfViewer({ fileName, rawUrl, downloadUrl, toolbarSlots }: PdfViewerProps) {
+  const t = useT();
   const [doc, setDoc] = useState<PDFDocumentProxy | null>(null);
   const [error, setError] = useState(false);
   const [page, setPage] = useState(1);
@@ -225,14 +228,14 @@ export function PdfViewer({ fileName, rawUrl, downloadUrl, toolbarSlots }: PdfVi
           {error ? (
             <div className="h-full flex items-center justify-center p-6">
               <div className="bg-background border rounded-xl p-10 text-center min-w-70">
-                <p className="text-sm font-semibold mb-1">Could not display this PDF</p>
-                <p className="text-sm text-muted-foreground mb-5">The file may be corrupted or use unsupported features.</p>
+                <p className="text-sm font-semibold mb-1">{t('common.error.couldNotDisplayThisPdf')}</p>
+                <p className="text-sm text-muted-foreground mb-5">{t('common.description.theFileMayBeCorruptedOrUseUnsupportedFeatures')}</p>
                 <a
                   href={downloadUrl}
                   download
-                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-foreground text-background text-sm font-semibold hover:opacity-90"
+                  className="whitespace-nowrap inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-foreground text-background text-sm font-semibold hover:opacity-90"
                 >
-                  <Download className="size-4" /> Download
+                  <Download className="size-4" /> {t('common.action.download')}
                 </a>
               </div>
             </div>
@@ -310,6 +313,7 @@ function PdfPageCanvas({ doc, pageNum, scale }: { doc: PDFDocumentProxy; pageNum
 }
 
 function PdfFindBar({ find, onClose, merged }: { find: PdfFind; onClose: () => void; merged: boolean }) {
+  const t = useT();
   const inputRef = useRef<HTMLInputElement>(null);
   useEffect(() => { inputRef.current?.focus(); }, []);
 
@@ -323,30 +327,30 @@ function PdfFindBar({ find, onClose, merged }: { find: PdfFind; onClose: () => v
       role="search"
       // In merged-header mode there is no toolbar row of our own, so the bar
       // hangs directly under the overlay header instead of under the row.
-      className={`absolute ${merged ? 'top-3' : 'top-14'} right-3 z-20 flex items-center gap-1 rounded-md border bg-background/95 shadow-md px-2 py-1`}
+      className={`absolute ${merged ? 'top-3' : 'top-14'} inset-e-3 z-20 flex items-center gap-1 rounded-md border bg-background/95 shadow-md px-2 py-1`}
       onKeyDown={onKeyDown}
     >
       <input
         ref={inputRef}
         value={find.query}
         onChange={(e) => find.setQuery(e.target.value)}
-        placeholder="Find"
+        placeholder={t('common.placeholder.find')}
         className="w-40 bg-transparent text-sm outline-none px-1"
-        aria-label="Find in document"
+        aria-label={t('common.accessibility.findInDocument')}
       />
       <span className="text-[11px] text-muted-foreground tabular-nums min-w-12 text-center">
-        {find.total ? `${find.current + 1}/${find.total}` : (find.query ? 'No results' : '')}
+        {find.total ? `${localDigits(find.current + 1)}/${localDigits(find.total)}` : (find.query ? t('common.label.noResults') : '')}
       </span>
       <button className="size-6 rounded flex items-center justify-center hover:bg-muted disabled:opacity-40"
-        onClick={find.prev} disabled={!find.total} title="Previous (Shift+Enter)">
+        onClick={find.prev} disabled={!find.total} title={t('common.tooltip.previousShiftEnter')}>
         <ChevronUp className="size-3.5" />
       </button>
       <button className="size-6 rounded flex items-center justify-center hover:bg-muted disabled:opacity-40"
-        onClick={find.next} disabled={!find.total} title="Next (Enter)">
+        onClick={find.next} disabled={!find.total} title={t('common.tooltip.nextEnter')}>
         <ChevronDown className="size-3.5" />
       </button>
       <button className="size-6 rounded flex items-center justify-center hover:bg-muted"
-        onClick={onClose} title="Close (Esc)">
+        onClick={onClose} title={t('common.tooltip.closeEsc')}>
         <X className="size-3.5" />
       </button>
     </div>

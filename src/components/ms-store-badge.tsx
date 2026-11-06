@@ -33,6 +33,7 @@
  * needed even though the badge only ever looks like an image.
  */
 import { useEffect, useState } from 'react';
+import { t as translate, useT } from '@/lib/i18n';
 
 const PRODUCT_ID = '9p1q4pm856st';
 const STORE_URL = `https://apps.microsoft.com/store/detail/${PRODUCT_ID}`;
@@ -69,7 +70,7 @@ function loadBadgeScript(): Promise<void> {
     script.type = 'module';
     script.src = SCRIPT_SRC;
     script.addEventListener('load', () => resolve());
-    script.addEventListener('error', () => reject(new Error('ms-store-badge script failed to load')));
+    script.addEventListener('error', () => reject(new Error(translate('common.error.msStoreBadgeScriptFailedToLoad'))));
     document.head.appendChild(script);
   });
 
@@ -82,6 +83,7 @@ function badgeThemeForSurface(): 'light' | 'dark' {
 }
 
 export function MsStoreBadge({ className = '' }: { className?: string }) {
+  const t = useT();
   const [failed, setFailed] = useState(false);
   const [theme, setTheme] = useState<'light' | 'dark'>(() =>
     typeof document === 'undefined' ? 'dark' : badgeThemeForSurface(),
@@ -117,7 +119,7 @@ export function MsStoreBadge({ className = '' }: { className?: string }) {
       >
         <img
           src="/badges/msstore.svg"
-          alt="Get it from Microsoft"
+          alt={t('common.action.getItFromMicrosoft')}
           width={139}
           height={38}
           className="h-[38px] w-auto"

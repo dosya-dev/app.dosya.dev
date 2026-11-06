@@ -1,11 +1,13 @@
 import { ErrorLayout } from '@/components/error-layout';
+import { useT } from '@/lib/i18n';
 
 export default function NotFoundPage() {
+  const t = useT();
   return (
     <ErrorLayout
       code="404"
-      title="Page not found"
-      message="The page you're looking for doesn't exist or may have moved."
+      title={t('common.tooltip.pageNotFound')}
+      message={t('common.description.thePageYouReLookingForDoesnTExistOrMayHaveMoved')}
     />
   );
 }

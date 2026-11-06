@@ -1,0 +1,15 @@
+{
+  /* Same reason as vendor/tsconfig.json: Vite's oxc transform loads a tsconfig
+     for every .ts/.tsx file it compiles, walking up until one configures it.
+     ../tsconfig.json is a solution stub and tsconfig.app.json includes only
+     "src", so without this file the walk for tests/helpers/*.tsx escapes
+     apps/web to the repo-root tsconfig, whose `extends: "astro/tsconfigs/strict"`
+     needs the ROOT node_modules. CI's web job installs only apps/web's deps, so
+     every suite importing tests/helpers/i18n-sweep failed there with
+     "[TSCONFIG_ERROR] ... Tsconfig not found" (no test failed, the files never
+     loaded) while dev machines stayed green.
+
+     src/lib/vendor-tsconfig.test.ts guards the invariant. */
+  "extends": "../tsconfig.app.json",
+  "include": ["**/*"]
+}

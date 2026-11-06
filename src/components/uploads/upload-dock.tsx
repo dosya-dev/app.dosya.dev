@@ -8,12 +8,15 @@ import { ContextMenu } from '@/components/context-menu';
 import { Progress } from '@/components/ui/progress';
 import { humanSize } from '@/lib/helpers';
 import { toast } from '@/lib/toast';
+import { useT } from '@/lib/i18n';
+import type { T } from '@/i18n/translator';
 import {
   ChevronUp, ChevronDown, X, RotateCw, Upload, Check, AlertCircle, Loader2,
   Download, FolderOpen, Trash2,
 } from 'lucide-react';
 
 export default function UploadDock() {
+  const t = useT();
   const navigate = useNavigate();
   const items = useUploads((s) => s.items);
   const clearFinished = useUploads((s) => s.clearFinished);
@@ -39,7 +42,7 @@ export default function UploadDock() {
     resumeIdRef.current = null;
     if (!file || !id) return;
     const res = resumeWithFile(id, file);
-    if (!res.ok) toast.error('Could not resume', res.error ?? 'File mismatch');
+    if (!res.ok) toast.error(t('common.error.couldNotResume'), res.error ?? t('common.error.fileMismatch'));
   };
 
   // Open a completed upload on the Files page, deep-linked by file id (+ folder)
@@ -60,30 +63,30 @@ export default function UploadDock() {
     const sep = { label: '', icon: null, separator: true, onClick: () => {} };
     if (item.status === 'complete') {
       return [
-        { label: 'Download', icon: <Download className="size-3.5" />, onClick: () => { if (item.fileId) window.open(`${API_BASE}/api/files/${item.fileId}/download`, '_blank'); } },
-        { label: 'Open in Files', icon: <FolderOpen className="size-3.5" />, onClick: () => openInFiles(item) },
+        { label: t('common.action.download'), icon: <Download className="size-3.5" />, onClick: () => { if (item.fileId) window.open(`${API_BASE}/api/files/${item.fileId}/download`, '_blank'); } },
+        { label: t('common.action.openInFiles'), icon: <FolderOpen className="size-3.5" />, onClick: () => openInFiles(item) },
         sep,
-        { label: 'Remove from list', icon: <X className="size-3.5" />, onClick: () => removeItem(item.id) },
+        { label: t('common.action.removeFromList'), icon: <X className="size-3.5" />, onClick: () => removeItem(item.id) },
       ];
     }
     if (item.status === 'error') {
       return [
-        { label: 'Retry', icon: <RotateCw className="size-3.5" />, onClick: () => retry(item.id) },
+        { label: t('common.retry'), icon: <RotateCw className="size-3.5" />, onClick: () => retry(item.id) },
         sep,
-        { label: 'Remove', icon: <Trash2 className="size-3.5" />, danger: true, onClick: () => removeItem(item.id) },
+        { label: t('common.remove'), icon: <Trash2 className="size-3.5" />, danger: true, onClick: () => removeItem(item.id) },
       ];
     }
     if (item.status === 'uploading' || item.status === 'queued') {
-      return [{ label: 'Cancel upload', icon: <X className="size-3.5" />, danger: true, onClick: () => cancel(item.id) }];
+      return [{ label: t('common.action.cancelUpload'), icon: <X className="size-3.5" />, danger: true, onClick: () => cancel(item.id) }];
     }
     if (item.status === 'interrupted') {
       return [
-        { label: 'Resume…', icon: <RotateCw className="size-3.5" />, onClick: () => onPickResume(item.id) },
+        { label: t('common.action.resume'), icon: <RotateCw className="size-3.5" />, onClick: () => onPickResume(item.id) },
         sep,
-        { label: 'Remove', icon: <Trash2 className="size-3.5" />, danger: true, onClick: () => removeItem(item.id) },
+        { label: t('common.remove'), icon: <Trash2 className="size-3.5" />, danger: true, onClick: () => removeItem(item.id) },
       ];
     }
-    return [{ label: 'Remove', icon: <Trash2 className="size-3.5" />, danger: true, onClick: () => removeItem(item.id) }]; // canceled
+    return [{ label: t('common.remove'), icon: <Trash2 className="size-3.5" />, danger: true, onClick: () => removeItem(item.id) }]; // canceled
   };
 
   const openCtx = (item: UploadItem, e: React.MouseEvent) => {
@@ -104,19 +107,19 @@ export default function UploadDock() {
 
   const attention = summary.failed + summary.interrupted;
   const headline = summary.anyActive
-    ? `Uploading ${summary.done}/${summary.total} · ${summary.overallPct}%`
+    ? t('common.label.uploadingSummarydoneSummarytotalSummaryoverallpct', { summaryDone: summary.done, summaryTotal: summary.total, summaryOverallPct: summary.overallPct })
     : attention > 0
-      ? `${summary.done}/${summary.total} uploaded · ${attention} need attention`
+      ? t('upload.heading.doneTotalUploadedAttentionNeedAttention', { done: summary.done, total: summary.total, attention })
       : summary.done === summary.total
-        ? `All ${summary.total} uploaded`
-        : `${summary.done}/${summary.total} uploaded`;
+        ? t('common.label.allSummarytotalUploaded', { summaryTotal: summary.total })
+        : t('upload.heading.doneTotalUploaded', { done: summary.done, total: summary.total });
 
   return (
     <>
       <div
         data-closed={closing ? 'true' : undefined}
         onAnimationEnd={(e) => { if (e.target === e.currentTarget && closing) setMounted(false); }}
-        className="fixed bottom-4 right-4 z-50 w-80 max-w-[calc(100vw-2rem)] rounded-xl border bg-card shadow-xl overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-200 data-closed:animate-out data-closed:fade-out-0 data-closed:slide-out-to-bottom-2 motion-reduce:slide-in-from-bottom-0 motion-reduce:data-closed:slide-out-to-bottom-0"
+        className="fixed bottom-4 inset-e-4 z-50 w-80 max-w-[calc(100vw-2rem)] rounded-xl border bg-card shadow-xl overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-200 data-closed:animate-out data-closed:fade-out-0 data-closed:slide-out-to-bottom-2 motion-reduce:slide-in-from-bottom-0 motion-reduce:data-closed:slide-out-to-bottom-0"
       >
         <input ref={fileInputRef} type="file" hidden onChange={onResumeFile} />
 
@@ -125,7 +128,7 @@ export default function UploadDock() {
         <div className="flex items-center gap-2.5 px-3.5 py-2.5">
           <button
             type="button"
-            className="flex items-center gap-2.5 flex-1 min-w-0 text-left hover:opacity-80"
+            className="flex items-center gap-2.5 flex-1 min-w-0 text-start hover:opacity-80"
             onClick={() => setExpanded((v) => !v)}
             aria-expanded={expanded}
           >
@@ -142,7 +145,7 @@ export default function UploadDock() {
               className="text-[11px] font-medium text-foreground hover:underline shrink-0"
               onClick={() => retryAllFailed()}
             >
-              Retry all failed
+              {t('common.tooltip.retryAllFailed')}
             </button>
           )}
           {clearable && (
@@ -151,14 +154,14 @@ export default function UploadDock() {
               className="text-[11px] text-muted-foreground hover:text-foreground shrink-0"
               onClick={() => clearFinished()}
             >
-              Clear
+              {t('common.action.clear')}
             </button>
           )}
           <button
             type="button"
             className="text-muted-foreground hover:text-foreground shrink-0"
             onClick={() => setExpanded((v) => !v)}
-            aria-label={expanded ? 'Collapse upload list' : 'Expand upload list'}
+            aria-label={expanded ? t('common.action.collapseUploadList') : t('common.action.expandUploadList')}
           >
             {expanded ? <ChevronDown className="size-4" /> : <ChevronUp className="size-4" />}
           </button>
@@ -174,11 +177,14 @@ export default function UploadDock() {
             />
             <div className="mt-1 flex items-center justify-between gap-2 text-[10px] text-muted-foreground">
               <span className="truncate">
-                {humanSize(summary.activeUploadedBytes)} of {humanSize(summary.activeTotalBytes)}
-                {' · '}{humanSize(Math.max(0, summary.activeTotalBytes - summary.activeUploadedBytes))} left
+                {t('common.label.summaryactiveuploadedbytesOfSummaryactivetotalbytesFormattedvalueLeft', {
+                  summaryActiveUploadedBytes: humanSize(summary.activeUploadedBytes),
+                  summaryActiveTotalBytes: humanSize(summary.activeTotalBytes),
+                  formattedValue: humanSize(Math.max(0, summary.activeTotalBytes - summary.activeUploadedBytes)),
+                })}
               </span>
               {summary.activeSpeedBps > 0 && (
-                <span className="shrink-0 tabular-nums">{humanSize(summary.activeSpeedBps)}/s</span>
+                <span className="shrink-0 tabular-nums">{t('common.label.bpsS', { bps: humanSize(summary.activeSpeedBps) })}</span>
               )}
             </div>
           </div>
@@ -213,6 +219,7 @@ export default function UploadDock() {
 function DockRow({ item, onResume, onOpen, onContextMenu }: {
   item: UploadItem; onResume: () => void; onOpen: () => void; onContextMenu: (e: React.MouseEvent) => void;
 }) {
+  const t = useT();
   const active = item.status === 'uploading' || item.status === 'queued';
   const remaining = Math.max(0, item.fileSize - item.bytesUploaded);
   const openable = item.status === 'complete' && !!item.fileId;
@@ -226,8 +233,8 @@ function DockRow({ item, onResume, onOpen, onContextMenu }: {
         {openable ? (
           <button
             type="button"
-            className="text-xs font-medium truncate max-w-full hover:underline text-left"
-            title="Open in Files"
+            className="text-xs font-medium truncate max-w-full hover:underline text-start"
+            title={t('common.action.openInFiles')}
             onClick={onOpen}
           >
             {item.fileName}
@@ -243,13 +250,17 @@ function DockRow({ item, onResume, onOpen, onContextMenu }: {
             />
             <div className="flex items-center justify-between gap-2 text-[10px] text-muted-foreground">
               <span className="truncate">
-                {humanSize(item.bytesUploaded)} / {humanSize(item.fileSize)} · {humanSize(remaining)} left
+                {t('common.label.itembytesuploadedItemfilesizeRemainingLeft', {
+                  itemBytesUploaded: humanSize(item.bytesUploaded),
+                  itemFileSize: humanSize(item.fileSize),
+                  remaining: humanSize(remaining),
+                })}
               </span>
               <span className="shrink-0 tabular-nums">
                 {item.status === 'queued'
-                  ? 'Queued'
+                  ? t('common.label.queued')
                   : item.speedBps && item.speedBps > 0
-                    ? `${humanSize(item.speedBps)}/s`
+                    ? t('common.label.bpsS', { bps: humanSize(item.speedBps) })
                     : `${item.progress}%`}
               </span>
             </div>
@@ -258,7 +269,7 @@ function DockRow({ item, onResume, onOpen, onContextMenu }: {
           <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
             <span>{humanSize(item.fileSize)}</span>
             <span>·</span>
-            <span>{statusLabel(item)}</span>
+            <span>{statusLabel(item, t)}</span>
           </div>
         )}
       </div>
@@ -268,9 +279,10 @@ function DockRow({ item, onResume, onOpen, onContextMenu }: {
 }
 
 function RowActions({ item, onResume }: { item: UploadItem; onResume: () => void }) {
+  const t = useT();
   if (item.status === 'uploading' || item.status === 'queued') {
     return (
-      <button className="text-muted-foreground hover:text-destructive" title="Cancel" onClick={() => cancel(item.id)}>
+      <button className="text-muted-foreground hover:text-destructive" title={t('common.cancel')} onClick={() => cancel(item.id)}>
         <X className="size-4" />
       </button>
     );
@@ -281,7 +293,7 @@ function RowActions({ item, onResume }: { item: UploadItem; onResume: () => void
     return (
       <button
         className="text-muted-foreground hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed"
-        title={retryable ? 'Retry' : 'Add the file again to upload it - this tab no longer has its contents.'}
+        title={retryable ? t('common.retry') : t('common.action.addTheFileAgainToUploadItThisTabNo')}
         disabled={!retryable}
         onClick={() => retry(item.id)}
       >
@@ -291,8 +303,8 @@ function RowActions({ item, onResume }: { item: UploadItem; onResume: () => void
   }
   if (item.status === 'interrupted') {
     return (
-      <button className="text-[11px] font-medium text-green-600 hover:underline" title="Re-select the file to resume" onClick={onResume}>
-        Resume
+      <button className="text-[11px] font-medium text-green-600 hover:underline" title={t('common.action.reSelectTheFileToResume')} onClick={onResume}>
+        {t('common.tooltip.resume')}
       </button>
     );
   }
@@ -307,13 +319,13 @@ function StatusIcon({ status }: { status: UploadItem['status'] }) {
   return <Upload className="size-4 text-muted-foreground shrink-0" />; // queued / canceled
 }
 
-function statusLabel(item: UploadItem): string {
+function statusLabel(item: UploadItem, t: T): string {
   switch (item.status) {
-    case 'complete': return 'Done';
-    case 'error': return item.error ?? 'Error';
-    case 'interrupted': return 'Interrupted';
-    case 'canceled': return 'Canceled';
+    case 'complete': return t('common.label.done');
+    case 'error': return item.error ?? t('common.status.error');
+    case 'interrupted': return t('common.label.interrupted');
+    case 'canceled': return t('common.label.canceled');
     case 'uploading': return `${item.progress}%`;
-    default: return 'Queued';
+    default: return t('common.label.queued');
   }
 }

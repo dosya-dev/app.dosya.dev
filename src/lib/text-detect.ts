@@ -1,50 +1,10 @@
 import { extOf } from '@/lib/helpers';
 
-// Extensions that render as text (superset of the old helpers TEXT_EXTS).
-export const TEXT_READABLE_EXTS = new Set<string>([
-  // plain / docs / data
-  'txt', 'log', 'md', 'markdown', 'rst', 'tex', 'csv', 'tsv', 'json', 'jsonc',
-  'xml', 'yaml', 'yml', 'toml', 'ini', 'cfg', 'conf', 'env', 'properties',
-  'diff', 'patch', 'sql', 'graphql', 'proto',
-  // subtitles - they ride alongside the videos they belong to
-  'srt', 'vtt', 'ass', 'ssa',
-  // web
-  'html', 'htm', 'css', 'scss', 'less', 'styl', 'svg',
-  'js', 'mjs', 'cjs', 'jsx', 'ts', 'tsx', 'vue', 'svelte',
-  // general programming
-  'py', 'rb', 'php', 'go', 'rs', 'java', 'kt', 'kts', 'scala', 'swift', 'dart',
-  'c', 'h', 'cpp', 'cc', 'hpp', 'cs', 'lua', 'pl', 'r', 'sh', 'bash', 'zsh',
-  'fish', 'bat', 'ps1', 'gradle', 'dockerfile', 'makefile',
-  // dotfiles / config files (from EXTENSIONLESS_TEXT_NAMES)
-  'gitignore', 'gitattributes', 'editorconfig', 'npmrc', 'dockerignore',
-  'prettierrc', 'babelrc',
-]);
-
-// Base names (lowercased) that are text even with no extension.
-const EXTENSIONLESS_TEXT_NAMES = new Set<string>([
-  'dockerfile', 'makefile', 'readme', 'license', 'licence', 'changelog',
-  'authors', 'notice', 'copying', '.gitignore', '.gitattributes', '.env',
-  '.editorconfig', '.npmrc', '.dockerignore', '.prettierrc', '.babelrc',
-]);
-
-function isTextMime(mime?: string | null): boolean {
-  if (!mime) return false;
-  const m = mime.toLowerCase();
-  if (m.startsWith('text/')) return true;
-  return [
-    'application/json', 'application/xml', 'application/javascript',
-    'application/x-yaml', 'application/x-sh', 'application/toml',
-    'application/x-www-form-urlencoded',
-  ].includes(m);
-}
-
-export function isTextReadable(name: string, mime?: string | null): boolean {
-  const ext = extOf(name);
-  if (ext && TEXT_READABLE_EXTS.has(ext)) return true;
-  if (!ext && EXTENSIONLESS_TEXT_NAMES.has(name.toLowerCase())) return true;
-  if (isTextMime(mime)) return true;
-  return false;
-}
+// The text lists and the text test itself live in
+// packages/shared/src/files/preview-formats.ts (through a generated copy), the
+// same ones the share page uses, so a file that reads as text here also reads
+// as text on its share link.
+export { TEXT_READABLE_EXTS, isTextReadable } from '@/lib/preview-formats.generated';
 
 /** Heuristic: presence of a NUL byte in the sampled prefix means "not text". */
 export function looksBinary(sample: string): boolean {

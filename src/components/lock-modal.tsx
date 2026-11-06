@@ -15,6 +15,7 @@ import {
   canApplyLock, describeLockMode, describeLockStatus, describeLockTarget,
   lockActionLabel, passwordFieldLabel, passwordHint, type LockMode,
 } from '@/lib/lock-mode';
+import { useT, useLocale } from '@/lib/i18n';
 
 export interface LockTarget {
   id: string;
@@ -47,6 +48,8 @@ function asLockMode(value: string | undefined): LockMode {
 }
 
 export function LockModal({ open, target, onClose, onDone }: LockModalProps) {
+  const t = useT();
+  const { locale } = useLocale();
   // The caller nulls `target` on close, which would unmount the body and
   // collapse the dialog to its title for the length of the exit animation.
   // Remember the last target so the closing dialog keeps its content.
@@ -58,7 +61,7 @@ export function LockModal({ open, target, onClose, onDone }: LockModalProps) {
       {/* sm: prefix required - a bare max-w-* loses to DialogContent's own sm:max-w-sm. */}
       <DialogContent className="sm:max-w-[400px]">
         <DialogHeader>
-          <DialogTitle>Lock {shown?.type ?? 'file'}</DialogTitle>
+          <DialogTitle>{t('files.heading.lockShowntypefile', { shownTypeFile: ((shown?.type ?? 'file') === 'folder' ? t('common.label.folder') : t('common.label.fileTitleCase')).toLocaleLowerCase(locale) })}</DialogTitle>
         </DialogHeader>
         {/* Keyed so a different item gets fresh state, not the last one's password. */}
         {shown && <LockModalBody key={shown.id} target={shown} onClose={onClose} onDone={onDone} />}
@@ -77,6 +80,7 @@ export function LockModal({ open, target, onClose, onDone }: LockModalProps) {
  * same things about the same lock_mode.
  */
 export function LockModalBody({ target, onClose, onDone }: { target: LockTarget; onClose: () => void; onDone: () => void }) {
+  const t = useT();
   const seed = asLockMode(target.lock_mode);
   const [loading, setLoading] = useState(true);
   const [current, setCurrent] = useState<LockMode>(seed);
@@ -143,17 +147,17 @@ export function LockModalBody({ target, onClose, onDone }: { target: LockTarget;
       if (selected === 'full_lock') body.password = password;
       const res = await api<{ ok: boolean; error?: string }>(endpoint, { method: 'POST', body: JSON.stringify(body) });
       if (!res.ok) {
-        toast.error("Couldn't update the lock", res.error ?? 'Try again.');
+        toast.error(t('file-security.error.couldnTUpdateTheLock'), res.error ?? t('files.error.tryAgain'));
         return;
       }
-      if (selected === 'none') toast.success('Lock removed', `${target.name} is open to everyone in the workspace.`);
-      else if (selected === 'view_only') toast.success('View only', `${target.name} can be previewed but not downloaded.`);
-      else if (current === 'full_lock') toast.success('Password updated', `${target.name} now needs the new password.`);
-      else toast.success('Locked with a password', `${target.name} now needs a password to open.`);
+      if (selected === 'none') toast.success(t('files.feedback.lockRemoved'), t('files.feedback.targetnameIsOpenToEveryoneInTheWorkspace', { targetName: target.name }));
+      else if (selected === 'view_only') toast.success(t('files.feedback.viewOnly'), t('files.feedback.targetnameCanBePreviewedButNotDownloaded', { targetName: target.name }));
+      else if (current === 'full_lock') toast.success(t('files.feedback.passwordUpdated'), t('files.feedback.targetnameNowNeedsTheNewPassword', { targetName: target.name }));
+      else toast.success(t('files.feedback.lockedWithAPassword'), t('files.feedback.targetnameNowNeedsAPasswordToOpen', { targetName: target.name }));
       onDone();
       onClose();
     } catch (err) {
-      toast.error("Couldn't update the lock", apiErrorMessage(err, "Can't reach the server. Check your connection and try again."));
+      toast.error(t('file-security.error.couldnTUpdateTheLock'), apiErrorMessage(err, t('common.error.canTReachTheServerCheckYourConnectionAnd')));
     } finally {
       setSaving(false);
     }
@@ -198,7 +202,7 @@ export function LockModalBody({ target, onClose, onDone }: { target: LockTarget;
         <RadioGroup
           value={selected}
           onValueChange={(v) => pick(asLockMode(String(v)))}
-          aria-label="Access level"
+          aria-label={t('file-security.accessibility.accessLevel')}
           className="gap-0 rounded-[10px] border border-border overflow-hidden"
         >
           {LOCK_MODE_OPTIONS.map((m) => {
@@ -222,7 +226,7 @@ export function LockModalBody({ target, onClose, onDone }: { target: LockTarget;
                 </label>
 
                 {on && m.value === 'full_lock' && (
-                  <div className="px-3 pb-3 pl-[38px]">
+                  <div className="px-3 pb-3 ps-[38px]">
                     <Label htmlFor={passwordId} className="text-xs mb-1.5">{passwordFieldLabel(current)}</Label>
                     <div className="relative">
                       <Input
@@ -232,27 +236,27 @@ export function LockModalBody({ target, onClose, onDone }: { target: LockTarget;
                         value={password}
                         onChange={(e: React.ChangeEvent<HTMLInputElement>) => { setPassword(e.target.value); setTooShort(false); }}
                         onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => { if (e.key === 'Enter') { e.preventDefault(); submit(); } }}
-                        placeholder={current === 'full_lock' ? 'Type a new password' : 'Choose a password'}
+                        placeholder={current === 'full_lock' ? t('file-security.placeholder.typeANewPassword') : t('file-security.placeholder.chooseAPassword')}
                         autoComplete="new-password"
                         spellCheck={false}
                         aria-invalid={tooShort || undefined}
                         aria-describedby={hintId}
-                        className="h-9 pr-9 text-sm"
+                        className="h-9 pe-9 text-sm"
                         autoFocus
                       />
                       <Button
                         type="button"
                         variant="ghost"
                         size="icon-sm"
-                        className="absolute right-1 top-1 text-muted-foreground"
-                        aria-label={showPassword ? 'Hide password' : 'Show password'}
+                        className="absolute inset-e-1 top-1 text-muted-foreground"
+                        aria-label={showPassword ? t('common.accessibility.hidePassword') : t('common.accessibility.showPassword')}
                         onClick={() => setShowPassword((v) => !v)}
                       >
                         {showPassword ? <EyeOff /> : <Eye />}
                       </Button>
                     </div>
                     <p id={hintId} className={`text-xs mt-1.5 ${tooShort ? 'text-destructive' : 'text-muted-foreground'}`}>
-                      {tooShort ? `Use at least ${MIN_LOCK_PASSWORD_LENGTH} characters.` : passwordHint(current)}
+                      {tooShort ? t('common.description.useAtLeastMinLockPasswordLengthCharacters', { minLockPasswordLength: MIN_LOCK_PASSWORD_LENGTH }) : passwordHint(current)}
                     </p>
                   </div>
                 )}
@@ -263,9 +267,9 @@ export function LockModalBody({ target, onClose, onDone }: { target: LockTarget;
       )}
 
       <div className="flex justify-end gap-2 pt-1">
-        <Button variant="outline" onClick={onClose} disabled={saving}>Cancel</Button>
+        <Button variant="outline" onClick={onClose} disabled={saving}>{t('common.cancel')}</Button>
         <Button onClick={submit} disabled={!enabled}>
-          {saving && <Loader2 className="size-4 animate-spin mr-1.5" />}
+          {saving && <Loader2 className="size-4 animate-spin me-1.5" />}
           {label}
         </Button>
       </div>

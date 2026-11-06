@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Download, ExternalLink, FolderOpen, Loader2, MoreVertical, Unplug } from 'lucide-react';
+import { ExternalLink, FolderOpen, Loader2, MoreVertical, Unplug } from 'lucide-react';
 import { IntegrationLayout } from '@/components/integrations/integration-layout';
 import { Button, buttonVariants } from '@/components/ui/button';
 import {
@@ -14,8 +14,10 @@ import { api, ApiError } from '@/api/client';
 import { humanizeApiError } from '@/api/error-copy';
 import { formatExactDateTime } from '@/lib/date-format';
 import { humanSizeShort, timeAgo } from '@/lib/helpers';
-import { getIntegration, WORDPRESS_ZIP_URL } from '@/lib/integrations';
+import { getIntegration, WORDPRESS_ORG_URL } from '@/lib/integrations';
 import { toast } from '@/lib/toast';
+import { t, useT } from '@/lib/i18n';
+import { richText } from '@/lib/rich-text';
 import { cn } from '@/lib/utils';
 
 const meta = getIntegration('wordpress')!;
@@ -53,10 +55,6 @@ type SiteBackups = WpBackup[] | null;
  * a workspace and press Allow, and the site receives its own wp_site key
  * from that exchange. Telling them to make a key here would leave a spare
  * full-scope key lying around for nothing.
- *
- * The zip link exists only because the plugin is not on WordPress.org yet.
- * When the listing is approved, replace the primary Download with "View on
- * WordPress.org" and WORDPRESS_ZIP_URL can go.
  */
 
 /** Read straight from error-copy (this page's test mocks the client down to api + ApiError). */
@@ -68,57 +66,58 @@ function errorMessage(err: unknown): string {
       if (parsed.error) return humanizeApiError(parsed.error);
     } catch { /* non-JSON body */ }
     if (err.body && !err.body.trimStart().startsWith('<')) return err.body;
-    return `Request failed (${err.status}). Please try again.`;
+    return t('common.error.requestFailedErrstatusPleaseTryAgain', { errStatus: err.status });
   }
-  return 'Could not load your WordPress sites. Please try again.';
+  return t('integrations-wordpress.error.couldNotLoadYourWordpressSitesPleaseTryAgain');
 }
 
 function hostOf(url: string): string {
   try { return new URL(url).host; } catch { return url; }
 }
 
-function plural(n: number, one: string, many: string): string {
-  return n === 1 ? one : many;
-}
-
 function planLine(count: number, caps: WpCaps): string {
   const head = caps.sites_max === null
-    ? `${count} ${plural(count, 'site', 'sites')}`
-    : `${count} of ${caps.sites_max} on your plan`;
-  return `${head} · ${caps.retention_days_max}-day retention · ${caps.immutability_hours_max} h protection`;
+    ? t('connect-wordpress.description.capssitesMaxPluralOneSiteOtherSites', { capsSites_max: count })
+    : t('integrations-wordpress.label.countOfCapssitesMaxOnYourPlan', { count, capsSites_max: caps.sites_max });
+  return t('integrations-wordpress.description.headCapsretentionDaysMaxDayRetentionCapsimmutabilityHoursMaxHProtection', {
+    head,
+    capsRetention_days_max: caps.retention_days_max,
+    capsImmutability_hours_max: caps.immutability_hours_max,
+  });
 }
 
 type Tone = 'green' | 'amber' | 'grey';
 const DOT: Record<Tone, string> = { green: 'bg-green-500', amber: 'bg-amber-500', grey: 'bg-muted-foreground' };
 
 function lastBackupCell(backups: SiteBackups): { main: string; sub: string | null } {
-  if (backups === null) return { main: 'Unknown', sub: null };
+  if (backups === null) return { main: t('integrations-wordpress.status.unknown'), sub: null };
   const b = backups[0];
-  if (!b) return { main: 'None yet', sub: null };
-  if (b.state === 'running') return { main: 'Uploading…', sub: null };
+  if (!b) return { main: t('integrations-wordpress.status.noneYet'), sub: null };
+  if (b.state === 'running') return { main: t('integrations-wordpress.status.uploading'), sub: null };
   const when = timeAgo(b.completed_at ?? b.created_at);
-  if (b.state === 'failed') return { main: 'Failed', sub: when };
+  if (b.state === 'failed') return { main: t('common.status.failed'), sub: when };
   const detail = b.kind === 'full'
-    ? `full, ${humanSizeShort(b.bytes_total)}`
-    : `incremental, ${humanSizeShort(b.bytes_new)} new`;
+    ? t('integrations-wordpress.label.fullBbytesTotal', { bBytes_total: humanSizeShort(b.bytes_total) })
+    : t('integrations-wordpress.label.incrementalBbytesNewNew', { bBytes_new: humanSizeShort(b.bytes_new) });
   return { main: when, sub: detail };
 }
 
 function statusCell(site: WpSite, backups: SiteBackups, now: number): { text: string; tone: Tone } {
-  if (site.status === 'clone_suspected') return { text: 'Copy detected, check the site', tone: 'amber' };
-  if (backups === null) return { text: 'Unknown', tone: 'grey' };
-  if (backups.length === 0) return { text: 'No backup yet', tone: 'grey' };
-  if (backups[0].state === 'failed') return { text: 'Last backup failed', tone: 'amber' };
+  if (site.status === 'clone_suspected') return { text: t('integrations-wordpress.label.copyDetectedCheckTheSite'), tone: 'amber' };
+  if (backups === null) return { text: t('common.label.unknown'), tone: 'grey' };
+  if (backups.length === 0) return { text: t('integrations-wordpress.label.noBackupYet'), tone: 'grey' };
+  if (backups[0].state === 'failed') return { text: t('integrations-wordpress.error.lastBackupFailed'), tone: 'amber' };
   const lock = Math.max(0, ...backups.map((b) => b.locked_until ?? 0));
-  if (lock > now) return { text: `Protected until ${formatExactDateTime(lock)}`, tone: 'green' };
-  return { text: 'Connected', tone: 'green' };
+  if (lock > now) return { text: t('integrations-wordpress.label.protectedUntilLock', { lock: formatExactDateTime(lock) }), tone: 'green' };
+  return { text: t('common.label.connected'), tone: 'green' };
 }
 
-function DownloadButton() {
+function WordPressOrgButton() {
+  const t = useT();
   return (
-    <a href={WORDPRESS_ZIP_URL} download className={cn(buttonVariants(), 'h-9 gap-2 px-4')}>
-      <Download className="size-4" />
-      Download dosya-backup.zip
+    <a href={WORDPRESS_ORG_URL} target="_blank" rel="noopener noreferrer" className={cn(buttonVariants(), 'h-9 gap-2 px-4')}>
+      {t('integrations-wordpress.action.viewOnWordpressOrg')}
+      <ExternalLink className="size-4" />
     </a>
   );
 }
@@ -126,6 +125,7 @@ function DownloadButton() {
 function SiteRow({
   site, backups, now, onDisconnect,
 }: { site: WpSite; backups: SiteBackups | undefined; now: number; onDisconnect: (s: WpSite) => void }) {
+  const t = useT();
   const loaded = backups !== undefined;
   const last = lastBackupCell(backups ?? null);
   const status = statusCell(site, backups ?? null, now);
@@ -141,7 +141,7 @@ function SiteRow({
         {last.sub && <div className="text-xs text-muted-foreground">{last.sub}</div>}
       </td>
       <td className="px-4 py-3 whitespace-nowrap">
-        {loaded && stored ? humanSizeShort(stored.bytes_total) : <span className="text-muted-foreground">{loaded ? (backups === null ? 'Unknown' : 'None') : ''}</span>}
+        {loaded && stored ? humanSizeShort(stored.bytes_total) : <span className="text-muted-foreground">{loaded ? (backups === null ? t('common.label.unknown') : t('common.label.none')) : ''}</span>}
       </td>
       <td className="px-4 py-3">
         <span className="inline-flex items-start gap-1.5">
@@ -156,19 +156,19 @@ function SiteRow({
               to={`/files?folder=${encodeURIComponent(site.root_folder_id)}`}
               className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'gap-1.5')}
             >
-              <FolderOpen /> Open folder
+              <FolderOpen /> {t('sync.action.openFolder')}
             </Link>
           )}
           <DropdownMenu>
             <DropdownMenuTrigger
-              aria-label={`Actions for ${site.name}`}
+              aria-label={t('common.accessibility.actionsForName', { name: site.name })}
               className={cn(buttonVariants({ variant: 'ghost', size: 'icon-sm' }))}
             >
               <MoreVertical className="size-4" />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem onClick={() => onDisconnect(site)}>
-                <Unplug className="size-4" /> Disconnect
+                <Unplug className="size-4" /> {t('common.action.disconnect')}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -187,7 +187,7 @@ function SkeletonRows() {
           <td className="px-4 py-3"><Skeleton className="h-4 w-20" /></td>
           <td className="px-4 py-3"><Skeleton className="h-4 w-14" /></td>
           <td className="px-4 py-3"><Skeleton className="h-4 w-28" /></td>
-          <td className="px-4 py-3"><Skeleton className="ml-auto h-7 w-28" /></td>
+          <td className="px-4 py-3"><Skeleton className="ms-auto h-7 w-28" /></td>
         </tr>
       ))}
     </>
@@ -195,6 +195,7 @@ function SkeletonRows() {
 }
 
 function SitesCard({ onLoaded }: { onLoaded: (hasSites: boolean) => void }) {
+  const t = useT();
   const [sites, setSites] = useState<WpSite[] | null>(null);
   const [caps, setCaps] = useState<WpCaps | null>(null);
   const [backups, setBackups] = useState<Record<string, SiteBackups>>({});
@@ -230,7 +231,7 @@ function SitesCard({ onLoaded }: { onLoaded: (hasSites: boolean) => void }) {
       }
     })();
     return () => { cancelled = true; };
-  }, [onLoaded]);
+  }, [onLoaded, t]);
 
   const confirmDisconnect = useCallback(async () => {
     if (!target || inFlight.current) return;
@@ -242,48 +243,47 @@ function SitesCard({ onLoaded }: { onLoaded: (hasSites: boolean) => void }) {
       setSites((cur) => (cur ? cur.filter((s) => s.id !== site.id) : cur));
       setTotal((t) => Math.max(0, t - 1));
       onLoaded(sites ? sites.length > 1 : true);
-      toast.success('Site disconnected', `${site.name} is no longer connected. Its backups are kept.`);
+      toast.success(t('integrations-wordpress.feedback.siteDisconnected'), t('integrations-wordpress.feedback.sitenameIsNoLongerConnectedItsBackupsAreKept', { siteName: site.name }));
       setTarget(null);
     } catch (e) {
-      toast.error('Disconnect failed', errorMessage(e));
+      toast.error(t('common.error.disconnectFailed'), errorMessage(e));
     } finally {
       inFlight.current = false;
       setDisconnecting(false);
     }
-  }, [target, sites, onLoaded]);
+  }, [target, sites, onLoaded, t]);
 
   const loading = sites === null && error === null;
   const empty = sites !== null && sites.length === 0;
-
   return (
     <section className="mb-6 rounded-xl border bg-card">
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 px-4 py-3">
-        <h2 className="text-sm font-semibold">Your WordPress sites</h2>
+        <h2 className="text-sm font-semibold">{t('integrations-wordpress.heading.yourWordpressSites')}</h2>
         {sites && caps && !empty && <p className="text-xs text-muted-foreground">{planLine(total, caps)}</p>}
       </div>
 
-      {error && <p role="alert" className="border-t px-4 py-3 text-sm text-destructive">{error}</p>}
+      {error && <p dir="auto" role="alert" className="border-t px-4 py-3 text-sm text-destructive">{error}</p>}
 
       {empty && (
         <div className="space-y-3 border-t px-4 py-6 text-center">
-          <p className="text-sm font-medium">No WordPress site connected yet.</p>
-          <div className="flex justify-center"><DownloadButton /></div>
+          <p className="text-sm font-medium">{t('integrations-wordpress.description.noWordpressSiteConnectedYet')}</p>
+          <div className="flex justify-center"><WordPressOrgButton /></div>
           <p className="text-sm text-muted-foreground">
-            Install it on your site, then press Connect to dosya in wp-admin.
+            {t('integrations-wordpress.description.installItOnYourSiteThenPressConnectToDosyaIn')}
           </p>
         </div>
       )}
 
       {!error && !empty && (
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
+          <table className="w-full text-start text-sm">
             <thead className="text-xs text-muted-foreground">
               <tr className="border-t">
-                <th className="px-4 py-2 font-medium">Site</th>
-                <th className="px-4 py-2 font-medium">Last backup</th>
-                <th className="px-4 py-2 font-medium">Stored</th>
-                <th className="px-4 py-2 font-medium">Status</th>
-                <th className="px-4 py-2 text-right font-medium"><span className="sr-only">Actions</span></th>
+                <th className="px-4 py-2 font-medium">{t('integrations-wordpress.label.site')}</th>
+                <th className="px-4 py-2 font-medium">{t('integrations-wordpress.label.lastBackup')}</th>
+                <th className="px-4 py-2 font-medium">{t('integrations-wordpress.label.stored')}</th>
+                <th className="px-4 py-2 font-medium">{t('common.column.status')}</th>
+                <th className="px-4 py-2 text-end font-medium"><span className="sr-only">{t('common.label.actions')}</span></th>
               </tr>
             </thead>
             <tbody>
@@ -298,24 +298,24 @@ function SitesCard({ onLoaded }: { onLoaded: (hasSites: boolean) => void }) {
 
       {!error && !empty && (
         <p className="border-t px-4 py-3 text-xs text-muted-foreground">
-          {sites !== null && sites.length < total && <span className="mb-1 block">Showing {sites.length} of {total} sites.</span>}
-          Backups are ordinary files in WordPress Backups. Restore from wp-admin; this page never deletes a locked backup.
+          {sites !== null && sites.length < total && <span className="mb-1 block">{t('integrations-wordpress.description.showingSitescountOfTotalSites', { sitesCount: sites?.length ?? 0, total })}</span>}
+          {t('integrations-wordpress.description.backupsAreOrdinaryFilesInWordPressBackupsRestore')}
         </p>
       )}
 
       <Dialog open={target !== null} onOpenChange={(o) => { if (!o && !disconnecting) setTarget(null); }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Disconnect {target?.name}?</DialogTitle>
+            <DialogTitle>{t('integrations-wordpress.heading.disconnectTargetname', { targetName: target?.name ?? '' })}</DialogTitle>
             <DialogDescription>
-              Disconnect {target?.name} from dosya? Backups already stored in dosya are kept.
+              {t('integrations-wordpress.description.disconnectTargetnameFromDosyaBackupsAlreadyStoredInDosyaAreKept', { targetName: target?.name ?? '' })}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setTarget(null)} disabled={disconnecting}>Cancel</Button>
+            <Button variant="outline" onClick={() => setTarget(null)} disabled={disconnecting}>{t('common.cancel')}</Button>
             <Button variant="destructive" onClick={confirmDisconnect} disabled={disconnecting}>
               {disconnecting && <Loader2 className="size-4 animate-spin" />}
-              Disconnect
+              {t('common.action.disconnect')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -337,24 +337,25 @@ function RailStep({ n, title, children }: { n: number; title: string; children: 
 }
 
 function AddSiteCard({ title }: { title: string }) {
+  const t = useT();
   return (
     <section className="mb-6 rounded-xl border bg-card p-4">
       <h2 className="mb-4 text-sm font-semibold">{title}</h2>
       <div className="grid gap-5 sm:grid-cols-3">
-        <RailStep n={1} title="Install">
-          <a href={WORDPRESS_ZIP_URL} download className="underline underline-offset-2 hover:text-foreground">
-            Download the zip
-          </a>{' '}
-          and upload it under Plugins › Add New › Upload Plugin. WordPress 6.0 or later, PHP 7.4 or later. Once the
-          plugin is listed on WordPress.org you can search for dosya Backup there instead.
+        <RailStep n={1} title={t('common.tooltip.install')}>
+          {richText(t('integrations-wordpress.description.inWpAdminOpenPluginsAddNewPluginSearchForDosya'), {
+            link1: (
+              <a href={WORDPRESS_ORG_URL} target="_blank" rel="noopener noreferrer" className="underline underline-offset-2 hover:text-foreground">
+                {t('integrations-wordpress.action.onWordpressOrg')}
+              </a>
+            ),
+          })}
         </RailStep>
-        <RailStep n={2} title="Connect">
-          In wp-admin press Connect to dosya; you come back here, pick the workspace and press Allow. The site
-          gets its own key that can only write to its backup folder and can never delete a backup.
+        <RailStep n={2} title={t('common.tooltip.connect')}>
+          {t('integrations-wordpress.description.inWpAdminPressConnectToDosyaYouComeBackHerePick')}
         </RailStep>
-        <RailStep n={3} title="Back up">
-          The first backup is full; after that only what changed is uploaded. Backups land in a WordPress Backups
-          folder in that workspace.
+        <RailStep n={3} title={t('integrations-wordpress.tooltip.backUp')}>
+          {t('integrations-wordpress.description.theFirstBackupIsFullAfterThatOnlyWhatChangedIs')}
         </RailStep>
       </div>
     </section>
@@ -362,24 +363,25 @@ function AddSiteCard({ title }: { title: string }) {
 }
 
 export default function WordPressSetup() {
+  const t = useT();
   // The empty state already carries the download button, so the card is "Add a site" there.
   const [hasSites, setHasSites] = useState(true);
   return (
     <IntegrationLayout icon={meta.icon} iconSrc={meta.iconSrc} title={meta.title} description={meta.description}>
       <SitesCard onLoaded={setHasSites} />
-      <AddSiteCard title={hasSites ? 'Add another site' : 'Add a site'} />
+      <AddSiteCard title={hasSites ? t('integrations-wordpress.tooltip.addAnotherSite') : t('integrations-wordpress.tooltip.addASite')} />
       <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-        <span>Restoring is free at any size.</span>
+        <span>{t('integrations-wordpress.description.restoringIsFreeAtAnySize')}</span>
         <a
           href={meta.docsUrl}
           target="_blank"
           rel="noreferrer"
           className="inline-flex items-center gap-1 underline underline-offset-2 hover:text-foreground"
         >
-          Plugin docs <ExternalLink className="size-3" />
+          {t('integrations-wordpress.action.pluginDocs')} <ExternalLink className="size-3" />
         </a>
         <Link to="/billing" className="underline underline-offset-2 hover:text-foreground">
-          What each plan includes
+          {t('common.action.whatEachPlanIncludes')}
         </Link>
       </p>
     </IntegrationLayout>

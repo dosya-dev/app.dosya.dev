@@ -99,6 +99,18 @@ describe('api() request options', () => {
   });
 });
 
+describe('api() on a 204', () => {
+  it('resolves on a 204 instead of throwing a JSON parse error', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(null, { status: 204 })));
+    await expect(api('/api/e2ee/user-keys', { method: 'DELETE' })).resolves.toBeUndefined();
+  });
+
+  it('still parses a JSON body', async () => {
+    mockFetchOnce(200, JSON.stringify({ ok: true }));
+    await expect(api('/api/x')).resolves.toEqual({ ok: true });
+  });
+});
+
 describe('responseErrorMessage (raw-fetch download handlers)', () => {
   const json = (body: unknown, status = 400) =>
     new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });

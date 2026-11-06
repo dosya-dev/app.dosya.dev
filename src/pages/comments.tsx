@@ -1,3 +1,4 @@
+import { formatDateWith, localDigits } from '@/lib/format-locale';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import { api, API_BASE } from '@/api/client';
@@ -19,7 +20,9 @@ import {
   avatarColor, initials,
 } from '@/lib/helpers';
 import { toast } from '@/lib/toast';
+import { t as tModule, useT } from '@/lib/i18n';
 import { validateCommentBody } from '@/lib/validation-policy.generated';
+import { translateExternal } from '@/lib/external-text';
 
 // ── Types ─────────────────────────────────────────────────
 
@@ -47,16 +50,16 @@ interface FileInfo {
 function formatDateSep(ts: number): string {
   const d = new Date(ts * 1000);
   const today = new Date();
-  if (d.toDateString() === today.toDateString()) return 'Today';
+  if (d.toDateString() === today.toDateString()) return tModule('common.label.today');
   const yesterday = new Date(today);
   yesterday.setDate(yesterday.getDate() - 1);
-  if (d.toDateString() === yesterday.toDateString()) return 'Yesterday';
-  return d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+  if (d.toDateString() === yesterday.toDateString()) return tModule('common.label.yesterday');
+  return formatDateWith(d, { month: 'long', day: 'numeric', year: 'numeric' }, 'en-US');
 }
 
 function formatTime(ts: number): string {
   const d = new Date(ts * 1000);
-  return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+  return formatDateWith(d, { hour: '2-digit', minute: '2-digit' }, 'en-US');
 }
 
 function dayKey(ts: number): string {
@@ -67,11 +70,12 @@ function dayKey(ts: number): string {
 // ── Page ──────────────────────────────────────────────────
 
 export default function CommentsPage() {
+  const t = useT();
   const [searchParams] = useSearchParams();
   const wsId = useWorkspace((s: { activeId: string }) => s.activeId);
 
   const fileId = searchParams.get('file_id');
-  const fileName = searchParams.get('name') || 'File';
+  const fileName = searchParams.get('name') || t('common.label.fileTitleCase');
   const highlightId = searchParams.get('comment');
 
   const [comments, setComments] = useState<Comment[]>([]);
@@ -95,23 +99,26 @@ export default function CommentsPage() {
       .catch(() => {});
   }, []);
 
-  // Load file info
+  // Load file info: the one file, by id. (This used to page the workspace's
+  // root listing, 500 rows, and look for the file in it, which was slow and
+  // never found a file inside a folder.)
   useEffect(() => {
     if (!fileId) return;
-    api<{ ok: boolean; files: FileInfo[] }>(`/api/files?workspace_id=${wsId}&per_page=500`)
-      .then((d) => {
-        const f = d.files?.find((x) => x.id === fileId);
-        if (f) setFileInfo(f);
-      })
+    api<{ ok: boolean; file: FileInfo }>(`/api/files/${encodeURIComponent(fileId)}`)
+      .then((d) => { if (d.file) setFileInfo(d.file); })
       .catch(() => {});
-  }, [fileId, wsId]);
+  }, [fileId]);
 
-  // Load comments
+  // Load comments. The spinner is for the first load only; a refresh after an
+  // edit or delete swaps the list in place instead of blanking it.
+  const loadedOnce = useRef(false);
+  useEffect(() => { loadedOnce.current = false; }, [fileId, wsId]);
   const loadComments = useCallback(async () => {
     if (!fileId || !wsId) return;
-    setLoading(true);
+    if (!loadedOnce.current) setLoading(true);
     try {
       setComments(await listComments(fileId, wsId));
+      loadedOnce.current = true;
     } catch {}
     setLoading(false);
   }, [fileId, wsId]);
@@ -129,12 +136,14 @@ export default function CommentsPage() {
   const handleSubmit = async (body: string, mentionIds: string[]): Promise<boolean> => {
     if (!fileId) return false;
     try {
-      await postComment({ workspaceId: wsId, fileId, body, parentId: replyTo?.id ?? null, mentionIds });
+      // The server returns the stored comment; add it rather than reloading
+      // the whole thread.
+      const posted = await postComment({ workspaceId: wsId, fileId, body, parentId: replyTo?.id ?? null, mentionIds });
+      setComments((list) => [...list, posted]);
       setReplyTo(null);
-      loadComments();
       return true;
     } catch {
-      toast.error('Comment failed', 'Your comment could not be posted.');
+      toast.error(t('comments.error.commentFailed'), t('comments.error.yourCommentCouldNotBePosted'));
       return false;
     }
   };
@@ -142,7 +151,7 @@ export default function CommentsPage() {
   const handleEdit = async (id: string) => {
     if (!editBody.trim()) return;
     const editError = validateCommentBody(editBody);
-    if (editError) { toast.error('Edit failed', editError); return; }
+    if (editError) { toast.error(t('comments.error.editFailed'), translateExternal(editError, 'toast')); return; }
     try {
       await api(`/api/comments/${id}`, {
         method: 'PUT',
@@ -151,7 +160,7 @@ export default function CommentsPage() {
       setEditId(null);
       loadComments();
     } catch {
-      toast.error('Edit failed', 'Your comment could not be updated.');
+      toast.error(t('comments.error.editFailed'), t('comments.error.yourCommentCouldNotBeUpdated'));
     }
   };
 
@@ -160,7 +169,7 @@ export default function CommentsPage() {
       await api(`/api/comments/${id}`, { method: 'DELETE' });
       loadComments();
     } catch {
-      toast.error('Delete failed', 'Your comment could not be deleted.');
+      toast.error(t('common.error.deleteFailed'), t('comments.error.yourCommentCouldNotBeDeleted'));
     }
   };
 
@@ -175,7 +184,7 @@ export default function CommentsPage() {
       <div className="flex items-center justify-between px-4 py-2.5 border-b shrink-0">
         <div className="flex items-center gap-3 min-w-0">
           <Link to="/files" className="size-8 rounded-md flex items-center justify-center hover:bg-muted shrink-0">
-            <ChevronLeft className="size-4 text-muted-foreground" />
+            <ChevronLeft className="size-4 text-muted-foreground rtl:-scale-x-100" />
           </Link>
           <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 overflow-hidden ${isImage(fileName) ? 'bg-muted' : ''}`} style={isImage(fileName) ? undefined : { background: colorFor(fileName) + '20' }}>
             {fileId ? (
@@ -192,13 +201,13 @@ export default function CommentsPage() {
           </div>
           <div className="min-w-0">
             <p className="text-sm font-semibold truncate">{fileName}</p>
-            <p className="text-[11px] text-muted-foreground">File conversation</p>
+            <p className="text-[11px] text-muted-foreground">{t('comments.label.fileConversation')}</p>
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           {comments.length > 0 && (
             <span className="text-[11px] font-semibold bg-primary text-primary-foreground rounded-full px-2 py-0.5">
-              {comments.length}
+              {localDigits(comments.length)}
             </span>
           )}
         </div>
@@ -213,15 +222,15 @@ export default function CommentsPage() {
             {loading ? (
               <div className="flex flex-col items-center justify-center h-full text-muted-foreground gap-2">
                 <Loader2 className="size-5 animate-spin" />
-                <span className="text-xs">Loading messages...</span>
+                <span className="text-xs">{t('comments.description.loadingMessages')}</span>
               </div>
             ) : sorted.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full text-center">
                 <div className="size-12 rounded-full bg-muted flex items-center justify-center mb-3">
                   <MessageSquare className="size-5 text-muted-foreground" />
                 </div>
-                <p className="text-sm font-medium text-muted-foreground mb-1">No messages yet</p>
-                <p className="text-xs text-muted-foreground">Start the conversation on this file.</p>
+                <p className="text-sm font-medium text-muted-foreground mb-1">{t('comments.label.noMessagesYet')}</p>
+                <p className="text-xs text-muted-foreground">{t('comments.description.startTheConversationOnThisFile')}</p>
               </div>
             ) : (
               <ChatMessages
@@ -245,11 +254,15 @@ export default function CommentsPage() {
           {/* Reply bar */}
           {replyTo && (
             <div className="flex items-center gap-2 px-5 py-2 bg-muted/50 border-t text-xs text-muted-foreground">
-              <CornerDownRight className="size-3 shrink-0" />
+              <CornerDownRight className="size-3 shrink-0 rtl:-scale-x-100" />
               <span className="truncate">
-                Replying to <span className="font-semibold text-foreground">{replyTo.user_name}</span>: {replyTo.body.slice(0, 60)}{replyTo.body.length > 60 ? '...' : ''}
+                {t('comments.description.replyingToReplytouserNameBodysliceReplytobodylengthSelectTrueOther', {
+                  replyToUser_name: replyTo.user_name,
+                  bodySlice: replyTo.body.slice(0, 60),
+                  replyToBodyLength: replyTo.body.length > 60 ? 'true' : 'false',
+                })}
               </span>
-              <button onClick={() => setReplyTo(null)} className="ml-auto shrink-0"><X className="size-3" /></button>
+              <button onClick={() => setReplyTo(null)} className="ms-auto shrink-0"><X className="size-3" /></button>
             </div>
           )}
 
@@ -269,7 +282,7 @@ export default function CommentsPage() {
                   <MentionComposer
                     workspaceId={wsId}
                     fileId={fileId}
-                    placeholder="Write a message..."
+                    placeholder={t('comments.placeholder.writeAMessage')}
                     onSubmit={handleSubmit}
                     inputRef={inputRef}
                   />
@@ -280,9 +293,9 @@ export default function CommentsPage() {
         </div>
 
         {/* Right detail panel */}
-        <aside className="w-[280px] shrink-0 border-l overflow-y-auto hidden lg:block">
+        <aside className="w-[280px] shrink-0 border-s overflow-y-auto hidden lg:block">
           <div className="p-4 border-b">
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">File details</p>
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">{t('common.label.fileDetails')}</p>
 
             {/* Preview */}
             <div className={`w-full h-28 rounded-lg flex items-center justify-center overflow-hidden mb-3 ${isImage(fileName) ? 'bg-muted' : ''}`} style={isImage(fileName) ? undefined : { background: colorFor(fileName) + '18' }}>
@@ -301,22 +314,22 @@ export default function CommentsPage() {
 
             <p className="text-sm font-semibold break-all mb-1">{fileName}</p>
             {info && (
-              <p className="text-xs text-muted-foreground">{humanSize(info.size_bytes)} &middot; {info.mime_type} &middot; {timeAgo(info.created_at)}</p>
+              <p className="text-xs text-muted-foreground">{t('comments.label.infosizeBytesMiddotInfomimeTypeMiddotInfocreatedAt', { infoSize_bytes: humanSize(info.size_bytes), infoMime_type: info.mime_type, infoCreated_at: timeAgo(info.created_at) })}</p>
             )}
           </div>
 
           {/* Properties */}
           {info && (
             <div className="p-4 border-b">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Properties</p>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">{t('common.label.properties')}</p>
               <div className="space-y-1.5">
-                <PropRow label="Uploaded by" value={info.uploader_name ?? 'Unknown'} />
-                <PropRow label="Size" value={humanSize(info.size_bytes)} />
-                <PropRow label="Type" value={info.mime_type || '-'} />
-                <PropRow label="Region" value={info.region || '-'} />
-                <PropRow label="Created" value={timeAgo(info.created_at)} />
-                <PropRow label="Modified" value={timeAgo(info.updated_at)} />
-                <PropRow label="Extension" value={info.extension ?? '-'} />
+                <PropRow label={t('common.label.uploadedBy')} value={info.uploader_name ?? t('common.label.unknown')} />
+                <PropRow label={t('common.label.size')} value={humanSize(info.size_bytes)} />
+                <PropRow label={t('common.label.type')} value={info.mime_type || '-'} />
+                <PropRow label={t('common.label.region')} value={info.region || '-'} />
+                <PropRow label={t('common.label.created')} value={timeAgo(info.created_at)} />
+                <PropRow label={t('common.label.modified')} value={timeAgo(info.updated_at)} />
+                <PropRow label={t('common.label.extension')} value={info.extension ?? '-'} />
               </div>
             </div>
           )}
@@ -329,14 +342,14 @@ export default function CommentsPage() {
                 target="_blank"
                 className="flex items-center gap-2 h-10 px-3 rounded-md border text-xs font-medium hover:bg-muted/50 w-full"
               >
-                View file
+                {t('common.action.viewFile')}
               </a>
               <a
                 href={`${API_BASE}/api/files/${fileId}/download`}
                 download
                 className="flex items-center gap-2 h-10 px-3 rounded-md bg-green-500 text-white text-xs font-medium hover:bg-green-600 w-full"
               >
-                Download
+                {t('common.action.download')}
               </a>
             </div>
           )}
@@ -388,6 +401,7 @@ function ChatMessages({ comments, allComments, currentUser, highlightId, editId,
   onEditBodyChange: (body: string) => void;
   onDelete: (id: string) => void;
 }) {
+  const t = useT();
   let lastDay = '';
   let lastUserId = '';
   let lastSide = '';
@@ -448,7 +462,7 @@ function ChatMessages({ comments, allComments, currentUser, highlightId, editId,
               {/* Bubble */}
               <div className={`max-w-[70%] min-w-0 ${isMine ? 'items-end' : 'items-start'}`}>
                 {showName && (
-                  <p className="text-[11px] font-semibold text-muted-foreground mb-0.5 px-1">{displayName}</p>
+                  <p className="text-[11px] font-semibold text-muted-foreground mb-0.5 px-1"><bdi>{displayName}</bdi></p>
                 )}
 
                 {anchorLabel(c) && c.file_id && (
@@ -458,17 +472,17 @@ function ChatMessages({ comments, allComments, currentUser, highlightId, editId,
                 )}
 
                 <div className="relative group/bubble">
-                  {/* Hover actions */}
-                  <div className={`absolute top-0 ${isMine ? 'left-0 -translate-x-full' : 'right-0 translate-x-full'} flex items-center gap-0.5 px-1 opacity-0 group-hover/bubble:opacity-100 transition-opacity`}>
-                    <button className="size-6 rounded flex items-center justify-center hover:bg-muted" onClick={() => onReply(c)} title="Reply">
-                      <CornerDownRight className="size-3 text-muted-foreground" />
+                  {/* Hover actions. rtl-ok: mirrored, rtl: counterpart on the same element */}
+                  <div className={`absolute top-0 ${isMine ? 'inset-s-0 -translate-x-full rtl:translate-x-full' : 'inset-e-0 translate-x-full rtl:-translate-x-full'} flex items-center gap-0.5 px-1 opacity-0 group-hover/bubble:opacity-100 transition-opacity`}>
+                    <button className="size-6 rounded flex items-center justify-center hover:bg-muted" onClick={() => onReply(c)} title={t('common.tooltip.reply')}>
+                      <CornerDownRight className="size-3 text-muted-foreground rtl:-scale-x-100" />
                     </button>
                     {isMine && (
                       <>
-                        <button className="size-6 rounded flex items-center justify-center hover:bg-muted" onClick={() => onStartEdit(c.id, c.body)} title="Edit">
+                        <button className="size-6 rounded flex items-center justify-center hover:bg-muted" onClick={() => onStartEdit(c.id, c.body)} title={t('common.edit')}>
                           <Pencil className="size-3 text-muted-foreground" />
                         </button>
-                        <button className="size-6 rounded flex items-center justify-center hover:bg-muted" onClick={() => onDelete(c.id)} title="Delete">
+                        <button className="size-6 rounded flex items-center justify-center hover:bg-muted" onClick={() => onDelete(c.id)} title={t('common.delete')}>
                           <Trash2 className="size-3 text-destructive" />
                         </button>
                       </>
@@ -477,8 +491,8 @@ function ChatMessages({ comments, allComments, currentUser, highlightId, editId,
 
                   {/* Reply quote */}
                   {parent && (
-                    <div className={`text-[10px] px-2.5 py-1 rounded-t-lg border-l-2 border-primary/40 bg-muted/50 text-muted-foreground ${isMine ? 'rounded-tr-lg' : 'rounded-tl-lg'}`}>
-                      <span className="font-semibold">{parent.user_name}</span>: {parent.body.slice(0, 60)}{parent.body.length > 60 ? '...' : ''}
+                    <div className={`text-[10px] px-2.5 py-1 rounded-t-lg border-s-2 border-primary/40 bg-muted/50 text-muted-foreground`}>
+                      <span className="font-semibold"><bdi>{parent.user_name}</bdi></span>: <bdi dir="auto">{parent.body.slice(0, 60)}{parent.body.length > 60 ? '...' : ''}</bdi>
                     </div>
                   )}
 
@@ -492,15 +506,15 @@ function ChatMessages({ comments, allComments, currentUser, highlightId, editId,
                         autoFocus
                       />
                       <div className="flex gap-1 mt-1">
-                        <button className="text-[10px] font-medium underline" onClick={() => onSaveEdit(c.id)}>Save</button>
-                        <button className="text-[10px] font-medium underline opacity-60" onClick={onCancelEdit}>Cancel</button>
+                        <button className="text-[10px] font-medium underline" onClick={() => onSaveEdit(c.id)}>{t('common.save')}</button>
+                        <button className="text-[10px] font-medium underline opacity-60" onClick={onCancelEdit}>{t('common.cancel')}</button>
                       </div>
                     </div>
                   ) : (
-                    <div className={`px-3 py-2 text-sm whitespace-pre-wrap break-words ${
+                    <div dir="auto" className={`px-3 py-2 text-sm whitespace-pre-wrap break-words ${
                       isMine
-                        ? `bg-primary text-primary-foreground ${isFirstInGroup ? 'rounded-2xl rounded-br-md' : isLastInGroup ? 'rounded-2xl rounded-tr-md' : 'rounded-r-md rounded-l-2xl'}`
-                        : `bg-muted ${isFirstInGroup ? 'rounded-2xl rounded-bl-md' : isLastInGroup ? 'rounded-2xl rounded-tl-md' : 'rounded-l-md rounded-r-2xl'}`
+                        ? `bg-primary text-primary-foreground ${isFirstInGroup ? 'rounded-2xl rounded-ee-md' : isLastInGroup ? 'rounded-2xl rounded-se-md' : 'rounded-e-md rounded-s-2xl'}`
+                        : `bg-muted ${isFirstInGroup ? 'rounded-2xl rounded-es-md' : isLastInGroup ? 'rounded-2xl rounded-ss-md' : 'rounded-s-md rounded-e-2xl'}`
                     } ${parent ? 'rounded-t-none' : ''}`}>
                       <CommentBody body={c.body} mentions={c.mentions ?? []} />
                     </div>
@@ -510,7 +524,7 @@ function ChatMessages({ comments, allComments, currentUser, highlightId, editId,
                 {showMeta && (
                   <div className={`flex items-center gap-1.5 mt-0.5 px-1 ${isMine ? 'justify-end' : ''}`}>
                     <span className="text-[10px] text-muted-foreground">{formatTime(c.created_at)}</span>
-                    {c.is_edited === 1 && <span className="text-[10px] text-muted-foreground italic">edited</span>}
+                    {c.is_edited === 1 && <span className="text-[10px] text-muted-foreground italic">{t('comments.label.edited')}</span>}
                   </div>
                 )}
               </div>
@@ -526,7 +540,7 @@ function PropRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex justify-between items-center">
       <span className="text-xs text-muted-foreground">{label}</span>
-      <span className="text-xs font-medium truncate max-w-32 text-right">{value}</span>
+      <span className="text-xs font-medium truncate max-w-32 text-end">{value}</span>
     </div>
   );
 }

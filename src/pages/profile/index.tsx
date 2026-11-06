@@ -3,9 +3,10 @@ import { Link, NavLink, Navigate, useLocation, useParams } from 'react-router-do
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { req } from '@/api/req';
 import { PrivacySection } from '@/components/account/privacy-section';
+import { useT } from '@/lib/i18n';
 import { useIsMobile } from '@/hooks/use-mobile';
 import {
-  NAV, NAV_GROUPS, DEFAULT_SECTION, isSectionId, sectionPath, ProfileSkeleton,
+  NAV, NAV_GROUPS, GROUP_LABEL_KEYS, DEFAULT_SECTION, isSectionId, sectionPath, ProfileSkeleton,
   type ProfileContext, type SectionId, type UserProfile,
 } from './shared';
 import IdentityPage from './identity';
@@ -40,6 +41,7 @@ export { DeleteAccountSection } from './delete';
 const NOTIFICATION_HASHES: Record<string, SectionId> = { security: 'password', danger: 'delete' };
 
 export default function ProfilePage() {
+  const t = useT();
   const { section } = useParams<{ section?: string }>();
   const location = useLocation();
   const isMobile = useIsMobile();
@@ -75,7 +77,7 @@ export default function ProfilePage() {
     return (
       <div className="p-4 space-y-4">
         <Link to="/profile" className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground">
-          <ChevronLeft className="size-3.5" /> Profile
+          <ChevronLeft className="size-3.5 rtl:-scale-x-100" /> {t('common.action.profile')}
         </Link>
         <SectionBody id={section} ctx={ctx} />
       </div>
@@ -84,23 +86,23 @@ export default function ProfilePage() {
 
   return (
     <div className="flex h-full overflow-hidden">
-      <nav className="w-48 shrink-0 border-r p-4 overflow-y-auto" aria-label="Profile sections">
+      <nav className="w-48 shrink-0 border-e p-4 overflow-y-auto" aria-label={t('profile.accessibility.profileSections')}>
         <RailWho user={user} />
         {NAV_GROUPS.map((group) => (
           <div key={group} className="mb-4">
-            <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">{group}</p>
+            <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">{t(GROUP_LABEL_KEYS[group])}</p>
             {NAV.filter((n) => n.group === group).map((n) => (
               <NavLink
                 key={n.id}
                 to={sectionPath(n.id)}
-                className={({ isActive }) => `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium text-left transition-colors mb-0.5 ${
+                className={({ isActive }) => `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium text-start transition-colors mb-0.5 ${
                   isActive
                     ? n.danger ? 'bg-destructive text-destructive-foreground' : 'bg-accent text-accent-foreground'
                     : n.danger ? 'text-destructive hover:bg-destructive/10' : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
                 }`}
               >
                 <n.icon className="size-3.5" />
-                {n.label}
+                {t(n.labelKey)}
               </NavLink>
             ))}
           </div>
@@ -152,6 +154,7 @@ function RailWho({ user }: { user: UserProfile | null }) {
 // Below the md breakpoint the rail used to be hidden, which left a phone with
 // a ten-section scroll and no way to jump. This is the rail as a page.
 function MobileIndex({ user }: { user: UserProfile | null }) {
+  const t = useT();
   return (
     <div className="p-4 space-y-5">
       {user && (
@@ -167,7 +170,7 @@ function MobileIndex({ user }: { user: UserProfile | null }) {
       )}
       {NAV_GROUPS.map((group) => (
         <div key={group}>
-          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">{group}</p>
+          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">{t(GROUP_LABEL_KEYS[group])}</p>
           <div className="rounded-lg border bg-card divide-y">
             {NAV.filter((n) => n.group === group).map((n) => (
               <Link
@@ -176,8 +179,8 @@ function MobileIndex({ user }: { user: UserProfile | null }) {
                 className={`flex items-center gap-3 px-3 py-3 text-sm font-medium ${n.danger ? 'text-destructive' : ''}`}
               >
                 <n.icon className="size-4 shrink-0" />
-                <span className="flex-1 min-w-0 truncate">{n.label}</span>
-                <ChevronRight className="size-4 text-muted-foreground shrink-0" />
+                <span className="flex-1 min-w-0 truncate">{t(n.labelKey)}</span>
+                <ChevronRight className="size-4 text-muted-foreground shrink-0 rtl:-scale-x-100" />
               </Link>
             ))}
           </div>

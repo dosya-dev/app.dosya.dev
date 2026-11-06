@@ -10,8 +10,11 @@
  * a function that can be read and tested on its own.
  */
 
+import { formatDateWith } from '@/lib/format-locale';
 import { ApiError, apiErrorCode, apiErrorMessage } from '@/api/client';
 import { humanSize } from '@/lib/helpers';
+import { t } from '@/lib/i18n';
+import type { MessageKey } from '@/i18n/keys';
 
 /** Mirrors ExportPartSummary in apps/api/src/lib/account/export/store.ts. */
 export interface ExportPart {
@@ -187,7 +190,17 @@ export function answerState(request: RequestState | null): AnswerState {
 
 // ── Sentences ──────────────────────────────────────────────
 
-const plural = (n: number, one: string, many: string) => `${n.toLocaleString('en-US')} ${n === 1 ? one : many}`;
+// A count with its unit word, as one plural message per unit.
+const UNIT_KEYS = {
+  minute: 'profile.label.minutes',
+  hour: 'profile.label.hours',
+  day: 'profile.label.days',
+  second: 'profile.label.seconds',
+  workspace: 'profile.label.workspaces',
+  archive: 'profile.label.archives',
+} as const;
+const plural = (n: number, unit: keyof typeof UNIT_KEYS) => t(UNIT_KEYS[unit], { count: n });
+const filesLabel = (n: number) => t('file-requests.status.ruploadCountPluralOneFileOtherFiles', { rUpload_count: n });
 
 // UTC, and en-GB, everywhere in this module. The deadline is a legal date and
 // the confirmation email already prints it this way; a page that renders it in
@@ -200,16 +213,15 @@ const utcYear = (seconds: number) => new Date(seconds * 1000).getUTCFullYear();
 
 /** "29 September", or "29 September 2026" once that is no longer this year. */
 function dayLabel(seconds: number, now: number): string {
-  const d = new Date(seconds * 1000);
-  return d.toLocaleDateString('en-GB', utcYear(seconds) === utcYear(now) ? UTC_DAY : UTC_FULL);
+  return formatDateWith(seconds, utcYear(seconds) === utcYear(now) ? UTC_DAY : UTC_FULL, 'en-GB');
 }
 
 /** "less than a minute" / "4 minutes" / "2 hours" / "3 days". */
 function durationLabel(seconds: number): string {
-  if (seconds < 60) return 'less than a minute';
-  if (seconds < 3600) return plural(Math.floor(seconds / 60), 'minute', 'minutes');
-  if (seconds < 86400) return plural(Math.floor(seconds / 3600), 'hour', 'hours');
-  return plural(Math.floor(seconds / 86400), 'day', 'days');
+  if (seconds < 60) return t('profile.label.lessThanAMinute');
+  if (seconds < 3600) return plural(Math.floor(seconds / 60), 'minute');
+  if (seconds < 86400) return plural(Math.floor(seconds / 3600), 'hour');
+  return plural(Math.floor(seconds / 86400), 'day');
 }
 
 /**
@@ -225,23 +237,23 @@ function durationLabel(seconds: number): string {
  * person - or anyone they show the page to - can still read it back.
  */
 export function describeAnswer(request: RequestState, now: number): string {
-  const asked = `Asked ${dayLabel(request.requested_at, now)}`;
+  const asked = t('profile.label.askedRequestrequestedAt', { requestRequested_at: dayLabel(request.requested_at, now) });
   const state = answerState(request);
   if (state === 'answered') {
     const at = request.answered_at ?? request.export?.created_at ?? null;
     return at === null
-      ? `${asked}, answered`
-      : `${asked}, answered in ${durationLabel(at - request.requested_at)}`;
+      ? t('profile.label.askedAnswered', { asked })
+      : t('profile.label.askedAnsweredInDurationlabel', { asked, durationLabel: durationLabel(at - request.requested_at) });
   }
   if (state === 'partial') {
     // Once the export is gone so is the moment it was built, and `answered_at`
     // is never written for a partial. Rather than reach for another timestamp,
     // the sentence simply stops saying how long it took.
     return request.export
-      ? `${asked}, partly answered in ${durationLabel(request.export.created_at - request.requested_at)}`
-      : `${asked}, partly answered`;
+      ? t('profile.label.askedPartlyAnsweredInDurationlabel', { asked, durationLabel: durationLabel(request.export.created_at - request.requested_at) })
+      : t('profile.label.askedPartlyAnswered', { asked });
   }
-  return `${asked}, open for ${durationLabel(Math.max(0, now - request.requested_at))}`;
+  return t('profile.label.askedOpenForDurationlabel', { asked, durationLabel: durationLabel(Math.max(0, now - request.requested_at)) });
 }
 
 /**
@@ -250,12 +262,13 @@ export function describeAnswer(request: RequestState, now: number): string {
  * (objection)") because those introduce the right; this names a request we are
  * already holding.
  */
-const KIND_PHRASE: Record<RequestKind, string> = {
-  access: 'request for a copy of your data',
-  portability: 'request to take your data elsewhere',
-  erasure: 'request to have your data deleted',
-  objection: 'objection',
-  restriction: 'request to pause how we use your data',
+// Keys, not sentences: the phrase is translated when the sentence is built.
+const KIND_PHRASE: Record<RequestKind, MessageKey | null> = {
+  access: 'profile.description.requestForACopyOfYourData',
+  portability: 'profile.label.requestToTakeYourDataElsewhere',
+  erasure: 'profile.label.requestToHaveYourDataDeleted',
+  objection: 'profile.label.objection',
+  restriction: 'profile.description.requestToPauseHowWeUseYourData',
 };
 
 /**
@@ -267,13 +280,17 @@ const KIND_PHRASE: Record<RequestKind, string> = {
  * what we still owe.
  */
 export function describeOtherRequest(other: OtherRequest, now: number): string {
-  return `We have your ${KIND_PHRASE[other.kind] ?? 'request'}, asked ${dayLabel(other.requested_at, now)}. `
-    + `${deadlineLabel(other.due_at)}.`;
+  const key = KIND_PHRASE[other.kind];
+  return t('profile.description.weHaveYourKindPhraseotherkindAskedOtherrequestedAtOtherdueAt', {
+    KIND_PHRASEOtherKind: key ? t(key) : 'request',
+    otherRequested_at: dayLabel(other.requested_at, now),
+    otherDue_at: deadlineLabel(other.due_at),
+  });
 }
 
 /** "29 October 2026" - the statutory date on its own. */
 export function dueDateLabel(dueAt: number): string {
-  return new Date(dueAt * 1000).toLocaleDateString('en-GB', UTC_FULL);
+  return formatDateWith(dueAt, UTC_FULL, 'en-GB');
 }
 
 /**
@@ -284,7 +301,7 @@ export function dueDateLabel(dueAt: number): string {
  * we must answer by a date we already met reads as a threat to do it again.
  */
 export function deadlineLabel(dueAt: number): string {
-  return `We must answer by ${dueDateLabel(dueAt)}`;
+  return t('profile.label.weMustAnswerByDueat', { dueAt: dueDateLabel(dueAt) });
 }
 
 /**
@@ -298,22 +315,29 @@ export function deadlineLabel(dueAt: number): string {
 export function cooldownLabel(retryAt: number | null, now: number): string | null {
   if (retryAt == null || retryAt <= now) return null;
   const secs = retryAt - now;
-  if (secs >= 3600) return `in ${plural(Math.floor(secs / 3600), 'hour', 'hours')}`;
-  if (secs >= 60) return `in ${plural(Math.ceil(secs / 60), 'minute', 'minutes')}`;
-  return `in ${plural(secs, 'second', 'seconds')}`;
+  if (secs >= 3600) return t('profile.label.inPlural', { duration: plural(Math.floor(secs / 3600), 'hour') });
+  if (secs >= 60) return t('profile.label.inPlural', { duration: plural(Math.ceil(secs / 60), 'minute') });
+  return t('profile.label.inSecs', { duration: plural(secs, 'second') });
 }
 
 /** What the archives hold, in one sentence. Never describes the report. */
 export function describeArchives(summary: ExportSummary): string {
-  if (summary.part_count === 0) return 'No file archives: we found no files uploaded by you.';
-  const head = `${plural(summary.file_count, 'file', 'files')} you uploaded, across ${plural(summary.workspace_count, 'workspace', 'workspaces')}`;
-  return `${head} - ${humanSize(summary.total_bytes)} in ${plural(summary.part_count, 'archive', 'archives')}.`;
+  if (summary.part_count === 0) return t('profile.description.noFileArchivesWeFoundNoFilesUploadedByYou');
+  const head = t('profile.label.summaryfileCountYouUploadedAcrossSummaryworkspaceCount', {
+    summaryFile_count: filesLabel(summary.file_count),
+    summaryWorkspace_count: plural(summary.workspace_count, 'workspace'),
+  });
+  return t('profile.description.headSummarytotalBytesInSummarypartCount', {
+    head,
+    summaryTotal_bytes: humanSize(summary.total_bytes),
+    summaryPart_count: plural(summary.part_count, 'archive'),
+  });
 }
 
 export function expiresLabel(expiresAt: number, now: number): string {
   const days = Math.floor((expiresAt - now) / 86400);
-  if (days < 1) return 'in less than a day';
-  return `in ${plural(days, 'day', 'days')}`;
+  if (days < 1) return t('profile.label.inLessThanADay');
+  return t('profile.label.inPlural', { duration: plural(days, 'day') });
 }
 
 // ── Errors ─────────────────────────────────────────────────
@@ -353,21 +377,19 @@ export function errorCopy(err: unknown): ErrorCopy {
 
   if (code === 'build_failed' || code === 'export_failed') {
     return {
-      text: 'We could not finish building your copy. Your request is still open and we still owe you an answer - '
-        + 'try again, or leave it with us and we will.',
+      text: t('profile.error.weCouldNotFinishBuildingYourCopyYourRequestIsStill'),
       retryAt,
     };
   }
   if (code === 'request_closed') {
     return {
-      text: 'That request has already been answered or closed. Ask again to start a new one.',
+      text: t('profile.description.thatRequestHasAlreadyBeenAnsweredOrClosedAskAgainTo'),
       retryAt,
     };
   }
   if (code === 'not_recorded') {
     return {
-      text: 'Your copy was built, but we could not record the answer against your request. Reload this page; '
-        + 'if it is still missing, write to privacy@dosya.dev and we will sort it out.',
+      text: t('profile.error.yourCopyWasBuiltButWeCouldNotRecordTheAnswer'),
       retryAt,
     };
   }
@@ -376,7 +398,7 @@ export function errorCopy(err: unknown): ErrorCopy {
   // sentence from the API, and rewriting those here would put the wording of a
   // legal gate in two places.
   return {
-    text: apiErrorMessage(err, 'Something went wrong. Please try again.'),
+    text: apiErrorMessage(err, t('common.error.somethingWentWrongPleaseTryAgain')),
     retryAt,
   };
 }

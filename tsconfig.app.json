@@ -25,8 +25,18 @@
       "@/*": ["./src/*"],
       "@dosya-dev/e2ee-core": ["./vendor/e2ee-core/index.d.ts"],
       "@dosya-dev/e2ee-client": ["./vendor/e2ee-client/index.d.ts"],
-      "@dosya-dev/audio-player": ["./vendor/audio-player/index.ts"]
+      "@dosya-dev/personas-engine": ["./vendor/personas-engine/index.d.ts"],
+      "@dosya-dev/face-reader": ["./vendor/face-reader/face_reader.d.ts"],
+      "@dosya-dev/onnxruntime-web": ["./vendor/onnxruntime-web/index.d.ts"],
+      "@dosya-dev/audio-player": ["./vendor/audio-player/index.ts"],
+      "@dosya-dev/video-player": ["./vendor/video-player/index.ts"],
+      "@dosya-dev/video-player/react": ["./vendor/video-player/react.tsx"],
+      "@dosya-dev/video-player/skin.css": ["./vendor/video-player/skin.css"]
     }
   },
-  "include": ["src"]
+  // The video player's ambient module for 'video.js/core.es.js' is not imported by
+  // anything, so it has to be listed for tsc -b to see it. (A line comment, not a
+  // block one: src/lib/vendor-tsconfig.test.ts strips comments with a regex that
+  // would pair this block's close with the "@/*" path key above.)
+  "include": ["src", "vendor/video-player/videojs-core.d.ts"]
 }

@@ -9,8 +9,12 @@ import { humanizeApiError } from '@/api/error-copy';
 import { PublicNav } from '@/components/public-nav';
 import { Logo } from '@/components/brand/logo';
 import { rememberPostAuthPath } from '@/lib/post-auth-path';
+import { t as translate, useT } from '@/lib/i18n';
+import type { MessageKey } from '@/i18n/keys';
 
-const BROWSER_NAMES: Record<string, string> = { chrome: 'Chrome', edge: 'Edge', firefox: 'Firefox', safari: 'Safari' };
+const BROWSER_NAMES: Record<string, MessageKey> = {
+  chrome: 'common.label.chrome', edge: 'common.label.edge', firefox: 'common.label.firefox', safari: 'common.label.safari',
+};
 
 /**
  * Mirrors api/client.ts's apiErrorMessage, read straight from error-copy.ts
@@ -26,9 +30,9 @@ function extensionErrorMessage(err: unknown): string {
       if (parsed.error) return humanizeApiError(parsed.error);
     } catch { /* non-JSON body */ }
     if (err.body && !err.body.trimStart().startsWith('<')) return err.body;
-    return `Request failed (${err.status}). Please try again.`;
+    return translate('common.error.requestFailedErrstatusPleaseTryAgain', { errStatus: err.status });
   }
-  return 'Could not connect the extension. Please try again.';
+  return translate('connect-extension.error.couldNotConnectTheExtensionPleaseTryAgain');
 }
 
 /**
@@ -39,6 +43,7 @@ function extensionErrorMessage(err: unknown): string {
  * untouched) and is brought back here by lib/post-auth-path.ts.
  */
 export default function ConnectExtensionPage() {
+  const t = useT();
   const navigate = useNavigate();
   const location = useLocation();
   const [params] = useSearchParams();
@@ -49,7 +54,8 @@ export default function ConnectExtensionPage() {
   const codeChallenge = params.get('code_challenge') ?? '';
   const state = params.get('state') ?? '';
   const redirectUri = params.get('redirect_uri') ?? '';
-  const browser = BROWSER_NAMES[client];
+  const browserKey = BROWSER_NAMES[client];
+  const browser = browserKey ? t(browserKey) : undefined;
   const complete = Boolean(browser && codeChallenge && state && redirectUri);
 
   const allow = async () => {
@@ -64,7 +70,7 @@ export default function ConnectExtensionPage() {
       // extend the one we sent did not come from our request. Navigating to it
       // anyway would make this page an open redirector carrying a live code.
       if (!res.redirect.startsWith(redirectUri + '?')) {
-        setError('The server returned an unexpected callback');
+        setError(t('connect-extension.error.theServerReturnedAnUnexpectedCallback'));
         setBusy(false);
         return;
       }
@@ -89,33 +95,32 @@ export default function ConnectExtensionPage() {
           <CardContent className="space-y-4 p-6">
             {complete ? (
               <>
-                <h1 className="text-xl font-semibold">Connect Save to dosya for {browser}</h1>
+                <h1 className="text-xl font-semibold">{t('connect-extension.heading.connectSaveToDosyaForBrowser', { browser: browser ?? '' })}</h1>
                 <p className="text-sm text-muted-foreground">
-                  The extension will be able to, as you:
+                  {t('connect-extension.description.theExtensionWillBeAbleToAsYou')}
                 </p>
-                <ul className="list-disc space-y-1 pl-5 text-sm">
-                  <li>Save files into your folders</li>
-                  <li>Create folders</li>
-                  <li>Create a share link for a file it saved</li>
+                <ul className="list-disc space-y-1 ps-5 text-sm">
+                  <li>{t('connect-extension.label.saveFilesIntoYourFolders')}</li>
+                  <li>{t('common.label.createFolders')}</li>
+                  <li>{t('connect-extension.description.createAShareLinkForAFileItSaved')}</li>
                 </ul>
                 <p className="text-sm text-muted-foreground">
-                  It cannot delete, rename or move files, change your account, or manage your team or billing.
-                  You can disconnect it any time from Settings, Sessions.
+                  {t('connect-extension.error.itCannotDeleteRenameOrMoveFilesChangeYourAccountOr')}
                 </p>
-                {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+                {error && <p dir="auto" role="alert" className="text-sm text-destructive">{error}</p>}
                 <div className="flex gap-2">
                   <Button onClick={allow} disabled={busy} className="flex-1">
-                    {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                    Allow
+                    {busy ? <Loader2 className="me-2 h-4 w-4 animate-spin" /> : null}
+                    {t('common.action.allow')}
                   </Button>
-                  <Button variant="outline" onClick={() => navigate('/')} disabled={busy}>Cancel</Button>
+                  <Button variant="outline" onClick={() => navigate('/')} disabled={busy}>{t('common.cancel')}</Button>
                 </div>
               </>
             ) : (
               <>
-                <h1 className="text-xl font-semibold">This link is incomplete</h1>
+                <h1 className="text-xl font-semibold">{t('connect-extension.heading.thisLinkIsIncomplete')}</h1>
                 <p className="text-sm text-muted-foreground">
-                  Open the sign-in from the Save to dosya extension's popup, not from a bookmark.
+                  {t('connect-extension.description.openTheSignInFromTheSaveToDosyaExtensionSPopupNot')}
                 </p>
               </>
             )}

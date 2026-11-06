@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import { Loader2, SquarePen } from 'lucide-react';
 import { API_BASE } from '@/api/client';
 import type { FileItem } from '@/lib/file-types';
+import { useT } from '@/lib/i18n';
 
 // Retries a 503 ("conversion in flight") this many times before giving up
 // and showing the fallback - 2 retries plus the initial attempt covers the
@@ -34,6 +35,7 @@ interface OfficePreviewProps {
  * error, hence the "Preparing preview..." state and bounded retry below.
  */
 export function OfficePreview({ file, version, fallback, compact }: OfficePreviewProps) {
+  const t = useT();
   const [status, setStatus] = useState<Status>('loading');
   const [objectUrl, setObjectUrl] = useState<string | null>(null);
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -108,21 +110,21 @@ export function OfficePreview({ file, version, fallback, compact }: OfficePrevie
     return (
       <div className="relative w-full h-full">
         {!compact && (
-          <div className="absolute top-2 right-2 z-10">
+          <div className="absolute top-2 inset-e-2 z-10">
             <a
               href={`/editor/${file.id}`}
               target="_blank"
               rel="noreferrer"
               className="h-7 px-2.5 rounded-md border bg-background/90 backdrop-blur-sm shadow-sm flex items-center gap-1.5 text-xs font-medium hover:bg-muted"
             >
-              <SquarePen className="size-3 text-muted-foreground" /> Open in editor
+              <SquarePen className="size-3 text-muted-foreground" /> {t('common.label.openInEditor')}
             </a>
           </div>
         )}
         <iframe
           src={`${objectUrl}#${hash}`}
           className="w-full h-full border-none rounded-md bg-white"
-          title={`Preview: ${file.name}`}
+          title={t('common.tooltip.previewFileName', { fileName: file.name })}
         />
       </div>
     );
@@ -131,7 +133,7 @@ export function OfficePreview({ file, version, fallback, compact }: OfficePrevie
   return (
     <div className="flex flex-col items-center justify-center gap-3 w-full h-full min-h-40 p-10 text-sm text-muted-foreground">
       <Loader2 className="size-5 animate-spin" />
-      <span>{status === 'preparing' ? 'Preparing preview...' : 'Loading preview...'}</span>
+      <span>{status === 'preparing' ? t('common.description.preparingPreview') : t('common.description.loadingPreview')}</span>
     </div>
   );
 }

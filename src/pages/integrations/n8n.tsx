@@ -19,6 +19,8 @@ import {
   getIntegration, N8N_EXAMPLES_URL, N8N_KEY_NAME, N8N_NODE_PUBLISHED, N8N_PACKAGE_NAME,
 } from '@/lib/integrations';
 import { toast } from '@/lib/toast';
+import { t, useT } from '@/lib/i18n';
+import { richText } from '@/lib/rich-text';
 import { cn } from '@/lib/utils';
 
 const meta = getIntegration('n8n')!;
@@ -61,7 +63,7 @@ function errorMessage(err: unknown, fallback: string): string {
       if (parsed.error) return humanizeApiError(parsed.error);
     } catch { /* non-JSON body */ }
     if (err.body && !err.body.trimStart().startsWith('<')) return err.body;
-    return `Request failed (${err.status}). Please try again.`;
+    return t('common.error.requestFailedErrstatusPleaseTryAgain', { errStatus: err.status });
   }
   return fallback;
 }
@@ -76,30 +78,31 @@ const DOT: Record<Tone, string> = { green: 'bg-green-500', amber: 'bg-amber-500'
 
 /** Whether the node can use this key, worst problem first. */
 export function keyStatus(k: N8nKey, now: number): { text: string; tone: Tone } {
-  if (k.expires_at !== null && k.expires_at <= now) return { text: 'Expired, create a new key', tone: 'amber' };
-  if (k.root_folder_id) return { text: 'Folder-anchored, n8n cannot use it', tone: 'amber' };
-  if (k.scope === 'read') return { text: 'Read only, uploads will fail', tone: 'amber' };
-  if (k.scope !== 'full') return { text: `${k.scope} scope, n8n needs full access`, tone: 'amber' };
-  if (k.last_used_at === null) return { text: 'Ready, not used yet', tone: 'grey' };
-  return { text: 'Connected', tone: 'green' };
+  if (k.expires_at !== null && k.expires_at <= now) return { text: t('integrations-n8n.label.expiredCreateANewKey'), tone: 'amber' };
+  if (k.root_folder_id) return { text: t('integrations-n8n.error.folderAnchoredN8nCannotUseIt'), tone: 'amber' };
+  if (k.scope === 'read') return { text: t('integrations-n8n.label.readOnlyUploadsWillFail'), tone: 'amber' };
+  if (k.scope !== 'full') return { text: t('integrations-n8n.label.kscopeScopeN8nNeedsFullAccess', { kScope: k.scope }), tone: 'amber' };
+  if (k.last_used_at === null) return { text: t('integrations-n8n.label.readyNotUsedYet'), tone: 'grey' };
+  return { text: t('common.label.connected'), tone: 'green' };
 }
 
 function reachOf(k: N8nKey, workspaces: Workspace[]): string {
-  if (!k.workspace_id) return 'Every workspace';
-  return workspaces.find((w) => w.id === k.workspace_id)?.name ?? 'One workspace';
+  if (!k.workspace_id) return t('integrations-n8n.label.everyWorkspace');
+  return workspaces.find((w) => w.id === k.workspace_id)?.name ?? t('integrations-n8n.label.oneWorkspace');
 }
 
 function KeyRow({
   k, workspaces, now, onRevoke,
 }: { k: N8nKey; workspaces: Workspace[]; now: number; onRevoke: (k: N8nKey) => void }) {
+  const t = useT();
   const status = keyStatus(k, now);
   return (
     <tr className="border-t align-top" data-testid="n8n-key-row">
       <td className="px-4 py-3">
         <div className="font-medium">{k.name}</div>
-        <div className="text-xs text-muted-foreground">Created {timeAgo(k.created_at)}</div>
+        <div className="text-xs text-muted-foreground">{t('common.label.createdDate', { date: timeAgo(k.created_at) })}</div>
       </td>
-      <td className="px-4 py-3">{k.last_used_at ? timeAgo(k.last_used_at) : <span className="text-muted-foreground">Never</span>}</td>
+      <td className="px-4 py-3">{k.last_used_at ? timeAgo(k.last_used_at) : <span className="text-muted-foreground">{t('common.label.never')}</span>}</td>
       <td className="px-4 py-3">{reachOf(k, workspaces)}</td>
       <td className="px-4 py-3">
         <span className="inline-flex items-start gap-1.5">
@@ -111,14 +114,14 @@ function KeyRow({
         <div className="flex items-center justify-end">
           <DropdownMenu>
             <DropdownMenuTrigger
-              aria-label={`Actions for ${k.name}`}
+              aria-label={t('common.accessibility.actionsForName', { name: k.name })}
               className={cn(buttonVariants({ variant: 'ghost', size: 'icon-sm' }))}
             >
               <MoreVertical className="size-4" />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem onClick={() => onRevoke(k)}>
-                <Trash2 className="size-4" /> Revoke
+                <Trash2 className="size-4" /> {t('common.action.revoke')}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -137,7 +140,7 @@ function SkeletonRows() {
           <td className="px-4 py-3"><Skeleton className="h-4 w-16" /></td>
           <td className="px-4 py-3"><Skeleton className="h-4 w-24" /></td>
           <td className="px-4 py-3"><Skeleton className="h-4 w-28" /></td>
-          <td className="px-4 py-3"><Skeleton className="ml-auto h-7 w-7" /></td>
+          <td className="px-4 py-3"><Skeleton className="ms-auto h-7 w-7" /></td>
         </tr>
       ))}
     </>
@@ -147,6 +150,7 @@ function SkeletonRows() {
 function CreateKeyDialog({
   open, workspaces, onClose, onCreated,
 }: { open: boolean; workspaces: Workspace[]; onClose: () => void; onCreated: () => void }) {
+  const t = useT();
   const [reach, setReach] = useState(WHOLE_ACCOUNT);
   const [creating, setCreating] = useState(false);
   const [plainKey, setPlainKey] = useState<string | null>(null);
@@ -172,7 +176,7 @@ function CreateKeyDialog({
       setPlainKey(res.key.plain_key);
       onCreated();
     } catch (e) {
-      toast.error('Could not create the key', errorMessage(e, 'Please try again.'));
+      toast.error(t('integrations-n8n.error.couldNotCreateTheKey'), errorMessage(e, t('common.error.pleaseTryAgain')));
     } finally {
       inFlight.current = false;
       setCreating(false);
@@ -187,7 +191,7 @@ function CreateKeyDialog({
   };
 
   const items = [
-    { value: WHOLE_ACCOUNT, label: 'Every workspace' },
+    { value: WHOLE_ACCOUNT, label: t('integrations-n8n.label.everyWorkspace') },
     ...workspaces.map((w) => ({ value: w.id, label: w.name })),
   ];
 
@@ -197,14 +201,13 @@ function CreateKeyDialog({
         {plainKey === null ? (
           <>
             <DialogHeader>
-              <DialogTitle>Create a key for n8n</DialogTitle>
+              <DialogTitle>{t('integrations-n8n.heading.createAKeyForN8n')}</DialogTitle>
               <DialogDescription>
-                A full-access key named n8n, which is what the dosya.dev node needs. Pin it to one
-                workspace to keep your workflows out of the others.
+                {t('integrations-n8n.description.aFullAccessKeyNamedN8nWhichIsWhatTheDosyaDevNode')}
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-1.5">
-              <label className="text-xs font-medium" htmlFor="n8n-reach">Workflows can reach</label>
+              <label className="text-xs font-medium" htmlFor="n8n-reach">{t('integrations-n8n.label.workflowsCanReach')}</label>
               <Select value={reach} onValueChange={(v) => setReach(v as string)} items={items}>
                 <SelectTrigger id="n8n-reach" className="w-full">
                   <SelectValue />
@@ -215,30 +218,32 @@ function CreateKeyDialog({
               </Select>
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={onClose} disabled={creating}>Cancel</Button>
+              <Button variant="outline" onClick={onClose} disabled={creating}>{t('common.cancel')}</Button>
               <Button onClick={create} disabled={creating}>
                 {creating && <Loader2 className="size-4 animate-spin" />}
-                Create key
+                {t('integrations-n8n.action.createKey')}
               </Button>
             </DialogFooter>
           </>
         ) : (
           <>
             <DialogHeader>
-              <DialogTitle>Your n8n key is ready</DialogTitle>
-              <DialogDescription>This is the only time the key is shown. Copy it now.</DialogDescription>
+              <DialogTitle>{t('integrations-n8n.heading.yourN8nKeyIsReady')}</DialogTitle>
+              <DialogDescription>{t('common.description.thisIsTheOnlyTimeTheKeyIsShownCopyIt')}</DialogDescription>
             </DialogHeader>
             <div className="flex items-center gap-2">
-              <code data-testid="n8n-plain-key" className="flex-1 break-all rounded-md bg-muted px-3 py-2 font-mono text-xs">{plainKey}</code>
-              <Button variant="outline" size="sm" onClick={copy} aria-label="Copy key">
-                <CopyCheck copied={copied} className="size-3.5" /> Copy
+              <code dir="ltr" data-testid="n8n-plain-key" className="flex-1 break-all rounded-md bg-muted px-3 py-2 font-mono text-xs">{plainKey}</code>
+              <Button variant="outline" size="sm" onClick={copy} aria-label={t('common.action.copyKey')}>
+                <CopyCheck copied={copied} className="size-3.5" /> {t('common.copy')}
               </Button>
             </div>
             <p className="rounded-lg bg-muted px-3 py-2.5 text-xs leading-relaxed">
-              In n8n, open <b className="font-semibold">Credentials</b>, add a <b className="font-semibold">dosya.dev API</b> credential
-              and paste this key. n8n checks it straight away.
+              {richText(t('integrations-n8n.description.inN8nOpenEmphasis1AddAEmphasis2CredentialAndPasteThis'), {
+                emphasis1: <b className="font-semibold">Credentials</b>,
+                emphasis2: <b className="font-semibold">dosya.dev API</b>,
+              })}
             </p>
-            <DialogFooter><Button onClick={onClose}>Done</Button></DialogFooter>
+            <DialogFooter><Button onClick={onClose}>{t('common.done')}</Button></DialogFooter>
           </>
         )}
       </DialogContent>
@@ -247,6 +252,7 @@ function CreateKeyDialog({
 }
 
 function KeysCard({ onLoaded }: { onLoaded: (hasKeys: boolean) => void }) {
+  const t = useT();
   const [keys, setKeys] = useState<N8nKey[] | null>(null);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -264,10 +270,10 @@ function KeysCard({ onLoaded }: { onLoaded: (hasKeys: boolean) => void }) {
       setError(null);
       onLoaded(mine.length > 0);
     } catch (e) {
-      setError(errorMessage(e, 'Could not load your API keys. Please try again.'));
+      setError(errorMessage(e, t('integrations-n8n.error.couldNotLoadYourApiKeysPleaseTryAgain')));
       onLoaded(false);
     }
-  }, [onLoaded]);
+  }, [onLoaded, t]);
 
   useEffect(() => {
     void load();
@@ -284,16 +290,16 @@ function KeysCard({ onLoaded }: { onLoaded: (hasKeys: boolean) => void }) {
     try {
       await api(`/api/me/api-keys/${encodeURIComponent(key.id)}`, { method: 'DELETE' });
       setKeys((cur) => (cur ? cur.filter((k) => k.id !== key.id) : cur));
-      toast.success('Key revoked', 'Workflows using it will be refused from now on.');
+      toast.success(t('common.feedback.keyRevoked'), t('integrations-n8n.feedback.workflowsUsingItWillBeRefusedFromNowOn'));
       setTarget(null);
       void load();
     } catch (e) {
-      toast.error('Revoke failed', errorMessage(e, 'Please try again.'));
+      toast.error(t('common.error.revokeFailed'), errorMessage(e, t('common.error.pleaseTryAgain')));
     } finally {
       inFlight.current = false;
       setRevoking(false);
     }
-  }, [target, load]);
+  }, [target, load, t]);
 
   const loading = keys === null && error === null;
   const empty = keys !== null && keys.length === 0;
@@ -301,40 +307,40 @@ function KeysCard({ onLoaded }: { onLoaded: (hasKeys: boolean) => void }) {
   return (
     <section className="mb-6 rounded-xl border bg-card">
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3">
-        <h2 className="text-sm font-semibold">Your n8n keys</h2>
+        <h2 className="text-sm font-semibold">{t('integrations-n8n.heading.yourN8nKeys')}</h2>
         {!empty && (
           <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setCreating(true)}>
-            <Plus className="size-4" /> New key
+            <Plus className="size-4" /> {t('integrations-n8n.action.newKey')}
           </Button>
         )}
       </div>
 
-      {error && <p role="alert" className="border-t px-4 py-3 text-sm text-destructive">{error}</p>}
+      {error && <p dir="auto" role="alert" className="border-t px-4 py-3 text-sm text-destructive">{error}</p>}
 
       {empty && (
         <div className="space-y-3 border-t px-4 py-6 text-center">
-          <p className="text-sm font-medium">No n8n key yet.</p>
+          <p className="text-sm font-medium">{t('integrations-n8n.description.noN8nKeyYet')}</p>
           <div className="flex justify-center">
             <Button className="h-9 gap-2 px-4" onClick={() => setCreating(true)}>
-              <KeyRound className="size-4" /> Create a key for n8n
+              <KeyRound className="size-4" /> {t('integrations-n8n.action.createAKeyForN8n')}
             </Button>
           </div>
           <p className="text-sm text-muted-foreground">
-            Paste it into a dosya.dev API credential in n8n. Your dosya password is never needed.
+            {t('integrations-n8n.description.pasteItIntoADosyaDevApiCredentialInN8nYourDosya')}
           </p>
         </div>
       )}
 
       {!error && !empty && (
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
+          <table className="w-full text-start text-sm">
             <thead className="text-xs text-muted-foreground">
               <tr className="border-t">
-                <th className="px-4 py-2 font-medium">Key</th>
-                <th className="px-4 py-2 font-medium">Last used</th>
-                <th className="px-4 py-2 font-medium">Reach</th>
-                <th className="px-4 py-2 font-medium">Status</th>
-                <th className="px-4 py-2 text-right font-medium"><span className="sr-only">Actions</span></th>
+                <th className="px-4 py-2 font-medium">{t('common.label.key')}</th>
+                <th className="px-4 py-2 font-medium">{t('common.label.lastUsed')}</th>
+                <th className="px-4 py-2 font-medium">{t('common.label.reach')}</th>
+                <th className="px-4 py-2 font-medium">{t('common.column.status')}</th>
+                <th className="px-4 py-2 text-end font-medium"><span className="sr-only">{t('common.label.actions')}</span></th>
               </tr>
             </thead>
             <tbody>
@@ -349,8 +355,11 @@ function KeysCard({ onLoaded }: { onLoaded: (hasKeys: boolean) => void }) {
 
       {!error && !empty && (
         <p className="border-t px-4 py-3 text-xs text-muted-foreground">
-          Keys named n8n are listed here. Every key, with its full settings, is in{' '}
-          <Link to="/profile/api" className="underline underline-offset-2 hover:text-foreground">Profile › API keys</Link>.
+          {richText(t('integrations-n8n.description.keysNamedN8nAreListedHereEveryKeyWithItsFull'), {
+            link1: (
+              <Link to="/profile/api" className="underline underline-offset-2 hover:text-foreground">{t('integrations-n8n.action.profileApiKeys')}</Link>
+            ),
+          })}
         </p>
       )}
 
@@ -364,16 +373,16 @@ function KeysCard({ onLoaded }: { onLoaded: (hasKeys: boolean) => void }) {
       <Dialog open={target !== null} onOpenChange={(o) => { if (!o && !revoking) setTarget(null); }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Revoke {target?.name}?</DialogTitle>
+            <DialogTitle>{t('integrations-n8n.heading.revokeTargetname', { name: target?.name ?? '' })}</DialogTitle>
             <DialogDescription>
-              Workflows using this key stop working immediately. Files they already saved are kept.
+              {t('integrations-n8n.description.workflowsUsingThisKeyStopWorkingImmediatelyFilesTheyAlreadySaved')}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setTarget(null)} disabled={revoking}>Cancel</Button>
+            <Button variant="outline" onClick={() => setTarget(null)} disabled={revoking}>{t('common.cancel')}</Button>
             <Button variant="destructive" onClick={confirmRevoke} disabled={revoking}>
               {revoking && <Loader2 className="size-4 animate-spin" />}
-              Revoke
+              {t('common.action.revoke')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -395,42 +404,43 @@ function RailStep({ n, title, children }: { n: number; title: string; children: 
 }
 
 function SetupCard({ title }: { title: string }) {
+  const t = useT();
   return (
     <section className="mb-6 rounded-xl border bg-card p-4">
       <h2 className="mb-4 text-sm font-semibold">{title}</h2>
       <div className="grid gap-5 sm:grid-cols-3">
-        <RailStep n={1} title="Install">
+        <RailStep n={1} title={t('common.tooltip.install')}>
           {N8N_NODE_PUBLISHED ? (
             <>
-              In n8n, open Settings › Community Nodes, choose Install and enter{' '}
-              <code className="text-[11px] text-foreground">{N8N_PACKAGE_NAME}</code>. Self-hosted n8n, or n8n Cloud
-              once the node is verified.
+              {richText(t('integrations-n8n.description.inN8nOpenSettingsCommunityNodesChooseInstallAndEnter'), {
+                emphasis1: <code className="text-[11px] text-foreground">{N8N_PACKAGE_NAME}</code>,
+              })}
             </>
           ) : (
             <>
-              The node is being published as{' '}
-              <code className="text-[11px] text-foreground">{N8N_PACKAGE_NAME}</code>. Once it is out, install it from
-              Settings › Community Nodes in n8n.
+              {richText(t('integrations-n8n.description.theNodeIsBeingPublishedAsEmphasis1OnceItIsOut'), {
+                emphasis1: <code className="text-[11px] text-foreground">{N8N_PACKAGE_NAME}</code>,
+              })}
             </>
           )}
         </RailStep>
-        <RailStep n={2} title="Connect">
-          Create a key above, then in n8n add a dosya.dev API credential and paste it. The node only ever sends the
-          key to dosya.
+        <RailStep n={2} title={t('common.tooltip.connect')}>
+          {t('integrations-n8n.description.createAKeyAboveThenInN8nAddADosyaDevApi')}
         </RailStep>
-        <RailStep n={3} title="Automate">
+        <RailStep n={3} title={t('integrations-n8n.tooltip.automate')}>
           {N8N_NODE_PUBLISHED ? (
             <>
-              Import a{' '}
-              <a href={N8N_EXAMPLES_URL} target="_blank" rel="noreferrer" className="underline underline-offset-2 hover:text-foreground">
-                ready-made workflow
-              </a>{' '}
-              or add a dosya.dev step to your own: upload, download, list, create folders and share links.
+              {richText(t('integrations-n8n.description.importALink1OrAddADosyaDevStepToYourOwn'), {
+                link1: (
+                  <a href={N8N_EXAMPLES_URL} target="_blank" rel="noreferrer" className="underline underline-offset-2 hover:text-foreground">
+                    {t('integrations-n8n.action.readyMadeWorkflow')}
+                  </a>
+                ),
+              })}
             </>
           ) : (
             <>
-              Add a dosya.dev step to a workflow to upload, download and list files, create folders and share links.
-              Ready-made workflows ship with the node.
+              {t('integrations-n8n.description.addADosyaDevStepToAWorkflowToUploadDownloadAnd')}
             </>
           )}
         </RailStep>
@@ -440,23 +450,24 @@ function SetupCard({ title }: { title: string }) {
 }
 
 export default function N8nSetup() {
+  const t = useT();
   const [hasKeys, setHasKeys] = useState(true);
   return (
     <IntegrationLayout icon={meta.icon} iconSrc={meta.iconSrc} title={meta.title} description={meta.description}>
       <KeysCard onLoaded={setHasKeys} />
-      <SetupCard title={hasKeys ? 'Set up another workflow' : 'Set up n8n'} />
+      <SetupCard title={hasKeys ? t('integrations-n8n.tooltip.setUpAnotherWorkflow') : t('integrations-n8n.tooltip.setUpN8n')} />
       <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-        <span>A retried upload never stores a file twice.</span>
+        <span>{t('integrations-n8n.description.aRetriedUploadNeverStoresAFileTwice')}</span>
         <a
           href={meta.docsUrl}
           target="_blank"
           rel="noreferrer"
           className="inline-flex items-center gap-1 underline underline-offset-2 hover:text-foreground"
         >
-          n8n integration page <ExternalLink className="size-3" />
+          {t('integrations-n8n.action.n8nIntegrationPage')} <ExternalLink className="size-3" />
         </a>
         <Link to="/billing" className="underline underline-offset-2 hover:text-foreground">
-          What each plan includes
+          {t('common.action.whatEachPlanIncludes')}
         </Link>
       </p>
     </IntegrationLayout>

@@ -2,16 +2,25 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const cancelAll = vi.fn();
 vi.mock('./upload-runner', () => ({ cancelAll: () => cancelAll() }));
+const teardownPersonas = vi.fn();
+vi.mock('./personas-device/teardown', () => ({ teardownPersonas: () => teardownPersonas() }));
+
+const wipePersonasDevice = vi.fn(async (_u: string | null) => {});
+vi.mock('./personas-device/wipe', () => ({ wipePersonasDevice: (u: string | null) => wipePersonasDevice(u) }));
 
 const { logoutAndRedirect, logoutAndRedirectTo } = await import('./logout');
 const { rememberShareDefault, readShareDefault } = await import('./share-defaults');
 const { useUploads } = await import('@/stores/uploads');
+const { useSession } = await import('@/stores/session');
 
 let hrefs: string[] = [];
 
 beforeEach(() => {
   hrefs = [];
   cancelAll.mockReset();
+  teardownPersonas.mockReset();
+  wipePersonasDevice.mockReset();
+  wipePersonasDevice.mockResolvedValue(undefined);
   vi.stubGlobal('fetch', vi.fn(async () => new Response(null, { status: 200 })));
   // jsdom refuses a real navigation; capture the assignment instead.
   Object.defineProperty(window, 'location', {
@@ -46,7 +55,24 @@ describe('logoutAndRedirect', () => {
     await logoutAndRedirect();
 
     expect(cancelAll).toHaveBeenCalledTimes(1);
+    // On-device Personas: read loops, the reader worker and the listing cache go with the account.
+    expect(teardownPersonas).toHaveBeenCalledTimes(1);
     expect(useUploads.getState().items).toEqual([]);
+    expect(hrefs).toEqual(['/login']);
+  });
+
+  it("removes the signed-out user's personas key before leaving, and a failing wipe does not block sign-out", async () => {
+    useSession.setState({ user: { id: 'u_7' } as never });
+    await logoutAndRedirect();
+    expect(wipePersonasDevice).toHaveBeenCalledWith('u_7');
+    expect(hrefs).toEqual(['/login']);
+
+    hrefs = [];
+    wipePersonasDevice.mockResolvedValue(undefined);
+    useSession.setState({ user: null });
+    await logoutAndRedirect();
+    // Session already cleared by a 401: the last user this tab saw is used.
+    expect(wipePersonasDevice).toHaveBeenLastCalledWith('u_7');
     expect(hrefs).toEqual(['/login']);
   });
 

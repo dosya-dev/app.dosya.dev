@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { localDigits } from '@/lib/format-locale';
 import {
   Bookmark as BookmarkIcon, ChevronLeft, ChevronRight, List, Loader2,
   Minus, Palette, Plus, Search, Trash2, X,
 } from 'lucide-react';
 import { API_BASE } from '@/api/client';
+import { t, useT } from '@/lib/i18n';
 import {
   addBookmark, hasBookmarkAt, loadReadingState, removeBookmark, updateReadingState,
   SAVE_DEBOUNCE_MS, type Bookmark, type ReadingState,
@@ -46,6 +48,7 @@ export function BookViewer({
   file: { id: string; name: string };
   onClose?: () => void;
 }) {
+  const tr = useT();
   const frameRef = useRef<HTMLIFrameElement | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -104,7 +107,7 @@ export function BookViewer({
         setError(null);
       }
       if (msg.type === "error") {
-        setError(String(msg.message ?? "This book could not be opened."));
+        setError(String(msg.message ?? t("common.error.thisBookCouldNotBeOpenedPeriodSentenceCase")));
         setState("error");
       }
       if (msg.type === "externalLink" && typeof msg.href === "string") {
@@ -117,7 +120,7 @@ export function BookViewer({
       if (!win || cancelled) return;
       try {
         const res = await fetch(`${API_BASE}/api/files/${file.id}/raw`, { credentials: "include" });
-        if (!res.ok) throw new Error(`Could not download the book (${res.status})`);
+        if (!res.ok) throw new Error(t("common.error.couldNotDownloadTheBookStatus", { status: res.status }));
         const buf = new Uint8Array(await res.arrayBuffer());
         if (cancelled) return;
 
@@ -136,7 +139,7 @@ export function BookViewer({
         await win.__dosyaOpen();
       } catch (err) {
         if (cancelled) return;
-        setError(err instanceof Error ? err.message : "This book could not be opened.");
+        setError(err instanceof Error ? err.message : t("common.error.thisBookCouldNotBeOpenedPeriodSentenceCase"));
         setState("error");
       }
     }
@@ -238,36 +241,36 @@ export function BookViewer({
   return (
     <div className="flex h-full w-full flex-col" data-testid="book-viewer">
       <div className="flex items-center gap-1.5 border-b px-3 py-2 border-border" >
-        <button data-testid="book-toc-toggle" onClick={() => togglePanel("toc")} disabled={toc.length === 0} title="Contents" className={chrome + active("toc")}>
+        <button data-testid="book-toc-toggle" onClick={() => togglePanel("toc")} disabled={toc.length === 0} title={tr('common.tooltip.contents')} className={chrome + active("toc")}>
           <List size={15} />
         </button>
-        <button data-testid="book-bookmarks-toggle" onClick={() => togglePanel("bookmarks")} title="Bookmarks" className={chrome + active("bookmarks")}>
+        <button data-testid="book-bookmarks-toggle" onClick={() => togglePanel("bookmarks")} title={tr('common.tooltip.bookmarks')} className={chrome + active("bookmarks")}>
           <BookmarkIcon size={15} />
           {reading.bookmarks.length > 0 && (
-            <span data-testid="book-bookmark-count" className="ml-1 text-xs">{reading.bookmarks.length}</span>
+            <span data-testid="book-bookmark-count" className="ms-1 text-xs">{localDigits(reading.bookmarks.length)}</span>
           )}
         </button>
-        <button data-testid="book-search-toggle" onClick={() => togglePanel("search")} title="Search in book" className={chrome + active("search")}>
+        <button data-testid="book-search-toggle" onClick={() => togglePanel("search")} title={tr('common.tooltip.searchInBook')} className={chrome + active("search")}>
           <Search size={15} />
         </button>
-        <button data-testid="book-themes-toggle" onClick={() => togglePanel("themes")} title="Reading theme" className={chrome + active("themes")}>
+        <button data-testid="book-themes-toggle" onClick={() => togglePanel("themes")} title={tr('common.tooltip.readingTheme')} className={chrome + active("themes")}>
           <Palette size={15} />
         </button>
 
         <span className="mx-1 h-4 w-px"  />
 
-        <button data-testid="book-prev" onClick={() => turn("prev")} title="Previous page" className={chrome}>
-          <ChevronLeft size={15} />
+        <button data-testid="book-prev" onClick={() => turn("prev")} title={tr('common.tooltip.previousPage')} className={chrome}>
+          <ChevronLeft className="rtl:-scale-x-100" size={15} />
         </button>
-        <button data-testid="book-next" onClick={() => turn("next")} title="Next page" className={chrome}>
-          <ChevronRight size={15} />
+        <button data-testid="book-next" onClick={() => turn("next")} title={tr('common.tooltip.nextPage')} className={chrome}>
+          <ChevronRight className="rtl:-scale-x-100" size={15} />
         </button>
 
         <button
           data-testid="book-bookmark-here"
           onClick={toggleBookmark}
           disabled={!location}
-          title={bookmarkHere ? "Remove bookmark" : "Bookmark this page"}
+          title={bookmarkHere ? tr('common.tooltip.removeBookmark') : tr('common.tooltip.bookmarkThisPage')}
           className={chrome + (bookmarkHere ? " text-primary" : "")}
         >
           <BookmarkIcon size={15} fill={bookmarkHere ? "currentColor" : "none"} />
@@ -278,15 +281,15 @@ export function BookViewer({
           {state === "ready" && ` · ${Math.round(fraction * 100)}%`}
         </span>
 
-        <button data-testid="book-font-smaller" onClick={() => setPrefs((p) => ({ ...p, fontSizePct: clampFont(p.fontSizePct - FONT_STEP) }))} disabled={prefs.fontSizePct <= FONT_MIN} title="Smaller text" className={chrome}>
+        <button data-testid="book-font-smaller" onClick={() => setPrefs((p) => ({ ...p, fontSizePct: clampFont(p.fontSizePct - FONT_STEP) }))} disabled={prefs.fontSizePct <= FONT_MIN} title={tr('common.tooltip.smallerText')} className={chrome}>
           <Minus size={14} />
         </button>
         <span data-testid="book-font-size" className="w-10 text-center text-xs text-muted-foreground">{prefs.fontSizePct}%</span>
-        <button data-testid="book-font-bigger" onClick={() => setPrefs((p) => ({ ...p, fontSizePct: clampFont(p.fontSizePct + FONT_STEP) }))} disabled={prefs.fontSizePct >= FONT_MAX} title="Larger text" className={chrome}>
+        <button data-testid="book-font-bigger" onClick={() => setPrefs((p) => ({ ...p, fontSizePct: clampFont(p.fontSizePct + FONT_STEP) }))} disabled={prefs.fontSizePct >= FONT_MAX} title={tr('common.tooltip.largerText')} className={chrome}>
           <Plus size={14} />
         </button>
         {onClose && (
-          <button data-testid="book-close" onClick={onClose} title="Close" className={chrome}>
+          <button data-testid="book-close" onClick={onClose} title={tr('common.close')} className={chrome}>
             <X size={15} />
           </button>
         )}
@@ -296,7 +299,7 @@ export function BookViewer({
         {panel !== "none" && (
           <aside
             data-testid={`book-panel-${panel}`}
-            className="w-72 shrink-0 overflow-y-auto border-r py-2 border-border"
+            className="w-72 shrink-0 overflow-y-auto border-e py-2 border-border"
             
           >
             {panel === "toc" && (
@@ -306,8 +309,8 @@ export function BookViewer({
                     key={`${item.href}-${i}`}
                     data-testid={`book-toc-item-${i}`}
                     onClick={() => goTo(item.href)}
-                    className="block w-full truncate px-3 py-1.5 text-left text-xs hover:bg-muted"
-                    style={{ paddingLeft: 12 + item.depth * 12 }}
+                    className="block w-full truncate px-3 py-1.5 text-start text-xs hover:bg-muted"
+                    style={{ paddingInlineStart: 12 + item.depth * 12 }}
                     title={item.label}
                   >
                     {item.label}
@@ -320,18 +323,18 @@ export function BookViewer({
               <div data-testid="book-bookmarks">
                 {reading.bookmarks.length === 0 ? (
                   <p data-testid="book-bookmarks-empty" className="px-3 py-2 text-xs text-muted-foreground">
-                    No bookmarks yet. Use the ribbon to mark this page.
+                    {tr('common.label.noBookmarksYetUseTheRibbonToMarkThis')}
                   </p>
                 ) : (
                   reading.bookmarks.map((b: Bookmark) => (
                     <div key={b.id} data-testid={`book-bookmark-${b.id}`} className="group flex items-center gap-1 px-3 py-1.5 text-xs hover:bg-muted">
-                      <button onClick={() => goTo(b.location)} className="flex-1 truncate text-left" title={b.label}>
+                      <button onClick={() => goTo(b.location)} className="flex-1 truncate text-start" title={b.label}>
                         {b.label}
                       </button>
                       <button
                         data-testid={`book-bookmark-${b.id}-remove`}
                         onClick={() => dropBookmark(b.id)}
-                        title="Remove bookmark"
+                        title={tr('common.tooltip.removeBookmark')}
                         className="text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-destructive"
                       >
                         <Trash2 size={11} />
@@ -350,26 +353,26 @@ export function BookViewer({
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
                     onKeyDown={(e) => { if (e.key === "Enter") runSearch(); }}
-                    placeholder="Search in this book"
+                    placeholder={tr('common.placeholder.searchInThisBook')}
                     className="min-w-0 flex-1 rounded-lg border px-2 py-1 text-xs outline-none focus:border-primary"
                     
                   />
-                  <button data-testid="book-search-clear" onClick={clearSearch} title="Clear" className={chrome}>
+                  <button data-testid="book-search-clear" onClick={clearSearch} title={tr('common.action.clear')} className={chrome}>
                     <X size={12} />
                   </button>
                 </div>
                 {searching && (
-                  <p data-testid="book-search-busy" className="px-3 py-1 text-xs text-muted-foreground">Searching…</p>
+                  <p data-testid="book-search-busy" className="px-3 py-1 text-xs text-muted-foreground">{tr('common.label.searching')}</p>
                 )}
                 {!searching && hits.length === 0 && query.trim() !== "" && (
-                  <p data-testid="book-search-none" className="px-3 py-1 text-xs text-muted-foreground">No matches.</p>
+                  <p data-testid="book-search-none" className="px-3 py-1 text-xs text-muted-foreground">{tr('common.description.noMatches')}</p>
                 )}
                 {hits.map((h, i) => (
                   <button
                     key={`${h.cfi}-${i}`}
                     data-testid={`book-search-hit-${i}`}
                     onClick={() => goTo(h.cfi)}
-                    className="block w-full px-3 py-1.5 text-left text-xs hover:bg-muted"
+                    className="block w-full px-3 py-1.5 text-start text-xs hover:bg-muted"
                   >
                     <span className="line-clamp-2 text-muted-foreground">{h.excerpt}</span>
                   </button>
@@ -400,7 +403,7 @@ export function BookViewer({
           <iframe
             ref={frameRef}
             data-testid="book-frame"
-            title={`Book: ${file.name}`}
+            title={tr('common.tooltip.bookFileName', { fileName: file.name })}
             src="/reader/index.html"
             className="h-full w-full border-none"
             style={{ background: theme.bg }}
@@ -409,14 +412,14 @@ export function BookViewer({
           {state === "loading" && (
             <div data-testid="book-loading" className="absolute inset-0 flex flex-col items-center justify-center gap-2" style={{ background: theme.bg }}>
               <Loader2 size={18} className="animate-spin text-muted-foreground" />
-              <p className="text-xs text-muted-foreground">Opening {file.name}…</p>
+              <p className="text-xs text-muted-foreground">{tr('common.status.openingFileName', { fileName: file.name })}</p>
             </div>
           )}
 
           {state === "error" && (
             <div data-testid="book-error" className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-8 text-center" style={{ background: theme.bg }}>
-              <p className="text-sm font-medium">This book could not be opened</p>
-              <p className="text-xs text-muted-foreground">{error}</p>
+              <p className="text-sm font-medium">{tr('common.error.thisBookCouldNotBeOpenedSentenceCase')}</p>
+              <p dir="auto" className="text-xs text-muted-foreground">{error}</p>
             </div>
           )}
         </div>

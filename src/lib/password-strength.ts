@@ -8,6 +8,7 @@
  * an informed choice.
  */
 import { LIMITS } from '@/lib/validation-policy.generated';
+import { t } from '@/lib/i18n';
 
 /**
  * Re-exported from the shared validation policy rather than declared here: the
@@ -19,10 +20,20 @@ export const MIN_PASSWORD_LENGTH = LIMITS.PASSWORD_MIN;
 
 export type StrengthLabel = 'Weak' | 'Fair' | 'Good' | 'Strong';
 
+// Labels are translated when scorePassword runs (never at import time), so the
+// result follows the language chosen at the moment of the call.
+const LABEL_TEXT: Record<StrengthLabel, () => string> = {
+  Weak: () => t('common.label.weak'),
+  Fair: () => t('common.label.fair'),
+  Good: () => t('common.label.good'),
+  Strong: () => t('common.label.strong'),
+};
+
 export interface PasswordStrength {
   /** 0..4, for the meter. 0 means "too short to score". */
   score: number;
-  label: StrengthLabel;
+  /** Translated for the current language. */
+  label: string;
   /** Non-empty when there is something specific worth saying. */
   warning: string;
   /** Meets the minimum the submit handler enforces. */
@@ -70,8 +81,8 @@ export function scorePassword(pw: string): PasswordStrength {
   if (pw.length < MIN_PASSWORD_LENGTH) {
     return {
       score: 0,
-      label: 'Weak',
-      warning: pw.length === 0 ? '' : `Use at least ${MIN_PASSWORD_LENGTH} characters.`,
+      label: LABEL_TEXT.Weak(),
+      warning: pw.length === 0 ? '' : t('common.description.useAtLeastMinLockPasswordLengthCharacters', { minLockPasswordLength: MIN_PASSWORD_LENGTH }),
       acceptable: false,
     };
   }
@@ -93,25 +104,25 @@ export function scorePassword(pw: string): PasswordStrength {
   const normalized = pw.toLowerCase().replace(/[0-9!@#$%^&*._-]+$/, '');
   let warning = '';
   if (COMMON.has(normalized) || COMMON.has(pw.toLowerCase())) {
-    warning = 'This is one of the most commonly used passwords.';
+    warning = t('common.description.thisIsOneOfTheMostCommonlyUsedPasswords');
     score = 0;
   } else if (isSingleCharRun(pw)) {
-    warning = 'A single repeated character is trivial to guess.';
+    warning = t('common.description.aSingleRepeatedCharacterIsTrivialToGuess');
     score = 0;
   } else if (hasSequentialRun(pw)) {
-    warning = 'Sequences like "abcdef" or "123456" are trivial to guess.';
+    warning = t('common.description.sequencesLikeAbcdefOr123456AreTrivialToGuess');
     score = 0;
   } else if (/^\d+$/.test(pw)) {
-    warning = 'Digits only - add letters or symbols.';
+    warning = t('common.description.digitsOnlyAddLettersOrSymbols');
     score = Math.min(score, 1);
   } else if (classes === 1) {
-    warning = 'Mix in upper case, digits, or symbols.';
+    warning = t('common.description.mixInUpperCaseDigitsOrSymbols');
     score = Math.min(score, 1);
   }
 
   return {
     score: Math.max(0, Math.min(4, score)),
-    label: LABELS[Math.max(0, Math.min(4, score))],
+    label: LABEL_TEXT[LABELS[Math.max(0, Math.min(4, score))]](),
     warning,
     acceptable: true,
   };

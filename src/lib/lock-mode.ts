@@ -8,45 +8,50 @@
  * copy change there.
  */
 
+import { t } from '@/lib/i18n';
+
 export type LockMode = 'none' | 'view_only' | 'full_lock';
 export type LockKind = 'file' | 'folder';
 
 /** The server rejects anything shorter (POST /api/files/:id/lock). */
 export const MIN_LOCK_PASSWORD_LENGTH = 8;
 
-export const LOCK_MODE_OPTIONS: readonly { value: LockMode; label: string }[] = [
-  { value: 'none', label: 'Unlocked' },
-  { value: 'view_only', label: 'View only' },
-  { value: 'full_lock', label: 'Password' },
+// `label` is a getter so the name is translated when it is read (at render),
+// never frozen at import time.
+export const LOCK_MODE_OPTIONS: readonly { value: LockMode; readonly label: string }[] = [
+  { value: 'none', get label() { return t('file-security.label.unlocked'); } },
+  { value: 'view_only', get label() { return t('files.label.viewOnly'); } },
+  { value: 'full_lock', get label() { return t('common.label.password'); } },
 ];
 
 // Each sentence maps to shipped behaviour in the API's download-guard and
 // share lock-gate: view_only denies the bytes but not the preview; full_lock
 // hands out one-hour unlock tokens, seals a folder against additions, and
 // refuses share links to the item.
-const DESCRIPTIONS: Record<LockKind, Record<LockMode, string>> = {
+// The table holds message KEYS; describeLockMode translates at call time.
+const DESCRIPTIONS = {
   file: {
-    none: 'Anyone with access to it can open, download and edit it.',
-    view_only: 'Members can preview it in the viewer, but not download or edit it.',
-    full_lock: 'Opens only with a password. An unlock lasts an hour, and share links to it stop working while it is locked.',
+    none: 'file-security.label.anyoneWithAccessToItCanOpenDownloadAnd',
+    view_only: 'file-security.label.membersCanPreviewItInTheViewerButNot',
+    full_lock: 'file-security.description.opensOnlyWithAPasswordAnUnlockLastsAn',
   },
   folder: {
-    none: 'Anyone with access to it can open it and work with everything inside.',
-    view_only: 'Members can browse and preview what is inside, but not download it.',
-    full_lock: 'Opens only with a password. While it is locked nothing can be added inside and share links to its contents stop working. An unlock lasts an hour.',
+    none: 'file-security.label.anyoneWithAccessToItCanOpenItAnd',
+    view_only: 'file-security.label.membersCanBrowseAndPreviewWhatIsInsideBut',
+    full_lock: 'file-security.description.opensOnlyWithAPasswordWhileItIsLocked',
   },
-};
+} as const;
 
 export function describeLockMode(kind: LockKind, mode: LockMode): string {
-  return DESCRIPTIONS[kind][mode];
+  return t(DESCRIPTIONS[kind][mode]);
 }
 
 /** What the primary button will do. Neutral while the current mode is unknown. */
 export function lockActionLabel(input: { selected: LockMode; current: LockMode; loading?: boolean }): string {
-  if (input.loading) return 'Apply';
-  if (input.selected === 'none') return 'Remove lock';
-  if (input.selected === 'view_only') return 'Set view only';
-  return input.current === 'full_lock' ? 'Update password' : 'Lock with password';
+  if (input.loading) return t('files.label.apply');
+  if (input.selected === 'none') return t('files.label.removeLock');
+  if (input.selected === 'view_only') return t('files.label.setViewOnly');
+  return input.current === 'full_lock' ? t('files.label.updatePassword') : t('files.label.lockWithPassword');
 }
 
 /**
@@ -61,12 +66,12 @@ export function canApplyLock(input: { selected: LockMode; current: LockMode; pas
 }
 
 export function passwordFieldLabel(current: LockMode): string {
-  return current === 'full_lock' ? 'New password' : 'Password';
+  return current === 'full_lock' ? t('common.label.newPassword') : t('common.label.password');
 }
 
 export function passwordHint(current: LockMode): string {
-  const base = `At least ${MIN_LOCK_PASSWORD_LENGTH} characters.`;
-  return current === 'full_lock' ? `${base} Replaces the current one.` : base;
+  const base = t('files.description.atLeastMinLockPasswordLengthCharacters', { minLockPasswordLength: MIN_LOCK_PASSWORD_LENGTH });
+  return current === 'full_lock' ? t('files.description.baseReplacesTheCurrentOne', { base }) : base;
 }
 
 /**
@@ -78,22 +83,23 @@ export function describeLockStatus(input: { lock_mode: string; locked_by_name?: 
   if (mode !== 'full_lock' && mode !== 'view_only') return null;
   const by = input.locked_by_name?.trim();
   const when = input.lockedWhen?.trim();
-  if (!by && !when) return mode === 'full_lock' ? 'Currently password-locked' : 'Currently view only';
-  const base = mode === 'full_lock' ? 'Password lock' : 'View only';
-  if (by && when) return `${base} · set by ${by}, ${when}`;
-  if (by) return `${base} · set by ${by}`;
-  return `${base} · set ${when}`;
+  if (!by && !when) return mode === 'full_lock' ? t('file-security.label.currentlyPasswordLocked') : t('file-security.label.currentlyViewOnly');
+  const base = mode === 'full_lock' ? t('files.label.passwordLock') : t('files.label.viewOnly');
+  if (by && when) return t('files.label.baseSetByByWhen', { base, by, when });
+  if (by) return t('files.label.baseSetByBy', { base, by });
+  return t('files.label.baseSetWhen', { base, when: when ?? '' });
 }
 
 /** The chip under the title. `size` is pre-formatted; unknown parts are left out. */
 export function describeLockTarget(input: { kind: LockKind; extension?: string | null; size?: string | null; file_count?: number | null }): string {
   const parts: string[] = [];
   if (input.kind === 'folder') {
-    parts.push('Folder');
-    if (typeof input.file_count === 'number') parts.push(`${input.file_count} ${input.file_count === 1 ? 'file' : 'files'}`);
+    parts.push(t('common.label.folder'));
+    // TODO(catalog): borrowed plural-files message from file-requests (no lock-mode entry).
+    if (typeof input.file_count === 'number') parts.push(t('file-requests.status.ruploadCountPluralOneFileOtherFiles', { rUpload_count: input.file_count }));
   } else {
     const ext = input.extension?.trim();
-    parts.push(ext ? ext.toUpperCase() : 'File');
+    parts.push(ext ? ext.toUpperCase() : t('common.label.fileTitleCase'));
   }
   if (input.size) parts.push(input.size);
   return parts.join(' · ');

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { CopyCheck } from '@/components/ui/copy-check';
 import { Button } from '@/components/ui/button';
 import { api } from '@/api/client';
+import { useT } from '@/lib/i18n';
 
 interface ReferralResponse {
   ok: boolean;
@@ -22,6 +23,7 @@ interface ReferralResponse {
  * the end of onboarding behind a referral outage is not acceptable.
  */
 export function ReferralStep() {
+  const t = useT();
   const [link, setLink] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -64,9 +66,9 @@ export function ReferralStep() {
 
   return (
     <div>
-      <p className="text-sm font-medium mb-1">Your invite link</p>
+      <p className="text-sm font-medium mb-1">{t('common.label.yourInviteLink')}</p>
       <p className="text-xs text-muted-foreground mb-3">
-        Every friend who starts using dosya adds 5 GB to your account, up to 25 GB.
+        {t('welcome.description.everyFriendWhoStartsUsingDosyaAdds5GbToYour')}
       </p>
       <div className="flex items-center gap-2">
         <input
@@ -83,7 +85,7 @@ export function ReferralStep() {
           onClick={() => { void copy(); }}
           className="h-9 gap-1.5 shrink-0"
         >
-          <CopyCheck copied={copied} className="size-3.5" /> {copied ? 'Copied' : 'Copy'}
+          <CopyCheck copied={copied} className="size-3.5" /> {copied ? t('common.action.copied') : t('common.copy')}
         </Button>
       </div>
     </div>

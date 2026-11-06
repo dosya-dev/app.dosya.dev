@@ -10,6 +10,8 @@ import { PublicNav } from '@/components/public-nav';
 import { Logo } from '@/components/brand/logo';
 import { rememberPostAuthPath } from '@/lib/post-auth-path';
 import { useWorkspace } from '@/stores/workspace';
+import { t as translate, useT } from '@/lib/i18n';
+import { richText } from '@/lib/rich-text';
 
 interface WpCaps { sites_max: number | null; retention_days_max: number; immutability_hours_max: number }
 interface WpSite { id: string; status?: string }
@@ -24,9 +26,9 @@ function errorMessage(err: unknown): string {
       if (parsed.error) return humanizeApiError(parsed.error);
     } catch { /* non-JSON body */ }
     if (err.body && !err.body.trimStart().startsWith('<')) return err.body;
-    return `Request failed (${err.status}). Please try again.`;
+    return translate('common.error.requestFailedErrstatusPleaseTryAgain', { errStatus: err.status });
   }
-  return 'Could not connect the site. Please try again.';
+  return translate('connect-wordpress.error.couldNotConnectTheSitePleaseTryAgain');
 }
 
 function parseHttpUrl(value: string): URL | null {
@@ -60,8 +62,25 @@ function withParams(base: URL, extra: Record<string, string>): string {
 }
 
 function capsLine(planName: string, caps: WpCaps): string {
-  const sites = caps.sites_max === null ? 'unlimited sites' : `${caps.sites_max} site${caps.sites_max === 1 ? '' : 's'}`;
-  return `${planName} plan: ${sites}, ${caps.retention_days_max} days retention, ${caps.immutability_hours_max} h immutability`;
+  const sites = caps.sites_max === null
+    ? translate('connect-wordpress.label.unlimitedSites')
+    : translate('connect-wordpress.description.capssitesMaxPluralOneSiteOtherSites', { capsSites_max: caps.sites_max });
+  return translate('connect-wordpress.description.plannamePlanSitesCapsretentionDaysMaxDaysRetentionCapsimmutabilityHoursMaxHImmutability', {
+    planName, sites, capsRetention_days_max: caps.retention_days_max, capsImmutability_hours_max: caps.immutability_hours_max,
+  });
+}
+
+/** Keeps `phrase` on one line (the old page wrapped it in a nowrap span); the text is unchanged. */
+function keepTogether(message: string, phrase: string) {
+  const at = message.indexOf(phrase);
+  if (at < 0) return message;
+  return (
+    <>
+      {message.slice(0, at)}
+      <span className="whitespace-nowrap">{phrase}</span>
+      {message.slice(at + phrase.length)}
+    </>
+  );
 }
 
 /**
@@ -73,6 +92,7 @@ function capsLine(planName: string, caps: WpCaps): string {
  * one-time code anywhere else.
  */
 export default function ConnectWordPressPage() {
+  const t = useT();
   const navigate = useNavigate();
   const location = useLocation();
   const [params] = useSearchParams();
@@ -93,7 +113,9 @@ export default function ConnectWordPressPage() {
   const returnUrl = useMemo(() => (complete ? validateReturn(returnParam, siteUrl) : null), [complete, returnParam, siteUrl]);
 
   const [workspaces, setWorkspaces] = useState<WorkspaceRow[] | null>(null);
-  const [planName, setPlanName] = useState('Free');
+  const [planNameSent, setPlanName] = useState<string | null>(null);
+  // The server's plan name as sent; the "Free" fallback follows the language.
+  const planName = planNameSent ?? t('common.label.free');
   const [caps, setCaps] = useState<WpCaps | null>(null);
   const [connected, setConnected] = useState(0);
   const [chosen, setChosen] = useState('');
@@ -118,7 +140,7 @@ export default function ConnectWordPressPage() {
         ]);
         if (!alive) return;
         setWorkspaces(ws.workspaces);
-        setPlanName(me.user?.plan?.name ?? 'Free');
+        setPlanName(me.user?.plan?.name ?? null);
         setCaps(sites.caps);
         setConnected(sites.sites.filter((s) => s.status !== 'disconnected').length);
       } catch (e: unknown) {
@@ -147,7 +169,7 @@ export default function ConnectWordPressPage() {
         }),
       });
       if (!res.code || res.state !== state) {
-        setError('The connection response did not match this request. Nothing was connected.');
+        setError(t('connect-wordpress.error.theConnectionResponseDidNotMatchThisRequestNothingWasConnected'));
         setBusy(false);
         return;
       }
@@ -175,27 +197,26 @@ export default function ConnectWordPressPage() {
           <CardContent className="space-y-4 p-6">
             {!complete ? (
               <>
-                <h1 className="text-xl font-semibold">This connect request is incomplete</h1>
+                <h1 className="text-xl font-semibold">{t('common.heading.thisConnectRequestIsIncomplete')}</h1>
                 <p className="text-sm text-muted-foreground">
-                  Start the connection from the dosya Backup page in your WordPress admin, not from a bookmark.
+                  {t('connect-wordpress.description.startTheConnectionFromTheDosyaBackupPageInYourWordpress')}
                 </p>
               </>
             ) : !returnUrl ? (
               <>
-                <h1 className="text-xl font-semibold">This connect request was refused</h1>
+                <h1 className="text-xl font-semibold">{t('connect-wordpress.heading.thisConnectRequestWasRefused')}</h1>
                 <p className="text-sm text-muted-foreground">
-                  The return address must be a /wp-admin/ page on {site!.host}. This link points somewhere else, so nothing was connected.
+                  {t('connect-wordpress.error.theReturnAddressMustBeAWpAdminPageOnHostThis', { host: site!.host })}
                 </p>
               </>
             ) : (
               <>
-                <h1 className="text-xl font-semibold">Connect {site!.host} to dosya</h1>
+                <h1 className="text-xl font-semibold">{t('connect-wordpress.heading.connectHostToDosya', { host: site!.host })}</h1>
                 <p className="text-sm text-muted-foreground">
-                  Allow {name} ({site!.host}) to store its backups in your dosya account. It gets a key limited to one
-                  folder, <span className="whitespace-nowrap">WordPress Backups</span>, and cannot see anything else.
+                  {keepTogether(t('connect-wordpress.error.allowNameHostToStoreItsBackupsInYourDosyaAccount', { name, host: site!.host }), 'WordPress Backups')}
                 </p>
                 <div className="space-y-1.5">
-                  <label htmlFor={selectId} className="text-sm font-medium">Save backups in workspace</label>
+                  <label htmlFor={selectId} className="text-sm font-medium">{t('connect-wordpress.label.saveBackupsInWorkspace')}</label>
                   <select
                     id={selectId}
                     value={selected}
@@ -208,28 +229,31 @@ export default function ConnectWordPressPage() {
                 </div>
                 {workspaces !== null && workspaces.length === 0 && (
                   <p role="alert" className="text-sm text-destructive">
-                    You have no workspace to save backups in. <Link to="/" className="underline underline-offset-2">Create one in dosya</Link> first.
+                    {richText(t('connect-wordpress.description.youHaveNoWorkspaceToSaveBackupsInLink1First'), {
+                      link1: <Link to="/" className="underline underline-offset-2">{t('common.action.createOneInDosya')}</Link>,
+                    })}
                   </p>
                 )}
                 {caps && (
                   <div className="space-y-1 text-sm text-muted-foreground">
                     <p>{capsLine(planName, caps)}</p>
-                    {caps.sites_max !== null && <p>{Math.min(connected, caps.sites_max)} of {caps.sites_max} sites connected</p>}
+                    {caps.sites_max !== null && <p>{t('connect-wordpress.label.connectedOfCapssitesMaxSitesConnected', { connected: Math.min(connected, caps.sites_max), capsSites_max: caps.sites_max })}</p>}
                   </div>
                 )}
                 {atCap && (
                   <p role="alert" className="text-sm text-destructive">
-                    Your plan's connected site limit is reached.{' '}
-                    <Link to="/pricing" className="underline underline-offset-2">See plans</Link> to connect more sites.
+                    {richText(t('connect-wordpress.description.yourPlanSConnectedSiteLimitIsReachedLink1ToConnectMore'), {
+                      link1: <Link to="/pricing" className="underline underline-offset-2">{t('common.action.seePlans')}</Link>,
+                    })}
                   </p>
                 )}
-                {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+                {error && <p dir="auto" role="alert" className="text-sm text-destructive">{error}</p>}
                 <div className="flex gap-2">
                   <Button onClick={allow} disabled={busy || !ready || atCap} className="flex-1">
-                    {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                    Allow
+                    {busy ? <Loader2 className="me-2 h-4 w-4 animate-spin" /> : null}
+                    {t('common.action.allow')}
                   </Button>
-                  <Button variant="outline" onClick={cancel} disabled={busy}>Cancel</Button>
+                  <Button variant="outline" onClick={cancel} disabled={busy}>{t('common.cancel')}</Button>
                 </div>
               </>
             )}

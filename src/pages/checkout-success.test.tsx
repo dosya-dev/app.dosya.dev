@@ -31,12 +31,12 @@ function LocationProbe() {
   return null;
 }
 
-function status(overrides: { limit?: number; hasSubscription?: boolean } = {}) {
+function status(overrides: { limit?: number; hasSubscription?: boolean; trialEnd?: number | null } = {}) {
   return {
     ok: true,
     plan: { id: 'pro', name: 'Pro', storage_bytes: 2 * TB, storage_label: '2 TB', price_monthly: 1299, price_yearly: null },
     usage: { used_bytes: 0, used_label: '0 B', limit_bytes: overrides.limit ?? 2 * TB + 5 * GB, limit_label: '2 TB', pct: 0 },
-    subscription: { status: 'active', current_period_end: null, has_subscription: overrides.hasSubscription ?? true, cancel_at_period_end: false, grace_period_end: null },
+    subscription: { status: 'active', current_period_end: null, has_subscription: overrides.hasSubscription ?? true, cancel_at_period_end: false, grace_period_end: null, trial_end: overrides.trialEnd ?? null },
     interval: 'month',
     items: [],
     referral_bonus_bytes: 0,
@@ -104,6 +104,9 @@ describe('checkout thank-you page', () => {
     expect(currentLocation).toBe('/checkout/success');
     const text = container!.textContent!;
     expect(text).toContain('Purchase complete');
+    expect(text).toContain('Thank you for your purchase');
+    expect([...container!.querySelectorAll('span')].map((s) => s.textContent)).toContain('Paid');
+    expect(text).toContain('Every package is covered by our 14-day money-back guarantee.');
     // Gigabytes, not "+2 TB": the point of the figure is how much was bought.
     expect(container!.querySelector('[data-testid="capacity-figure"]')!.textContent).toBe('+2,048GB');
     expect(text).toContain('Storage added');
@@ -115,6 +118,43 @@ describe('checkout thank-you page', () => {
     // No matchMedia here, which the page reads as "do not animate".
     expect(container!.querySelector('[data-testid="fireworks"]')).toBeNull();
     expect(sessionStorage.length).toBe(0);
+  });
+
+  it('says the trial started when the checkout cost nothing', async () => {
+    rememberStorageBeforePurchase(5 * GB);
+    const trialEnd = Math.floor(Date.now() / 1000) + 7 * 86400;
+    script({
+      '/api/billing/sync': { ok: true },
+      '/api/billing/status': status({ trialEnd }),
+      '/api/billing/receipt': {
+        ok: true, kind: 'checkout', paid: true, amount: 0, currency: 'usd',
+        invoice_number: null, invoice_url: null, paid_at: 1_800_000_000,
+        email: 'buyer@example.test', card: { brand: 'visa', last4: '4242' },
+      },
+    });
+
+    await render('/checkout/success?session_id=cs_test_abcdefghijkl');
+
+    const date = new Date(trialEnd * 1000).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+    const text = container!.textContent!;
+    expect(text).toContain('Trial started');
+    expect(text).toContain(`You won't be charged until ${date}.`);
+    expect(text).not.toContain('Payment received');
+    expect(container!.querySelector('h1')!.textContent).toContain('Your 7-day trial has started');
+    expect(text).toContain(`You won't be charged until ${date}. Cancel any time before then from Billing.`);
+    expect(container!.querySelector('h1')!.textContent).not.toContain("You won't be charged");
+    const lede = container!.querySelector('h1')!.nextElementSibling!;
+    expect(lede.tagName).toBe('P');
+    expect(lede.textContent).toBe(`You won't be charged until ${date}. Cancel any time before then from Billing.`);
+    expect(text).not.toContain('Purchase complete');
+    expect(text).not.toContain('Thank you for your purchase');
+    const badges = [...container!.querySelectorAll('span')].map((s) => s.textContent);
+    expect(badges).toContain('Trial');
+    expect(badges).not.toContain('Paid');
+    expect(text).toContain('Due today');
+    expect(text).toContain('$0.00');
+    expect(text).toContain('After your trial, payments are covered by our 14-day money-back guarantee.');
+    expect(text).not.toContain('Every package is covered by our 14-day money-back guarantee.');
   });
 
   it('describes a plan change with its next invoice', async () => {

@@ -33,7 +33,7 @@ vi.mock('@/lib/upload-drop', () => ({
   uploadFromPicker: (...a: unknown[]) => uploadFromPicker(...a),
 }));
 
-const { default: UploadsPage, QueueRow } = await import('./uploads');
+const { default: UploadsPage, QueueRow, QueueStats } = await import('./uploads');
 const { useWorkspace } = await import('@/stores/workspace');
 
 beforeAll(() => {
@@ -99,6 +99,53 @@ describe('Uploads page QueueRow', () => {
   it('shows no Retry button for a completed row', () => {
     render(item({ status: 'complete', progress: 100 }));
     expect([...container!.querySelectorAll('button')].some((b) => b.textContent?.trim() === 'Retry')).toBe(false);
+  });
+});
+
+// Cloud import showed transfer speed; the Upload page only showed percentages.
+describe('Uploads page speed', () => {
+  function renderStats(queue: UploadItem[]) {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    act(() => { root!.render(<QueueStats queue={queue} />); });
+  }
+
+  it('shows the speed on an uploading row', () => {
+    render(item({ status: 'uploading', progress: 40, bytesUploaded: 40, speedBps: 2 * 1024 * 1024 }));
+    expect(container!.textContent).toContain('2.0 MB/s');
+    expect(container!.textContent).toContain('40%');
+  });
+
+  it('shows no speed on a queued row', () => {
+    render(item({ status: 'queued', speedBps: 0 }));
+    expect(container!.textContent).not.toContain('/s');
+  });
+
+  it('sums bytes and speed across active uploads and estimates time left', () => {
+    const MB = 1024 * 1024;
+    renderStats([
+      item({ id: 'a', status: 'uploading', fileSize: 100 * MB, bytesUploaded: 40 * MB, speedBps: 3 * MB }),
+      item({ id: 'b', status: 'queued', fileSize: 100 * MB }),
+      item({ id: 'c', status: 'complete', fileSize: 500 * MB, bytesUploaded: 500 * MB }),
+    ]);
+    const line = container!.querySelector('[data-testid="upload-queue-stats"]')!.textContent!;
+    expect(line).toContain('40.0 MB of 200.0 MB');
+    expect(line).toContain('3.0 MB/s');
+    // 160 MB left at 3 MB/s = 54s
+    expect(line).toContain('about 54s left');
+  });
+
+  it('leaves out speed and time left before a speed is known', () => {
+    renderStats([item({ status: 'uploading', fileSize: 100, bytesUploaded: 10 })]);
+    const line = container!.querySelector('[data-testid="upload-queue-stats"]')!.textContent!;
+    expect(line).not.toContain('/s');
+    expect(line).not.toContain('left');
+  });
+
+  it('renders nothing once nothing is active', () => {
+    renderStats([item({ status: 'complete', progress: 100 })]);
+    expect(container!.querySelector('[data-testid="upload-queue-stats"]')).toBeNull();
   });
 });
 

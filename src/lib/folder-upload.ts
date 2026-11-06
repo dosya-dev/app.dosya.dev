@@ -4,6 +4,7 @@
  * Deliberately free of network and store access so the ordering rules below are
  * testable: the caller injects how a folder gets created.
  */
+import { t } from '@/lib/i18n';
 import type { DroppedEntry, DroppedTree } from '@/lib/dropped-entries';
 
 /** Creates one folder and resolves to its id. */
@@ -83,7 +84,7 @@ export async function createFolderTree(
         } catch (err) {
           dead.add(path);
           plan.failed.push(path);
-          plan.error ??= err instanceof Error ? err.message : 'Could not create folder';
+          plan.error ??= err instanceof Error ? err.message : t('common.error.couldNotCreateFolder');
         }
       }
     };

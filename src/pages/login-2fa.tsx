@@ -8,8 +8,10 @@ import { Label } from '@/components/ui/label';
 import { Lock, Loader2, ArrowLeft } from 'lucide-react';
 import { pendingPostAuthPath } from '@/lib/redemption-claim';
 import { consumePostAuthPath } from '@/lib/post-auth-path';
+import { useT } from '@/lib/i18n';
 
 export default function Login2faPage() {
+  const t = useT();
   const navigate = useNavigate();
   const [code, setCode] = useState('');
   const [recoveryCode, setRecoveryCode] = useState('');
@@ -19,7 +21,7 @@ export default function Login2faPage() {
 
   const handleVerify = async () => {
     const value = showRecovery ? recoveryCode.trim() : code.trim();
-    if (!value) { setError('Enter a code'); return; }
+    if (!value) { setError(t('two-factor.error.enterACode')); return; }
     setError('');
     setSubmitting(true);
     try {
@@ -30,14 +32,14 @@ export default function Login2faPage() {
       if (res.ok) {
         navigate(pendingPostAuthPath() ?? consumePostAuthPath() ?? res.redirect ?? '/');
       } else {
-        setError(res.error ?? 'Verification failed');
+        setError(res.error ?? t('common.error.verificationFailed'));
       }
     } catch (e: unknown) {
       try {
         const body = JSON.parse(e && typeof e === 'object' && 'body' in e && typeof e.body === 'string' ? e.body : '{}') as { error?: string };
-        setError(body.error || 'Verification failed');
+        setError(body.error || t('common.error.verificationFailed'));
       } catch {
-        setError('Verification failed');
+        setError(t('common.error.verificationFailed'));
       }
     }
     setSubmitting(false);
@@ -52,15 +54,15 @@ export default function Login2faPage() {
             <div className="size-12 rounded-full bg-muted flex items-center justify-center mx-auto mb-3">
               <Lock className="size-6 text-muted-foreground" />
             </div>
-            <h1 className="text-xl font-bold">Two-factor authentication</h1>
+            <h1 className="text-xl font-bold">{t('common.heading.twoFactorAuthentication')}</h1>
             <p className="text-sm text-muted-foreground mt-1">
-              {showRecovery ? 'Enter a recovery code' : 'Enter the 6-digit code to continue'}
+              {showRecovery ? t('two-factor.label.enterARecoveryCode') : t('two-factor.label.enterThe6DigitCodeToContinue')}
             </p>
           </div>
 
           {/* Error */}
           {error && (
-            <div className="text-xs text-destructive bg-destructive/10 border border-destructive/20 rounded-md px-3 py-2 mb-4">
+            <div dir="auto" className="text-xs text-destructive bg-destructive/10 border border-destructive/20 rounded-md px-3 py-2 mb-4">
               {error}
             </div>
           )}
@@ -81,20 +83,20 @@ export default function Login2faPage() {
                 autoFocus
               />
               <Button className="w-full" onClick={handleVerify} disabled={submitting}>
-                {submitting && <Loader2 className="size-4 animate-spin mr-1.5" />}
-                Verify
+                {submitting && <Loader2 className="size-4 animate-spin me-1.5" />}
+                {t('two-factor.action.verify')}
               </Button>
             </div>
           ) : (
             <div className="space-y-4">
               <div>
-                <Label className="text-xs font-medium text-muted-foreground mb-1.5 block">Recovery code</Label>
+                <Label className="text-xs font-medium text-muted-foreground mb-1.5 block">{t('two-factor.label.recoveryCode')}</Label>
                 <Input
                   type="text"
                   value={recoveryCode}
                   onChange={(e: React.ChangeEvent<HTMLInputElement>) => setRecoveryCode(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleVerify()}
-                  placeholder="XXXX-XXXX"
+                  placeholder={t('two-factor.placeholder.xxxxXxxx')}
                   maxLength={9}
                   autoComplete="off"
                   className="font-mono"
@@ -102,8 +104,8 @@ export default function Login2faPage() {
                 />
               </div>
               <Button className="w-full" onClick={handleVerify} disabled={submitting}>
-                {submitting && <Loader2 className="size-4 animate-spin mr-1.5" />}
-                Use recovery code
+                {submitting && <Loader2 className="size-4 animate-spin me-1.5" />}
+                {t('two-factor.action.useRecoveryCode')}
               </Button>
             </div>
           )}
@@ -114,14 +116,14 @@ export default function Login2faPage() {
               className="text-xs text-muted-foreground hover:text-foreground underline"
               onClick={() => { setShowRecovery(!showRecovery); setError(''); }}
             >
-              {showRecovery ? 'Use authenticator code' : 'Use a recovery code instead'}
+              {showRecovery ? t('two-factor.action.useAuthenticatorCode') : t('two-factor.action.useARecoveryCodeInstead')}
             </button>
           </div>
 
           {/* Back */}
           <div className="text-center mt-3">
             <Link to="/login" className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1">
-              <ArrowLeft className="size-3" /> Back to login
+              <ArrowLeft className="size-3 rtl:-scale-x-100" /> {t('common.action.backToLogin')}
             </Link>
           </div>
         </Card>

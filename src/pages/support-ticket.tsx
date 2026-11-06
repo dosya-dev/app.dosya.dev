@@ -12,15 +12,17 @@ import { Textarea } from '@/components/ui/textarea';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
-import { CATEGORY_LABELS, StatusBadge } from '@/components/support/ticket-meta';
+import { categoryLabel, StatusBadge } from '@/components/support/ticket-meta';
 import { AttachImages } from '@/components/support/attach-images';
 import { toast } from '@/lib/toast';
 import { timeAgo, initials } from '@/lib/helpers';
 import { useDocumentTitle } from '@/lib/page-title';
 import { ChevronLeft, Copy } from 'lucide-react';
 import { Logo } from "@/components/brand/logo";
+import { useT } from '@/lib/i18n';
 
 export default function SupportTicketPage() {
+  const t = useT();
   const { id } = useParams<{ id: string }>();
   const [ticket, setTicket] = useState<TicketDetail | null>(null);
   const [messages, setMessages] = useState<TicketMessage[]>([]);
@@ -39,7 +41,7 @@ export default function SupportTicketPage() {
       .catch(() => { /* avatar falls back to initials */ });
   }, []);
 
-  useDocumentTitle(ticket?.subject ? `${ticket.subject} · Support` : 'Support');
+  useDocumentTitle(ticket?.subject ? t('support-ticket.label.ticketsubjectSupport', { ticketSubject: ticket.subject }) : t('common.label.support'));
 
   // Initial load with alive guard
   useEffect(() => {
@@ -67,9 +69,9 @@ export default function SupportTicketPage() {
       setTicket(data.ticket);
       setMessages(data.messages);
     } catch (err) {
-      toast.error('Could not refresh the ticket', apiErrorMessage(err));
+      toast.error(t('support-ticket.error.couldNotRefreshTheTicket'), apiErrorMessage(err));
     }
-  }, [id]);
+  }, [id, t]);
 
   const send = async () => {
     if (!id || !body.trim() || sending) return;
@@ -80,7 +82,7 @@ export default function SupportTicketPage() {
       setFiles([]);
       await refresh();
     } catch (err) {
-      toast.error('Reply failed', apiErrorMessage(err));
+      toast.error(t('support-ticket.error.replyFailed'), apiErrorMessage(err));
     }
     setSending(false);
   };
@@ -92,16 +94,16 @@ export default function SupportTicketPage() {
       await closeTicket(id);
       await refresh();
       setConfirmClose(false);
-      toast.success('Ticket closed', 'You can reopen it anytime by replying.');
+      toast.success(t('support-ticket.feedback.ticketClosed'), t('support-ticket.feedback.youCanReopenItAnytimeByReplying'));
     } catch (err) {
-      toast.error('Close failed', apiErrorMessage(err));
+      toast.error(t('support-ticket.error.closeFailed'), apiErrorMessage(err));
     }
     setClosing(false);
   };
 
   const backLink = (
     <Link to="/support" className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground mb-4">
-      <ChevronLeft className="size-3.5" /> Back to tickets
+      <ChevronLeft className="size-3.5 rtl:-scale-x-100" /> {t('support-ticket.action.backToTickets')}
     </Link>
   );
 
@@ -110,7 +112,7 @@ export default function SupportTicketPage() {
       <div className="p-6 max-w-2xl mx-auto">
         {backLink}
         <Card className="gap-0 py-12 text-center text-sm text-muted-foreground">
-          This ticket does not exist or you do not have access to it.
+          {t('support-ticket.description.thisTicketDoesNotExistOrYouDoNotHaveAccess')}
         </Card>
       </div>
     );
@@ -135,15 +137,15 @@ export default function SupportTicketPage() {
                 <StatusBadge status={ticket.status} />
               </div>
               <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1 flex-wrap">
-                {CATEGORY_LABELS[ticket.category] ?? ticket.category} · Opened {timeAgo(ticket.created_at)} ·
+                {categoryLabel(ticket.category)} {t('support-ticket.label.opened')} {timeAgo(ticket.created_at)} ·
                 <button
                   type="button"
                   onClick={() => {
                     navigator.clipboard.writeText(ticket.id);
-                    toast.success('Ticket ID copied', 'Quote it anywhere you contact us and we can follow up.');
+                    toast.success(t('support-ticket.action.ticketIdCopied'), t('support-ticket.action.quoteItAnywhereYouContactUsAndWeCanFollowUp'));
                   }}
                   className="inline-flex items-center gap-1 font-mono hover:text-foreground"
-                  title="Copy ticket ID"
+                  title={t('support-ticket.action.copyTicketId')}
                 >
                   {ticket.id} <Copy className="size-3" />
                 </button>
@@ -151,7 +153,7 @@ export default function SupportTicketPage() {
             </div>
             {ticket.status !== 'closed' && (
               <Button variant="outline" size="sm" disabled={closing} onClick={() => setConfirmClose(true)}>
-                Close ticket
+                {t('support-ticket.action.closeTicket')}
               </Button>
             )}
           </div>
@@ -178,7 +180,7 @@ export default function SupportTicketPage() {
                 )}
                 <div className={`flex flex-col min-w-0 ${m.author_type === 'user' ? 'items-end' : 'items-start'}`}>
                   <p className="text-[11px] text-muted-foreground mb-1">
-                    {m.author_type === 'staff' ? 'Support' : (me?.name || 'You')}
+                    {m.author_type === 'staff' ? t('common.label.support') : (me?.name || t('common.label.you'))}
                     {' · '}{timeAgo(m.created_at)}
                   </p>
                   <div className={`rounded-xl px-4 py-3 text-sm whitespace-pre-wrap break-words ${
@@ -202,8 +204,7 @@ export default function SupportTicketPage() {
 
           {ticket.status === 'closed' && (
             <Card className="gap-0 px-4 py-3 mb-4 text-xs text-muted-foreground bg-muted/50">
-              This ticket was closed{ticket.closed_by === 'staff' ? ' by our support team' : ''}.
-              Sending a new message will reopen it.
+              {t('support-ticket.description.thisTicketWasClosedTicketclosedBystaffSelectTrueByOurSupportTeam', { ticketClosed_byStaff: ticket.closed_by === 'staff' ? 'true' : 'false' })}
             </Card>
           )}
 
@@ -211,14 +212,14 @@ export default function SupportTicketPage() {
             <Textarea
               value={body}
               onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setBody(e.target.value)}
-              placeholder="Write a reply…"
+              placeholder={t('support-ticket.placeholder.writeAReply')}
               rows={3}
               maxLength={10000}
             />
             <div className="flex items-center justify-between gap-2">
               <AttachImages files={files} onChange={setFiles} disabled={sending} />
               <Button onClick={send} disabled={sending || !body.trim()}>
-                {sending ? 'Sending…' : 'Send reply'}
+                {sending ? t('common.status.sending') : t('support-ticket.action.sendReply')}
               </Button>
             </div>
           </div>
@@ -226,14 +227,14 @@ export default function SupportTicketPage() {
           {confirmClose && (
             <Dialog open onOpenChange={() => !closing && setConfirmClose(false)}>
               <DialogContent className="max-w-sm">
-                <DialogHeader><DialogTitle>Close this ticket?</DialogTitle></DialogHeader>
+                <DialogHeader><DialogTitle>{t('support-ticket.heading.closeThisTicket')}</DialogTitle></DialogHeader>
                 <p className="text-sm text-muted-foreground">
-                  This marks the conversation as resolved. You can reopen it anytime by sending a new message.
+                  {t('support-ticket.description.thisMarksTheConversationAsResolvedYouCanReopenItAnytime')}
                 </p>
                 <DialogFooter>
-                  <Button variant="outline" disabled={closing} onClick={() => setConfirmClose(false)}>Cancel</Button>
+                  <Button variant="outline" disabled={closing} onClick={() => setConfirmClose(false)}>{t('common.cancel')}</Button>
                   <Button disabled={closing} onClick={close}>
-                    {closing ? 'Closing…' : 'Close ticket'}
+                    {closing ? t('support-ticket.action.closing') : t('support-ticket.action.closeTicket')}
                   </Button>
                 </DialogFooter>
               </DialogContent>

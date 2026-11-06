@@ -17,6 +17,7 @@
 // rail belongs to FileViewer and already shows the .zip's own details, so the
 // entry's facts go in the caption strip under the preview instead - which the
 // artboard also shows.
+import { formatNumber, localDigits } from '@/lib/format-locale';
 import { useCallback, useEffect, useMemo, useRef, useState, Suspense } from 'react';
 import { ChevronDown, ChevronRight, Folder, Lock, Ban, Search, Download, Loader2, Save, X } from 'lucide-react';
 import { api, API_BASE, ApiError, apiErrorMessage } from '@/api/client';
@@ -29,6 +30,23 @@ import { colorFor, labelFor, humanSize, extOf, isImage, isVideo, isAudio } from 
 import { isTextReadable } from '@/lib/text-detect';
 import { lazyChunkNamed } from '@/lib/chunk-reload';
 import type { FileItem } from '@/lib/file-types';
+import { t, useT } from '@/lib/i18n';
+import { richText } from '@/lib/rich-text';
+
+/**
+ * lib/archive-save.ts is shared verbatim with desktop and mobile and cannot
+ * import the translator, so it reports its own English sentences. Known ones
+ * are translated here, at display; anything else (the server's own text) is
+ * shown as sent.
+ */
+function localizeSaveMessage(message: string): string {
+  switch (message) {
+    case 'Request failed': return t('common.error.requestFailed');
+    case 'Folder could not be created': return t('common.error.folderCouldNotBeCreated');
+    case 'Its folder could not be created': return t('common.error.itsFolderCouldNotBeCreated');
+    default: return message;
+  }
+}
 
 const PdfViewer = lazyChunkNamed(
   () => import('@/components/pdf-viewer/pdf-viewer'),
@@ -55,8 +73,8 @@ const DISK_IMAGE_EXTS = new Set(['iso', 'img']);
 /** The noun for the summary line: what the API says it opened, else what the
  *  extension suggests (the API is the authority once it has answered). */
 function kindLabel(index: ArchiveIndex | null, name: string): string {
-  if (index?.kind === 'iso' || (!index?.kind && DISK_IMAGE_EXTS.has(extOf(name)))) return 'disk image';
-  return 'archive';
+  if (index?.kind === 'iso' || (!index?.kind && DISK_IMAGE_EXTS.has(extOf(name)))) return t('common.label.diskImage');
+  return t('common.label.archive');
 }
 
 /** Compression methods the server will actually stream (store and deflate). */
@@ -101,6 +119,7 @@ const STAGE_MUTED_TEXT = 'text-[oklch(0.6499_0.0194_240.1577)]';
 const STAGE_CAPTION_BG = 'bg-[oklch(0.135_0.018_238.9)]';
 
 export function ArchiveViewer({ file, version }: { file: FileItem; version?: number }) {
+  const tr = useT();
   const [index, setIndex] = useState<ArchiveIndex | null>(null);
   const [error, setError] = useState<{ status: number | null; message: string } | null>(null);
   const [selected, setSelected] = useState<TreeNode | null>(null);
@@ -138,7 +157,7 @@ export function ArchiveViewer({ file, version }: { file: FileItem; version?: num
           // Not the heading again: that sentence is already on screen
           // directly above this line. A failure with no API message to show
           // is a transport failure, and saying so is more use than an echo.
-          message: apiErrorMessage(err, 'Network error. Please try again.'),
+          message: apiErrorMessage(err, t('common.error.networkErrorPleaseTryAgain')),
         });
       });
     return () => { cancelled = true; };
@@ -185,8 +204,10 @@ export function ArchiveViewer({ file, version }: { file: FileItem; version?: num
     const plan = planFolderSave(nodes, rootName);
     if ('tooMany' in plan) {
       toast.error(
-        'Too many files to save at once',
-        `This folder has ${plan.tooMany.toLocaleString()} files. Save smaller folders (up to ${MAX_FOLDER_SAVE_FILES}), or download the archive.`,
+        t('common.error.tooManyFilesToSaveAtOnce'),
+        t('common.error.thisFolderHasToomanytolocalestringFilesSaveSmallerFoldersUpToMaxFolderSaveFiles', {
+          tooMany: formatNumber(plan.tooMany), maxFolderSaveFiles: MAX_FOLDER_SAVE_FILES,
+        }),
       );
       return;
     }
@@ -201,9 +222,9 @@ export function ArchiveViewer({ file, version }: { file: FileItem; version?: num
       if (job.node.index === null) return;
       try {
         const out = await saveEntry(job.node.index, folderId, job.node.name);
-        toast.success('Saved to dosya', out.name);
+        toast.success(t('common.feedback.savedToDosya'), out.name);
       } catch (err) {
-        toast.error('Could not save this file', apiErrorMessage(err));
+        toast.error(t('common.error.couldNotSaveThisFile'), apiErrorMessage(err));
       }
       return;
     }
@@ -216,12 +237,12 @@ export function ArchiveViewer({ file, version }: { file: FileItem; version?: num
       isCancelled: () => cancelRef.current,
     });
     setProgress(null);
-    const parts = [`Saved ${out.saved} ${out.saved === 1 ? 'file' : 'files'}`];
-    if (out.skipped) parts.push(`${out.skipped} skipped`);
-    if (out.failed.length) parts.push(`${out.failed.length} failed`);
-    if (out.cancelled) parts.push('cancelled');
+    const parts = [t('common.description.savedOutsavedPluralOneFileOtherFiles', { outSaved: out.saved })];
+    if (out.skipped) parts.push(t('common.label.outskippedSkipped', { count: out.skipped }));
+    if (out.failed.length) parts.push(t('common.error.failedcountFailed', { count: out.failed.length }));
+    if (out.cancelled) parts.push(t('common.label.cancelled'));
     const summary = parts.join(', ');
-    if (out.failed.length) toast.error(summary, `${out.failed[0]!.name}: ${out.failed[0]!.message}`);
+    if (out.failed.length) toast.error(summary, `${out.failed[0]!.name}: ${localizeSaveMessage(out.failed[0]!.message)}`);
     else toast.success(summary, job.plan.rootName);
   };
 
@@ -232,18 +253,18 @@ export function ArchiveViewer({ file, version }: { file: FileItem; version?: num
     // (404/403/a network failure) is a request problem, not a claim about the
     // archive, so it keeps a heading that cannot contradict a body like
     // "Network error. Please try again."
-    const noun = DISK_IMAGE_EXTS.has(extOf(file.name)) ? 'disk image' : 'zip';
-    const heading = error.status === 422 ? `This file isn't a valid ${noun}`
-      : error.status === 413 ? 'This archive is too large to list'
-      : 'This archive could not be opened';
+    const noun = DISK_IMAGE_EXTS.has(extOf(file.name)) ? tr('common.label.diskImage') : 'zip';
+    const heading = error.status === 422 ? tr('common.label.thisFileIsnTAValidNoun', { noun })
+      : error.status === 413 ? tr('common.error.thisArchiveIsTooLargeToList')
+      : tr('common.error.thisArchiveCouldNotBeOpened');
     return (
       <div className="flex-1 flex items-center justify-center p-8">
         <div className="bg-background border rounded-xl p-8 text-center max-w-80">
           <p className="text-[13px] font-semibold">{heading}</p>
-          <p className="text-[11px] text-muted-foreground mt-1.5 leading-relaxed">{error.message}</p>
+          <p dir="auto" className="text-[11px] text-muted-foreground mt-1.5 leading-relaxed">{error.message}</p>
           <a href={`${API_BASE}/api/files/${file.id}/download`} download
              className="inline-flex items-center gap-1.5 mt-4 h-8 px-3.5 rounded-lg border text-xs font-medium hover:bg-muted">
-            <Download className="size-3.5 text-muted-foreground" /> Download the file
+            <Download className="size-3.5 text-muted-foreground" /> {tr('common.action.downloadTheFile')}
           </a>
         </div>
       </div>
@@ -252,19 +273,19 @@ export function ArchiveViewer({ file, version }: { file: FileItem; version?: num
 
   return (
     <div className="flex-1 flex min-h-0">
-      <div className="w-[340px] shrink-0 border-r flex flex-col min-h-0 bg-background">
+      <div className="w-[340px] shrink-0 border-e flex flex-col min-h-0 bg-background">
         <div className="px-3 py-2.5 border-b flex flex-col gap-2">
           <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
             <Folder className="size-3.5" aria-hidden="true" />
             {index ? (
               <>
-                <span className="font-mono">{index.totalEntries.toLocaleString()} entries</span>
+                <span className="font-mono">{tr('common.label.totalentriesEntries', { totalEntries: formatNumber(index.totalEntries) })}</span>
                 <span aria-hidden="true">&middot;</span>
                 <span className="font-mono">{humanSize(index.archiveSize)}</span>
                 <span aria-hidden="true">&middot;</span>
                 <span data-testid="archive-kind">{kindLabel(index, file.name)}</span>
               </>
-            ) : <span className="font-mono">Opening&hellip;</span>}
+            ) : <span className="font-mono">{tr('common.label.openingHellip')}</span>}
           </div>
           {/* The ring is on the LABEL, not the input: `outline-none` on the
               input removes the only indicator the field had, and the visible
@@ -275,8 +296,8 @@ export function ArchiveViewer({ file, version }: { file: FileItem; version?: num
             <Search className="size-3.5 text-muted-foreground shrink-0" aria-hidden="true" />
             <input
               type="search" value={filter} onChange={(e) => setFilter(e.target.value)}
-              placeholder="Filter entries"
-              aria-label="Filter entries"
+              placeholder={tr('common.placeholder.filterEntries')}
+              aria-label={tr('common.placeholder.filterEntries')}
               className="min-w-0 flex-1 bg-transparent text-xs outline-none placeholder:text-muted-foreground"
             />
           </label>
@@ -287,7 +308,7 @@ export function ArchiveViewer({ file, version }: { file: FileItem; version?: num
             onClick={() => startFolderSave(tree, file.name.replace(/\.[^.]+$/, '') || file.name)}
             className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md border text-[11px] font-medium hover:bg-muted disabled:text-muted-foreground disabled:cursor-not-allowed disabled:hover:bg-transparent self-start"
           >
-            <Save className="size-3.5 text-muted-foreground" aria-hidden="true" /> Save all to dosya
+            <Save className="size-3.5 text-muted-foreground" aria-hidden="true" /> {tr('common.action.saveAllToDosya')}
           </button>
         </div>
 
@@ -295,14 +316,14 @@ export function ArchiveViewer({ file, version }: { file: FileItem; version?: num
           <div role="status" className="px-3 py-2 border-b text-[11px] flex items-center gap-2">
             <Loader2 className="size-3.5 animate-spin text-muted-foreground shrink-0" aria-hidden="true" />
             <span className="flex-1 truncate">
-              Saving {progress.done} of {progress.total} into {progress.root}
+              {tr('common.label.savingDoneOfTotalIntoRootName', { done: progress.done, total: progress.total, rootName: progress.root })}
             </span>
             <button
               type="button"
               onClick={() => { cancelRef.current = true; }}
               className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground shrink-0"
             >
-              <X className="size-3" aria-hidden="true" /> Cancel
+              <X className="size-3" aria-hidden="true" /> {tr('common.cancel')}
             </button>
           </div>
         )}
@@ -314,7 +335,7 @@ export function ArchiveViewer({ file, version }: { file: FileItem; version?: num
         {/* role="group" so the aria-label is actually exposed: a label on a
             role-less div is dropped by every AT, which left this region
             unnamed. Not role="tree" - see above. */}
-        <div role="group" className="flex-1 overflow-y-auto p-1.5" aria-label="Archive contents">
+        <div role="group" className="flex-1 overflow-y-auto p-1.5" aria-label={tr('common.accessibility.archiveContents')}>
           {!index && Array.from({ length: 8 }, (_, i) => (
             <div key={i} data-testid="archive-skeleton-row" className="flex items-center gap-2 h-[30px] px-2">
               <span className="size-5 rounded-[5px] bg-muted shrink-0" />
@@ -328,7 +349,7 @@ export function ArchiveViewer({ file, version }: { file: FileItem; version?: num
               still has no row to draw, which used to render a blank list. */}
           {index && tree.length === 0 && (
             <p className="text-[11px] text-muted-foreground px-2 py-6 text-center leading-relaxed">
-              There is nothing inside this archive.
+              {tr('common.description.thereIsNothingInsideThisArchive')}
             </p>
           )}
 
@@ -341,11 +362,13 @@ export function ArchiveViewer({ file, version }: { file: FileItem; version?: num
           {index?.truncated && (
             <div className="mt-2 border-t pt-2.5 px-2">
               <p className="text-xs font-semibold">
-                Showing the first {index.entries.length.toLocaleString()} of{' '}
-                <span className="font-mono">{index.totalEntries.toLocaleString()}</span> entries
+                {richText(tr('common.description.showingTheFirstEntryCountOfTotalEntriesEntries'), {
+                  entryCount: formatNumber(index.entries.length),
+                  totalEntries: <span className="font-mono">{formatNumber(index.totalEntries)}</span>,
+                })}
               </p>
               <p className="text-[11px] text-muted-foreground mt-1 leading-relaxed">
-                Use the filter to find what you need, or download the whole archive to get the rest.
+                {tr('common.description.useTheFilterToFindWhatYouNeedOr')}
               </p>
             </div>
           )}
@@ -361,8 +384,8 @@ export function ArchiveViewer({ file, version }: { file: FileItem; version?: num
         onClose={() => setPending(null)}
         workspaceId={workspaceId}
         onSelect={(id) => { void onPicked(id); }}
-        title="Save to folder"
-        confirmLabel="Save here"
+        title={tr('common.tooltip.saveToFolder')}
+        confirmLabel={tr('common.action.saveHere')}
       />
     </div>
   );
@@ -376,6 +399,7 @@ function Row({ node, path, depth, filter, openDirs, onToggle, selected, onSelect
   /** A folder save is running: one at a time, since they share the progress strip. */
   saving: boolean;
 }) {
+  const tr = useT();
   const q = filter.trim().toLowerCase();
   const matches = q === '' || node.name.toLowerCase().includes(q);
   // Closed unless explicitly opened - a filter match always forces a
@@ -400,19 +424,19 @@ function Row({ node, path, depth, filter, openDirs, onToggle, selected, onSelect
           onClick={() => onToggle(path)}
           onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle(path); } }}
           aria-expanded={open}
-          className="group flex items-center gap-2 h-[30px] w-full px-2 rounded-md hover:bg-muted text-left cursor-pointer"
-          style={{ paddingLeft: `${8 + depth * 22}px` }}
+          className="group flex items-center gap-2 h-[30px] w-full px-2 rounded-md hover:bg-muted text-start cursor-pointer"
+          style={{ paddingInlineStart: `${8 + depth * 22}px` }}
         >
           {open ? <ChevronDown className="size-3.5 text-muted-foreground shrink-0" />
-                : <ChevronRight className="size-3.5 text-muted-foreground shrink-0" />}
+                : <ChevronRight className="size-3.5 text-muted-foreground shrink-0 rtl:-scale-x-100" />}
           <Folder className="size-[15px] text-muted-foreground shrink-0" aria-hidden="true" />
           <span className="text-[13px] font-medium truncate">{node.name}</span>
-          <span className="font-mono text-[11px] text-muted-foreground ml-auto shrink-0">{node.fileCount}</span>
+          <span className="font-mono text-[11px] text-muted-foreground ms-auto shrink-0">{localDigits(node.fileCount)}</span>
           <button
             type="button"
             data-testid={`archive-save-dir-${path}`}
-            aria-label={`Save folder ${node.name} to dosya`}
-            title="Save folder to dosya"
+            aria-label={tr('common.accessibility.saveFolderNodeNameToDosya', { nodeName: node.name })}
+            title={tr('common.tooltip.saveFolderToDosya')}
             disabled={saving}
             onClick={(e) => { e.stopPropagation(); onSaveDir(node); }}
             className="inline-flex items-center justify-center size-6 rounded-md text-muted-foreground hover:text-foreground hover:bg-background shrink-0 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
@@ -430,8 +454,8 @@ function Row({ node, path, depth, filter, openDirs, onToggle, selected, onSelect
   const openable = !node.encrypted && OPENABLE_METHODS.has(node.method);
   const isSelected = selected?.index === node.index;
   const reason = node.encrypted
-    ? 'This entry is password-protected'
-    : `Compressed with a method this viewer cannot open (method ${node.method})`;
+    ? tr('common.label.thisEntryIsPasswordProtected')
+    : tr('common.error.compressedWithAMethodThisViewerCannotOpenMethod', { method: node.method });
 
   return (
     <button
@@ -445,10 +469,10 @@ function Row({ node, path, depth, filter, openDirs, onToggle, selected, onSelect
       aria-disabled={!openable}
       title={openable ? node.name : reason}
       onClick={() => { if (openable) onSelect(node); }}
-      className={`flex items-center gap-2 h-[30px] w-full px-2 rounded-md text-left ${
+      className={`flex items-center gap-2 h-[30px] w-full px-2 rounded-md text-start ${
         isSelected ? 'bg-muted' : 'hover:bg-muted'
       } ${openable ? '' : 'text-muted-foreground cursor-not-allowed'}`}
-      style={{ paddingLeft: `${8 + depth * 22}px` }}
+      style={{ paddingInlineStart: `${8 + depth * 22}px` }}
     >
       <span
         className="size-5 rounded-[5px] shrink-0 flex items-center justify-center text-[8px] font-bold tracking-[0.04em] text-white"
@@ -459,7 +483,7 @@ function Row({ node, path, depth, filter, openDirs, onToggle, selected, onSelect
       </span>
       <span className="text-[13px] font-medium truncate">{node.name}</span>
       {openable ? (
-        <span className="font-mono text-[11px] text-muted-foreground ml-auto shrink-0">{humanSize(node.size)}</span>
+        <span className="font-mono text-[11px] text-muted-foreground ms-auto shrink-0">{humanSize(node.size)}</span>
       ) : (
         <>
           {/* Encrypted and method-refused both need a marker that survives
@@ -467,8 +491,8 @@ function Row({ node, path, depth, filter, openDirs, onToggle, selected, onSelect
               for the other - muted text alone left the method case with no
               visible marker at all, unlike encrypted's lock glyph. */}
           {node.encrypted
-            ? <Lock className="size-3 text-muted-foreground ml-auto shrink-0" aria-hidden="true" />
-            : <Ban className="size-3 text-muted-foreground ml-auto shrink-0" aria-hidden="true" />}
+            ? <Lock className="size-3 text-muted-foreground ms-auto shrink-0" aria-hidden="true" />
+            : <Ban className="size-3 text-muted-foreground ms-auto shrink-0" aria-hidden="true" />}
           <span className="sr-only">{reason}</span>
         </>
       )}
@@ -477,6 +501,7 @@ function Row({ node, path, depth, filter, openDirs, onToggle, selected, onSelect
 }
 
 function DownloadCard({ fileId, node, note, version }: { fileId: string; node: TreeNode; note?: string; version?: number }) {
+  const tr = useT();
   return (
     <div className="bg-background border rounded-xl p-8 text-center">
       <p className="text-4xl font-bold text-muted-foreground tracking-wider mb-3">{labelFor(node.name)}</p>
@@ -489,7 +514,7 @@ function DownloadCard({ fileId, node, note, version }: { fileId: string; node: T
           Matches the desktop pane's own sentinel. */}
       <a href={entryUrl(fileId, node.index ?? -1, true, version)} download
          className={`inline-flex items-center gap-2 h-8 px-3.5 rounded-lg border text-xs font-medium hover:bg-muted ${note ? '' : 'mt-5'}`}>
-        <Download className="size-3.5 text-muted-foreground" /> Download this file
+        <Download className="size-3.5 text-muted-foreground" /> {tr('common.action.downloadThisFile')}
       </a>
     </div>
   );
@@ -498,10 +523,11 @@ function DownloadCard({ fileId, node, note, version }: { fileId: string; node: T
 function EntryPreview({ file, node, version, onSave }: {
   file: FileItem; node: TreeNode | null; version?: number; onSave: (n: TreeNode) => void;
 }) {
+  const tr = useT();
   if (!node || node.index === null) {
     return (
       <div className="flex-1 flex items-center justify-center p-6">
-        <p className={`text-[13px] ${STAGE_MUTED_TEXT}`}>Select a file to preview it.</p>
+        <p className={`text-[13px] ${STAGE_MUTED_TEXT}`}>{tr('common.description.selectAFileToPreviewIt')}</p>
       </div>
     );
   }
@@ -517,11 +543,11 @@ function EntryPreview({ file, node, version, onSave }: {
       <div className="flex items-center gap-1.5 shrink-0">
         <a href={entryUrl(file.id, node.index, true, version)} download
            className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md border border-white/15 text-[11px] font-medium hover:bg-white/10">
-          <Download className="size-3.5" aria-hidden="true" /> Download
+          <Download className="size-3.5" aria-hidden="true" /> {tr('common.action.download')}
         </a>
         <button type="button" data-testid="archive-save-entry" data-index={node.index} onClick={() => onSave(node)}
            className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md border border-white/15 text-[11px] font-medium hover:bg-white/10">
-          <Save className="size-3.5" aria-hidden="true" /> Save to dosya
+          <Save className="size-3.5" aria-hidden="true" /> {tr('common.action.saveToDosya')}
         </button>
       </div>
     </div>
@@ -563,7 +589,7 @@ function EntryPreview({ file, node, version, onSave }: {
     // the UNCOMPRESSED size for every byte it streams, so gating happens
     // BEFORE the request - same threshold and shape as TextViewer's own
     // oversize card in file-viewer.tsx.
-    body = <DownloadCard fileId={file.id} node={node} version={version} note={`Too large to preview inline (${humanSize(node.size)}).`} />;
+    body = <DownloadCard fileId={file.id} node={node} version={version} note={tr('common.error.tooLargeToPreviewInlineSize', { size: humanSize(node.size) })} />;
   } else if (textReadable) {
     body = <EntryText url={url} />;
   } else {
@@ -584,6 +610,7 @@ function EntryPreview({ file, node, version, onSave }: {
 }
 
 function EntryText({ url }: { url: string }) {
+  const tr = useT();
   const [result, setResult] = useState<{ text: string; truncated: boolean } | null>(null);
   const [failed, setFailed] = useState(false);
 
@@ -601,15 +628,15 @@ function EntryText({ url }: { url: string }) {
     let cancelled = false;
     fetch(url, { credentials: 'include' })
       .then((r) => (r.ok ? r.text() : Promise.reject(new Error(String(r.status)))))
-      .then((t) => {
+      .then((body) => {
         if (cancelled) return;
-        setResult({ text: t.slice(0, TEXT_RENDER_MAX), truncated: t.length > TEXT_RENDER_MAX });
+        setResult({ text: body.slice(0, TEXT_RENDER_MAX), truncated: body.length > TEXT_RENDER_MAX });
       })
       .catch(() => { if (!cancelled) setFailed(true); });
     return () => { cancelled = true; };
   }, [url]);
 
-  if (failed) return <p className={`text-[13px] ${STAGE_TEXT}`}>This entry could not be opened.</p>;
+  if (failed) return <p className={`text-[13px] ${STAGE_TEXT}`}>{tr('common.error.thisEntryCouldNotBeOpened')}</p>;
   if (result === null) return <Loader2 className={`size-6 animate-spin ${STAGE_MUTED_TEXT}`} />;
   return (
     <div className="max-w-full max-h-full flex flex-col items-center gap-2">
@@ -621,7 +648,7 @@ function EntryText({ url }: { url: string }) {
           PREVIEW has to say so too when the render cap cuts it. */}
       {result.truncated && (
         <p className={`text-[11px] ${STAGE_MUTED_TEXT} shrink-0`}>
-          Showing the first {TEXT_RENDER_MAX.toLocaleString()} characters. Download the file to see the rest.
+          {tr('common.description.showingTheFirstTextRenderMaxCharactersDownloadTheFileTo', { textRenderMax: formatNumber(TEXT_RENDER_MAX) })}
         </p>
       )}
     </div>

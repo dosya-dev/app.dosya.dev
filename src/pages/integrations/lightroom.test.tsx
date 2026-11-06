@@ -82,6 +82,10 @@ describe('LightroomSetup', () => {
     for (const s of ['Download', 'Add it', 'Connect']) expect(text()).toContain(s);
     const link = [...document.querySelectorAll('a')].find((a) => a.textContent?.includes('Download plug-in'))!;
     expect(link.getAttribute('href')).toBe('https://dosya.dev/downloads/lightroom/dosya-lightroom.zip');
+    const exchange = [...document.querySelectorAll('a')].find((a) => a.textContent?.includes('Adobe Exchange'))!;
+    expect(exchange.getAttribute('href')).toBe('https://exchange.adobe.com/apps/cc/206096');
+    expect(exchange.getAttribute('target')).toBe('_blank');
+    expect(exchange.getAttribute('rel')).toContain('noopener');
     expect(container!.querySelectorAll('[data-testid="lr-key-row"]')).toHaveLength(0);
   });
 

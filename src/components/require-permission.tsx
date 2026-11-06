@@ -3,6 +3,9 @@ import { Link } from 'react-router-dom';
 import { Lock } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { usePermissions } from '@/hooks/use-permissions';
+import { useT } from '@/lib/i18n';
+
+const LINK_SLOT = '\u0000';
 
 /**
  * A page gate for the `access_*` permissions.
@@ -24,6 +27,7 @@ import { usePermissions } from '@/hooks/use-permissions';
  * RESOLVED map that says no closes the door.
  */
 export function RequirePermission({ perm, children }: { perm: string; children: ReactNode }) {
+  const t = useT();
   const { can, isResolved, isLoading } = usePermissions();
 
   // Held back rather than rendered-then-swapped: mounting the page for a beat
@@ -32,14 +36,17 @@ export function RequirePermission({ perm, children }: { perm: string; children: 
   if (isLoading) return <div className="p-6" aria-busy="true" />;
 
   if (isResolved && !can(perm)) {
+    // The link sits where the message puts {link1}, so a language can move it.
+    const [before, after = ''] = t('common.description.askAWorkspaceOwnerOrAdminIfYouNeedItLink1', { link1: LINK_SLOT }).split(LINK_SLOT);
     return (
       <div className="p-6 max-w-4xl mx-auto">
         <Card className="gap-3 py-12 text-center text-sm text-muted-foreground">
           <Lock className="size-5 mx-auto opacity-60" />
-          <p>You do not have access to this page.</p>
+          <p>{t('common.description.youDoNotHaveAccessToThisPage')}</p>
           <p className="text-xs">
-            Ask a workspace owner or admin if you need it.{' '}
-            <Link to="/" className="underline hover:text-foreground">Back to dashboard</Link>
+            {before}
+            <Link to="/" className="underline hover:text-foreground">{t('common.action.backToDashboard')}</Link>
+            {after}
           </p>
         </Card>
       </div>

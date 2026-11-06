@@ -18,61 +18,78 @@
  * Safari fall out as the remainder.
  */
 
+import { t } from '@/lib/i18n';
+import type { MessageKey } from '@/i18n/keys';
+
 export type BrowserSlug = 'chrome' | 'firefox' | 'edge' | 'safari';
 
 export interface ExtensionStore {
 	slug: BrowserSlug;
-	/** What the reader calls their browser. */
-	browser: string;
-	/** What the vendor calls the place it lives. */
-	storeName: string;
+	/** What the reader calls their browser (translated when read). */
+	readonly browser: string;
+	/** What the vendor calls the place it lives (translated when read). */
+	readonly storeName: string;
 	/** The address the store will serve. Only safe to link when published. */
 	listingUrl: string;
 	/** False while the listing is still in review, when that URL 404s. */
 	published: boolean;
 	logo: string;
-	cta: string;
+	/** The button text (translated when read). */
+	readonly cta: string;
+}
+
+/** The table holds catalog keys; the three display strings translate when read. */
+function store(
+	base: Omit<ExtensionStore, 'browser' | 'storeName' | 'cta'>,
+	keys: { browser: MessageKey; storeName: MessageKey; cta: MessageKey },
+): ExtensionStore {
+	return {
+		...base,
+		get browser() { return t(keys.browser); },
+		get storeName() { return t(keys.storeName); },
+		get cta() { return t(keys.cta); },
+	};
 }
 
 /** Chrome first: largest share, and the one listing that is certainly live. */
 export const EXTENSION_STORES: ExtensionStore[] = [
-	{
-		slug: 'chrome',
-		browser: 'Chrome',
-		storeName: 'Chrome Web Store',
-		listingUrl:
-			'https://chromewebstore.google.com/detail/save-to-dosya/dkedbgjibdhomlepbbobfobmcgjgimem',
-		published: true,
-		logo: '/browsers/chrome.svg',
-		cta: 'Add for Chrome',
-	},
-	{
-		slug: 'firefox',
-		browser: 'Firefox',
-		storeName: 'Firefox Add-ons',
-		listingUrl: 'https://addons.mozilla.org/en-US/firefox/addon/save-to-dosya/',
-		published: true,
-		logo: '/browsers/firefox.svg',
-		cta: 'Add for Firefox',
-	},
-	{
-		slug: 'edge',
-		browser: 'Edge',
-		storeName: 'Edge Add-ons',
-		listingUrl: 'https://microsoftedge.microsoft.com/addons/detail/dapdhleiinckjcmlfnooelpaneahhnaf',
-		published: true,
-		logo: '/browsers/edge.svg',
-		cta: 'Add for Edge',
-	},
-	{
-		slug: 'safari',
-		browser: 'Safari',
-		storeName: 'Mac App Store',
-		listingUrl: 'https://apps.apple.com/app/id6820120081',
-		published: true,
-		logo: '/browsers/safari.svg',
-		cta: 'Add for Safari',
-	},
+	store(
+		{
+			slug: 'chrome',
+			listingUrl:
+				'https://chromewebstore.google.com/detail/save-to-dosya/dkedbgjibdhomlepbbobfobmcgjgimem',
+			published: true,
+			logo: '/browsers/chrome.svg',
+		},
+		{ browser: 'common.label.chrome', storeName: 'integrations-extension.label.chromeWebStore', cta: 'integrations-extension.label.addForChrome' },
+	),
+	store(
+		{
+			slug: 'firefox',
+			listingUrl: 'https://addons.mozilla.org/en-US/firefox/addon/save-to-dosya/',
+			published: true,
+			logo: '/browsers/firefox.svg',
+		},
+		{ browser: 'common.label.firefox', storeName: 'integrations-extension.label.firefoxAddOns', cta: 'integrations-extension.label.addForFirefox' },
+	),
+	store(
+		{
+			slug: 'edge',
+			listingUrl: 'https://microsoftedge.microsoft.com/addons/detail/dapdhleiinckjcmlfnooelpaneahhnaf',
+			published: true,
+			logo: '/browsers/edge.svg',
+		},
+		{ browser: 'common.label.edge', storeName: 'integrations-extension.label.edgeAddOns', cta: 'integrations-extension.label.addForEdge' },
+	),
+	store(
+		{
+			slug: 'safari',
+			listingUrl: 'https://apps.apple.com/app/id6820120081',
+			published: true,
+			logo: '/browsers/safari.svg',
+		},
+		{ browser: 'common.label.safari', storeName: 'common.label.macAppStore', cta: 'integrations-extension.label.addForSafari' },
+	),
 ];
 
 /**

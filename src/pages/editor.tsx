@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import { ArrowLeft, Eye, Download } from 'lucide-react';
 import { api, apiErrorMessage, API_BASE } from '@/api/client';
 import { useDocumentTitle } from '@/lib/page-title';
+import { t, useT } from '@/lib/i18n';
 
 interface EditorConfigResponse {
   ok: boolean;
@@ -61,13 +62,13 @@ function errorCodeOf(e: DocsApiEvent | undefined): number | undefined {
  * own wording, the rest fall back to a generic line.
  */
 export function describeEditorError(e: DocsApiEvent | undefined): string {
-  const lead = 'The document editor could not be loaded';
+  const lead = t('editor.error.theDocumentEditorCouldNotBeLoaded');
   switch (errorCodeOf(e)) {
-    case -4: return `${lead} - the document server could not fetch this file. You can still preview or download it.`;
-    case -2: return `${lead} - the document server could not be reached.`;
-    case -20: return `${lead} - the document server has no free editing seats right now.`;
-    case -21: return `${lead} - the document server is not licensed for editing.`;
-    default: return `${lead}.`;
+    case -4: return t('editor.error.leadTheDocumentServerCouldNotFetchThisFileYou', { lead });
+    case -2: return t('editor.error.leadTheDocumentServerCouldNotBeReached', { lead });
+    case -20: return t('editor.description.leadTheDocumentServerHasNoFreeEditingSeatsRight', { lead });
+    case -21: return t('editor.description.leadTheDocumentServerIsNotLicensedForEditing', { lead });
+    default: return t('editor.error.theDocumentEditorCouldNotBeLoaded.editorCouldNotBeLoaded');
   }
 }
 
@@ -79,8 +80,8 @@ export function describeEditorError(e: DocsApiEvent | undefined): string {
 export function describeEditorNotice(e: DocsApiEvent | undefined): string {
   const code = errorCodeOf(e);
   return code === undefined
-    ? 'The document editor reported a problem. If it stops responding, reload the page.'
-    : `The document editor reported a problem (code ${code}). If it stops responding, reload the page.`;
+    ? t('editor.description.theDocumentEditorReportedAProblemIfItStopsRespondingReload')
+    : t('editor.description.theDocumentEditorReportedAProblemCodeCodeIfItStops', { code });
 }
 
 const SCRIPT_ID = 'onlyoffice-docsapi';
@@ -106,7 +107,7 @@ function loadDocsApi(serverUrl: string): Promise<void> {
       script.removeEventListener('load', onLoad);
       script.removeEventListener('error', onError);
       script.remove();
-      reject(new Error('Document server unreachable'));
+      reject(new Error(t('editor.error.documentServerUnreachable')));
     };
     script.addEventListener('load', onLoad);
     script.addEventListener('error', onError);
@@ -120,6 +121,7 @@ function loadDocsApi(serverUrl: string): Promise<void> {
 }
 
 export default function EditorPage() {
+  const t = useT();
   const { fileId } = useParams();
   const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [error, setError] = useState('');
@@ -182,7 +184,7 @@ export default function EditorPage() {
         setState('ready');
       } catch (e) {
         if (!cancelled) {
-          setError(apiErrorMessage(e, 'The document editor could not be loaded.'));
+          setError(apiErrorMessage(e, t('editor.error.theDocumentEditorCouldNotBeLoaded.editorCouldNotBeLoaded')));
           setState('error');
         }
       }
@@ -197,19 +199,19 @@ export default function EditorPage() {
     <div className="h-screen flex flex-col bg-background">
       <header className="flex items-center gap-3 px-4 py-2 border-b shrink-0">
         <Link to="/files" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
-          <ArrowLeft className="size-4" /> Files
+          <ArrowLeft className="size-4 rtl:-scale-x-100" /> {t('common.label.files.files')}
         </Link>
         <span className="text-sm font-medium truncate">{title ?? ''}</span>
         {mode === 'view' && (
-          <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
-            <Eye className="size-3" /> Read-only
+          <span className="whitespace-nowrap inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
+            <Eye className="size-3" /> {t('editor.status.readOnly')}
           </span>
         )}
       </header>
       <div className="flex-1 min-h-0 relative">
         {state === 'loading' && (
           <div className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">
-            Loading editor...
+            {t('editor.status.loadingEditor')}
           </div>
         )}
         {/* An unrecognised code may in fact be fatal, leaving this notice over
@@ -225,9 +227,9 @@ export default function EditorPage() {
               <span className="text-muted-foreground">{notice}</span>
               <button
                 type="button"
-                aria-label="Dismiss"
+                aria-label={t('common.action.dismiss')}
                 onClick={() => setNotice(null)}
-                className="ml-auto font-semibold text-muted-foreground hover:text-foreground"
+                className="ms-auto font-semibold text-muted-foreground hover:text-foreground"
               >
                 ×
               </button>
@@ -238,13 +240,13 @@ export default function EditorPage() {
                 onClick={() => setAttempt((a) => a + 1)}
                 className="font-medium underline underline-offset-4 hover:text-foreground"
               >
-                Try again
+                {t('common.action.tryAgain')}
               </button>
               <Link to={`/files?view=${fileId}`} className="inline-flex items-center gap-1 font-medium underline underline-offset-4 hover:text-foreground">
-                <Eye className="size-3" /> Open preview
+                <Eye className="size-3" /> {t('editor.action.openPreview')}
               </Link>
               <a href={`${API_BASE}/api/files/${fileId}/download`} className="inline-flex items-center gap-1 font-medium underline underline-offset-4 hover:text-foreground">
-                <Download className="size-3" /> Download
+                <Download className="size-3" /> {t('common.action.download')}
               </a>
             </div>
           </div>
@@ -253,28 +255,30 @@ export default function EditorPage() {
           <div data-testid="editor-error-overlay" className="absolute inset-0 flex items-center justify-center">
             <div className="bg-background border rounded-xl p-8 text-center max-w-sm">
               <p className="text-sm text-muted-foreground mb-4">
-                {error || 'The document editor could not be loaded.'}
+                {error || t('editor.error.theDocumentEditorCouldNotBeLoaded.editorCouldNotBeLoaded')}
               </p>
               <button
                 type="button"
                 onClick={() => setAttempt((a) => a + 1)}
                 className="px-4 py-2 rounded-lg bg-foreground text-background text-sm font-semibold hover:opacity-90"
               >
-                Try again
+                {t('common.action.tryAgain')}
               </button>
               {/* The document is still there even when the editor is not. */}
               <div className="mt-4 flex items-center justify-center gap-4 text-xs">
                 <Link to={`/files?view=${fileId}`} className="inline-flex items-center gap-1 font-medium underline underline-offset-4 hover:text-foreground">
-                  <Eye className="size-3" /> Open preview
+                  <Eye className="size-3" /> {t('editor.action.openPreview')}
                 </Link>
                 <a href={`${API_BASE}/api/files/${fileId}/download`} className="inline-flex items-center gap-1 font-medium underline underline-offset-4 hover:text-foreground">
-                  <Download className="size-3" /> Download
+                  <Download className="size-3" /> {t('common.action.download')}
                 </a>
               </div>
             </div>
           </div>
         )}
-        <div id="oo-editor" className="w-full h-full" />
+        <div dir="ltr" className="w-full h-full">
+          <div id="oo-editor" className="w-full h-full" />
+        </div>
       </div>
     </div>
   );

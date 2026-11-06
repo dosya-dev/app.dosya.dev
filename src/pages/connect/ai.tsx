@@ -1,5 +1,5 @@
 // apps/web/src/pages/connect/ai.tsx
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -10,6 +10,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { rememberPostAuthPath } from '@/lib/post-auth-path';
 import { AI_BRAND_MARKS, isAiBrand } from '@/lib/ai-brands';
 import { Check, Lock, Monitor, ShieldCheck, TriangleAlert, X } from 'lucide-react';
+import { t as translate, useT } from '@/lib/i18n';
+import { richText } from '@/lib/rich-text';
+import type { MessageKey } from '@/i18n/keys';
+import { tidySpaces } from '@/pages/connect/carried-message';
 
 /** What GET /api/oauth/consent returns. Every client string is untrusted:
  *  it comes from the app's own registration, so it renders as text only. */
@@ -24,9 +28,9 @@ interface ConsentView {
   workspaces: { id: string; name: string }[];
 }
 
-const SCOPE_LABELS: Record<string, string> = {
-  'files.read': 'Read files and folders',
-  'account.read': 'See your plan and storage',
+const SCOPE_LABELS: Record<string, MessageKey> = {
+  'files.read': 'connect-ai.label.readFilesAndFolders',
+  'account.read': 'connect-ai.label.seeYourPlanAndStorage',
 };
 
 /** The authorization server's origin. In dev the API sits behind the Vite
@@ -48,14 +52,36 @@ function isOurAuthorizeUrl(raw: string): boolean {
 
 function errorText(err: unknown): string {
   if (err instanceof ApiError) {
-    if (err.status === 410) return 'This request expired. Go back to your AI app and connect again.';
+    if (err.status === 410) return translate('connect-ai.description.thisRequestExpiredGoBackToYourAiAppAndConnect');
     try {
       const parsed = JSON.parse(err.body) as { error?: string };
       if (parsed.error) return humanizeApiError(parsed.error);
     } catch { /* non-JSON body */ }
-    return `Request failed (${err.status}). Please try again.`;
+    return translate('common.error.requestFailedErrstatusPleaseTryAgain', { errStatus: err.status });
   }
-  return 'Could not connect the app. Please try again.';
+  return translate('connect-ai.error.couldNotConnectTheAppPleaseTryAgain');
+}
+
+/**
+ * The footer sentence. TODO(catalog): the message uses {emphasis1} for BOTH the
+ * redirect host and the account email, so the two cannot be told apart by name.
+ * Every language puts the host first and the email second (checked for all of
+ * them in vault-sweep.test.tsx), so the first slot is the host and the second
+ * the email. Doubled spaces left by the absent optional part are collapsed in
+ * the template only.
+ */
+function accessLine(message: string, host: string, email: string) {
+  const parts = tidySpaces(message).split('{emphasis1}');
+  return (
+    <>
+      {parts.map((part, i) => (
+        <Fragment key={i}>
+          {part}
+          {i === 0 ? <strong>{host}</strong> : i === 1 && email ? <strong>{email}</strong> : null}
+        </Fragment>
+      ))}
+    </>
+  );
 }
 
 /**
@@ -69,6 +95,7 @@ function errorText(err: unknown): string {
  *    let the person pick the workspace, and post the decision back.
  */
 export default function ConnectAiPage() {
+  const t = useT();
   const navigate = useNavigate();
   const location = useLocation();
   const [params] = useSearchParams();
@@ -140,7 +167,7 @@ export default function ConnectAiPage() {
       let host = '';
       try { host = new URL(res.redirect).hostname; } catch { /* malformed */ }
       if (host !== view.client.redirectHost) {
-        setError('The server returned an unexpected destination');
+        setError(t('connect-ai.error.theServerReturnedAnUnexpectedDestination'));
         setBusy(false);
         return;
       }
@@ -156,14 +183,14 @@ export default function ConnectAiPage() {
     if (invalid) {
       return (
         <>
-          <h1 className="text-xl font-semibold">That link is not valid</h1>
-          <p className="text-sm text-muted-foreground">Start connecting again from your AI app.</p>
+          <h1 className="text-xl font-semibold">{t('connect-ai.error.thatLinkIsNotValid')}</h1>
+          <p className="text-sm text-muted-foreground">{t('connect-ai.description.startConnectingAgainFromYourAiApp')}</p>
         </>
       );
     }
     if (!view) {
       return error
-        ? <p role="alert" className="text-sm text-destructive">{error}</p>
+        ? <p dir="auto" role="alert" className="text-sm text-destructive">{error}</p>
         : <div className="flex justify-center py-6"><Loader2 className="h-5 w-5 animate-spin" /></div>;
     }
     const c = view.client;
@@ -198,45 +225,47 @@ export default function ConnectAiPage() {
           </span>
         </div>
 
-        <h1 className="text-balance text-center text-xl font-semibold">{who} wants to read your dosya files</h1>
+        <h1 className="text-balance text-center text-xl font-semibold">{t('connect-ai.heading.whoWantsToReadYourDosyaFiles', { who })}</h1>
 
         <div className="flex justify-center">
           {brand ? (
             <span className="inline-flex items-center gap-1.5 rounded-full border border-green-600/30 bg-green-500/10 px-2.5 py-0.5 text-xs font-medium text-green-700 dark:text-green-400">
-              <ShieldCheck className="size-3.5" /> Verified: {c.redirectHost}{c.by ? ` \u00b7 by ${c.by}` : ''}
+              <ShieldCheck className="size-3.5" /> {t('connect-ai.description.verifiedCredirecthostHasby', { cRedirectHost: c.redirectHost, hasBy: c.by ? 'true' : 'other', cBy: c.by ?? '' })}
             </span>
           ) : (
             <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/40 bg-amber-500/10 px-2.5 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-400">
-              <TriangleAlert className="size-3.5" /> Not verified {'\u00b7'} sends to {c.redirectHost}
+              <TriangleAlert className="size-3.5" /> {t('connect-ai.label.notVerifiedSendsToCredirecthost', { cRedirectHost: c.redirectHost })}
             </span>
           )}
         </div>
 
         {c.redirectIsLoopback && (
           <div role="note" className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
-            This sends access to an app on your computer. Continue only if you just started connecting from it.
+            {t('connect-ai.description.thisSendsAccessToAnAppOnYourComputerContinueOnly')}
           </div>
         )}
         {!brand && !c.redirectIsLoopback && (
           <p className="text-center text-xs text-muted-foreground">
-            {c.domain ? <>Published by <strong>{c.domain}</strong>. </> : 'This app registered itself, so its name is not verified. '}
-            Continue only if you recognise it.
+            {richText(
+              tidySpaces(t('connect-ai.description.cdomainSelectTruePublishedByEmphasis1OtherThisAppRegisteredItself', { cDomain: c.domain ? 'true' : '' })),
+              { emphasis1: <strong>{c.domain}</strong> },
+            )}
           </p>
         )}
 
         {view.workspaces.length === 0 ? (
-          <p className="text-sm text-destructive">You have no workspace this app can read. End-to-end encrypted Spaces cannot be connected.</p>
+          <p className="text-sm text-destructive">{t('connect-ai.error.youHaveNoWorkspaceThisAppCanReadEndToEndEncryptedSpaces')}</p>
         ) : (
           <div className="space-y-1 text-sm">
-            <span className="font-medium">Workspace it can read</span>
+            <span className="font-medium">{t('connect-ai.label.workspaceItCanRead')}</span>
             <Select
               value={workspaceId || null}
               onValueChange={(v) => setWorkspaceId(v ? String(v) : '')}
               disabled={busy}
               items={view.workspaces.map((w) => ({ value: w.id, label: w.name }))}
             >
-              <SelectTrigger className="h-10 w-full text-sm" aria-label="Workspace it can read">
-                <SelectValue placeholder="Choose a workspace" />
+              <SelectTrigger className="h-10 w-full text-sm" aria-label={t('connect-ai.accessibility.workspaceItCanRead')}>
+                <SelectValue placeholder={t('connect-ai.placeholder.chooseAWorkspace')} />
               </SelectTrigger>
               <SelectContent alignItemWithTrigger={false}>
                 {view.workspaces.map((w) => <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>)}
@@ -257,27 +286,27 @@ export default function ConnectAiPage() {
                   onChange={(e) => setOptional((o) => ({ ...o, [s.id]: e.target.checked }))}
                 />
                 <span>
-                  {s.id === 'files.read' && chosen ? <>Find and read files in <strong>{chosen.name}</strong></> : (SCOPE_LABELS[s.id] ?? s.id)}
+                  {s.id === 'files.read' && chosen
+                    ? richText(t('connect-ai.label.findAndReadFilesInEmphasis1'), { emphasis1: <strong>{chosen.name}</strong> })
+                    : (SCOPE_LABELS[s.id] ? t(SCOPE_LABELS[s.id]) : s.id)}
                 </span>
               </label>
             </li>
           ))}
-          <li className="flex items-start gap-2.5 text-muted-foreground"><X className="mt-0.5 size-4 shrink-0" /> Change, share or delete anything</li>
-          <li className="flex items-start gap-2.5 text-muted-foreground"><X className="mt-0.5 size-4 shrink-0" /> Open your other workspaces or your Vault</li>
+          <li className="flex items-start gap-2.5 text-muted-foreground"><X className="mt-0.5 size-4 shrink-0" /> {t('connect-ai.label.changeShareOrDeleteAnything')}</li>
+          <li className="flex items-start gap-2.5 text-muted-foreground"><X className="mt-0.5 size-4 shrink-0" /> {t('connect-ai.description.openYourOtherWorkspacesOrYourVault')}</li>
         </ul>
 
-        {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+        {error && <p dir="auto" role="alert" className="text-sm text-destructive">{error}</p>}
         <div className="flex gap-2">
           <Button onClick={() => decide('approve')} disabled={busy || !workspaceId} className="flex-1">
-            {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Check className="mr-1.5 size-4" />}
-            Allow {brand ? c.name : ''}
+            {busy ? <Loader2 className="me-2 h-4 w-4 animate-spin" /> : <Check className="me-1.5 size-4" />}
+            {t('connect-ai.action.allowBrandSelectTrueCnameOther', { brand: brand ? 'true' : '', cName: c.name })}
           </Button>
-          <Button variant="outline" onClick={() => decide('deny')} disabled={busy}>Deny</Button>
+          <Button variant="outline" onClick={() => decide('deny')} disabled={busy}>{t('common.action.deny')}</Button>
         </div>
         <p className="text-center text-xs text-muted-foreground">
-          Access goes to <strong>{c.redirectHost}</strong>.
-          {accountEmail ? <> Signed in as <strong>{accountEmail}</strong>.</> : null}
-          {' '}Disconnect any time in Settings, Connected AI apps.
+          {accessLine(t('connect-ai.description.accessGoesToEmphasis1AccountemailSelectTrueSignedInAsEmphasis1', { accountEmail: accountEmail ? 'true' : '' }), c.redirectHost, accountEmail)}
         </p>
       </>
     );

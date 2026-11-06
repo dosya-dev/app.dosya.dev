@@ -10,6 +10,8 @@ import {
   detectDesktopOs, isHandheld, macArchitecture, snapInstallCommand, buildSize,
   OS_LABEL, type DesktopOs, type DesktopInfo,
 } from '@/lib/desktop-os';
+import { useT } from '@/lib/i18n';
+import { richText } from '@/lib/rich-text';
 
 const meta = getIntegration('desktop')!;
 const ORDER: DesktopOs[] = ['windows', 'mac', 'linux'];
@@ -32,6 +34,7 @@ const ORDER: DesktopOs[] = ['windows', 'mac', 'linux'];
  * not.
  */
 export default function DesktopSetup() {
+  const t = useT();
   const [os, setOs] = useState<DesktopOs | null>(null);
   const [handheld, setHandheld] = useState(false);
   const [picked, setPicked] = useState<DesktopOs | null>(null);
@@ -56,6 +59,11 @@ export default function DesktopSetup() {
   const active = picked ?? os;
   const others = ORDER.filter((p) => p !== active);
   const version = info?.version;
+  const debMessage = (size: number | undefined) => {
+    const label = buildSize(size);
+    // Template-only tidy: some languages leave a doubled space around the empty size branch.
+    return t('integrations-desktop.description.onDebianOrUbuntuTheLink1Hasdebsize', { hasDebSize: label ? 'true' : 'other', debSize: label ?? '' }).replace(/ {2,}/g, ' ').trim();
+  };
 
   return (
     <IntegrationLayout icon={meta.icon} title={meta.title} description={meta.description}>
@@ -63,31 +71,34 @@ export default function DesktopSetup() {
         <div className="mb-6 flex items-start gap-3 rounded-lg border bg-muted/30 p-3">
           <Smartphone className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
           <div className="text-sm">
-            <p className="font-medium">This one is for a computer</p>
+            <p className="font-medium">{t('integrations-desktop.label.thisOneIsForAComputer')}</p>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              You are on a phone or tablet, so none of these will install here. dosya has native
-              mobile apps instead.{' '}
-              <a
-                href="https://dosya.dev/mobile/"
-                target="_blank"
-                rel="noreferrer"
-                className="underline underline-offset-2 hover:text-foreground"
-              >
-                See the mobile apps
-              </a>
-              . You can still send a download link to your computer from below.
+              {richText(t('integrations-desktop.description.youAreOnAPhoneOrTabletSoNoneOfThese'), {
+                link1: (
+                  <a
+                    href="https://dosya.dev/mobile/"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="underline underline-offset-2 hover:text-foreground"
+                  >
+                    {t('integrations-desktop.action.seeTheMobileApps')}
+                  </a>
+                ),
+              })}
             </p>
           </div>
         </div>
       )}
 
-      <Step n={1} title={active ? `Download for ${OS_LABEL[active]}` : 'Download the app'}>
+      <Step n={1} title={active
+        ? t('integrations-desktop.tooltip.downloadForOsLabelactive', { OS_LABELActive: OS_LABEL[active] })
+        : t('integrations-desktop.tooltip.downloadTheApp')}>
         {active ? (
           <>
             <p>
-              {active === 'mac' && `A universal .dmg for ${macArchitecture(info)}, macOS 12 or later.`}
-              {active === 'windows' && 'An .exe installer for 64-bit Windows 10 and 11.'}
-              {active === 'linux' && 'An AppImage that runs on any modern 64-bit distribution.'}
+              {active === 'mac' && t('integrations-desktop.description.aUniversalDmgForInfoMacos12OrLater', { info: macArchitecture(info) })}
+              {active === 'windows' && t('integrations-desktop.description.anExeInstallerFor64BitWindows10And11')}
+              {active === 'linux' && t('integrations-desktop.description.anAppimageThatRunsOnAnyModern64BitDistribution')}
             </p>
             {/* The store badge sits beside the direct download rather than in
                 a later step: they are the same decision, made once, and each
@@ -98,7 +109,7 @@ export default function DesktopSetup() {
                 className="inline-flex h-11 items-center gap-2 rounded-lg bg-primary px-5 text-sm font-semibold text-primary-foreground shadow-sm transition-opacity hover:opacity-90"
               >
                 <Download className="size-4" />
-                Download for {OS_LABEL[active]}
+                {t('integrations-desktop.action.downloadFor')} {OS_LABEL[active]}
                 {(version || buildSize(info?.builds?.[active]?.size)) && (
                   <span className="font-normal opacity-70">
                     {version ? `v${version}` : ''}
@@ -116,17 +127,14 @@ export default function DesktopSetup() {
 
             {active !== 'linux' && (
               <p className="text-xs text-muted-foreground">
-                The store build handles its own updates. It trails the direct download by a
-                release while review runs, so it can be a version behind.
+                {t('integrations-desktop.description.theStoreBuildHandlesItsOwnUpdatesItTrailsTheDirect')}
               </p>
             )}
 
             {active === 'linux' && snapInstallCommand(info) && (
               <>
                 <p className="text-xs text-muted-foreground">
-                  snapd handles updates after install. The Snap Store's own install button only
-                  appears once a revision reaches the stable channel, so until then this is the
-                  command that works:
+                  {t('integrations-desktop.description.snapdHandlesUpdatesAfterInstallTheSnapStoreSOwnInstallButton')}
                 </p>
                 <CodeBlock code={snapInstallCommand(info)!} lang="bash" />
               </>
@@ -148,7 +156,7 @@ export default function DesktopSetup() {
         )}
 
         <p className="text-xs text-muted-foreground">
-          {active ? 'On a different computer? ' : 'Or pick one: '}
+          {active ? `${t('integrations-desktop.description.onADifferentComputer')} ` : `${t('integrations-desktop.label.orPickOne')} `}
           {others.map((p, i) => (
             <span key={p}>
               {i > 0 && ' · '}
@@ -165,35 +173,38 @@ export default function DesktopSetup() {
       </Step>
 
       {active && (
-        <Step n={2} title="Install it">
+        <Step n={2} title={t('integrations-desktop.tooltip.installIt')}>
           {active === 'mac' && (
             <p>
-              Open the .dmg, drag <strong>dosya</strong> into Applications, then launch it from
-              there. macOS checks the signature on first run, which can take a few seconds.
+              {richText(t('integrations-desktop.description.openTheDmgDragEmphasis1IntoApplicationsThenLaunchItFrom'), {
+                emphasis1: <strong>dosya</strong>,
+              })}
             </p>
           )}
           {active === 'windows' && (
             <p>
-              Run the .exe. It installs for the current user, so it needs no administrator
-              password. SmartScreen may ask once before the certificate is widely seen; choose
-              <strong> More info</strong> then <strong>Run anyway</strong>.
+              {richText(t('integrations-desktop.description.runTheExeItInstallsForTheCurrentUserSoIt'), {
+                emphasis1: <strong>{t('integrations-desktop.label.moreInfo')}</strong>,
+                emphasis2: <strong>{t('integrations-desktop.label.runAnyway')}</strong>,
+              })}
             </p>
           )}
           {active === 'linux' && (
             <>
-              <p>Make the AppImage executable and run it:</p>
+              <p>{t('integrations-desktop.description.makeTheAppimageExecutableAndRunIt')}</p>
               <CodeBlock code={'chmod +x dosya-*.AppImage\n./dosya-*.AppImage'} lang="bash" />
               {info?.builds?.linux?.deb?.fileName && (
                 <p>
-                  On Debian or Ubuntu the{' '}
-                  <a
-                    href={`${desktopDownload(API_BASE, 'linux')}&format=deb`}
-                    className="underline underline-offset-2 hover:text-foreground"
-                  >
-                    .deb package
-                  </a>{' '}
-                  {buildSize(info.builds.linux.deb.size) ? `(${buildSize(info.builds.linux.deb.size)}) ` : ''}
-                  integrates with your package manager instead. It does not self-update.
+                  {richText(debMessage(info.builds.linux.deb.size), {
+                    link1: (
+                      <a
+                        href={`${desktopDownload(API_BASE, 'linux')}&format=deb`}
+                        className="underline underline-offset-2 hover:text-foreground"
+                      >
+                        {t('integrations-desktop.action.debPackage')}
+                      </a>
+                    ),
+                  })}
                 </p>
               )}
             </>
@@ -204,13 +215,15 @@ export default function DesktopSetup() {
       {/* Every store route now lives in step 1 beside its download, so the
           page is the same three steps on all three platforms: get it,
           install it, or skip both and use the terminal. */}
-      <Step n={active ? 3 : 2} title="Prefer the terminal?">
+      <Step n={active ? 3 : 2} title={t('integrations-desktop.tooltip.preferTheTerminal')}>
         <p>
-          The{' '}
-          <Link to="/integrations/cli" className="underline underline-offset-2 hover:text-foreground">
-            dosya CLI
-          </Link>{' '}
-          gives you scriptable uploads, downloads and folder sync from the command line.
+          {richText(t('integrations-desktop.description.theLink1GivesYouScriptableUploadsDownloadsAndFolderSyncFrom'), {
+            link1: (
+              <Link to="/integrations/cli" className="underline underline-offset-2 hover:text-foreground">
+                {t('integrations-desktop.action.dosyaCli')}
+              </Link>
+            ),
+          })}
         </p>
       </Step>
     </IntegrationLayout>
@@ -228,7 +241,8 @@ export default function DesktopSetup() {
  * MacAppStoreBadge.astro on the marketing site.
  */
 function MacAppStoreBadge() {
-  const alt = 'Download on the Mac App Store';
+  const t = useT();
+  const alt = t('common.label.downloadOnTheMacAppStore');
   return (
     <a
       href={MAC_APP_STORE_URL}
@@ -253,7 +267,8 @@ function MacAppStoreBadge() {
  * the proportions survive sitting in a row.
  */
 function SnapStoreBadge() {
-  const alt = 'Get it from the Snap Store';
+  const t = useT();
+  const alt = t('integrations-desktop.label.getItFromTheSnapStore');
   return (
     <a
       href={SNAP_STORE_URL}

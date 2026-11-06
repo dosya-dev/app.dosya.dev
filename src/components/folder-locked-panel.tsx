@@ -19,6 +19,7 @@ import { Lock, Loader2, ArrowLeft } from 'lucide-react';
 import { api, ApiError, apiErrorMessage } from '@/api/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { useT } from '@/lib/i18n';
 
 interface FolderLockedPanelProps {
     folderId: string;
@@ -30,6 +31,7 @@ interface FolderLockedPanelProps {
 }
 
 export function FolderLockedPanel({ folderId, folderName, onUnlocked, onBack }: FolderLockedPanelProps) {
+    const t = useT();
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
     const [submitting, setSubmitting] = useState(false);
@@ -46,7 +48,7 @@ export function FolderLockedPanel({ folderId, folderName, onUnlocked, onBack }: 
             if (res.ok && res.unlock_token) {
                 onUnlocked(res.unlock_token);
             } else {
-                setError(res.error ?? 'Incorrect password');
+                setError(res.error ?? t('files.error.incorrectPassword'));
                 setPassword('');
             }
         } catch (err) {
@@ -54,7 +56,7 @@ export function FolderLockedPanel({ folderId, folderName, onUnlocked, onBack }: 
             // than in the else branch above. Clear the field on a real answer
             // from the server, but keep it on a network failure - retyping a
             // password because the wifi blipped is its own small insult.
-            setError(apiErrorMessage(err, "Can't reach the server. Check your connection and try again."));
+            setError(apiErrorMessage(err, t('common.error.canTReachTheServerCheckYourConnectionAnd')));
             if (err instanceof ApiError) setPassword('');
         }
         setSubmitting(false);
@@ -66,14 +68,14 @@ export function FolderLockedPanel({ folderId, folderName, onUnlocked, onBack }: 
                 <Lock className="size-6 text-muted-foreground" />
             </div>
             <p className="text-sm font-medium text-foreground mb-1">
-                {folderName ? `"${folderName}" is locked` : 'This folder is locked'}
+                {folderName ? t('files.label.foldernameIsLocked', { folderName }) : t('files.label.thisFolderIsLocked')}
             </p>
             <p className="text-xs text-muted-foreground max-w-80 mb-4">
-                Enter the folder password to see what is inside. Access stays open for one hour.
+                {t('files.description.enterTheFolderPasswordToSeeWhatIsInsideAccessStays')}
             </p>
 
             {error && (
-                <p className="text-xs text-destructive bg-destructive/10 border border-destructive/20 rounded-md px-3 py-2 mb-3 max-w-72">
+                <p dir="auto" className="text-xs text-destructive bg-destructive/10 border border-destructive/20 rounded-md px-3 py-2 mb-3 max-w-72">
                     {error}
                 </p>
             )}
@@ -84,17 +86,17 @@ export function FolderLockedPanel({ folderId, folderName, onUnlocked, onBack }: 
                     value={password}
                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPassword(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && submit()}
-                    placeholder="Folder password"
+                    placeholder={t('files.placeholder.folderPassword')}
                     className="h-9"
                     autoFocus
                 />
                 <Button size="sm" className="h-9 shrink-0" onClick={submit} disabled={submitting || !password.trim()}>
-                    {submitting && <Loader2 className="size-4 animate-spin mr-1.5" />} Unlock
+                    {submitting && <Loader2 className="size-4 animate-spin me-1.5" />} {t('common.action.unlock')}
                 </Button>
             </div>
 
             <Button variant="ghost" size="sm" className="h-7 text-xs mt-3 text-muted-foreground" onClick={onBack}>
-                <ArrowLeft className="size-3 mr-1" /> Go back
+                <ArrowLeft className="size-3 me-1 rtl:-scale-x-100" /> {t('common.action.goBack')}
             </Button>
         </div>
     );

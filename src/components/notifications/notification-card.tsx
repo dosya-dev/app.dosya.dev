@@ -3,8 +3,10 @@ import { X } from "lucide-react";
 import { parseActions, relativeTime, isUnread, openDestination, type NotificationItem } from "../../lib/notifications";
 import { useNotifications } from "../../stores/notifications";
 import { NotificationIcon } from "./notification-icon";
+import { useT } from "../../lib/i18n";
 
 export function NotificationCard({ item }: { item: NotificationItem }) {
+  const t = useT();
   const navigate = useNavigate();
   const markItemRead = useNotifications((s) => s.markItemRead);
   const dismissItem = useNotifications((s) => s.dismissItem);
@@ -30,11 +32,11 @@ export function NotificationCard({ item }: { item: NotificationItem }) {
       <NotificationIcon icon={item.icon} category={item.category} priority={item.priority} unread={isUnread(item)} />
       <div className="min-w-0 flex-1">
         <div className="flex items-start gap-2">
-          <p className="text-sm font-medium truncate">{item.title}</p>
+          <p dir="auto" className="text-sm font-medium truncate">{item.title}</p>
           {isUnread(item) && <span className="mt-1 size-1.5 rounded-full bg-green-500 shrink-0" />}
-          <span className="ml-auto text-xs text-muted-foreground shrink-0">{relativeTime(item.created_at, now)}</span>
+          <span className="ms-auto text-xs text-muted-foreground shrink-0">{relativeTime(item.created_at, now)}</span>
         </div>
-        {item.body && <p className="text-sm text-muted-foreground line-clamp-2">{item.body}</p>}
+        {item.body && <p dir="auto" className="text-sm text-muted-foreground line-clamp-2">{item.body}</p>}
         {actions.length > 0 && (
           <div className="mt-1.5 flex gap-1.5">
             {actions.map((a, idx) => (
@@ -54,7 +56,7 @@ export function NotificationCard({ item }: { item: NotificationItem }) {
         )}
       </div>
       <button
-        aria-label="Dismiss"
+        aria-label={t('common.action.dismiss')}
         className="opacity-0 group-hover:opacity-100 self-start text-muted-foreground hover:text-foreground"
         onClick={(e) => { e.stopPropagation(); dismissItem(item.id); }}
       >

@@ -3,6 +3,8 @@
 // re-validates (apps/api/src/lib/support-diagnostics.ts); this is the
 // client half, and the card the user reads before Send.
 
+import { t } from '@/lib/i18n';
+
 export const BUILD_SHA: string = typeof __BUILD_SHA__ === 'string' && __BUILD_SHA__ ? __BUILD_SHA__ : 'dev';
 
 /** The marketing version people see in release notes. The web app ships
@@ -66,12 +68,12 @@ export function collectDiagnostics(input: DiagnosticsInput = {}): WebDiagnostics
  *  "Error reference", never the vendor's name. */
 export function diagnosticsRows(d: WebDiagnostics): { label: string; value: string }[] {
   const rows: { label: string; value: string | null }[] = [
-    { label: 'App', value: `${d.app_version} · build ${d.build ?? 'dev'}` },
-    { label: 'Browser', value: d.platform },
-    { label: 'Workspace', value: d.workspace_id },
-    { label: 'Page', value: d.page },
-    { label: 'Error reference', value: d.error_ref },
-    { label: 'Error', value: d.error_message },
+    { label: t('report-problem.label.app'), value: `${d.app_version} · build ${d.build ?? 'dev'}` },
+    { label: t('common.label.browser'), value: d.platform },
+    { label: t('common.label.workspace'), value: d.workspace_id },
+    { label: t('report-problem.label.page'), value: d.page },
+    { label: t('report-problem.label.errorReference'), value: d.error_ref },
+    { label: t('error-page.label.error'), value: d.error_message },
     ...Object.entries(d.extra).map(([label, value]) => ({ label, value })),
   ];
   return rows.filter((r): r is { label: string; value: string } => typeof r.value === 'string' && r.value.length > 0);

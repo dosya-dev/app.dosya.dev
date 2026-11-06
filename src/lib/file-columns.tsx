@@ -7,6 +7,7 @@ import type { FileItem, FolderItem } from '@/lib/file-types';
 import { humanSize, extOf, originLabel } from '@/lib/helpers';
 import type { SortKey } from '@/lib/list-sort';
 import { KIND_COPY, takenIsWallClockOf, type LibraryKind, type LibraryItem } from '@/lib/library-request';
+import { t } from '@/lib/i18n';
 import { formatCell, useDateFormat } from '@/lib/date-format';
 
 /**
@@ -62,7 +63,8 @@ function capturedAtMs(raw: string | null | undefined): number | null {
 
 export interface ColumnDef {
   key: ColumnKey;
-  label: string;
+  /** Translated when read, so a header follows the language live. */
+  readonly label: string;
   defaultVisible: boolean;
   width?: string;
   render: (f: FileItem) => React.ReactNode;
@@ -70,19 +72,19 @@ export interface ColumnDef {
 }
 
 export const ALL_COLUMNS: ColumnDef[] = [
-  { key: 'name', label: 'Name', defaultVisible: true, width: 'flex-1 min-w-40', render: () => null /* handled separately */ },
-  { key: 'size', label: 'Size', defaultVisible: true, width: 'w-20', render: (f) => humanSize(f.size_bytes), renderFolder: (f) => humanSize(f.total_size_bytes) },
-  { key: 'created', label: 'Created', defaultVisible: true, width: 'w-24', render: (f) => <DateCell ts={f.created_at} />, renderFolder: (f) => <DateCell ts={f.created_at} /> },
-  { key: 'modified', label: 'Modified', defaultVisible: false, width: 'w-24', render: (f) => <DateCell ts={f.updated_at} />, renderFolder: (f) => <DateCell ts={f.content_updated_at} /> },
-  { key: 'taken', label: 'Date taken', defaultVisible: false, width: 'w-24', render: (f) => <DateCell ts={takenAtOf(f)} wallClock={takenIsWallClock(f)} /> },
-  { key: 'type', label: 'Type', defaultVisible: false, width: 'w-28', render: (f) => f.mime_type, renderFolder: () => 'Folder' },
-  { key: 'extension', label: 'Extension', defaultVisible: false, width: 'w-16', render: (f) => (f.extension || extOf(f.name) || '-').toUpperCase() },
-  { key: 'version', label: 'Version', defaultVisible: false, width: 'w-16', render: (f) => f.current_version > 1 ? `v${f.current_version}` : '-' },
-  { key: 'uploader', label: 'Uploader', defaultVisible: false, width: 'w-28', render: (f) => f.uploader_name ?? '-', renderFolder: (f) => f.uploader_name ?? '-' },
-  { key: 'region', label: 'Region', defaultVisible: false, width: 'w-20', render: (f) => f.region || '-', renderFolder: (f) => f.region === 'multi' ? 'Multiple' : (f.region || '-') },
-  { key: 'origin', label: 'Origin', defaultVisible: true, width: 'w-20', render: (f) => originLabel(f.origin), renderFolder: (f) => originLabel(f.origin) },
-  { key: 'shares', label: 'Shares', defaultVisible: false, width: 'w-14', render: (f) => f.share_count > 0 ? String(f.share_count) : '-', renderFolder: (f) => f.share_count > 0 ? String(f.share_count) : '-' },
-  { key: 'comments', label: 'Comments', defaultVisible: false, width: 'w-14', render: (f) => f.comment_count > 0 ? String(f.comment_count) : '-', renderFolder: (f) => f.comment_count > 0 ? String(f.comment_count) : '-' },
+  { key: 'name', get label() { return t('common.label.name'); }, defaultVisible: true, width: 'flex-1 min-w-40', render: () => null /* handled separately */ },
+  { key: 'size', get label() { return t('common.label.size'); }, defaultVisible: true, width: 'w-20', render: (f) => humanSize(f.size_bytes), renderFolder: (f) => humanSize(f.total_size_bytes) },
+  { key: 'created', get label() { return t('common.label.created'); }, defaultVisible: true, width: 'w-24', render: (f) => <DateCell ts={f.created_at} />, renderFolder: (f) => <DateCell ts={f.created_at} /> },
+  { key: 'modified', get label() { return t('common.label.modified'); }, defaultVisible: false, width: 'w-24', render: (f) => <DateCell ts={f.updated_at} />, renderFolder: (f) => <DateCell ts={f.content_updated_at} /> },
+  { key: 'taken', get label() { return t('files.label.dateTaken'); }, defaultVisible: false, width: 'w-24', render: (f) => <DateCell ts={takenAtOf(f)} wallClock={takenIsWallClock(f)} /> },
+  { key: 'type', get label() { return t('common.label.type'); }, defaultVisible: false, width: 'w-28', render: (f) => f.mime_type, renderFolder: () => t('common.label.folder') },
+  { key: 'extension', get label() { return t('common.label.extension'); }, defaultVisible: false, width: 'w-16', render: (f) => (f.extension || extOf(f.name) || '-').toUpperCase() },
+  { key: 'version', get label() { return t('files.label.versionTitleCase'); }, defaultVisible: false, width: 'w-16', render: (f) => f.current_version > 1 ? `v${f.current_version}` : '-' },
+  { key: 'uploader', get label() { return t('common.label.uploader'); }, defaultVisible: false, width: 'w-28', render: (f) => f.uploader_name ?? '-', renderFolder: (f) => f.uploader_name ?? '-' },
+  { key: 'region', get label() { return t('common.label.region'); }, defaultVisible: false, width: 'w-20', render: (f) => f.region || '-', renderFolder: (f) => f.region === 'multi' ? t('files.label.multiple') : (f.region || '-') },
+  { key: 'origin', get label() { return t('common.label.origin'); }, defaultVisible: true, width: 'w-20', render: (f) => originLabel(f.origin), renderFolder: (f) => originLabel(f.origin) },
+  { key: 'shares', get label() { return t('common.label.shares'); }, defaultVisible: false, width: 'w-14', render: (f) => f.share_count > 0 ? String(f.share_count) : '-', renderFolder: (f) => f.share_count > 0 ? String(f.share_count) : '-' },
+  { key: 'comments', get label() { return t('common.label.comments'); }, defaultVisible: false, width: 'w-14', render: (f) => f.comment_count > 0 ? String(f.comment_count) : '-', renderFolder: (f) => f.comment_count > 0 ? String(f.comment_count) : '-' },
 ];
 
 export const DEFAULT_VISIBLE: Set<ColumnKey> = new Set(ALL_COLUMNS.filter((c) => c.defaultVisible).map((c) => c.key));

@@ -1,4 +1,5 @@
 import type { CloudJob } from '@/api/cloud-import';
+import { t } from '@/lib/i18n';
 import { useCloudImports } from '@/stores/cloud-imports';
 
 /**
@@ -51,11 +52,13 @@ export function etaSeconds(
 
 /** "45s" / "4m" / "1h" / "1h 20m" - always the "about" scale, never exact. */
 export function humanDuration(seconds: number): string {
+  // TODO(catalog): no entry exists for the seconds abbreviation ("45s"), so it stays English in every language.
   if (seconds < 60) return `${seconds}s`;
-  if (seconds < 3600) return `${Math.round(seconds / 60)}m`;
+  if (seconds < 3600) return t('teams.label.countM', { count: Math.round(seconds / 60) });
   const h = Math.floor(seconds / 3600);
   const m = Math.round((seconds % 3600) / 60);
-  return m > 0 ? `${h}h ${m}m` : `${h}h`;
+  const hours = t('teams.label.countH', { count: h });
+  return m > 0 ? `${hours} ${t('teams.label.countM', { count: m })}` : hours;
 }
 
 /**

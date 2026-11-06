@@ -10,6 +10,7 @@ vi.mock('@/api/client', async (importOriginal) => {
 
 const { UnlockGate } = await import('./unlock-gate');
 const { useE2ee } = await import('@/stores/e2ee');
+const { useSession } = await import('@/stores/session');
 type E2eeEngine = import('@/stores/e2ee').E2eeEngine;
 
 function fakeEngine(overrides: Partial<E2eeEngine> = {}): E2eeEngine {
@@ -49,13 +50,19 @@ beforeEach(() => {
   useE2ee.setState({ status: 'locked', error: null, hasIdentity: null, workspaces: [], busy: false, recoveryKeyOnce: null });
   apiMock.mockReset();
   apiMock.mockResolvedValue({ ok: true, method: null, totp_enabled: false });
+  useSession.setState({ user: null });
 });
 
-afterEach(() => {
+afterEach(async () => {
+  // A destroy still wiping this device's Personas data would land in the next
+  // test (hasIdentity: false routes its gate to Setup): let it finish here.
+  await vi.waitFor(() => expect(useE2ee.getState().busy).toBe(false));
   if (root) act(() => root!.unmount());
   container?.remove();
   root = null;
   container = null;
+  // A dialog portal can outlive its root; a stale one would answer the next test's queries.
+  document.body.innerHTML = '';
 });
 
 async function mount() {
@@ -96,7 +103,7 @@ describe('UnlockGate recovery paths', () => {
   });
 
   it('"Destroy vault and start over" asks for the password, calls the engine, and returns to setup', async () => {
-    const calls: [string, string | undefined][] = [];
+    const calls: [unknown, string | undefined][] = [];
     useE2ee.getState().__setEngine(fakeEngine({ destroyIdentity: async (pw, code) => { calls.push([pw, code]); } }));
     await mount();
 
@@ -138,7 +145,7 @@ describe('UnlockGate recovery paths', () => {
 
   it('asks for a 2FA code as well when the account has one, and sends it', async () => {
     apiMock.mockResolvedValue({ ok: true, method: 'totp', totp_enabled: true });
-    const calls: [string, string | undefined][] = [];
+    const calls: [unknown, string | undefined][] = [];
     useE2ee.getState().__setEngine(fakeEngine({ destroyIdentity: async (pw, code) => { calls.push([pw, code]); } }));
     await mount();
 
@@ -153,5 +160,71 @@ describe('UnlockGate recovery paths', () => {
     act(() => { (document.body.querySelector('input[type="checkbox"]') as HTMLInputElement).click(); });
     await act(async () => { button('Destroy my vault')!.click(); });
     expect(calls).toEqual([['hunter22', '123456']]);
+  });
+
+  it('an Apple or Google sign-in account confirms with an emailed code, never a password', async () => {
+    useSession.setState({ user: { id: 'u1', name: 'A', email: 'a@x.com', avatar_url: null, deletion_scheduled_for: null, has_password: false } });
+    const calls: [unknown, string | undefined][] = [];
+    useE2ee.getState().__setEngine(fakeEngine({ destroyIdentity: async (proof, code) => { calls.push([proof, code]); } }));
+    await mount();
+
+    await act(async () => { button('Destroy vault and start over', container!)!.click(); });
+    expect(document.body.querySelector('#e2ee-destroy-password')).toBeNull();
+
+    await act(async () => { button('Send code')!.click(); });
+    expect(apiMock).toHaveBeenCalledWith('/api/e2ee/destroy-request', { method: 'POST' });
+
+    type(document.body.querySelector('#e2ee-destroy-email-code') as HTMLInputElement, '12 34 56');
+    act(() => { (document.body.querySelector('input[type="checkbox"]') as HTMLInputElement).click(); });
+    await act(async () => { button('Destroy my vault')!.click(); });
+
+    expect(calls).toEqual([[{ code: '123456' }, undefined]]);
+  });
+
+  it('an email-code 2FA account is offered the emailed code too, since the password path refuses it', async () => {
+    apiMock.mockResolvedValue({ ok: true, method: 'email', totp_enabled: false });
+    await mount();
+
+    await act(async () => { button('Destroy vault and start over', container!)!.click(); });
+    await act(async () => { await Promise.resolve(); });
+
+    expect(document.body.querySelector('#e2ee-destroy-password')).toBeNull();
+    expect(button('Send code')).not.toBeNull();
+    // Email 2FA is satisfied by the mailed code: no separate 2FA field.
+    expect(document.body.querySelector('#e2ee-destroy-code')).toBeNull();
+  });
+
+  it('moves to the emailed code when the password path is refused for email-code 2FA, not to a 2FA field', async () => {
+    const { ApiError } = await import('@/api/client');
+    useE2ee.getState().__setEngine(fakeEngine({
+      destroyIdentity: async () => {
+        throw new ApiError(409, JSON.stringify({ error: 'Destroying a vault is not available on accounts using email codes for two-factor authentication. Switch to an authenticator app in your security settings, then try again.' }));
+      },
+    }));
+    await mount();
+    await act(async () => { button('Destroy vault and start over', container!)!.click(); });
+    type(document.body.querySelector('#e2ee-destroy-password') as HTMLInputElement, 'hunter22');
+    act(() => { (document.body.querySelector('input[type="checkbox"]') as HTMLInputElement).click(); });
+    await act(async () => { button('Destroy my vault')!.click(); });
+
+    expect(document.body.querySelector('#e2ee-destroy-password')).toBeNull();
+    expect(button('Send code')).not.toBeNull();
+    expect(document.body.querySelector('#e2ee-destroy-code')).toBeNull();
+  });
+
+  it('shows the code field when a code was sent a moment ago and Send code is refused for the cooldown', async () => {
+    const { ApiError } = await import('@/api/client');
+    useSession.setState({ user: { id: 'u1', name: 'A', email: 'a@x.com', avatar_url: null, deletion_scheduled_for: null, has_password: false } });
+    apiMock.mockImplementation(async (path: string) => {
+      if (path === '/api/e2ee/destroy-request') throw new ApiError(429, JSON.stringify({ error: 'A code was just sent. Check your inbox, or wait a minute to request another.' }));
+      return { ok: true, method: null };
+    });
+    useE2ee.getState().__setEngine(fakeEngine());
+    await mount();
+    await act(async () => { button('Destroy vault and start over', container!)!.click(); });
+    await act(async () => { button('Send code')!.click(); });
+
+    expect(document.body.querySelector('#e2ee-destroy-email-code')).not.toBeNull();
+    expect(document.body.textContent).toContain('A code was just sent');
   });
 });

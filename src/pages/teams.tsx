@@ -1,3 +1,4 @@
+import { formatDateWith, localDigits } from '@/lib/format-locale';
 import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { api, apiErrorMessage, API_BASE } from '@/api/client';
@@ -27,6 +28,9 @@ import {
 import { FolderPickerDialog } from '@/components/folder-picker-dialog';
 import { timeAgo, expiryLabel, avatarColor, initials, actionLabel } from '@/lib/helpers';
 import { toast } from '@/lib/toast';
+import { t as translate, useT } from '@/lib/i18n';
+import { richText } from '@/lib/rich-text';
+import type { MessageKey } from '@/i18n/keys';
 
 // ── Avatar with guaranteed initials fallback ───────────────
 // Shows the profile photo when present AND loadable; otherwise the colored
@@ -88,7 +92,10 @@ interface Activity {
 interface TeamStats { members: number; pending: number; shares_this_week: number }
 interface Role { id: string; name: string; is_builtin?: boolean; is_custom?: boolean; permissions?: Record<string, boolean> }
 
-const ROLE_LABELS: Record<string, string> = { role_owner: 'Owner', role_admin: 'Admin', role_member: 'Member', role_viewer: 'Viewer' };
+// Built-in roles are labelled from the catalog; a custom role's name is user content and shows as sent.
+const ROLE_LABEL_KEYS: Record<string, MessageKey> = {
+  role_owner: 'common.label.owner', role_admin: 'common.label.admin', role_member: 'common.label.member', role_viewer: 'common.label.viewer',
+};
 const ROLE_COLORS: Record<string, string> = {
   role_owner: 'bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-400',
   role_admin: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-400',
@@ -104,6 +111,7 @@ const roleColor = (id: string) => ROLE_COLORS[id] ?? CUSTOM_ROLE_COLOR;
 // ── Page ───────────────────────────────────────────────────
 
 export default function TeamsPage() {
+  const t = useT();
   const wsId = useWorkspace((s: { activeId: string }) => s.activeId);
   // Without `view_activity` the server narrows this panel to the member's own
   // rows, so the heading says whose rows these are rather than implying the
@@ -160,10 +168,10 @@ export default function TeamsPage() {
       // `/api/team` always returns at least the caller's own owner row, so
       // `members` staying empty here means the request failed, not that the
       // workspace is solo. Distinct from the empty state on purpose.
-      setLoadError(apiErrorMessage(err, 'Team members could not be loaded.'));
+      setLoadError(apiErrorMessage(err, t('teams.error.teamMembersCouldNotBeLoaded')));
     }
     setLoading(false);
-  }, [wsId]);
+  }, [wsId, t]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -172,8 +180,8 @@ export default function TeamsPage() {
     if (!removeTarget) return;
     try {
       const res = await api<{ ok: boolean }>(`/api/team/members/${removeTarget.id}`, { method: 'DELETE' });
-      if (res.ok) { toast.success('Member removed', 'They no longer have access to this workspace.'); setRemoveTarget(null); load(); }
-    } catch { toast.error('Remove failed', 'The member could not be removed.'); }
+      if (res.ok) { toast.success(t('teams.feedback.memberRemoved'), t('teams.feedback.theyNoLongerHaveAccessToThisWorkspace')); setRemoveTarget(null); load(); }
+    } catch { toast.error(t('common.error.removeFailed'), t('teams.error.theMemberCouldNotBeRemoved')); }
   };
 
   const openAnchorDialog = (m: TeamMember) => {
@@ -191,15 +199,17 @@ export default function TeamsPage() {
       });
       if (res.ok) {
         toast.success(
-          'Folder access updated',
-          anchorFolderId ? `${anchorTarget.name} is now confined to the selected folder.` : `${anchorTarget.name} can now see the whole workspace.`,
+          t('teams.feedback.folderAccessUpdated'),
+          anchorFolderId
+            ? t('teams.feedback.anchortargetnameIsNowConfinedToTheSelectedFolder', { anchorTargetName: anchorTarget.name })
+            : t('teams.feedback.anchortargetnameCanNowSeeTheWholeWorkspace', { anchorTargetName: anchorTarget.name }),
         );
         setAnchorTarget(null);
         load();
       } else {
-        toast.error('Update failed', res.error ?? 'The folder restriction could not be saved.');
+        toast.error(t('common.error.updateFailed'), res.error ?? t('teams.error.theFolderRestrictionCouldNotBeSaved'));
       }
-    } catch (err) { toast.error('Update failed', apiErrorMessage(err, 'The folder restriction could not be saved.')); }
+    } catch (err) { toast.error(t('common.error.updateFailed'), apiErrorMessage(err, t('teams.error.theFolderRestrictionCouldNotBeSaved'))); }
     setSavingAnchor(false);
   };
 
@@ -218,7 +228,7 @@ export default function TeamsPage() {
     // stays listed (disabled) so the control reads right; refuse it here too.
     const target = roles.find((r) => r.id === roleId);
     if (target && !grantable(target)) {
-      toast.error("Can't assign that role", 'It grants more than your own role holds.');
+      toast.error(t('teams.error.canTAssignThatRole'), t('teams.error.itGrantsMoreThanYourOwnRoleHolds'));
       return;
     }
     setChangingRoleId(m.membership_id);
@@ -227,14 +237,14 @@ export default function TeamsPage() {
         method: 'PUT', body: JSON.stringify({ role_id: roleId }),
       });
       if (res.ok) {
-        toast.success('Role updated', `${m.name} is now ${roleName(roleId)}.`);
+        toast.success(t('common.feedback.roleUpdated'), t('teams.feedback.mnameIsNowRoleid', { mName: m.name, roleId: roleName(roleId) }));
         load();
         // Not our own row (the endpoint refuses that), but the map is
         // 60s-stale and this is the one moment we know roles moved.
         void queryClient.invalidateQueries({ queryKey: permissionsQueryKey(wsId) });
       }
-      else toast.error('Update failed', res.error ?? 'The role could not be changed.');
-    } catch (err) { toast.error('Update failed', apiErrorMessage(err, 'The role could not be changed.')); }
+      else toast.error(t('common.error.updateFailed'), res.error ?? t('teams.error.theRoleCouldNotBeChanged'));
+    } catch (err) { toast.error(t('common.error.updateFailed'), apiErrorMessage(err, t('teams.error.theRoleCouldNotBeChanged'))); }
     setChangingRoleId(null);
   };
 
@@ -243,35 +253,37 @@ export default function TeamsPage() {
     setResendingId(inv.id);
     try {
       const res = await api<{ ok: boolean }>(`/api/team/invites/${inv.id}/resend`, { method: 'POST' });
-      if (res.ok) toast.success('Invite resent', `The invitation email was sent to ${inv.email} again.`);
-    } catch (err) { toast.error('Resend failed', apiErrorMessage(err)); }
+      if (res.ok) toast.success(t('teams.feedback.inviteResent'), t('teams.feedback.theInvitationEmailWasSentToInvemailAgain', { invEmail: inv.email }));
+    } catch (err) { toast.error(t('teams.error.resendFailed'), apiErrorMessage(err)); }
     setResendingId(null);
   };
 
   const copyInviteLink = async (inv: Invite) => {
     try {
       await navigator.clipboard.writeText(inv.invite_url);
-      toast.success('Link copied', 'Send it to the person directly. Anyone with the link can accept the invite.');
-    } catch { toast.error('Copy failed', 'The link could not be copied.'); }
+      toast.success(t('common.feedback.linkCopied'), t('teams.feedback.sendItToThePersonDirectlyAnyoneWithTheLinkCan'));
+    } catch { toast.error(t('common.error.copyFailed'), t('teams.error.theLinkCouldNotBeCopied')); }
   };
 
   const revokeInvite = async () => {
     if (!revokeTarget) return;
     try {
       const res = await api<{ ok: boolean }>(`/api/team/invites/${revokeTarget.id}/revoke`, { method: 'POST' });
-      if (res.ok) { toast.success('Invite revoked', 'The invitation is no longer valid.'); setRevokeTarget(null); load(); }
-    } catch { toast.error('Revoke failed', 'The invite could not be revoked.'); }
+      if (res.ok) { toast.success(t('teams.feedback.inviteRevoked'), t('teams.feedback.theInvitationIsNoLongerValid')); setRevokeTarget(null); load(); }
+    } catch { toast.error(t('common.error.revokeFailed'), t('teams.error.theInviteCouldNotBeRevoked')); }
   };
 
   const revokeLink = async (id: string) => {
     try {
       await api(`/api/team/invite-link?id=${id}`, { method: 'DELETE' });
       load();
-    } catch { toast.error('Revoke failed', 'The invite link could not be revoked.'); }
+    } catch { toast.error(t('common.error.revokeFailed'), t('teams.error.theInviteLinkCouldNotBeRevoked')); }
   };
 
   // Resolve a role id to its display name (built-in or custom).
-  const roleName = (id: string) => roles.find((r) => r.id === id)?.name ?? ROLE_LABELS[id] ?? id;
+  // Built-in roles read from the catalog, custom roles as sent.
+  const roleLabel = (r: { id: string; name: string }) => (ROLE_LABEL_KEYS[r.id] ? t(ROLE_LABEL_KEYS[r.id]) : r.name);
+  const roleName = (id: string) => (ROLE_LABEL_KEYS[id] ? t(ROLE_LABEL_KEYS[id]) : (roles.find((r) => r.id === id)?.name ?? id));
 
   // Whether the current user can set another member's folder anchor. The
   // server enforces manage_roles on every request regardless, but hiding the
@@ -302,34 +314,34 @@ export default function TeamsPage() {
       <div className="flex-1 overflow-y-auto p-6 space-y-5">
         {/* Header */}
         <div className="flex items-start justify-between">
-          <h1 className="text-xl font-bold tracking-tight">Team</h1>
+          <h1 className="text-xl font-bold tracking-tight">{t('common.heading.team')}</h1>
           {/* Both invite endpoints need invite_members; a button that only
               ever 403s is not an invitation. */}
           {canInvite && (
             <Button className="gap-1.5" onClick={() => { setInviteOpen(true); setInviteTab('email'); }}>
-              <UserPlus className="size-4" /> Invite to workspace
+              <UserPlus className="size-4" /> {t('teams.action.inviteToWorkspace')}
             </Button>
           )}
         </div>
 
-        {wsName && <Badge variant="secondary" className="text-xs">{wsName} workspace</Badge>}
+        {wsName && <Badge variant="secondary" className="text-xs">{t('teams.status.wsnameWorkspace', { wsName })}</Badge>}
 
         {/* Stats */}
         <div className="grid grid-cols-3 gap-3">
-          <StatCard icon={<Users className="size-4" />} value={stats?.members ?? 0} label="Members" />
-          <StatCard icon={<Clock className="size-4" />} value={stats?.pending ?? 0} label="Pending invites" />
-          <StatCard icon={<Share2 className="size-4" />} value={stats?.shares_this_week ?? 0} label="Shares this week" />
+          <StatCard icon={<Users className="size-4" />} value={stats?.members ?? 0} label={t('common.label.members')} />
+          <StatCard icon={<Clock className="size-4" />} value={stats?.pending ?? 0} label={t('team.label.pendingInvites')} />
+          <StatCard icon={<Share2 className="size-4" />} value={stats?.shares_this_week ?? 0} label={t('team.label.sharesThisWeek')} />
         </div>
 
         {/* Members */}
         <div>
-          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">Members · {members.length}</p>
+          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">{t('teams.label.membersMemberscount', { membersCount: members.length })}</p>
           <Card>
             <CardContent className="p-0">
               {/* Header */}
               <div className="grid grid-cols-[2.2fr_1.6fr_1fr_1fr_80px] px-5 py-2 border-b">
-                {['Member', 'Role', 'Joined', 'Last active', ''].map((h) => (
-                  <span key={h} className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">{h}</span>
+                {(['common.label.member', 'team.label.role', 'team.column.joined', 'teams.label.lastActive', ''] as const).map((h) => (
+                  <span key={h || 'actions'} className="min-w-0 truncate text-[10px] font-semibold text-muted-foreground uppercase tracking-wider" title={h ? t(h) : undefined}>{h ? t(h) : ''}</span>
                 ))}
               </div>
               {loadError ? (
@@ -338,20 +350,20 @@ export default function TeamsPage() {
                    retry the only way out was a full page reload. */
                 <div className="flex flex-col items-center justify-center py-10 text-center">
                   <AlertCircle className="size-8 text-destructive/40 mb-3" />
-                  <p className="text-sm font-medium text-foreground mb-1">Could not load team members</p>
-                  <p className="text-xs text-muted-foreground max-w-80 mb-3">{loadError}</p>
+                  <p className="text-sm font-medium text-foreground mb-1">{t('teams.error.couldNotLoadTeamMembers')}</p>
+                  <p dir="auto" className="text-xs text-muted-foreground max-w-80 mb-3">{loadError}</p>
                   <Button variant="outline" size="sm" className="h-7 text-xs" onClick={load}>
-                    <RefreshCw className="size-3 mr-1" /> Try again
+                    <RefreshCw className="size-3 me-1" /> {t('common.action.tryAgain')}
                   </Button>
                 </div>
               ) : members.length === 1 ? (
                 <EmptyState
                   icon={Users}
-                  title="You are the only member"
-                  description="Invite people to share this workspace. Roles control who can upload, share, delete and manage billing."
+                  title={t('teams.tooltip.youAreTheOnlyMember')}
+                  description={t('teams.description.invitePeopleToShareThisWorkspaceRolesControlWhoCanUpload')}
                   actions={canInvite ? (
                     <Button size="sm" className="h-7 text-xs" onClick={() => { setInviteOpen(true); setInviteTab('email'); }}>
-                      Invite someone
+                      {t('teams.action.inviteSomeone')}
                     </Button>
                   ) : undefined}
                 />
@@ -361,10 +373,10 @@ export default function TeamsPage() {
                     <UserAvatar url={m.avatar_url} userId={m.user_id} name={m.name} />
                     <div>
                       <p className="text-sm font-medium">
-                        <button className="hover:underline text-left" onClick={() => setProfileMember(m)} title="View profile">{m.name}</button>
-                        {m.is_you && <Badge variant="secondary" className="text-[9px] ml-1">you</Badge>}
+                        <button className="hover:underline text-start" onClick={() => setProfileMember(m)} title={t('teams.action.viewProfile')}><bdi>{m.name}</bdi></button>
+                        {m.is_you && <Badge variant="secondary" className="text-[9px] ms-1">{t('common.status.you')}</Badge>}
                       </p>
-                      <p className="text-[11px] text-muted-foreground">{m.email}</p>
+                      <p className="text-[11px] text-muted-foreground"><bdi dir="ltr">{m.email}</bdi></p>
                     </div>
                   </div>
                   <div>
@@ -376,15 +388,15 @@ export default function TeamsPage() {
                       <Select
                         value={m.role_id}
                         onValueChange={(v) => changeRole(m, v as string)}
-                        items={rowRoles(m).map((r) => ({ value: r.id, label: r.name }))}
+                        items={rowRoles(m).map((r) => ({ value: r.id, label: roleLabel(r) }))}
                         disabled={changingRoleId === m.membership_id}
                       >
-                        <SelectTrigger className="h-6 text-[11px] w-[130px]" aria-label={`Role for ${m.name}`}>
+                        <SelectTrigger className="h-6 text-[11px] w-[130px]" aria-label={t('team.accessibility.roleForMName', { mName: m.name })}>
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
                           {rowRoles(m).map((r) => (
-                            <SelectItem key={r.id} value={r.id} disabled={!grantable(r)}>{r.name}</SelectItem>
+                            <SelectItem key={r.id} value={r.id} disabled={!grantable(r)}>{roleLabel(r)}</SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
@@ -392,14 +404,14 @@ export default function TeamsPage() {
                       <Badge className={`text-[11px] ${roleColor(m.role_id)}`}>{roleName(m.role_id)}</Badge>
                     )}
                     <p className="text-[10px] text-muted-foreground mt-0.5 truncate max-w-[160px]">
-                      {m.root_folder_id ? (m.root_folder_name ?? 'Folder') : 'Whole workspace'}
+                      {m.root_folder_id ? (m.root_folder_name ?? t('common.label.folder')) : t('teams.label.wholeWorkspace')}
                     </p>
                   </div>
                   <span className="text-xs text-muted-foreground">{timeAgo(m.joined_at)}</span>
                   <span className="text-xs text-muted-foreground">&nbsp;</span>
                   <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100">
                     {!m.is_you && m.role_id !== 'role_owner' && canManageRoles && (
-                      <Button variant="outline" size="sm" className="h-6 w-6 p-0" title="Set folder access" onClick={() => openAnchorDialog(m)}>
+                      <Button variant="outline" size="sm" className="h-6 w-6 p-0" title={t('teams.action.setFolderAccess')} onClick={() => openAnchorDialog(m)}>
                         <Folder className="size-3" />
                       </Button>
                     )}
@@ -421,29 +433,29 @@ export default function TeamsPage() {
 
         {/* Pending Invites */}
         <div>
-          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">Pending invites · {invites.length}</p>
+          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">{t('teams.label.pendingInvitesInvitescount', { invitesCount: invites.length })}</p>
           <Card>
             <CardContent className="p-0">
               {invites.length === 0 ? (
-                <p className="py-6 text-center text-xs text-muted-foreground">No pending invites</p>
+                <p className="py-6 text-center text-xs text-muted-foreground">{t('teams.label.noPendingInvites')}</p>
               ) : invites.map((inv) => (
                 <div key={inv.id} className="flex items-center gap-3 px-5 py-3 border-b last:border-b-0">
                   <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center shrink-0"><Mail className="size-3.5 text-muted-foreground" /></div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium">{inv.email}</p>
+                    <p className="text-sm font-medium"><bdi dir="ltr">{inv.email}</bdi></p>
                     <p className="text-[11px] text-muted-foreground">
-                      Invited by {inv.invited_by_name ?? 'Unknown'} · expires in {timeUntil(inv.expires_at)}
+                      {t('teams.description.invitedByInvinvitedByNameunknownExpiresInInvexpiresAt', { invInvited_by_nameUnknown: inv.invited_by_name ?? t('common.label.unknown'), invExpires_at: timeUntil(inv.expires_at) })}
                     </p>
                   </div>
                   <Badge variant="secondary" className="text-[10px]">{roleName(inv.role_id)}</Badge>
-                  <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => copyInviteLink(inv)} title="Copy the invite link to share it yourself">
-                    <Copy className="size-3" /> Copy link
+                  <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => copyInviteLink(inv)} title={t('teams.action.copyTheInviteLinkToShareItYourself')}>
+                    <Copy className="size-3" /> {t('common.action.copyLink')}
                   </Button>
-                  <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => resendInvite(inv)} disabled={resendingId === inv.id} title="Send the invitation email again">
-                    {resendingId === inv.id ? <Loader2 className="size-3 animate-spin" /> : <Send className="size-3" />} Resend
+                  <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => resendInvite(inv)} disabled={resendingId === inv.id} title={t('teams.action.sendTheInvitationEmailAgain')}>
+                    {resendingId === inv.id ? <Loader2 className="size-3 animate-spin" /> : <Send className="size-3 rtl:-scale-x-100" />} {t('common.action.resend')}
                   </Button>
                   <Button variant="outline" size="sm" className="h-7 text-xs text-destructive border-destructive/30" onClick={() => setRevokeTarget({ id: inv.id, email: inv.email })}>
-                    Revoke
+                    {t('common.action.revoke')}
                   </Button>
                 </div>
               ))}
@@ -453,22 +465,22 @@ export default function TeamsPage() {
 
         {/* Invite Links */}
         <div>
-          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">Invite links</p>
+          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">{t('teams.label.inviteLinks')}</p>
           <Card>
             <CardContent className="p-0">
               {links.length === 0 ? (
-                <p className="py-6 text-center text-xs text-muted-foreground">No active invite links</p>
+                <p className="py-6 text-center text-xs text-muted-foreground">{t('teams.label.noActiveInviteLinks')}</p>
               ) : links.map((l) => (
                 <div key={l.id} className="flex items-center gap-3 px-5 py-3 border-b last:border-b-0">
                   <div className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center shrink-0"><Link2 className="size-3.5 text-muted-foreground" /></div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-xs font-mono truncate">{l.url}</p>
+                    <p dir="ltr" className="text-xs font-mono truncate">{l.url}</p>
                     <p className="text-[11px] text-muted-foreground">
-                      {roleName(l.role_id) || l.role_name} · {l.max_uses ? `${l.use_count}/${l.max_uses} used` : `${l.use_count} used`} · {expiryLabel(l.expires_at)}
+                      {roleName(l.role_id) || l.role_name} · {t('teams.label.luseCountUsed', { lUse_count: l.max_uses ? `${localDigits(l.use_count)}/${localDigits(l.max_uses)}` : localDigits(l.use_count) })} · {expiryLabel(l.expires_at)}
                     </p>
                   </div>
                   <CopyButton text={l.url} />
-                  <Button variant="outline" size="sm" className="h-7 text-xs text-destructive border-destructive/30" onClick={() => revokeLink(l.id)}>Revoke</Button>
+                  <Button variant="outline" size="sm" className="h-7 text-xs text-destructive border-destructive/30" onClick={() => revokeLink(l.id)}>{t('common.action.revoke')}</Button>
                 </div>
               ))}
             </CardContent>
@@ -477,17 +489,17 @@ export default function TeamsPage() {
       </div>
 
       {/* Right panel */}
-      <div className="w-56 shrink-0 border-l overflow-y-auto hidden lg:block">
+      <div className="w-56 shrink-0 border-s overflow-y-auto hidden lg:block">
         {/* Activity */}
         <div className="p-4 border-b">
-          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-3">{can('view_activity') ? 'Recent activity' : 'Your recent activity'}</p>
+          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-3">{can('view_activity') ? t('team.heading.recentActivity') : t('teams.label.yourRecentActivity')}</p>
           {activity.length === 0 ? (
-            <p className="text-xs text-muted-foreground">No activity yet</p>
+            <p className="text-xs text-muted-foreground">{t('common.empty.noActivityYet')}</p>
           ) : activity.slice(0, 8).map((a, i) => (
             <div key={i} className="flex gap-2 items-start mb-2.5">
-              <UserAvatar url={a.avatar_url} userId={a.user_id ?? ''} name={a.user_name ?? 'Unknown'} className="w-5 h-5 text-[8px] mt-0.5" />
+              <UserAvatar url={a.avatar_url} userId={a.user_id ?? ''} name={a.user_name ?? t('common.label.unknown')} className="w-5 h-5 text-[8px] mt-0.5" />
               <div>
-                <p className="text-[11px] text-muted-foreground leading-snug"><span className="font-semibold text-foreground">{a.user_name ?? 'Unknown'}</span> {actionLabel(a.action)} {a.meta?.name && <span className="font-semibold text-foreground">{a.meta.name}</span>}</p>
+                <p className="text-[11px] text-muted-foreground leading-snug"><span className="font-semibold text-foreground"><bdi>{a.user_name ?? t('common.label.unknown')}</bdi></span> {actionLabel(a.action)} {a.meta?.name && <span className="font-semibold text-foreground"><bdi>{a.meta.name}</bdi></span>}</p>
                 <p className="text-[10px] text-muted-foreground/60">{timeAgo(a.created_at)}</p>
               </div>
             </div>
@@ -496,30 +508,30 @@ export default function TeamsPage() {
 
         {/* Role guide */}
         <div className="p-4 border-b">
-          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-3">Role guide</p>
-          {[
-            { role: 'Owner', color: '#16A34A', desc: 'Full control, billing, delete workspace' },
-            { role: 'Admin', color: '#4338CA', desc: 'Manage members and all files' },
-            { role: 'Member', color: '#706E69', desc: 'Upload, share, manage own files' },
-            { role: 'Viewer', color: '#92400E', desc: 'Download and view only' },
-          ].map((r) => (
+          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-3">{t('team.heading.roleGuide')}</p>
+          {([
+            { role: 'common.label.owner', color: '#16A34A', desc: 'teams.description.fullControlBillingDeleteWorkspace' },
+            { role: 'common.label.admin', color: '#4338CA', desc: 'teams.description.manageMembersAndAllFiles' },
+            { role: 'common.label.member', color: '#706E69', desc: 'teams.description.uploadShareManageOwnFiles' },
+            { role: 'common.label.viewer', color: '#92400E', desc: 'teams.description.downloadAndViewOnly' },
+          ] as const).map((r) => (
             <div key={r.role} className="flex gap-2 items-start mb-2">
               <div className="w-1.5 h-1.5 rounded-full shrink-0 mt-1.5" style={{ background: r.color }} />
               <div>
-                <p className="text-xs font-semibold">{r.role}</p>
-                <p className="text-[10px] text-muted-foreground">{r.desc}</p>
+                <p className="text-xs font-semibold">{t(r.role)}</p>
+                <p className="text-[10px] text-muted-foreground">{t(r.desc)}</p>
               </div>
             </div>
           ))}
           <Link to="/role-create" className="mt-3 flex items-center justify-center gap-1.5 py-2 border border-dashed rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors no-underline">
-            <Plus className="size-3" /> Create custom role
+            <Plus className="size-3" /> {t('teams.action.createCustomRole')}
           </Link>
         </div>
 
         {/* Workspace link */}
         <div className="p-4">
           <Link to="/settings" className="flex items-center gap-2 px-3 py-2.5 border rounded-lg text-xs font-medium hover:bg-muted/50 transition-colors no-underline text-foreground">
-            <Settings className="size-3.5" /> Workspace settings
+            <Settings className="size-3.5" /> {t('common.action.workspaceSettings')}
           </Link>
         </div>
       </div>
@@ -530,11 +542,11 @@ export default function TeamsPage() {
       {/* Remove member dialog */}
       <Dialog open={!!removeTarget} onOpenChange={() => setRemoveTarget(null)}>
         <DialogContent className="max-w-sm text-center">
-          <DialogHeader><DialogTitle>Remove member</DialogTitle></DialogHeader>
-          <p className="text-sm text-muted-foreground">Remove <span className="font-semibold text-foreground">{removeTarget?.name}</span> from this workspace? They will lose access immediately.</p>
+          <DialogHeader><DialogTitle>{t('team.heading.removeMember')}</DialogTitle></DialogHeader>
+          <p className="text-sm text-muted-foreground">{richText(t('teams.description.removeRemovetargetnameFromThisWorkspaceTheyWillLoseAccessImmediately', { removeTargetName: '{removeTargetName}' }), { removeTargetName: <span className="font-semibold text-foreground"><bdi>{removeTarget?.name}</bdi></span> })}</p>
           <DialogFooter className="justify-center">
-            <Button variant="outline" onClick={() => setRemoveTarget(null)}>Cancel</Button>
-            <Button variant="destructive" onClick={removeMember}>Remove</Button>
+            <Button variant="outline" onClick={() => setRemoveTarget(null)}>{t('common.cancel')}</Button>
+            <Button variant="destructive" onClick={removeMember}>{t('common.remove')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -542,23 +554,23 @@ export default function TeamsPage() {
       {/* Folder access dialog (phase C, task 5) */}
       <Dialog open={!!anchorTarget} onOpenChange={(v) => { if (!v) setAnchorTarget(null); }}>
         <DialogContent className="max-w-sm">
-          <DialogHeader><DialogTitle>Folder access</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{t('teams.heading.folderAccess')}</DialogTitle></DialogHeader>
           <p className="text-sm text-muted-foreground">
-            Control what <span className="font-semibold text-foreground">{anchorTarget?.name}</span> can see in this workspace.
+            {richText(t('teams.description.controlWhatAnchortargetnameCanSeeInThisWorkspace', { anchorTargetName: '{anchorTargetName}' }), { anchorTargetName: <span className="font-semibold text-foreground"><bdi>{anchorTarget?.name}</bdi></span> })}
           </p>
           <div>
-            <p className="text-xs font-medium mb-0.5">Limit to a folder</p>
+            <p className="text-xs font-medium mb-0.5">{t('teams.label.limitToAFolder')}</p>
             <p className="text-[11px] text-muted-foreground mb-2">
-              Optional. This member will only see this folder and everything inside it, in the web app, WebDAV and the S3 gateway.
+              {t('teams.description.optionalThisMemberWillOnlySeeThisFolderAndEverythingInside')}
             </p>
             {anchorFolderId ? (
               <div className="flex items-center gap-2">
-                <span className="flex-1 text-xs truncate border rounded-lg px-3 py-2">{anchorFolderName || 'Folder'}</span>
-                <Button variant="outline" size="sm" onClick={() => { setAnchorFolderId(null); setAnchorFolderName(''); }}>Clear</Button>
+                <span className="flex-1 text-xs truncate border rounded-lg px-3 py-2">{anchorFolderName || t('common.label.folder')}</span>
+                <Button variant="outline" size="sm" onClick={() => { setAnchorFolderId(null); setAnchorFolderName(''); }}>{t('common.action.clear')}</Button>
               </div>
             ) : (
               <Button variant="outline" size="sm" className="w-full h-9 text-xs" onClick={() => setAnchorPickerOpen(true)}>
-                Choose folder…
+                {t('common.action.chooseFolder')}
               </Button>
             )}
           </div>
@@ -578,20 +590,16 @@ export default function TeamsPage() {
               confinement decision on it. */}
           {anchorFolderId && (
             <div className="rounded-lg border border-border bg-muted/40 px-3 py-2">
-              <p className="text-[11px] font-medium mb-1">What this changes for them</p>
+              <p className="text-[11px] font-medium mb-1">{t('teams.label.whatThisChangesForThem')}</p>
               <p className="text-[11px] text-muted-foreground">
-                Everywhere they look - the web app, desktop sync, WebDAV and the S3
-                gateway - they see this folder and what is inside it, and nothing else.
-                Their dashboard, search and shared links cover only this folder. Workspace
-                settings, the team page and the activity log stay unavailable to them.
-                Clear the folder to give the whole workspace back.
+                {t('teams.description.everywhereTheyLookTheWebAppDesktopSyncWebdavAnd')}
               </p>
             </div>
           )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setAnchorTarget(null)}>Cancel</Button>
+            <Button variant="outline" onClick={() => setAnchorTarget(null)}>{t('common.cancel')}</Button>
             <Button onClick={saveAnchor} disabled={savingAnchor}>
-              {savingAnchor ? <Loader2 className="size-4 animate-spin mr-1.5" /> : null} Save
+              {savingAnchor ? <Loader2 className="size-4 animate-spin me-1.5" /> : null} {t('common.save')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -608,8 +616,8 @@ export default function TeamsPage() {
           selectedId={anchorFolderId}
           selectedName={anchorFolderName}
           onSelect={(id, name) => { setAnchorFolderId(id); setAnchorFolderName(name); setAnchorPickerOpen(false); }}
-          title="Limit to a folder"
-          confirmLabel="Select folder"
+          title={t('teams.tooltip.limitToAFolder')}
+          confirmLabel={t('common.label.selectFolder')}
         />
       )}
 
@@ -617,7 +625,7 @@ export default function TeamsPage() {
       {/* Member profile modal */}
       <Dialog open={!!profileMember} onOpenChange={(v) => { if (!v) setProfileMember(null); }}>
         <DialogContent className="max-w-xs">
-          <DialogHeader><DialogTitle>Profile</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{t('common.heading.profile')}</DialogTitle></DialogHeader>
           {profileMember && (
             <div className="flex flex-col items-center text-center gap-3 py-2">
               <UserAvatar
@@ -628,23 +636,23 @@ export default function TeamsPage() {
               />
               <div>
                 <p className="text-sm font-semibold">
-                  {profileMember.name}
-                  {profileMember.is_you && <Badge variant="secondary" className="text-[9px] ml-1.5">you</Badge>}
+                  <bdi>{profileMember.name}</bdi>
+                  {profileMember.is_you && <Badge variant="secondary" className="text-[9px] ms-1.5">{t('common.status.you')}</Badge>}
                 </p>
                 <Badge className={`text-[10px] mt-1 ${roleColor(profileMember.role_id)}`}>{roleName(profileMember.role_id)}</Badge>
               </div>
-              <div className="w-full space-y-2 text-left border rounded-lg p-3">
+              <div className="w-full space-y-2 text-start border rounded-lg p-3">
                 <div className="flex items-center justify-between gap-3">
-                  <span className="text-[11px] text-muted-foreground shrink-0">Email</span>
-                  <span className="text-xs font-medium break-all text-right">{profileMember.email}</span>
+                  <span className="text-[11px] text-muted-foreground shrink-0">{t('common.label.email')}</span>
+                  <span className="text-xs font-medium break-all text-end"><bdi dir="ltr">{profileMember.email}</bdi></span>
                 </div>
                 <div className="flex items-center justify-between gap-3">
-                  <span className="text-[11px] text-muted-foreground shrink-0">Last active</span>
-                  <span className="text-xs font-medium">{profileMember.last_active_at ? timeAgo(profileMember.last_active_at) : 'No activity yet'}</span>
+                  <span className="text-[11px] text-muted-foreground shrink-0">{t('teams.label.lastActive')}</span>
+                  <span className="text-xs font-medium">{profileMember.last_active_at ? timeAgo(profileMember.last_active_at) : t('common.empty.noActivityYet')}</span>
                 </div>
                 <div className="flex items-center justify-between gap-3">
-                  <span className="text-[11px] text-muted-foreground shrink-0">Joined</span>
-                  <span className="text-xs font-medium">{new Date(profileMember.joined_at * 1000).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}</span>
+                  <span className="text-[11px] text-muted-foreground shrink-0">{t('team.column.joined')}</span>
+                  <span className="text-xs font-medium">{formatDateWith(profileMember.joined_at, { year: 'numeric', month: 'short', day: 'numeric' }, 'en-US')}</span>
                 </div>
               </div>
             </div>
@@ -654,14 +662,13 @@ export default function TeamsPage() {
 
       <Dialog open={!!revokeTarget} onOpenChange={() => setRevokeTarget(null)}>
         <DialogContent className="max-w-xs">
-          <DialogHeader><DialogTitle>Revoke invite</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{t('teams.heading.revokeInvite')}</DialogTitle></DialogHeader>
           <p className="text-xs text-muted-foreground">
-            Revoke the invitation sent to <span className="font-semibold text-foreground break-all">{revokeTarget?.email}</span>?
-            {' '}Their invite link will stop working immediately.
+            {richText(t('teams.description.revokeTheInvitationSentToRevoketargetemailTheirInviteLinkWillStop', { revokeTargetEmail: '{revokeTargetEmail}' }), { revokeTargetEmail: <span className="font-semibold text-foreground break-all"><bdi dir="ltr">{revokeTarget?.email}</bdi></span> })}
           </p>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setRevokeTarget(null)}>Cancel</Button>
-            <Button variant="destructive" onClick={revokeInvite}>Revoke</Button>
+            <Button variant="outline" onClick={() => setRevokeTarget(null)}>{t('common.cancel')}</Button>
+            <Button variant="destructive" onClick={revokeInvite}>{t('common.action.revoke')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -671,13 +678,15 @@ export default function TeamsPage() {
 
 // ── Invite Modal ───────────────────────────────────────────
 
-const MAX_USES_OPTIONS = [
-  { value: '', label: 'Unlimited' }, { value: '1', label: '1' }, { value: '5', label: '5' },
+// A label is either a catalog key or a plain number.
+type Option = { value: string; labelKey?: MessageKey; label?: string };
+const MAX_USES_OPTIONS: Option[] = [
+  { value: '', labelKey: 'teams.label.unlimited' }, { value: '1', label: '1' }, { value: '5', label: '5' },
   { value: '10', label: '10' }, { value: '25', label: '25' }, { value: '100', label: '100' },
 ];
-const LINK_EXPIRY_OPTIONS = [
-  { value: '', label: 'Never' }, { value: '1', label: '1 day' }, { value: '7', label: '7 days' },
-  { value: '30', label: '30 days' }, { value: '90', label: '90 days' },
+const LINK_EXPIRY_OPTIONS: Option[] = [
+  { value: '', labelKey: 'common.label.never' }, { value: '1', labelKey: 'common.label.oneDay' }, { value: '7', labelKey: 'common.label.sevenDays' },
+  { value: '30', labelKey: 'common.label.thirtyDays' }, { value: '90', labelKey: 'common.label.ninetyDays' },
 ];
 
 function InviteModal({ open, tab, onTabChange, onClose, wsId, roles, onInvited }: {
@@ -685,8 +694,11 @@ function InviteModal({ open, tab, onTabChange, onClose, wsId, roles, onInvited }
   /** Already filtered to what the caller may grant - see `grantable` in TeamsPage. */
   roles: Role[]; onInvited: () => void;
 }) {
+  const t = useT();
+  const roleLabel = (r: { id: string; name: string }) => (ROLE_LABEL_KEYS[r.id] ? t(ROLE_LABEL_KEYS[r.id]) : r.name);
+  const optionLabel = (o: Option) => (o.labelKey ? t(o.labelKey) : (o.label ?? ''));
   const assignable = roles;
-  const roleItems = assignable.map((r) => ({ value: r.id, label: r.name }));
+  const roleItems = assignable.map((r) => ({ value: r.id, label: roleLabel(r) }));
   // Multi-email invite: each address gets its own invite with a unique,
   // email-bound accept link.
   const [emails, setEmails] = useState<string[]>([]);
@@ -732,7 +744,7 @@ function InviteModal({ open, tab, onTabChange, onClose, wsId, roles, onInvited }
     const pending = emailInput.trim().toLowerCase();
     const list = [...emails];
     if (pending && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(pending) && !list.includes(pending)) list.push(pending);
-    if (list.length === 0) { setError('Add at least one email address.'); return; }
+    if (list.length === 0) { setError(t('common.error.addAtLeastOneEmailAddress')); return; }
 
     setError(''); setSending(true);
     // One invite per address - each gets its own unique, email-bound link
@@ -742,12 +754,12 @@ function InviteModal({ open, tab, onTabChange, onClose, wsId, roles, onInvited }
         const res = await api<{ ok: boolean; error?: string }>('/api/team/invite', {
           method: 'POST', body: JSON.stringify({ workspace_id: wsId, email: addr, role }),
         });
-        if (!res.ok) failures.push({ addr, message: res.error ?? 'failed' });
-      } catch (err) { failures.push({ addr, message: apiErrorMessage(err, 'failed') }); }
+        if (!res.ok) failures.push({ addr, message: res.error ?? t('teams.error.failed') });
+      } catch (err) { failures.push({ addr, message: apiErrorMessage(err, t('teams.error.failed')) }); }
     }
     const sent = list.length - failures.length;
     if (sent > 0) {
-      toast.success('Invites sent', `Sent ${sent} invite${sent === 1 ? '' : 's'}.`);
+      toast.success(t('teams.feedback.invitesSent'), t('teams.feedback.sentSentPluralOneInviteOtherInvites', { sent }));
       onInvited();
     }
     if (failures.length > 0) {
@@ -773,7 +785,7 @@ function InviteModal({ open, tab, onTabChange, onClose, wsId, roles, onInvited }
         }),
       });
       if (res.ok && res.link) { setCreatedLink(res.link.url); onInvited(); }
-      else setError(res.error ?? 'Failed');
+      else setError(res.error ?? t('common.error.failed'));
     } catch (err) { setError(apiErrorMessage(err)); }
     setCreatingLink(false);
   };
@@ -782,26 +794,26 @@ function InviteModal({ open, tab, onTabChange, onClose, wsId, roles, onInvited }
     <Dialog open={open} onOpenChange={() => onClose()}>
       <DialogContent className="max-w-md p-0">
         <div className="px-5 pt-5 pb-0">
-          <DialogTitle>Invite to workspace</DialogTitle>
+          <DialogTitle>{t('team.heading.inviteToWorkspace')}</DialogTitle>
         </div>
         {/* Tabs */}
         <Tabs value={tab} onValueChange={(v) => onTabChange(v as 'email' | 'link')}>
           <TabsList variant="line" className="w-full gap-0 border-b p-0 group-data-horizontal/tabs:h-auto">
             <TabsTrigger value="email" className="flex-1 rounded-none py-2.5 text-xs group-data-horizontal/tabs:after:-bottom-px">
-              <Mail className="size-3.5" /> Email invite
+              <Mail className="size-3.5" /> {t('teams.action.emailInvite')}
             </TabsTrigger>
             <TabsTrigger value="link" className="flex-1 rounded-none py-2.5 text-xs group-data-horizontal/tabs:after:-bottom-px">
-              <Link2 className="size-3.5" /> Invite link
+              <Link2 className="size-3.5" /> {t('teams.action.inviteLink')}
             </TabsTrigger>
           </TabsList>
         </Tabs>
         <div className="px-5 pb-5 pt-3">
-          {error && <div className="bg-destructive/10 border border-destructive/30 text-destructive text-xs rounded-lg px-3 py-2 mb-3">{error}</div>}
+          {error && <div dir="auto" className="bg-destructive/10 border border-destructive/30 text-destructive text-xs rounded-lg px-3 py-2 mb-3">{error}</div>}
 
           {tab === 'email' ? (
             <form onSubmit={sendInvite} className="space-y-3">
               <div>
-                <Label className="text-xs font-medium text-muted-foreground mb-1 block">Email addresses</Label>
+                <Label className="text-xs font-medium text-muted-foreground mb-1 block">{t('common.label.emailAddresses')}</Label>
                 <div className="flex flex-wrap gap-1 min-h-9 border rounded-md px-2 py-1.5 cursor-text focus-within:ring-1 focus-within:ring-ring">
                   {emails.map((e, i) => (
                     <span key={i} className="inline-flex items-center gap-1 bg-muted rounded px-1.5 py-0.5 text-[11px] font-medium">
@@ -814,65 +826,65 @@ function InviteModal({ open, tab, onTabChange, onClose, wsId, roles, onInvited }
                     onChange={(e) => setEmailInput(e.target.value)}
                     onKeyDown={handleEmailKeyDown}
                     onBlur={() => { if (emailInput.trim()) { addEmail(emailInput); setEmailInput(''); } }}
-                    placeholder={emails.length === 0 ? 'colleague@company.com (press Enter to add)' : ''}
+                    placeholder={emails.length === 0 ? t('teams.placeholder.colleagueCompanyComPressEnterToAdd') : ''}
                     className="flex-1 min-w-24 bg-transparent outline-none text-sm"
                   />
                 </div>
-                <p className="text-[11px] text-muted-foreground mt-1">Each person gets their own invite link, valid only for their email address.</p>
+                <p className="text-[11px] text-muted-foreground mt-1">{t('teams.description.eachPersonGetsTheirOwnInviteLinkValidOnlyForTheir')}</p>
               </div>
               <div>
-                <Label className="text-xs font-medium text-muted-foreground mb-1 block">Role</Label>
+                <Label className="text-xs font-medium text-muted-foreground mb-1 block">{t('team.label.role')}</Label>
                 <Select value={role} onValueChange={(v) => setRole(v as string)} items={roleItems}>
                   <SelectTrigger className="w-full h-9 text-sm"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    {assignable.map((r) => (<SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>))}
+                    {assignable.map((r) => (<SelectItem key={r.id} value={r.id}>{roleLabel(r)}</SelectItem>))}
                   </SelectContent>
                 </Select>
               </div>
               <Button type="submit" className="w-full" disabled={sending}>
-                {sending ? <Loader2 className="size-4 animate-spin mr-2" /> : null} Send invite
+                {sending ? <Loader2 className="size-4 animate-spin me-2" /> : null} {t('team.action.sendInvite')}
               </Button>
-              <p className="text-[11px] text-muted-foreground">Invite expires after 7 days.</p>
+              <p className="text-[11px] text-muted-foreground">{t('teams.description.inviteExpiresAfter7Days')}</p>
             </form>
           ) : (
             <div className="space-y-3">
               <div>
-                <Label className="text-xs font-medium text-muted-foreground mb-1 block">Role for new members</Label>
+                <Label className="text-xs font-medium text-muted-foreground mb-1 block">{t('teams.label.roleForNewMembers')}</Label>
                 <Select value={linkRole} onValueChange={(v) => setLinkRole(v as string)} items={roleItems}>
                   <SelectTrigger className="w-full h-9 text-sm"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    {assignable.map((r) => (<SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>))}
+                    {assignable.map((r) => (<SelectItem key={r.id} value={r.id}>{roleLabel(r)}</SelectItem>))}
                   </SelectContent>
                 </Select>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <Label className="text-xs font-medium text-muted-foreground mb-1 block">Max uses</Label>
-                  <Select value={linkMaxUses} onValueChange={(v) => setLinkMaxUses(v as string)} items={MAX_USES_OPTIONS}>
+                  <Label className="text-xs font-medium text-muted-foreground mb-1 block">{t('teams.label.maxUses')}</Label>
+                  <Select value={linkMaxUses} onValueChange={(v) => setLinkMaxUses(v as string)} items={MAX_USES_OPTIONS.map((o) => ({ value: o.value, label: optionLabel(o) }))}>
                     <SelectTrigger className="w-full h-9 text-sm"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      {MAX_USES_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+                      {MAX_USES_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{optionLabel(o)}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
                 <div>
-                  <Label className="text-xs font-medium text-muted-foreground mb-1 block">Expires</Label>
-                  <Select value={linkExpires} onValueChange={(v) => setLinkExpires(v as string)} items={LINK_EXPIRY_OPTIONS}>
+                  <Label className="text-xs font-medium text-muted-foreground mb-1 block">{t('common.label.expires')}</Label>
+                  <Select value={linkExpires} onValueChange={(v) => setLinkExpires(v as string)} items={LINK_EXPIRY_OPTIONS.map((o) => ({ value: o.value, label: optionLabel(o) }))}>
                     <SelectTrigger className="w-full h-9 text-sm"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      {LINK_EXPIRY_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+                      {LINK_EXPIRY_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{optionLabel(o)}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
               </div>
               <Button className="w-full" onClick={createLink} disabled={creatingLink}>
-                {creatingLink ? <Loader2 className="size-4 animate-spin mr-2" /> : null} Create invite link
+                {creatingLink ? <Loader2 className="size-4 animate-spin me-2" /> : null} {t('teams.action.createInviteLink')}
               </Button>
               {createdLink && (
                 <div className="mt-3">
-                  <Label className="text-xs font-medium text-muted-foreground mb-1 block">Share this link</Label>
+                  <Label className="text-xs font-medium text-muted-foreground mb-1 block">{t('teams.label.shareThisLink')}</Label>
                   <div className="flex gap-2">
-                    <Input value={createdLink} readOnly className="h-8 text-xs font-mono flex-1" />
+                    <Input value={createdLink} readOnly dir="ltr" className="h-8 text-xs font-mono flex-1" />
                     <CopyButton text={createdLink} />
                   </div>
                 </div>
@@ -889,11 +901,11 @@ function InviteModal({ open, tab, onTabChange, onClose, wsId, roles, onInvited }
 
 function timeUntil(ts: number): string {
   const diff = ts - Math.floor(Date.now() / 1000);
-  if (diff <= 0) return 'expired';
-  if (diff < 3600) return Math.floor(diff / 60) + 'm';
-  if (diff < 86400) return Math.floor(diff / 3600) + 'h';
+  if (diff <= 0) return translate('teams.label.expired');
+  if (diff < 3600) return translate('teams.label.countM', { count: Math.floor(diff / 60) });
+  if (diff < 86400) return translate('teams.label.countH', { count: Math.floor(diff / 3600) });
   const days = Math.ceil(diff / 86400);
-  return days === 1 ? '1 day' : `${days} days`;
+  return days === 1 ? translate('common.label.oneDay') : translate('teams.label.countDays', { count: days });
 }
 
 function StatCard({ value, label }: { icon: React.ReactNode; value: number; label: string }) {

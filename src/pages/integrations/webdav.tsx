@@ -4,10 +4,13 @@ import { useIntegrationCtx } from '@/hooks/use-integration-ctx';
 import { usePermissions } from '@/hooks/use-permissions';
 import { Lock } from 'lucide-react';
 import { getIntegration, webdavUrl, webdavWindowsMount, webdavLinuxMount } from '@/lib/integrations';
+import { useT } from '@/lib/i18n';
+import { richText } from '@/lib/rich-text';
 
 const meta = getIntegration('webdav')!;
 
 export default function WebdavSetup() {
+  const t = useT();
   const ctx = useIntegrationCtx();
   // The door itself is per role (access_webdav); the key made below is refused at
   // it. Saying so here beats a setup walkthrough that ends in a 403 from a
@@ -20,71 +23,70 @@ export default function WebdavSetup() {
         <div className="mb-6 flex items-start gap-3 rounded-lg border border-destructive/30 bg-destructive/5 p-3">
           <Lock className="mt-0.5 size-4 shrink-0 text-destructive" />
           <div className="text-sm">
-            <p className="font-medium">Your role can&rsquo;t use WebDAV</p>
+            <p className="font-medium">{t('integrations-webdav.label.yourRoleCanRsquoTUseWebdav')}</p>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              Any credentials you set up below will be refused for this workspace. Ask a workspace owner or admin for access.
+              {t('common.description.anyCredentialsYouSetUpBelowWillBeRefusedForThis')}
             </p>
           </div>
         </div>
       )}
       <ApiKeyCallout />
-      <Step n={1} title="Endpoint & credentials">
-        <p>Connect any WebDAV client to this URL:</p>
+      <Step n={1} title={t('integrations-webdav.tooltip.endpointCredentials')}>
+        <p>{t('integrations-webdav.description.connectAnyWebdavClientToThisUrl')}</p>
         <CodeBlock code={webdavUrl(ctx)} lang="text" />
         <p>
-          Sign in with <strong>HTTP Basic auth</strong> - username is your account email
-          (<code>{ctx.email}</code>) and the password is your <code>dos_…</code> API key.
+          {richText(t('integrations-webdav.description.signInWithEmphasis1UsernameIsYourAccountEmailEmphasis2'), {
+            emphasis1: <strong>HTTP Basic auth</strong>,
+            emphasis2: <code>{ctx.email}</code>,
+            emphasis3: <code>dos_…</code>,
+          })}
         </p>
         <p>
-          Your workspace appears twice on purpose. Finder and Explorer name the mounted
-          drive after the last part of the URL, so the ID identifies the workspace and the
-          name after it is just the caption you will see on your desktop. That is what lets
-          you mount two workspaces that share a name - your own and one you were invited to
-          - at the same time, with both still reading correctly.
+          {t('integrations-webdav.description.yourWorkspaceAppearsTwiceOnPurposeFinderAndExplorerNameThe')}
         </p>
         <p>
-          Because that last part is only a label, renaming this workspace will not break a
-          drive you have already mounted, and you can edit it to any caption you prefer.
+          {t('integrations-webdav.description.becauseThatLastPartIsOnlyALabelRenamingThisWorkspace')}
         </p>
       </Step>
-      <Step n={2} title="macOS (Finder)">
-        <p>Finder → Go → <em>Connect to Server…</em>, paste the URL, then enter your email and API key.</p>
+      <Step n={2} title={t('integrations-webdav.tooltip.macosFinder')}>
+        <p>
+          {richText(t('integrations-webdav.description.finderGoEmphasis1PasteTheUrlThenEnterYour'), {
+            emphasis1: <em>{t('integrations-webdav.label.connectToServer')}</em>,
+          })}
+        </p>
       </Step>
-      <Step n={3} title="Windows">
-        <p>Map a network drive from an elevated prompt:</p>
+      <Step n={3} title={t('integrations-webdav.tooltip.windows')}>
+        <p>{t('integrations-webdav.description.mapANetworkDriveFromAnElevatedPrompt')}</p>
         <CodeBlock code={webdavWindowsMount(ctx)} lang="powershell" />
       </Step>
-      <Step n={4} title="Linux (davfs2)">
+      <Step n={4} title={t('integrations-webdav.tooltip.linuxDavfs2')}>
         <CodeBlock code={webdavLinuxMount(ctx)} lang="bash" />
       </Step>
-      <Step n={5} title="Limiting a key to one folder">
+      <Step n={5} title={t('integrations-webdav.tooltip.limitingAKeyToOneFolder')}>
         <p>
-          A key does not have to reach your whole workspace. When you create one on your{' '}
-          <a href="/profile">profile page</a>, you can pin it to a workspace and anchor it at a
-          single folder. Mount that key and the folder becomes the root - everything above and
-          beside it is not just hidden, it is unreachable, including by typing a path directly.
+          {richText(t('integrations-webdav.description.aKeyDoesNotHaveToReachYourWholeWorkspaceWhen'), {
+            link1: <a href="/profile">{t('integrations-webdav.action.profilePage')}</a>,
+          })}
         </p>
         <p>
-          A folder-anchored key works over WebDAV and the S3 gateway. It is deliberately refused
-          on the REST API and SFTP, because those do not apply the folder limit yet, and a
-          restriction that silently does not apply is worse than none.
+          {t('integrations-webdav.description.aFolderAnchoredKeyWorksOverWebdavAndTheS3GatewayIt')}
         </p>
         <p>
-          Two things worth knowing. An anchored mount does not show the{' '}
-          <code>Documents</code>, <code>Videos</code>, <code>Images</code>, <code>Shared</code>{' '}
-          and <code>Deleted</code> smart views, because those span the whole workspace. And if
-          you move the anchor folder to the trash, the key stops working until you restore it.
+          {richText(t('integrations-webdav.description.twoThingsWorthKnowingAnAnchoredMountDoesNotShowThe'), {
+            emphasis1: <code>{t('common.label.documents')}</code>,
+            emphasis2: <code>{t('common.label.videos')}</code>,
+            emphasis3: <code>{t('common.label.images')}</code>,
+            emphasis4: <code>{t('common.label.shared')}</code>,
+            emphasis5: <code>{t('common.label.deleted')}</code>,
+          })}
         </p>
       </Step>
-      <Step n={6} title="Limiting a key to certain protocols">
+      <Step n={6} title={t('integrations-webdav.tooltip.limitingAKeyToCertainProtocols')}>
         <p>
-          The same creation form lets you tick which protocols a key may use - WebDAV, SFTP, the
-          S3 gateway, the REST API - in any combination. Leave them all unticked and the key
-          works everywhere, which is how every key made before this existed behaves.
+          {t('integrations-webdav.description.theSameCreationFormLetsYouTickWhichProtocolsAKey')}
         </p>
         <p>
-          This is per key, not per person. If you want a credential that can only mount a drive
-          and can never call the API, make one that is WebDAV-only and use it for that.
+          {t('integrations-webdav.description.thisIsPerKeyNotPerPersonIfYouWantA')}
         </p>
       </Step>
     </IntegrationLayout>

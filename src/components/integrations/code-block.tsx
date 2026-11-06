@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { CopyCheck } from '@/components/ui/copy-check';
 import { highlightToHtmlThemed } from '@/lib/text-highlight';
+import { useT } from '@/lib/i18n';
 
 // Colorful, read-only code block that follows the app theme. The surface uses
 // theme tokens (so it blends into any of the 8 themes) and the syntax colors
@@ -8,6 +9,7 @@ import { highlightToHtmlThemed } from '@/lib/text-highlight';
 // ancestor via the `.cb-shiki` rules in index.css. Plain text shows first,
 // then swaps in once the highlighter and grammar load.
 export function CodeBlock({ code, lang = 'bash', caption }: { code: string; lang?: string; caption?: string }) {
+  const t = useT();
   const [copied, setCopied] = useState(false);
   const [html, setHtml] = useState<string | null>(null);
 
@@ -39,18 +41,18 @@ export function CodeBlock({ code, lang = 'bash', caption }: { code: string; lang
       <button
         type="button"
         onClick={copy}
-        aria-label="Copy to clipboard"
-        className="absolute right-2 top-2 z-10 flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        aria-label={t('common.action.copyToClipboard')}
+        className="absolute inset-e-2 top-2 z-10 flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
       >
         <CopyCheck copied={copied} className="size-3.5" checkClassName="text-green-600" />
       </button>
       {html ? (
         <div
-          className="cb-shiki overflow-x-auto text-[13px] leading-relaxed [&_code]:text-[13px]! [&_pre]:m-0! [&_pre]:bg-transparent! [&_pre]:p-3 [&_pre]:pr-10"
+          className="cb-shiki overflow-x-auto text-[13px] leading-relaxed [&_code]:text-[13px]! [&_pre]:m-0! [&_pre]:bg-transparent! [&_pre]:p-3 [&_pre]:pe-10"
           dangerouslySetInnerHTML={{ __html: html }}
         />
       ) : (
-        <pre className="overflow-x-auto p-3 pr-10 text-[13px] leading-relaxed text-foreground/80">
+        <pre className="overflow-x-auto p-3 pe-10 text-[13px] leading-relaxed text-foreground/80">
           <code>{code}</code>
         </pre>
       )}

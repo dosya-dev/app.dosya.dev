@@ -1,5 +1,6 @@
 import type { QueryClient } from '@tanstack/react-query';
 import { api } from '@/api/client';
+import { t } from '@/lib/i18n';
 
 /**
  * GET /api/dashboard through React Query, so the layout can start the
@@ -58,7 +59,7 @@ export interface DashboardData {
 
 export async function fetchDashboard(wsId: string): Promise<DashboardData> {
   const d = await api<{ ok: boolean } & DashboardData>(`/api/dashboard?workspace_id=${wsId}`);
-  if (!d.ok) throw new Error('The dashboard could not be loaded.');
+  if (!d.ok) throw new Error(t('dashboard.error.theDashboardCouldNotBeLoaded'));
   return d;
 }
 

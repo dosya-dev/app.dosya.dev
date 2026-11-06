@@ -6,6 +6,8 @@ import {
   EXTENSION_STORES, detectBrowser, getStore, FALLBACK_STORE,
   type BrowserSlug, type ExtensionStore,
 } from '@/lib/browser-extension';
+import { useT } from '@/lib/i18n';
+import { richText } from '@/lib/rich-text';
 
 const meta = getIntegration('extension')!;
 
@@ -22,6 +24,7 @@ const meta = getIntegration('extension')!;
  * a fallback until their installation links are enabled.
  */
 export default function ExtensionSetup() {
+  const t = useT();
   const [slug, setSlug] = useState<BrowserSlug>('chrome');
 
   useEffect(() => setSlug(detectBrowser(navigator.userAgent)), []);
@@ -31,10 +34,12 @@ export default function ExtensionSetup() {
 
   return (
     <IntegrationLayout icon={meta.icon} title={meta.title} description={meta.description}>
-      <Step n={1} title={mine.published ? `Add it to ${mine.browser}` : `Not on ${mine.browser} yet`}>
+      <Step n={1} title={mine.published
+        ? t('integrations-extension.tooltip.addItToMinebrowser', { mineBrowser: mine.browser })
+        : t('integrations-extension.tooltip.notOnMinebrowserYet', { mineBrowser: mine.browser })}>
         {mine.published ? (
           <>
-            <p>It installs from the {mine.storeName} like any other extension.</p>
+            <p>{t('integrations-extension.description.itInstallsFromTheMinestorenameLikeAnyOtherExtension', { mineStoreName: mine.storeName })}</p>
             <p>
               <StoreButton store={mine} />
             </p>
@@ -42,9 +47,10 @@ export default function ExtensionSetup() {
         ) : (
           <>
             <p>
-              The {mine.browser} listing is submitted and waiting on review, so there is nothing
-              to install there yet. {FALLBACK_STORE.browser} is live today, and the extension
-              behaves the same in every browser once it is on.
+              {t('integrations-extension.description.theMinebrowserListingIsSubmittedAndWaitingOnReviewSoThere', {
+                mineBrowser: mine.browser,
+                FALLBACK_STOREBrowser: FALLBACK_STORE.browser,
+              })}
             </p>
             <p>
               <StoreButton store={FALLBACK_STORE} />
@@ -53,7 +59,7 @@ export default function ExtensionSetup() {
         )}
 
         <p className="text-xs text-muted-foreground">
-          Other browsers:{' '}
+          {t('integrations-extension.label.otherBrowsers')}{' '}
           {others.map((s, i) => (
             <span key={s.slug}>
               {i > 0 && ' · '}
@@ -68,37 +74,38 @@ export default function ExtensionSetup() {
                 </a>
               ) : (
                 // Named, not linked: this URL 404s until the store approves it.
-                <span title={`${s.storeName} listing in review`}>{s.browser} (in review)</span>
+                <span title={t('integrations-extension.tooltip.sstorenameListingInReview', { sStoreName: s.storeName })}>{t('integrations-extension.label.sbrowserInReview', { sBrowser: s.browser })}</span>
               )}
             </span>
           ))}
         </p>
       </Step>
 
-      <Step n={2} title="Sign in once">
-        <p>
-          Open the extension and sign in with your dosya account. It uses the same session as this
-          tab, so there is no key to paste and nothing to configure.
-        </p>
+      <Step n={2} title={t('integrations-extension.tooltip.signInOnce')}>
+        <p>{t('integrations-extension.description.openTheExtensionAndSignInWithYourDosyaAccountIt')}</p>
       </Step>
 
-      <Step n={3} title="Save anything you can right-click">
+      <Step n={3} title={t('integrations-extension.tooltip.saveAnythingYouCanRightClick')}>
         <p>
-          Right-click an image, a selection, or the page itself and choose <strong>Save image</strong>,{' '}
-          <strong>Save selection as text</strong> or <strong>Save visible screenshot</strong>. Each
-          one lands straight in a dosya folder you pick, without a download and re-upload.
+          {richText(t('integrations-extension.description.rightClickAnImageASelectionOrThePageItselfAndChoose'), {
+            emphasis1: <strong>{t('integrations-extension.label.saveImage')}</strong>,
+            emphasis2: <strong>{t('integrations-extension.label.saveSelectionAsText')}</strong>,
+            emphasis3: <strong>{t('integrations-extension.label.saveVisibleScreenshot')}</strong>,
+          })}
         </p>
         <p>
-          The{' '}
-          <a
-            href={meta.docsUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="underline underline-offset-2 hover:text-foreground"
-          >
-            extension page
-          </a>{' '}
-          covers what it can capture, the size limit and exactly which permissions it asks for.
+          {richText(t('integrations-extension.description.theLink1CoversWhatItCanCaptureTheSizeLimitAnd'), {
+            link1: (
+              <a
+                href={meta.docsUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="underline underline-offset-2 hover:text-foreground"
+              >
+                {t('integrations-extension.action.extensionPage')}
+              </a>
+            ),
+          })}
         </p>
       </Step>
     </IntegrationLayout>

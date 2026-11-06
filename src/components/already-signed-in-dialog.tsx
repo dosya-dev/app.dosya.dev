@@ -1,3 +1,4 @@
+import { formatDateWith } from '@/lib/format-locale';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { TriangleAlert } from 'lucide-react';
@@ -9,6 +10,7 @@ import { initials } from '@/lib/helpers';
 import { API_BASE } from '@/api/client';
 import { pendingPostAuthPath } from '@/lib/redemption-claim';
 import { consumePostAuthPath } from '@/lib/post-auth-path';
+import { useT } from '@/lib/i18n';
 
 /**
  * The prompt a signed-in visitor gets on /login and /sign-up.
@@ -39,6 +41,7 @@ export function AlreadySignedInDialog({
    */
   suppressed?: boolean;
 }) {
+  const t = useT();
   const { status, user } = account;
   const [dismissed, setDismissed] = useState(false);
   const navigate = useNavigate();
@@ -59,12 +62,12 @@ export function AlreadySignedInDialog({
       <DialogContent>
         <DialogHeader>
           <DialogTitle>
-            {purpose === 'login' ? "You're already signed in" : 'You already have an account'}
+            {purpose === 'login' ? t('common.heading.youReAlreadySignedIn') : t('common.heading.youAlreadyHaveAnAccount')}
           </DialogTitle>
           <DialogDescription>
             {purpose === 'login'
-              ? 'Open dosya with this account, or sign in as someone else.'
-              : "You're signed in on this browser. Open dosya, or start a second account."}
+              ? t('common.description.openDosyaWithThisAccountOrSignInAsSomeoneElse')
+              : t('common.description.youReSignedInOnThisBrowserOpenDosyaOrStartA')}
           </DialogDescription>
         </DialogHeader>
 
@@ -93,38 +96,39 @@ export function AlreadySignedInDialog({
           <div className="flex items-start gap-2 rounded-lg bg-(--tone-warn-bg) text-(--tone-warn-ink) px-3 py-2.5 text-[13px]">
             <TriangleAlert className="size-4 shrink-0 mt-0.5" aria-hidden="true" />
             <span>
-              This account is scheduled for deletion on{' '}
-              {new Date(user.deletion_scheduled_for * 1000).toLocaleDateString(undefined, { day: 'numeric', month: 'long' })}.
+              {t('common.description.thisAccountIsScheduledForDeletionOnFormatteddate', {
+                formattedDate: formatDateWith(user.deletion_scheduled_for, { day: 'numeric', month: 'long' }),
+              })}
             </span>
           </div>
         )}
 
         <div className="flex flex-col gap-2">
           <Button className="h-10 w-full justify-center overflow-hidden" onClick={onContinue}>
-            <span className="truncate">Continue as {label}</span>
+            <span className="truncate">{t('common.action.continueAsLabel', { label })}</span>
           </Button>
           <Button
             variant="outline"
             className="h-10 w-full"
             onClick={() => { void logoutAndRedirectTo(purpose === 'login' ? '/login' : '/sign-up'); }}
           >
-            {purpose === 'login' ? 'Log in with a different account' : 'Create a new account'}
+            {purpose === 'login' ? t('common.action.logInWithADifferentAccount') : t('common.action.createANewAccount')}
           </Button>
         </div>
 
         {purpose === 'login' ? (
           <p className="text-xs text-muted-foreground">
-            Signing in as someone else signs you out of this browser and stops any uploads in progress.
+            {t('common.description.signingInAsSomeoneElseSignsYouOutOfThisBrowser')}
           </p>
         ) : (
           <p className="text-xs text-muted-foreground">
-            Creating a new account signs you out of this one first. Want a different existing account?{' '}
+            {t('common.description.creatingANewAccountSignsYouOutOfThisOneFirst')}{' '}
             <Button
               variant="link"
               className="h-auto p-0 text-xs font-normal underline"
               onClick={() => { void logoutAndRedirectTo('/login'); }}
             >
-              Log in instead
+              {t('common.action.logInInstead')}
             </Button>
             .
           </p>

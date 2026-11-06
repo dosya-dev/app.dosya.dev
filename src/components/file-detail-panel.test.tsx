@@ -1,4 +1,4 @@
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 
@@ -157,5 +157,68 @@ describe('FileDetailPanel - action buttons follow the callbacks', () => {
     expect(labels).toContain('Delete file');
     expect(labels).not.toContain('Share');
     expect(labels).not.toContain('Copy file');
+  });
+});
+
+// The panel's video preview is the shared dosya player in compact mode, not
+// the browser's native <video controls>. jsdom has no media pipeline: the
+// same stubs as file-viewer.test.tsx let Video.js mount.
+describe('FileDetailPanel - video preview', () => {
+  const mediaProps = ['play', 'pause', 'load', 'canPlayType'] as const;
+  let saved: Partial<Record<(typeof mediaProps)[number], PropertyDescriptor | undefined>> = {};
+  let hadMatchMedia = true;
+
+  beforeEach(() => {
+    saved = {};
+    for (const k of mediaProps) saved[k] = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, k);
+    Object.defineProperty(HTMLMediaElement.prototype, 'play', { configurable: true, writable: true, value: vi.fn(() => Promise.resolve()) });
+    Object.defineProperty(HTMLMediaElement.prototype, 'pause', { configurable: true, writable: true, value: vi.fn() });
+    Object.defineProperty(HTMLMediaElement.prototype, 'load', { configurable: true, writable: true, value: vi.fn() });
+    Object.defineProperty(HTMLMediaElement.prototype, 'canPlayType', { configurable: true, writable: true, value: () => 'maybe' });
+    hadMatchMedia = typeof window.matchMedia === 'function';
+    if (!hadMatchMedia) {
+      Object.defineProperty(window, 'matchMedia', {
+        configurable: true, writable: true,
+        value: (query: string) => ({
+          matches: false, media: query, onchange: null, addListener() {}, removeListener() {},
+          addEventListener() {}, removeEventListener() {}, dispatchEvent: () => false,
+        }),
+      });
+    }
+  });
+  afterEach(() => {
+    for (const k of mediaProps) {
+      const d = saved[k];
+      if (d) Object.defineProperty(HTMLMediaElement.prototype, k, d);
+      else delete (HTMLMediaElement.prototype as unknown as Record<string, unknown>)[k];
+    }
+    if (!hadMatchMedia) delete (window as unknown as Record<string, unknown>).matchMedia;
+  });
+
+  const video = () => testFile({ name: 'clip.mp4', mime_type: 'video/mp4', extension: 'mp4' });
+
+  it('renders the compact dosya player with metadata preload, not native controls', async () => {
+    await renderPanel(video());
+    const player = container!.querySelector('.dp.dp-compact');
+    expect(player, 'expected the compact player').not.toBeNull();
+    expect(container!.querySelector('video[controls]')).toBeNull();
+    const v = player!.querySelector('video')!;
+    expect(v.getAttribute('src')).toContain('/api/files/f1/raw');
+    expect(v.getAttribute('preload')).toBe('metadata');
+    expect(player!.querySelector('.dp-report-btn, .dp-keys-btn')).toBeNull();
+  });
+
+  it('leaves Space to the page while focus is outside the player', async () => {
+    await renderPanel(video());
+    const e = new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true });
+    document.body.dispatchEvent(e);
+    expect(e.defaultPrevented).toBe(false);
+  });
+
+  it('a playback failure swaps in the panel icon fallback', async () => {
+    await renderPanel(video());
+    await act(async () => { container!.querySelector('video')!.dispatchEvent(new Event('error')); await flush(); });
+    expect(container!.querySelector('.dp')).toBeNull();
+    expect(container!.querySelector('img[alt="MP4"]')).not.toBeNull();
   });
 });

@@ -1,3 +1,5 @@
+import { t } from '@/lib/i18n';
+
 /**
  * Two label maps with DIFFERENT key spaces. Keep them separate: conflating
  * them does not blank the label out - consumers guard lookups with a
@@ -15,6 +17,12 @@ export const IMPORT_SOURCE_LABELS: Record<string, string> = {
   'google-drive': 'Google Drive',
   onedrive: 'OneDrive',
   dropbox: 'Dropbox',
+  // Copied in from someone's share link (POST /api/share/:token/save).
+  // A getter, so the label follows the language chosen at read time (this
+  // module is evaluated once, before the catalog is loaded).
+  get share() {
+    return t('search.label.sharedLink');
+  },
 };
 
 export const PROVIDER_LABELS: Record<string, string> = {

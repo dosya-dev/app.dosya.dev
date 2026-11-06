@@ -1,4 +1,5 @@
 import { api, ApiError } from '@/api/client';
+import { t } from '@/lib/i18n';
 
 // A request helper that never throws: an API refusal comes back as the JSON
 // body the server sent ({ ok: false, error }), a non-JSON failure as
@@ -12,8 +13,8 @@ export async function req<T extends OkResult = OkResult>(path: string, options?:
   } catch (e) {
     if (e instanceof ApiError) {
       try { return JSON.parse(e.body) as T; } catch { /* not json */ }
-      return { ok: false, error: e.body || `Request failed (${e.status})` } as T;
+      return { ok: false, error: e.body || t('common.error.requestFailedStatus', { status: e.status }) } as T;
     }
-    return { ok: false, error: e instanceof Error ? e.message : 'Network error' } as T;
+    return { ok: false, error: e instanceof Error ? e.message : t('profile.label.networkError') } as T;
   }
 }

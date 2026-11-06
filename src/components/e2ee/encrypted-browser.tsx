@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { useE2ee, type EncryptedEntry, type KnownWorkspace } from '@/stores/e2ee';
+import { useE2ee, errorText, spaceLabel, type EncryptedEntry, type KnownWorkspace } from '@/stores/e2ee';
+import { useT } from '@/lib/i18n';
 import { useWorkspace } from '@/stores/workspace';
 import { MembersPanel } from '@/components/e2ee/members-panel';
 import { VaultSidebar } from '@/components/e2ee/vault-sidebar';
@@ -32,6 +33,7 @@ import {
  * together - see VaultSidebar's doc comment.
  */
 export function EncryptedBrowser() {
+  const t = useT();
   const workspaces = useE2ee((s) => s.workspaces);
   const activeWorkspaceId = useE2ee((s) => s.activeWorkspaceId);
   // P2e: the active GLOBAL storage workspace (separate from the E2EE Space
@@ -41,7 +43,7 @@ export function EncryptedBrowser() {
   const activeGlobalId = useWorkspace((s) => s.activeId);
   const entries = useE2ee((s) => s.entries);
   const busy = useE2ee((s) => s.busy);
-  const error = useE2ee((s) => s.error);
+  const error = useE2ee((s) => errorText(s, t));
   const lock = useE2ee((s) => s.lock);
   const createWorkspace = useE2ee((s) => s.createWorkspace);
   const openWorkspace = useE2ee((s) => s.openWorkspace);
@@ -155,10 +157,10 @@ export function EncryptedBrowser() {
       if (loose.length > 0) uploadFiles(loose, currentFolderId);
       if (tree.hadDirectory) {
         toast.info(
-          'Folders are not supported in the Vault yet',
+          t('vault.error.foldersAreNotSupportedInTheVaultYet'),
           loose.length > 0
-            ? `Uploaded ${loose.length} loose file${loose.length === 1 ? '' : 's'}; drop the folder's files directly to encrypt them.`
-            : "Drop the folder's files directly to encrypt them.",
+            ? t('vault.feedback.uploadedLoosecountPluralOneLooseFileOtherLooseFiles', { looseCount: loose.length })
+            : t('vault.feedback.dropTheFolderSFilesDirectlyToEncryptThem'),
         );
       }
     });
@@ -182,17 +184,17 @@ export function EncryptedBrowser() {
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <Badge variant="secondary" className="gap-1">
-                <ShieldCheck className="size-3 text-green-600" /> End-to-end encrypted
+                <ShieldCheck className="size-3 text-green-600" /> {t('vault.status.endToEndEncrypted')}
               </Badge>
               <h1 className="text-lg font-semibold">Vault</h1>
             </div>
             <Button variant="outline" size="sm" className="gap-1.5" onClick={() => lock()}>
-              <LogOut className="size-3.5" /> Lock
+              <LogOut className="size-3.5 rtl:-scale-x-100" /> {t('common.action.lock')}
             </Button>
           </div>
 
           {error && (
-            <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+            <div dir="auto" className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
               {error}
             </div>
           )}
@@ -210,7 +212,7 @@ export function EncryptedBrowser() {
           <div className="flex flex-col gap-3 md:hidden">
             <div className="flex flex-col gap-1.5">
               {mySpaces.length > 0 && (
-                <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">My Spaces</p>
+                <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{t('vault.label.mySpaces')}</p>
               )}
               <div className="flex flex-wrap items-center gap-2">
                 {mySpaces.map((ws) => (
@@ -222,14 +224,14 @@ export function EncryptedBrowser() {
                   />
                 ))}
                 <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setNewWsOpen(true)}>
-                  <Plus className="size-3.5" /> New Space
+                  <Plus className="size-3.5" /> {t('vault.action.newSpace')}
                 </Button>
               </div>
             </div>
 
             {sharedSpacesList.length > 0 && (
               <div className="flex flex-col gap-1.5">
-                <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Shared with me</p>
+                <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{t('vault.label.sharedWithMe')}</p>
                 <div className="flex flex-wrap items-center gap-2">
                   {sharedSpacesList.map((ws) => (
                     <SpaceChip
@@ -256,7 +258,7 @@ export function EncryptedBrowser() {
                 <div className="absolute inset-0 z-10 flex items-center justify-center rounded-xl border-2 border-dashed border-primary bg-primary/5">
                   <div className="flex flex-col items-center gap-2 text-primary">
                     <Upload className="size-10" />
-                    <p className="text-sm font-semibold">Drop files to encrypt &amp; upload</p>
+                    <p className="text-sm font-semibold">{t('vault.label.dropFilesToEncryptUpload')}</p>
                   </div>
                 </div>
               )}
@@ -264,12 +266,12 @@ export function EncryptedBrowser() {
               <div className="mb-3 flex items-center justify-between gap-3">
                 <div className="flex min-w-0 items-center gap-1 text-xs">
                   <button onClick={() => handleBreadcrumb(-1)} className="font-medium hover:text-foreground text-muted-foreground truncate">
-                    {activeWorkspace.name}
+                    {spaceLabel(activeWorkspace, t)}
                   </button>
                   {folderPath.map((f, i) => (
                     <span key={f.id} className="flex items-center gap-1 shrink-0">
-                      <ChevronRight className="size-3 text-muted-foreground" />
-                      <button onClick={() => handleBreadcrumb(i)} className="text-muted-foreground hover:text-foreground truncate max-w-32">
+                      <ChevronRight className="size-3 text-muted-foreground rtl:-scale-x-100" />
+                      <button onClick={() => handleBreadcrumb(i)} className="text-muted-foreground hover:text-foreground truncate max-w-32" dir="auto">
                         {f.name}
                       </button>
                     </span>
@@ -277,10 +279,10 @@ export function EncryptedBrowser() {
                 </div>
                 <div className="flex shrink-0 items-center gap-1.5">
                   <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setMembersOpen(true)}>
-                    <Users className="size-3.5" /> Members
+                    <Users className="size-3.5" /> {t('common.action.members')}
                   </Button>
                   <Button size="sm" className="gap-1.5" onClick={() => fileInputRef.current?.click()} disabled={busy}>
-                    <Upload className="size-3.5" /> Upload
+                    <Upload className="size-3.5" /> {t('common.action.upload')}
                   </Button>
                 </div>
                 <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFileInput} />
@@ -295,7 +297,7 @@ export function EncryptedBrowser() {
               ) : entries.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-16 text-center">
                   <Folder className="mb-3 size-10 text-muted-foreground/30" />
-                  <p className="text-sm text-muted-foreground">No files yet - upload to get started.</p>
+                  <p className="text-sm text-muted-foreground">{t('vault.description.noFilesYetUploadToGetStarted')}</p>
                 </div>
               ) : (
                 <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
@@ -316,7 +318,7 @@ export function EncryptedBrowser() {
           ) : (
             <div className="flex flex-col items-center justify-center rounded-xl border border-dashed py-16 text-center">
               <ShieldCheck className="mb-3 size-10 text-muted-foreground/30" />
-              <p className="text-sm text-muted-foreground">Select or create a Space to get started.</p>
+              <p className="text-sm text-muted-foreground">{t('vault.description.selectOrCreateASpaceToGetStarted')}</p>
             </div>
           )}
         </div>
@@ -326,22 +328,22 @@ export function EncryptedBrowser() {
       <Dialog open={newWsOpen} onOpenChange={setNewWsOpen}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>New Space</DialogTitle>
+            <DialogTitle>{t('vault.heading.newSpace')}</DialogTitle>
           </DialogHeader>
           <div className="space-y-1.5">
-            <Label htmlFor="e2ee-ws-name">Name</Label>
+            <Label htmlFor="e2ee-ws-name">{t('common.label.name')}</Label>
             <Input
               id="e2ee-ws-name"
               autoFocus
               value={newWsName}
               onChange={(e) => setNewWsName(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') handleCreateWorkspace(); }}
-              placeholder="e.g. Personal documents"
+              placeholder={t('vault.placeholder.eGPersonalDocuments')}
             />
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setNewWsOpen(false)}>Cancel</Button>
-            <Button onClick={handleCreateWorkspace} disabled={!newWsName.trim() || busy}>Create</Button>
+            <Button variant="outline" onClick={() => setNewWsOpen(false)}>{t('common.cancel')}</Button>
+            <Button onClick={handleCreateWorkspace} disabled={!newWsName.trim() || busy}>{t('common.action.create')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -351,7 +353,7 @@ export function EncryptedBrowser() {
         <MembersPanel
           open={membersOpen}
           onOpenChange={setMembersOpen}
-          workspaceName={activeWorkspace.name}
+          workspaceName={spaceLabel(activeWorkspace, t)}
         />
       )}
     </div>
@@ -364,24 +366,26 @@ export function EncryptedBrowser() {
 function SpaceChip({
   workspace, active, onClick,
 }: { workspace: KnownWorkspace; active: boolean; onClick: () => void }) {
+  const t = useT();
   return (
     <button
       onClick={onClick}
-      className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+      className={`whitespace-nowrap flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
         active
           ? 'border-primary bg-primary/10 text-primary'
           : 'text-muted-foreground hover:bg-muted/60'
       }`}
     >
-      {workspace.name}
+      {spaceLabel(workspace, t)}
       {workspace.shared && (
-        <Badge variant="secondary" className="text-[9px]">Shared</Badge>
+        <Badge variant="secondary" className="text-[9px]">{t('common.label.shared.shared')}</Badge>
       )}
     </button>
   );
 }
 
-function EncryptedFolderCard({ name, onClick }: { name: string; onClick: () => void }) {
+export function EncryptedFolderCard({ name, onClick }: { name: string; onClick: () => void }) {
+  const t = useT();
   return (
     <Card
       className="gap-0 cursor-pointer py-0 p-3 transition-all hover:-translate-y-px hover:shadow-md"
@@ -390,31 +394,32 @@ function EncryptedFolderCard({ name, onClick }: { name: string; onClick: () => v
       <div className="mb-2 flex items-center gap-2">
         <Folder className="size-6 text-muted-foreground" />
       </div>
-      <p className="truncate text-xs font-medium">{name}</p>
-      <p className="text-[10px] text-muted-foreground">Encrypted folder</p>
+      <p className="truncate text-xs font-medium" dir="auto">{name}</p>
+      <p className="text-[10px] text-muted-foreground">{t('vault.label.encryptedFolder')}</p>
     </Card>
   );
 }
 
-function EncryptedFileCard({ name, onDownload }: { name: string; onDownload: () => void }) {
-  const ext = (name.split('.').pop() || 'FILE').toUpperCase();
+export function EncryptedFileCard({ name, onDownload }: { name: string; onDownload: () => void }) {
+  const t = useT();
+  const ext = (name.split('.').pop() || t('common.label.fileBadge')).toUpperCase();
   return (
     <Card className="group relative aspect-3/2 gap-0 overflow-hidden rounded-xl p-0 py-0 ring-1 ring-black/5 transition-all hover:-translate-y-px hover:shadow-lg dark:ring-white/10">
       <div className="absolute inset-0 flex items-center justify-center bg-linear-to-br from-muted to-background">
         <File className="size-8 text-muted-foreground/50" />
       </div>
       <div className="pointer-events-none absolute inset-x-0 bottom-0 h-3/5 bg-linear-to-t from-black/80 via-black/40 to-transparent" />
-      <span className="absolute top-2 right-2 rounded-full bg-black/45 px-2 py-0.5 text-[10px] font-mono font-semibold uppercase tracking-wider text-white backdrop-blur-sm">
+      <span className="absolute top-2 inset-e-2 rounded-full bg-black/45 px-2 py-0.5 text-[10px] font-mono font-semibold uppercase tracking-wider text-white backdrop-blur-sm">
         {ext}
       </span>
       <button
-        className="absolute bottom-2 right-2 z-10 flex size-8 items-center justify-center rounded-full bg-black/35 opacity-0 backdrop-blur-sm transition-colors hover:bg-black/55 group-hover:opacity-100"
-        title="Download"
+        className="absolute bottom-2 inset-e-2 z-10 flex size-8 items-center justify-center rounded-full bg-black/35 opacity-0 backdrop-blur-sm transition-colors hover:bg-black/55 group-hover:opacity-100"
+        title={t('common.action.download')}
         onClick={(e) => { e.stopPropagation(); onDownload(); }}
       >
         <Download className="size-4 text-white" />
       </button>
-      <p className="absolute inset-x-0 bottom-0 z-0 truncate p-2.5 pr-12 font-mono text-sm font-semibold text-white drop-shadow">
+      <p className="absolute inset-x-0 bottom-0 z-0 truncate p-2.5 pe-12 font-mono text-sm font-semibold text-white drop-shadow" dir="auto">
         {name}
       </p>
     </Card>

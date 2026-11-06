@@ -23,14 +23,17 @@ import {
 } from 'lucide-react';
 import { timeAgo } from '@/lib/helpers';
 import { toast } from '@/lib/toast';
+import { t, useT } from '@/lib/i18n';
+import { richText } from '@/lib/rich-text';
+import type { MessageKey } from '@/i18n/keys';
 
 const meta = getIntegration('webhooks')!;
 
 const EVENT_TYPES = [
-  { value: 'file.uploaded', label: 'File uploaded' },
-  { value: 'file.deleted', label: 'File deleted' },
-  { value: 'share.accessed', label: 'Share accessed' },
-] as const;
+  { value: 'file.uploaded', labelKey: 'common.label.fileUploaded' },
+  { value: 'file.deleted', labelKey: 'common.label.fileDeleted' },
+  { value: 'share.accessed', labelKey: 'integrations-webhooks.label.shareAccessed' },
+] as const satisfies readonly { value: string; labelKey: MessageKey }[];
 
 // ── Types ─────────────────────────────────────────────────
 
@@ -65,16 +68,17 @@ interface Pagination { page: number; per_page: number; total: number; total_page
 // into the future - timeAgo() would misreport it, so format it separately.
 function retryEta(ts: number): string {
   const diff = ts - Math.floor(Date.now() / 1000);
-  if (diff <= 0) return 'due now';
-  if (diff < 60) return `in ${diff}s`;
-  if (diff < 3600) return `in ${Math.floor(diff / 60)}m`;
-  if (diff < 86400) return `in ${Math.floor(diff / 3600)}h`;
-  return `in ${Math.floor(diff / 86400)}d`;
+  if (diff <= 0) return t('integrations-webhooks.label.dueNow');
+  if (diff < 60) return t('integrations-webhooks.label.inDiffS', { diff });
+  if (diff < 3600) return t('integrations-webhooks.label.inMathfloorM', { MathFloor: Math.floor(diff / 60) });
+  if (diff < 86400) return t('integrations-webhooks.label.inMathfloorH', { MathFloor: Math.floor(diff / 3600) });
+  return t('integrations-webhooks.label.inMathfloorD', { MathFloor: Math.floor(diff / 86400) });
 }
 
 // ── Page ──────────────────────────────────────────────────
 
 export default function WebhooksPage() {
+  const t = useT();
   const workspaceId = useWorkspace((s) => s.activeId);
   const [webhooks, setWebhooks] = useState<WebhookEndpoint[]>([]);
   const [loading, setLoading] = useState(true);
@@ -89,34 +93,37 @@ export default function WebhooksPage() {
       );
       if (data.ok) setWebhooks(data.webhooks);
     } catch (err) {
-      toast.error('Failed to load webhooks', apiErrorMessage(err));
+      toast.error(t('integrations-webhooks.error.failedToLoadWebhooks'), apiErrorMessage(err));
     }
     setLoading(false);
-  }, [workspaceId]);
+  }, [workspaceId, t]);
 
   useEffect(() => { load(); }, [load]);
 
   return (
     <IntegrationLayout icon={meta.icon} title={meta.title} description={meta.description}>
       <p className="mb-4 text-xs text-muted-foreground">
-        Each event is delivered as a signed POST request. See the{' '}
-        <a
-          href={meta.docsUrl}
-          target="_blank"
-          rel="noreferrer"
-          className="underline underline-offset-2 hover:text-foreground"
-        >
-          API reference
-        </a>{' '}
-        for payload shapes and how to verify the <code className="text-[11px] text-foreground">X-Dosya-Signature</code> header.
+        {richText(t('integrations-webhooks.description.eachEventIsDeliveredAsASignedPostRequestSeeThe'), {
+          link1: (
+            <a
+              href={meta.docsUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="underline underline-offset-2 hover:text-foreground"
+            >
+              {t('integrations-webhooks.action.apiReference')}
+            </a>
+          ),
+          emphasis1: <code className="text-[11px] text-foreground">X-Dosya-Signature</code>,
+        })}
       </p>
 
       <div className="mb-3 flex items-center justify-between gap-3">
         <p className="text-xs text-muted-foreground">
-          {loading ? 'Loading...' : `${webhooks.length} endpoint${webhooks.length === 1 ? '' : 's'}`}
+          {loading ? t('common.label.loading') : t('integrations-webhooks.description.webhookscountPluralOneEndpointOtherEndpoints', { webhooksCount: webhooks.length })}
         </p>
         <Button size="sm" className="gap-1.5" onClick={() => setCreateOpen(true)} disabled={!workspaceId}>
-          <Plus className="size-4" /> New endpoint
+          <Plus className="size-4" /> {t('integrations-webhooks.action.newEndpoint')}
         </Button>
       </div>
 
@@ -132,7 +139,7 @@ export default function WebhooksPage() {
         </div>
       ) : webhooks.length === 0 ? (
         <Card className="gap-0 py-12 text-center text-sm text-muted-foreground">
-          No webhook endpoints yet. Click &ldquo;New endpoint&rdquo; to register one.
+          {t('integrations-webhooks.description.noWebhookEndpointsYetClickLdquoNewEndpointRdquoToRegisterOne')}
         </Card>
       ) : (
         <div className="space-y-3">
@@ -165,6 +172,7 @@ export default function WebhooksPage() {
 // ── Endpoint card ─────────────────────────────────────────
 
 function EndpointCard({ endpoint, onChange }: { endpoint: WebhookEndpoint; onChange: () => void }) {
+  const t = useT();
   const [testing, setTesting] = useState(false);
   const [reenabling, setReenabling] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
@@ -183,11 +191,11 @@ function EndpointCard({ endpoint, onChange }: { endpoint: WebhookEndpoint; onCha
     setTesting(true);
     try {
       await api(`/api/webhooks/${endpoint.id}/test`, { method: 'POST' });
-      toast.success('Test event sent', 'Check the deliveries log below for the result.');
+      toast.success(t('integrations-webhooks.feedback.testEventSent'), t('integrations-webhooks.feedback.checkTheDeliveriesLogBelowForTheResult'));
       setDeliveriesOpen(true);
       setDeliveriesReloadKey((k) => k + 1);
     } catch (err) {
-      toast.error('Test failed', apiErrorMessage(err));
+      toast.error(t('integrations-webhooks.error.testFailed'), apiErrorMessage(err));
     }
     setTesting(false);
   };
@@ -196,10 +204,10 @@ function EndpointCard({ endpoint, onChange }: { endpoint: WebhookEndpoint; onCha
     setReenabling(true);
     try {
       await api(`/api/webhooks/${endpoint.id}`, { method: 'PATCH', body: JSON.stringify({ active: true }) });
-      toast.success('Webhook re-enabled');
+      toast.success(t('integrations-webhooks.feedback.webhookReEnabled'));
       onChange();
     } catch (err) {
-      toast.error('Re-enable failed', apiErrorMessage(err));
+      toast.error(t('integrations-webhooks.error.reEnableFailed'), apiErrorMessage(err));
     }
     setReenabling(false);
   };
@@ -208,11 +216,11 @@ function EndpointCard({ endpoint, onChange }: { endpoint: WebhookEndpoint; onCha
     setDeleting(true);
     try {
       await api(`/api/webhooks/${endpoint.id}`, { method: 'DELETE' });
-      toast.success('Webhook deleted');
+      toast.success(t('integrations-webhooks.feedback.webhookDeleted'));
       setDeleteOpen(false);
       onChange();
     } catch (err) {
-      toast.error('Delete failed', apiErrorMessage(err));
+      toast.error(t('common.error.deleteFailed'), apiErrorMessage(err));
     }
     setDeleting(false);
   };
@@ -224,7 +232,7 @@ function EndpointCard({ endpoint, onChange }: { endpoint: WebhookEndpoint; onCha
       setRollOpen(false);
       setRolledSecret(res.secret);
     } catch (err) {
-      toast.error('Roll secret failed', apiErrorMessage(err));
+      toast.error(t('integrations-webhooks.error.rollSecretFailed'), apiErrorMessage(err));
     }
     setRolling(false);
   };
@@ -233,11 +241,11 @@ function EndpointCard({ endpoint, onChange }: { endpoint: WebhookEndpoint; onCha
     <Card className="gap-0 py-0 overflow-hidden">
       <div className="p-4">
         <div className="flex items-center gap-2 flex-wrap">
-          <p className="text-sm font-medium font-mono break-all">{endpoint.url}</p>
+          <p dir="ltr" className="text-sm font-medium font-mono break-all">{endpoint.url}</p>
           {active ? (
-            <Badge className="shrink-0 bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-400 text-[10px]">Active</Badge>
+            <Badge className="shrink-0 bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-400 text-[10px]">{t('integrations-webhooks.status.active.webhook')}</Badge>
           ) : (
-            <Badge variant="secondary" className="shrink-0 text-[10px]">Disabled</Badge>
+            <Badge variant="secondary" className="shrink-0 text-[10px]">{t('integrations-webhooks.status.disabled')}</Badge>
           )}
         </div>
         {endpoint.description && <p className="mt-1 text-xs text-muted-foreground">{endpoint.description}</p>}
@@ -246,41 +254,43 @@ function EndpointCard({ endpoint, onChange }: { endpoint: WebhookEndpoint; onCha
             <Badge key={e} variant="outline" className="text-[10px] font-mono">{e}</Badge>
           ))}
         </div>
-        <p className="mt-2 text-[11px] text-muted-foreground">Created {timeAgo(endpoint.created_at)}</p>
+        <p className="mt-2 text-[11px] text-muted-foreground">{t('common.label.createdDate', { date: timeAgo(endpoint.created_at) })}</p>
 
         {disabled && (
           <div className="mt-3 flex items-start gap-2.5 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
             <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-500" />
             <div className="flex-1 text-xs">
-              <p className="font-medium text-amber-800 dark:text-amber-400">Auto-disabled after repeated failures</p>
+              <p className="font-medium text-amber-800 dark:text-amber-400">{t('integrations-webhooks.error.autoDisabledAfterRepeatedFailures')}</p>
               <p className="mt-0.5 text-amber-700/80 dark:text-amber-500/80">
-                {endpoint.consecutive_failures} consecutive failed deliveries &middot; disabled {timeAgo(endpoint.disabled_at!)}.
-                Fix the endpoint, then re-enable it.
+                {t('integrations-webhooks.error.endpointconsecutiveFailuresConsecutiveFailedDeliveriesMiddotDisabledFormattedvalueFixTheEndpointThen', {
+                  endpointConsecutive_failures: endpoint.consecutive_failures,
+                  formattedValue: timeAgo(endpoint.disabled_at!),
+                })}
               </p>
             </div>
             <Button size="sm" variant="outline" className="h-7 shrink-0 text-xs" onClick={reenable} disabled={reenabling}>
-              {reenabling ? <Loader2 className="size-3 animate-spin" /> : 'Re-enable'}
+              {reenabling ? <Loader2 className="size-3 animate-spin" /> : t('integrations-webhooks.action.reEnable')}
             </Button>
           </div>
         )}
 
         <div className="mt-3 flex flex-wrap gap-1.5">
           <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={sendTest} disabled={testing}>
-            {testing ? <Loader2 className="size-3 animate-spin" /> : <Send className="size-3" />} Send test event
+            {testing ? <Loader2 className="size-3 animate-spin" /> : <Send className="size-3 rtl:-scale-x-100" />} {t('integrations-webhooks.action.sendTestEvent')}
           </Button>
           <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => setDeliveriesOpen((v) => !v)}>
-            {deliveriesOpen ? <ChevronUp className="size-3" /> : <ChevronDown className="size-3" />} Deliveries
+            {deliveriesOpen ? <ChevronUp className="size-3" /> : <ChevronDown className="size-3" />} {t('integrations-webhooks.action.deliveries')}
           </Button>
-          <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setEditOpen(true)}>Edit</Button>
+          <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setEditOpen(true)}>{t('common.edit')}</Button>
           <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => setRollOpen(true)}>
-            <KeyRound className="size-3" /> Roll secret
+            <KeyRound className="size-3" /> {t('integrations-webhooks.action.rollSecret')}
           </Button>
           <Button
             variant="outline" size="sm"
             className="h-7 text-xs gap-1 text-destructive border-destructive/30 hover:bg-destructive/10"
             onClick={() => setDeleteOpen(true)}
           >
-            <Trash2 className="size-3" /> Delete
+            <Trash2 className="size-3" /> {t('common.delete')}
           </Button>
         </div>
       </div>
@@ -298,13 +308,11 @@ function EndpointCard({ endpoint, onChange }: { endpoint: WebhookEndpoint; onCha
 
       <ConfirmDialog
         open={deleteOpen}
-        title="Delete webhook"
-        description={(
-          <>Delete the endpoint for <span className="font-mono text-foreground break-all">{endpoint.url}</span>?
-            {' '}This can&rsquo;t be undone and its delivery history will be lost.
-          </>
-        )}
-        confirmLabel="Delete"
+        title={t('integrations-webhooks.tooltip.deleteWebhook')}
+        description={richText(t('integrations-webhooks.description.deleteTheEndpointForEndpointurlThisCanRsquoTBeUndoneAndIts'), {
+          endpointUrl: <span dir="ltr" className="font-mono text-foreground break-all">{endpoint.url}</span>,
+        })}
+        confirmLabel={t('common.delete')}
         destructive
         busy={deleting}
         onConfirm={remove}
@@ -313,9 +321,9 @@ function EndpointCard({ endpoint, onChange }: { endpoint: WebhookEndpoint; onCha
 
       <ConfirmDialog
         open={rollOpen}
-        title="Roll signing secret"
-        description="Generate a new signing secret for this endpoint. The old secret stops working immediately - update your receiver before rolling."
-        confirmLabel="Roll secret"
+        title={t('integrations-webhooks.tooltip.rollSigningSecret')}
+        description={t('integrations-webhooks.description.generateANewSigningSecretForThisEndpointTheOldSecret')}
+        confirmLabel={t('integrations-webhooks.action.rollSecret')}
         busy={rolling}
         onConfirm={rollSecret}
         onClose={() => setRollOpen(false)}
@@ -331,6 +339,7 @@ function EndpointCard({ endpoint, onChange }: { endpoint: WebhookEndpoint; onCha
 // ── Deliveries section ────────────────────────────────────
 
 function DeliveriesSection({ endpointId }: { endpointId: string }) {
+  const t = useT();
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
   const [pagination, setPagination] = useState<Pagination | null>(null);
   const [page, setPage] = useState(1);
@@ -345,10 +354,10 @@ function DeliveriesSection({ endpointId }: { endpointId: string }) {
       );
       if (data.ok) { setDeliveries(data.deliveries); setPagination(data.pagination); }
     } catch (err) {
-      toast.error('Failed to load deliveries', apiErrorMessage(err));
+      toast.error(t('integrations-webhooks.error.failedToLoadDeliveries'), apiErrorMessage(err));
     }
     setLoading(false);
-  }, [endpointId, page]);
+  }, [endpointId, page, t]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -356,10 +365,10 @@ function DeliveriesSection({ endpointId }: { endpointId: string }) {
     setRedeliveringId(id);
     try {
       await api(`/api/webhooks/${endpointId}/deliveries/${id}/redeliver`, { method: 'POST' });
-      toast.success('Redelivery queued', 'A new delivery attempt has been scheduled.');
+      toast.success(t('integrations-webhooks.feedback.redeliveryQueued'), t('integrations-webhooks.feedback.aNewDeliveryAttemptHasBeenScheduled'));
       if (page === 1) load(); else setPage(1);
     } catch (err) {
-      toast.error('Redeliver failed', apiErrorMessage(err));
+      toast.error(t('integrations-webhooks.error.redeliverFailed'), apiErrorMessage(err));
     }
     setRedeliveringId(null);
   };
@@ -367,8 +376,8 @@ function DeliveriesSection({ endpointId }: { endpointId: string }) {
   return (
     <div className="border-t bg-muted/20 px-4 py-3">
       <div className="mb-2 flex items-center justify-between">
-        <p className="text-xs font-medium text-muted-foreground">Recent deliveries</p>
-        <Button variant="ghost" size="icon-sm" onClick={load} disabled={loading} title="Refresh">
+        <p className="text-xs font-medium text-muted-foreground">{t('integrations-webhooks.label.recentDeliveries')}</p>
+        <Button variant="ghost" size="icon-sm" onClick={load} disabled={loading} title={t('common.action.refresh')}>
           <RotateCw className={`size-3.5 ${loading ? 'animate-spin' : ''}`} />
         </Button>
       </div>
@@ -379,18 +388,18 @@ function DeliveriesSection({ endpointId }: { endpointId: string }) {
         </div>
       ) : deliveries.length === 0 ? (
         <p className="py-6 text-center text-xs text-muted-foreground">
-          No deliveries yet. Send a test event to see one here.
+          {t('integrations-webhooks.description.noDeliveriesYetSendATestEventToSeeOneHere')}
         </p>
       ) : (
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="text-[11px]">Event</TableHead>
-              <TableHead className="text-[11px]">Created</TableHead>
-              <TableHead className="text-[11px]">Status</TableHead>
-              <TableHead className="text-[11px]">Response</TableHead>
-              <TableHead className="text-[11px]">Attempts</TableHead>
-              <TableHead className="text-[11px]">Next retry</TableHead>
+              <TableHead className="text-[11px]">{t('common.label.event')}</TableHead>
+              <TableHead className="text-[11px]">{t('common.label.created')}</TableHead>
+              <TableHead className="text-[11px]">{t('common.column.status')}</TableHead>
+              <TableHead className="text-[11px]">{t('integrations-webhooks.label.response')}</TableHead>
+              <TableHead className="text-[11px]">{t('integrations-webhooks.label.attempts')}</TableHead>
+              <TableHead className="text-[11px]">{t('integrations-webhooks.label.nextRetry')}</TableHead>
               <TableHead className="text-[11px]" />
             </TableRow>
           </TableHeader>
@@ -404,7 +413,7 @@ function DeliveriesSection({ endpointId }: { endpointId: string }) {
                   className="text-xs text-muted-foreground"
                   title={d.error ?? d.response_snippet ?? undefined}
                 >
-                  {d.response_status != null ? d.response_status : d.error ? 'Error' : '-'}
+                  {d.response_status != null ? d.response_status : d.error ? t('common.status.error') : '-'}
                 </TableCell>
                 <TableCell className="text-xs text-muted-foreground">{d.attempts}</TableCell>
                 <TableCell className="text-xs text-muted-foreground">
@@ -416,7 +425,7 @@ function DeliveriesSection({ endpointId }: { endpointId: string }) {
                     onClick={() => redeliver(d.id)} disabled={redeliveringId === d.id}
                   >
                     {redeliveringId === d.id ? <Loader2 className="size-3 animate-spin" /> : <RotateCw className="size-3" />}
-                    Redeliver
+                    {t('integrations-webhooks.action.redeliver')}
                   </Button>
                 </TableCell>
               </TableRow>
@@ -428,11 +437,11 @@ function DeliveriesSection({ endpointId }: { endpointId: string }) {
       {pagination && pagination.total_pages > 1 && (
         <div className="flex items-center justify-center gap-2 mt-3">
           <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
-            <ChevronLeft className="size-3.5" />
+            <ChevronLeft className="size-3.5 rtl:-scale-x-100" />
           </Button>
-          <span className="text-[11px] text-muted-foreground">Page {page} of {pagination.total_pages}</span>
+          <span className="text-[11px] text-muted-foreground">{t('common.label.pagePageOfPaginationtotalPages', { page, pageCount: pagination.total_pages })}</span>
           <Button variant="outline" size="sm" disabled={page >= pagination.total_pages} onClick={() => setPage((p) => p + 1)}>
-            <ChevronRight className="size-3.5" />
+            <ChevronRight className="size-3.5 rtl:-scale-x-100" />
           </Button>
         </div>
       )}
@@ -441,13 +450,14 @@ function DeliveriesSection({ endpointId }: { endpointId: string }) {
 }
 
 function DeliveryStatusBadge({ status }: { status: Delivery['status'] }) {
+  const t = useT();
   if (status === 'success') {
-    return <Badge className="bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-400 text-[10px]">Success</Badge>;
+    return <Badge className="bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-400 text-[10px]">{t('integrations-webhooks.status.success')}</Badge>;
   }
   if (status === 'failed') {
-    return <Badge variant="destructive" className="text-[10px]">Failed</Badge>;
+    return <Badge variant="destructive" className="text-[10px]">{t('common.status.failed')}</Badge>;
   }
-  return <Badge variant="secondary" className="text-[10px]">Pending</Badge>;
+  return <Badge variant="secondary" className="text-[10px]">{t('common.status.pending')}</Badge>;
 }
 
 // ── Create / edit dialog ──────────────────────────────────
@@ -457,6 +467,7 @@ type EndpointFormProps =
   | { mode: 'edit'; initial: WebhookEndpoint; onClose: () => void; onSaved: () => void };
 
 function EndpointFormDialog(props: EndpointFormProps) {
+  const t = useT();
   const isEdit = props.mode === 'edit';
   const [url, setUrl] = useState(isEdit ? props.initial.url : '');
   const [events, setEvents] = useState<Set<string>>(new Set(isEdit ? props.initial.events : []));
@@ -464,6 +475,9 @@ function EndpointFormDialog(props: EndpointFormProps) {
   const [active, setActive] = useState(isEdit ? props.initial.active !== 0 : true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  // The label keeps "(optional)" in its lighter weight: split the message at the parenthesis.
+  const descriptionLabel = t('integrations-webhooks.label.descriptionOptional');
+  const optional = descriptionLabel.match(/^(.*?)\s*([(\uff08].*[)\uff09])\s*$/);
 
   const toggleEvent = (value: string) => {
     setEvents((prev) => {
@@ -476,8 +490,8 @@ function EndpointFormDialog(props: EndpointFormProps) {
   const submit = async () => {
     setError('');
     const trimmedUrl = url.trim();
-    if (!/^https:\/\/.+/.test(trimmedUrl)) { setError('URL must be a valid https:// address.'); return; }
-    if (events.size === 0) { setError('Select at least one event type.'); return; }
+    if (!/^https:\/\/.+/.test(trimmedUrl)) { setError(t('integrations-webhooks.error.urlMustBeAValidHttpsAddress')); return; }
+    if (events.size === 0) { setError(t('integrations-webhooks.error.selectAtLeastOneEventType')); return; }
 
     setSubmitting(true);
     try {
@@ -488,7 +502,7 @@ function EndpointFormDialog(props: EndpointFormProps) {
             url: trimmedUrl, events: Array.from(events), description: description.trim() || null, active,
           }),
         });
-        toast.success('Webhook updated');
+        toast.success(t('integrations-webhooks.feedback.webhookUpdated'));
         props.onSaved();
       } else {
         const res = await api<{ ok: boolean; webhook: { id: string; url: string; secret: string } }>('/api/webhooks', {
@@ -512,12 +526,12 @@ function EndpointFormDialog(props: EndpointFormProps) {
     <Dialog open onOpenChange={() => props.onClose()}>
       <DialogContent className="max-w-md max-h-[85vh] flex flex-col">
         <DialogHeader>
-          <DialogTitle>{isEdit ? 'Edit webhook' : 'New webhook endpoint'}</DialogTitle>
+          <DialogTitle>{isEdit ? t('integrations-webhooks.heading.editWebhook') : t('integrations-webhooks.heading.newWebhookEndpoint')}</DialogTitle>
         </DialogHeader>
 
         <div className="flex-1 overflow-y-auto space-y-4 -mx-4 px-4">
           <div>
-            <Label className="text-xs font-medium text-muted-foreground mb-1 block">Endpoint URL</Label>
+            <Label className="text-xs font-medium text-muted-foreground mb-1 block">{t('integrations-webhooks.label.endpointUrl')}</Label>
             <Input
               value={url}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => setUrl(e.target.value)}
@@ -528,12 +542,12 @@ function EndpointFormDialog(props: EndpointFormProps) {
           </div>
 
           <div>
-            <Label className="text-xs font-medium text-muted-foreground mb-1.5 block">Events</Label>
+            <Label className="text-xs font-medium text-muted-foreground mb-1.5 block">{t('common.label.events')}</Label>
             <div className="space-y-2">
               {EVENT_TYPES.map((et) => (
                 <label key={et.value} className="flex items-center gap-2 text-xs cursor-pointer">
                   <Checkbox checked={events.has(et.value)} onCheckedChange={() => toggleEvent(et.value)} />
-                  <span>{et.label}</span>
+                  <span>{t(et.labelKey)}</span>
                   <code className="text-[10px] text-muted-foreground">{et.value}</code>
                 </label>
               ))}
@@ -542,12 +556,12 @@ function EndpointFormDialog(props: EndpointFormProps) {
 
           <div>
             <Label className="text-xs font-medium text-muted-foreground mb-1 block">
-              Description <span className="font-normal">(optional)</span>
+              {optional ? <>{optional[1]} <span className="font-normal">{optional[2]}</span></> : descriptionLabel}
             </Label>
             <Textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="What is this endpoint for?"
+              placeholder={t('integrations-webhooks.placeholder.whatIsThisEndpointFor')}
               className="h-14 min-h-0 px-3 text-xs md:text-xs resize-y"
             />
           </div>
@@ -555,18 +569,18 @@ function EndpointFormDialog(props: EndpointFormProps) {
           {isEdit && (
             <label className="flex items-center gap-2 text-xs cursor-pointer">
               <Checkbox checked={active} onCheckedChange={(checked) => setActive(!!checked)} />
-              <span>Active</span>
+              <span>{t('integrations-webhooks.status.active.webhook')}</span>
             </label>
           )}
 
-          {error && <p className="text-xs text-destructive bg-destructive/10 border border-destructive/20 rounded-md px-3 py-2">{error}</p>}
+          {error && <p dir="auto" className="text-xs text-destructive bg-destructive/10 border border-destructive/20 rounded-md px-3 py-2">{error}</p>}
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={props.onClose}>Cancel</Button>
+          <Button variant="outline" onClick={props.onClose}>{t('common.cancel')}</Button>
           <Button onClick={submit} disabled={submitting}>
-            {submitting ? <Loader2 className="size-4 animate-spin mr-1.5" /> : null}
-            {submitting ? (isEdit ? 'Saving...' : 'Creating...') : (isEdit ? 'Save changes' : 'Create endpoint')}
+            {submitting ? <Loader2 className="size-4 animate-spin me-1.5" /> : null}
+            {submitting ? (isEdit ? t('common.action.saving') : t('common.action.creating')) : (isEdit ? t('common.action.saveChanges') : t('integrations-webhooks.action.createEndpoint'))}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -577,13 +591,14 @@ function EndpointFormDialog(props: EndpointFormProps) {
 // ── Secret reveal dialog ──────────────────────────────────
 
 function SecretRevealDialog({ secret, url, onClose }: { secret: string; url: string; onClose: () => void }) {
+  const t = useT();
   const [copied, setCopied] = useState(false);
 
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(secret);
       setCopied(true);
-      toast.success('Secret copied', "Store it securely - you won't see it again.");
+      toast.success(t('integrations-webhooks.feedback.secretCopied'), t('integrations-webhooks.feedback.storeItSecurelyYouWonTSeeItAgain'));
       setTimeout(() => setCopied(false), 2000);
     } catch { /* clipboard unavailable */ }
   };
@@ -591,21 +606,25 @@ function SecretRevealDialog({ secret, url, onClose }: { secret: string; url: str
   return (
     <Dialog open onOpenChange={() => onClose()}>
       <DialogContent className="max-w-md">
-        <DialogHeader><DialogTitle>Signing secret</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>{t('integrations-webhooks.heading.signingSecret')}</DialogTitle></DialogHeader>
         <p className="text-xs text-muted-foreground">
-          Copy this now for <span className="font-mono text-foreground break-all">{url}</span> - we won&rsquo;t show it again.
+          {richText(t('integrations-webhooks.description.copyThisNowForUrlWeWonRsquoTShowItAgain'), {
+            url: <span dir="ltr" className="font-mono text-foreground break-all">{url}</span>,
+          })}
         </p>
         <div className="flex gap-2">
-          <Input value={secret} readOnly className="h-8 text-xs font-mono flex-1" />
+          <Input value={secret} readOnly dir="ltr" className="h-8 text-xs font-mono flex-1" />
           <Button variant="outline" size="sm" className="h-8 text-xs shrink-0 gap-1" onClick={copy}>
-            {copied ? <Check className="size-3" /> : <Copy className="size-3" />} {copied ? 'Copied' : 'Copy'}
+            {copied ? <Check className="size-3" /> : <Copy className="size-3" />} {copied ? t('common.action.copied') : t('common.copy')}
           </Button>
         </div>
         <p className="text-[11px] text-muted-foreground">
-          Use it to verify the <code className="text-[11px] text-foreground">X-Dosya-Signature</code> header on incoming requests.
+          {richText(t('integrations-webhooks.description.useItToVerifyTheEmphasis1HeaderOnIncomingRequests'), {
+            emphasis1: <code className="text-[11px] text-foreground">X-Dosya-Signature</code>,
+          })}
         </p>
         <DialogFooter>
-          <Button onClick={onClose}>Done - I&rsquo;ve copied it</Button>
+          <Button onClick={onClose}>{t('integrations-webhooks.action.doneIRsquoVeCopiedIt')}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -615,7 +634,7 @@ function SecretRevealDialog({ secret, url, onClose }: { secret: string; url: str
 // ── Confirm dialog ────────────────────────────────────────
 
 function ConfirmDialog({
-  open, title, description, confirmLabel = 'Confirm', destructive, busy, onConfirm, onClose,
+  open, title, description, confirmLabel, destructive, busy, onConfirm, onClose,
 }: {
   open: boolean;
   title: string;
@@ -626,15 +645,16 @@ function ConfirmDialog({
   onConfirm: () => void;
   onClose: () => void;
 }) {
+  const t = useT();
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
       <DialogContent className="max-w-sm">
         <DialogHeader><DialogTitle>{title}</DialogTitle></DialogHeader>
         <p className="text-xs text-muted-foreground">{description}</p>
         <DialogFooter>
-          <Button variant="outline" onClick={onClose} disabled={busy}>Cancel</Button>
+          <Button variant="outline" onClick={onClose} disabled={busy}>{t('common.cancel')}</Button>
           <Button variant={destructive ? 'destructive' : 'default'} onClick={onConfirm} disabled={busy}>
-            {busy ? <Loader2 className="size-3.5 animate-spin" /> : confirmLabel}
+            {busy ? <Loader2 className="size-3.5 animate-spin" /> : (confirmLabel ?? t('common.label.confirm'))}
           </Button>
         </DialogFooter>
       </DialogContent>

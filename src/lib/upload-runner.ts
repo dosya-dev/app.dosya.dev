@@ -1,4 +1,5 @@
 import { API_BASE } from '@/api/client';
+import { t } from '@/lib/i18n';
 import { useUploads } from '@/stores/uploads';
 import { createScheduler } from '@/lib/upload-scheduler';
 import { getUserConcurrency, effectiveConcurrency } from '@/lib/upload-concurrency';
@@ -239,10 +240,10 @@ function xhrPut(
       try {
         const d = JSON.parse(xhr.responseText);
         if (xhr.status >= 200 && xhr.status < 300 && d.ok) resolve(d);
-        else reject(new Error(d.error ?? `HTTP ${xhr.status}`));
-      } catch { reject(new Error(`HTTP ${xhr.status}`)); }
+        else reject(new Error(d.error ?? t('common.error.httpXhrstatus', { xhrStatus: xhr.status })));
+      } catch { reject(new Error(t('common.error.httpXhrstatus', { xhrStatus: xhr.status }))); }
     };
-    xhr.onerror = () => { untrackXhr(id, xhr); reject(new Error('Network error')); };
+    xhr.onerror = () => { untrackXhr(id, xhr); reject(new Error(t('common.error.networkError'))); };
     xhr.onabort = () => { untrackXhr(id, xhr); reject(new DOMException('Aborted', 'AbortError')); };
     xhr.send(body);
   });
@@ -265,7 +266,7 @@ async function initSession(item: UploadItem): Promise<any> {
     }),
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok || !data.ok) throw new Error(data.error ?? `Init failed (HTTP ${res.status})`);
+  if (!res.ok || !data.ok) throw new Error(data.error ?? t('common.error.initFailedHttpResstatus', { resStatus: res.status }));
   return data;
 }
 
@@ -312,7 +313,7 @@ async function uploadParts(
     headers: sourceTimeHeaders(file.lastModified),
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok || !data.ok) throw new Error(data.error ?? `Complete failed (HTTP ${res.status})`);
+  if (!res.ok || !data.ok) throw new Error(data.error ?? t('common.error.completeFailedHttpResstatus', { resStatus: res.status }));
   if (bailIfCanceled(id)) return;
   markComplete(id, { bytesUploaded: file.size, fileId: data?.file?.id });
 }
@@ -320,7 +321,7 @@ async function uploadParts(
 async function resumeParts(id: string, file: File, sessionId: string): Promise<void> {
   const res = await fetch(`${API_BASE}/api/upload/${sessionId}/status`, { credentials: 'include' });
   const s = await res.json().catch(() => ({}));
-  if (!res.ok || !s.ok) throw new Error(s.error ?? 'Could not read upload status');
+  if (!res.ok || !s.ok) throw new Error(s.error ?? t('common.error.couldNotReadUploadStatus'));
   if (bailIfCanceled(id)) return;
   if (s.status === 'complete') {
     markComplete(id, { bytesUploaded: file.size });
@@ -340,7 +341,7 @@ function handleError(id: string, err: unknown): void {
   }
   store().patchItem(id, {
     status: 'error',
-    error: err instanceof Error ? err.message : 'Upload failed',
+    error: err instanceof Error ? err.message : t('common.error.uploadFailed'),
   });
 }
 
@@ -555,9 +556,9 @@ export function retryAllFailed(): void {
 /** Resume an interrupted item by re-selecting the same file. */
 export function resumeWithFile(id: string, file: File): { ok: boolean; error?: string } {
   const item = getItem(id);
-  if (!item) return { ok: false, error: 'Upload not found' };
+  if (!item) return { ok: false, error: t('common.error.uploadNotFound') };
   if (file.name !== item.fileName || file.size !== item.fileSize) {
-    return { ok: false, error: 'That file does not match (name or size differs).' };
+    return { ok: false, error: t('common.error.thatFileDoesNotMatchNameOrSizeDiffers') };
   }
   fileMap.set(id, file);
   canceledIds.delete(id);

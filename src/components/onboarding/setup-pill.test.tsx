@@ -77,6 +77,17 @@ describe('SetupPill', () => {
     expect(pill!.textContent).toContain('Setup 1/4');
   });
 
+  it('hides the label below sm but keeps an accessible name and the count', () => {
+    useOnboarding.setState({ purpose: 'dev', steps: { ...NONE, upload: true } });
+    render();
+    const pill = container!.querySelector('[data-testid="setup-pill"]')!;
+    expect(pill.getAttribute('aria-label')).toBe('Setup 1/4');
+    expect(pill.className).toContain('shrink-0');
+    const label = container!.querySelector('[data-testid="setup-pill-label"]')!;
+    expect(label.className).toContain('hidden');
+    expect(label.className).toContain('sm:inline');
+  });
+
   it('counts progress only over the active purpose set, not unrelated derivations', () => {
     // geo and mobile are media-purpose derivations; with purpose "dev" they
     // must not count toward, or complete, the pill's progress.

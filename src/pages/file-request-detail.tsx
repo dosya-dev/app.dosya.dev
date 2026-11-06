@@ -1,5 +1,7 @@
+import { formatDateWith } from '@/lib/format-locale';
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
+import { textEditorHref, type TextEditorState } from '@/lib/text-edit';
 import { useQueryClient } from '@tanstack/react-query';
 import { api, API_BASE } from '@/api/client';
 import { useDocumentTitle } from '@/lib/page-title';
@@ -21,6 +23,9 @@ import {
 } from 'lucide-react';
 import { humanSize, timeAgo, fileIconSrc } from '@/lib/helpers';
 import { toast } from '@/lib/toast';
+import { useT } from '@/lib/i18n';
+import { richText } from '@/lib/rich-text';
+import type { MessageKey } from '@/i18n/keys';
 import { startArchiveDownload } from '@/lib/archive-download';
 import { FileViewer } from '@/components/file-viewer';
 import { FileRequestEditDialog } from '@/components/file-request-edit-dialog';
@@ -83,22 +88,22 @@ interface ViewerFile {
 
 type SortMode = 'newest' | 'oldest' | 'name_asc' | 'name_desc' | 'largest' | 'smallest';
 
-const SORT_OPTIONS: { value: SortMode; label: string }[] = [
-  { value: 'newest', label: 'Newest' },
-  { value: 'oldest', label: 'Oldest' },
-  { value: 'name_asc', label: 'Name A-Z' },
-  { value: 'name_desc', label: 'Name Z-A' },
-  { value: 'largest', label: 'Largest' },
-  { value: 'smallest', label: 'Smallest' },
+const SORT_OPTIONS: { value: SortMode; labelKey: MessageKey }[] = [
+  { value: 'newest', labelKey: 'common.option.newest' },
+  { value: 'oldest', labelKey: 'common.option.oldest' },
+  { value: 'name_asc', labelKey: 'common.option.nameAZ' },
+  { value: 'name_desc', labelKey: 'common.option.nameZA' },
+  { value: 'largest', labelKey: 'common.option.largest' },
+  { value: 'smallest', labelKey: 'common.option.smallest' },
 ];
 
-function toViewerFile(u: Upload): ViewerFile {
+function toViewerFile(u: Upload, anonymous: string): ViewerFile {
   return {
     id: u.file_id, name: u.file_name, size_bytes: u.size_bytes, mime_type: u.mime_type,
     extension: u.extension ?? '', region: u.region ?? '', created_at: u.created_at,
     updated_at: u.updated_at, current_version: u.current_version, lock_mode: u.lock_mode,
     is_hidden: u.is_hidden, uploaded_by: u.uploaded_by ?? '',
-    uploader_name: u.uploader_name ?? u.uploader_email ?? 'Anonymous',
+    uploader_name: u.uploader_name ?? u.uploader_email ?? anonymous,
     share_count: 0, comment_count: 0, is_synced: 0,
   };
 }
@@ -106,6 +111,7 @@ function toViewerFile(u: Upload): ViewerFile {
 // ── Page ──────────────────────────────────────────────────
 
 export default function FileRequestDetailPage() {
+  const t = useT();
   const { id } = useParams<{ id: string }>();
   const [request, setRequest] = useState<RequestMeta | null>(null);
   const [uploads, setUploads] = useState<Upload[]>([]);
@@ -122,6 +128,7 @@ export default function FileRequestDetailPage() {
   const [sort, setSort] = useState<SortMode>('newest');
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [viewerFile, setViewerFile] = useState<ViewerFile | null>(null);
+  const navigate = useNavigate();
   const [renameTarget, setRenameTarget] = useState<{ id: string; name: string } | null>(null);
   const [renameName, setRenameName] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
@@ -129,6 +136,7 @@ export default function FileRequestDetailPage() {
   const [zipping, setZipping] = useState(false);
 
   const queryClient = useQueryClient();
+  const sortItems = SORT_OPTIONS.map((o) => ({ value: o.value, label: t(o.labelKey) }));
   // Rename/delete here mutate the SAME workspace files the main /files page's
   // React Query cache holds - without this, renaming or deleting an upload
   // from this page leaves that cache stale (same shape as the upload-complete
@@ -137,7 +145,7 @@ export default function FileRequestDetailPage() {
     queryClient.invalidateQueries({ queryKey: [FILES_QUERY_ROOT] });
   }, [queryClient]);
 
-  useDocumentTitle(request?.title ? `${request.title} · File request` : 'File request');
+  useDocumentTitle(request?.title ? t('file-request-detail.label.requesttitleFileRequest', { requestTitle: request.title }) : t('file-request-detail.label.fileRequest'));
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -164,7 +172,7 @@ export default function FileRequestDetailPage() {
     if (!request) return;
     await navigator.clipboard.writeText(request.url);
     setCopied(true);
-    toast.success('Link copied', 'The request link is on your clipboard.');
+    toast.success(t('common.feedback.linkCopied'), t('common.feedback.theRequestLinkIsOnYourClipboard'));
     setTimeout(() => setCopied(false), 2000);
   };
 
@@ -173,9 +181,9 @@ export default function FileRequestDetailPage() {
     setRevoking(true);
     try {
       await api(`/api/file-requests/${request.id}`, { method: 'DELETE' });
-      toast.success('Request revoked', 'The upload link no longer works.');
+      toast.success(t('file-request-detail.feedback.requestRevoked'), t('file-request-detail.feedback.theUploadLinkNoLongerWorks'));
       load();
-    } catch { toast.error('Revoke failed', 'The request could not be revoked.'); }
+    } catch { toast.error(t('common.error.revokeFailed'), t('file-request-detail.error.theRequestCouldNotBeRevoked')); }
     setRevoking(false);
   };
 
@@ -189,20 +197,20 @@ export default function FileRequestDetailPage() {
       await api(`/api/files/${renameTarget.id}/rename`, {
         method: 'PUT', body: JSON.stringify({ name: renameName.trim() }),
       });
-      toast.success('Renamed', 'The file has been renamed.');
+      toast.success(t('common.feedback.renamed'), t('file-request-detail.feedback.theFileHasBeenRenamed'));
       setRenameTarget(null); load(); invalidateFilesCache();
-    } catch { toast.error('Rename failed', 'The file could not be renamed.'); }
+    } catch { toast.error(t('common.error.renameFailed'), t('file-request-detail.error.theFileCouldNotBeRenamed')); }
   };
 
   const handleDelete = async () => {
     if (!deleteTarget) return;
     try {
       await api(`/api/files/${deleteTarget.id}`, { method: 'DELETE' });
-      toast.success('Deleted', `${deleteTarget.name} was deleted.`);
+      toast.success(t('common.feedback.deleted'), t('common.feedback.deletetargetnameWasDeleted', { deleteTargetName: deleteTarget.name }));
       setSelected((prev) => { const next = new Set(prev); next.delete(deleteTarget.id); return next; });
       setDeleteTarget(null);
       load(); invalidateFilesCache();
-    } catch { toast.error('Delete failed', 'The file could not be deleted.'); }
+    } catch { toast.error(t('common.error.deleteFailed'), t('file-request-detail.error.theFileCouldNotBeDeleted')); }
   };
 
   const bulkDelete = async () => {
@@ -212,9 +220,9 @@ export default function FileRequestDetailPage() {
         method: 'POST',
         body: JSON.stringify({ workspace_id: request.workspace_id, file_ids: Array.from(selected), folder_ids: [] }),
       });
-      toast.success('Deleted', `${selected.size} file${selected.size === 1 ? '' : 's'} deleted.`);
+      toast.success(t('common.feedback.deleted'), t('file-request-detail.feedback.selectedsizePluralOneFileOtherFilesDeleted', { selectedSize: selected.size }));
       setSelected(new Set()); setBulkDeleteOpen(false); load(); invalidateFilesCache();
-    } catch { toast.error('Delete failed', 'The selected files could not be deleted.'); }
+    } catch { toast.error(t('common.error.deleteFailed'), t('file-request-detail.error.theSelectedFilesCouldNotBeDeleted')); }
   };
 
   // Streams through the shared helper rather than buffering the archive into a
@@ -226,9 +234,9 @@ export default function FileRequestDetailPage() {
     setZipping(true);
     const { parts } = await startArchiveDownload(
       { fileIds: Array.from(selected) },
-      { onError: (message) => toast.error('Download problem', message) },
+      { onError: (message) => toast.error(t('common.error.downloadProblem'), message) },
     );
-    if (parts > 1) toast.info('Download started', `Too many files for one ZIP - arriving as ${parts} downloads.`);
+    if (parts > 1) toast.info(t('common.feedback.downloadStarted'), t('file-request-detail.feedback.tooManyFilesForOneZipArrivingAsPartsDownloads', { parts: String(parts) }));
     setZipping(false);
   };
 
@@ -261,7 +269,8 @@ export default function FileRequestDetailPage() {
     return sorted;
   }, [uploads, search, sort]);
 
-  const viewerFiles = useMemo(() => visible.map(toViewerFile), [visible]);
+  const anonymous = t('file-request-detail.label.anonymous');
+  const viewerFiles = useMemo(() => visible.map((u) => toViewerFile(u, anonymous)), [visible, anonymous]);
 
   const allVisibleSelected = visible.length > 0 && visible.every((u) => selected.has(u.file_id));
   const toggleSelectAll = () => {
@@ -274,14 +283,26 @@ export default function FileRequestDetailPage() {
   const uploadedCount = recipients.filter((r) => r.uploaded_at).length;
   const pendingCount = recipients.length - uploadedCount;
 
+  const metaLine = request
+    ? t('file-request-detail.description.uploadscountPluralHasexpiryHascreator', {
+        uploadsCount: uploads.length,
+        hasExpiry: request.expires_at ? 'true' : 'other',
+        expired: expired ? 'true' : 'other',
+        formattedDate: request.expires_at ? formatDateWith(request.expires_at, { month: 'short', day: 'numeric' }) : '',
+        requestCreated_at: timeAgo(request.created_at),
+        hasCreator: request.created_by_name ? 'true' : 'other',
+        requestCreated_by_name: request.created_by_name ?? '',
+      }).replace(/ {2,}/g, ' ').trim() // some languages leave a doubled space where the expiry or creator part is empty
+    : '';
+
   if (notFound) {
     return (
       <div className="p-6 max-w-4xl mx-auto">
         <Link to="/file-requests" className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground mb-4">
-          <ChevronLeft className="size-3.5" /> Back to file requests
+          <ChevronLeft className="size-3.5 rtl:-scale-x-100" /> {t('file-request-detail.action.backToFileRequests')}
         </Link>
         <Card className="gap-0 py-12 text-center text-sm text-muted-foreground">
-          This file request does not exist or you do not have access to it.
+          {t('file-request-detail.description.thisFileRequestDoesNotExistOrYouDoNotHave')}
         </Card>
       </div>
     );
@@ -290,7 +311,7 @@ export default function FileRequestDetailPage() {
   return (
     <div className="p-6 max-w-4xl mx-auto">
       <Link to="/file-requests" className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground mb-4">
-        <ChevronLeft className="size-3.5" /> Back to file requests
+        <ChevronLeft className="size-3.5 rtl:-scale-x-100" /> {t('file-request-detail.action.backToFileRequests')}
       </Link>
 
       {loading || !request ? (
@@ -304,36 +325,34 @@ export default function FileRequestDetailPage() {
           {/* Header */}
           <div className="flex items-start justify-between gap-4 mb-4">
             <div className="min-w-0">
-              <h1 className="text-xl font-bold truncate">{request.title || 'Untitled request'}</h1>
+              <h1 className="text-xl font-bold truncate">{request.title || t('file-request-detail.heading.untitledRequest')}</h1>
               <div className="flex items-center gap-2 mt-1.5 flex-wrap">
                 {revoked ? (
-                  <Badge variant="secondary" className="text-[10px]">Revoked</Badge>
+                  <Badge variant="secondary" className="text-[10px]">{t('common.status.revoked')}</Badge>
                 ) : expired ? (
-                  <Badge variant="destructive" className="text-[10px]">Expired</Badge>
+                  <Badge variant="destructive" className="text-[10px]">{t('common.status.expired')}</Badge>
                 ) : (
-                  <Badge className="bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-400 text-[10px]">Active</Badge>
+                  <Badge className="bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-400 text-[10px]">{t('common.status.active')}</Badge>
                 )}
                 {request.is_password_protected ? (
-                  <Badge variant="secondary" className="text-[10px] gap-1"><Lock className="size-2.5" /> Password</Badge>
+                  <Badge variant="secondary" className="text-[10px] gap-1"><Lock className="size-2.5" /> {t('common.status.password')}</Badge>
                 ) : null}
                 <span className="text-[11px] text-muted-foreground">
-                  {uploads.length} file{uploads.length === 1 ? '' : 's'}
-                  {request.expires_at ? ` · ${expired ? 'Expired' : 'Expires'} ${new Date(request.expires_at * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}` : ' · No expiry'}
-                  {` · Created ${timeAgo(request.created_at)}${request.created_by_name ? ` by ${request.created_by_name}` : ''}`}
+                  {metaLine}
                 </span>
               </div>
             </div>
             <div className="flex gap-1.5 shrink-0">
               <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={handleCopy}>
                 {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
-                {copied ? 'Copied!' : 'Copy link'}
+                {copied ? t('common.action.copied.copied') : t('common.action.copyLink')}
               </Button>
               {!revoked && (
-                <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setEditOpen(true)}>Edit</Button>
+                <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setEditOpen(true)}>{t('common.edit')}</Button>
               )}
               {!revoked && !expired && (
                 <Button variant="outline" size="sm" className="h-7 text-xs text-destructive border-destructive/30 hover:bg-destructive/10" onClick={handleRevoke} disabled={revoking}>
-                  {revoking ? <Loader2 className="size-3 animate-spin" /> : 'Revoke'}
+                  {revoking ? <Loader2 className="size-3 animate-spin" /> : t('common.action.revoke')}
                 </Button>
               )}
             </div>
@@ -343,13 +362,20 @@ export default function FileRequestDetailPage() {
           {recipients.length > 0 && (
             <Card className="gap-0 py-0 mb-4 overflow-hidden">
               <button
-                className="w-full flex items-center gap-2 px-4 py-2.5 text-left hover:bg-muted/50"
+                className="w-full flex items-center gap-2 px-4 py-2.5 text-start hover:bg-muted/50"
                 onClick={() => setRecipientsOpen(!recipientsOpen)}
               >
                 <Users className="size-4 text-muted-foreground shrink-0" />
-                <span className="text-sm font-semibold flex-1">Recipients ({recipients.length})</span>
+                <span className="text-sm font-semibold flex-1">{t('file-request-detail.action.recipientsRecipientscount', { recipientCount: String(recipients.length) })}</span>
                 <span className="text-xs text-muted-foreground">
-                  <span className="text-green-600 font-medium">{uploadedCount} uploaded</span> · {pendingCount} pending
+                  {(() => {
+                    const [done, ...more] = t('file-request-detail.action.uploadedcountUploadedPendingcountPending', {
+                      uploadedCount: String(uploadedCount), pendingCount: String(pendingCount),
+                    }).split(' · ');
+                    return more.length
+                      ? <><span className="text-green-600 font-medium">{done}</span> · {more.join(' · ')}</>
+                      : done;
+                  })()}
                 </span>
                 <ChevronDown className={`size-3.5 text-muted-foreground transition-transform ${recipientsOpen ? 'rotate-180' : ''}`} />
               </button>
@@ -359,7 +385,7 @@ export default function FileRequestDetailPage() {
                     <div key={r.id} className="flex items-center gap-2.5 text-xs pt-1.5">
                       <div className={`size-2 rounded-full shrink-0 ${r.uploaded_at ? 'bg-green-500' : 'bg-muted-foreground/30'}`} />
                       <span className="flex-1 truncate">{r.email}</span>
-                      <span className="text-muted-foreground">{r.uploaded_at ? `Uploaded ${timeAgo(r.uploaded_at)}` : 'Pending'}</span>
+                      <span className="text-muted-foreground">{r.uploaded_at ? t('file-request-detail.label.uploadedRuploadedAt', { rUploaded_at: timeAgo(r.uploaded_at) }) : t('common.label.pending')}</span>
                     </div>
                   ))}
                 </div>
@@ -370,32 +396,32 @@ export default function FileRequestDetailPage() {
           {/* Toolbar */}
           <div className="flex items-center gap-2 mb-3">
             <div className="relative flex-1 max-w-56">
-              <Search className="size-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              <Search className="size-3.5 absolute inset-s-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
               <Input
-                placeholder="Search uploads..."
+                placeholder={t('file-request-detail.placeholder.searchUploads')}
                 value={search}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearch(e.target.value)}
-                className="h-8 text-xs pl-8"
+                className="h-8 text-xs ps-8"
               />
             </div>
-            <Select value={sort} onValueChange={(v) => setSort(v as SortMode)} items={SORT_OPTIONS}>
+            <Select value={sort} onValueChange={(v) => setSort(v as SortMode)} items={sortItems}>
               <SelectTrigger className="h-8 text-xs w-32">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {SORT_OPTIONS.map((o) => (
+                {sortItems.map((o) => (
                   <SelectItem key={o.value} value={o.value} className="text-xs">{o.label}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
             {selected.size > 0 && (
-              <div className="flex items-center gap-1.5 ml-auto">
-                <span className="text-xs text-muted-foreground">{selected.size} selected</span>
+              <div className="flex items-center gap-1.5 ms-auto">
+                <span className="text-xs text-muted-foreground">{t('common.label.totalselectedSelected', { totalSelected: String(selected.size) })}</span>
                 <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={bulkDownloadZip} disabled={zipping}>
-                  {zipping ? <Loader2 className="size-3 animate-spin" /> : <Download className="size-3" />} Download
+                  {zipping ? <Loader2 className="size-3 animate-spin" /> : <Download className="size-3" />} {t('common.action.download')}
                 </Button>
                 <Button variant="outline" size="sm" className="h-7 text-xs gap-1 text-destructive border-destructive/30 hover:bg-destructive/10" onClick={() => setBulkDeleteOpen(true)}>
-                  <Trash2 className="size-3" /> Delete
+                  <Trash2 className="size-3" /> {t('common.delete')}
                 </Button>
                 <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setSelected(new Set())}>
                   <X className="size-3" />
@@ -409,10 +435,10 @@ export default function FileRequestDetailPage() {
             {uploads.length === 0 ? (
               <div className="py-14 text-center">
                 <FileText className="size-8 text-muted-foreground/20 mx-auto mb-3" />
-                <p className="text-sm text-muted-foreground mb-3">No files uploaded yet</p>
+                <p className="text-sm text-muted-foreground mb-3">{t('common.label.noFilesUploadedYet')}</p>
                 {!revoked && !expired && (
                   <Button variant="outline" size="sm" className="text-xs gap-1.5" onClick={handleCopy}>
-                    <Copy className="size-3" /> Copy request link
+                    <Copy className="size-3" /> {t('file-request-detail.action.copyRequestLink')}
                   </Button>
                 )}
               </div>
@@ -421,14 +447,14 @@ export default function FileRequestDetailPage() {
                 {/* Header row */}
                 <div className="flex items-center gap-3 px-4 py-2 border-b bg-muted/30 text-[11px] font-medium text-muted-foreground">
                   <input type="checkbox" checked={allVisibleSelected} onChange={toggleSelectAll} className="size-3.5 shrink-0" />
-                  <span className="flex-1 min-w-40">Name</span>
-                  <span className="w-20">Size</span>
-                  <span className="w-36 hidden sm:block">Uploader</span>
-                  <span className="w-24">Uploaded</span>
+                  <span className="flex-1 min-w-40">{t('common.label.name')}</span>
+                  <span className="w-20">{t('common.label.size')}</span>
+                  <span className="w-36 hidden sm:block">{t('common.label.uploader')}</span>
+                  <span className="w-24">{t('common.status.uploaded')}</span>
                   <span className="w-24" />
                 </div>
                 {visible.length === 0 ? (
-                  <p className="py-10 text-center text-xs text-muted-foreground">No uploads match your search</p>
+                  <p className="py-10 text-center text-xs text-muted-foreground">{t('file-request-detail.label.noUploadsMatchYourSearch')}</p>
                 ) : (
                   visible.map((u, idx) => (
                     <div
@@ -449,17 +475,17 @@ export default function FileRequestDetailPage() {
                       </div>
                       <span className="w-20 text-xs text-muted-foreground">{humanSize(u.size_bytes)}</span>
                       <span className="w-36 text-xs text-muted-foreground truncate hidden sm:block">
-                        {u.uploader_name || u.uploader_email || 'Anonymous'}
+                        {u.uploader_name || u.uploader_email || anonymous}
                       </span>
                       <span className="w-24 text-xs text-muted-foreground">{timeAgo(u.created_at)}</span>
                       <div className="w-24 flex justify-end gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
-                        <button className="size-7 rounded-md flex items-center justify-center hover:bg-muted" title="Download" onClick={() => handleDownload(u.file_id)}>
+                        <button className="size-7 rounded-md flex items-center justify-center hover:bg-muted" title={t('common.action.download')} onClick={() => handleDownload(u.file_id)}>
                           <Download className="size-3.5 text-muted-foreground" />
                         </button>
-                        <button className="size-7 rounded-md flex items-center justify-center hover:bg-muted" title="Rename" onClick={() => { setRenameTarget({ id: u.file_id, name: u.file_name }); setRenameName(u.file_name); }}>
+                        <button className="size-7 rounded-md flex items-center justify-center hover:bg-muted" title={t('common.action.rename')} onClick={() => { setRenameTarget({ id: u.file_id, name: u.file_name }); setRenameName(u.file_name); }}>
                           <Pencil className="size-3.5 text-muted-foreground" />
                         </button>
-                        <button className="size-7 rounded-md flex items-center justify-center hover:bg-muted" title="Delete" onClick={() => setDeleteTarget({ id: u.file_id, name: u.file_name })}>
+                        <button className="size-7 rounded-md flex items-center justify-center hover:bg-muted" title={t('common.delete')} onClick={() => setDeleteTarget({ id: u.file_id, name: u.file_name })}>
                           <Trash2 className="size-3.5 text-destructive" />
                         </button>
                       </div>
@@ -481,6 +507,7 @@ export default function FileRequestDetailPage() {
           onClose={() => setViewerFile(null)}
           onNavigate={(f) => setViewerFile(f as ViewerFile)}
           onRefresh={load}
+          onEditText={(f) => { const state: TextEditorState = { back: true }; navigate(textEditorHref(f.id), { state }); }}
         />
       )}
 
@@ -498,7 +525,7 @@ export default function FileRequestDetailPage() {
       {renameTarget && (
         <Dialog open onOpenChange={() => setRenameTarget(null)}>
           <DialogContent className="max-w-sm">
-            <DialogHeader><DialogTitle>Rename file</DialogTitle></DialogHeader>
+            <DialogHeader><DialogTitle>{t('file-request-detail.heading.renameFile')}</DialogTitle></DialogHeader>
             <Input
               value={renameName}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => setRenameName(e.target.value)}
@@ -507,8 +534,8 @@ export default function FileRequestDetailPage() {
               autoFocus
             />
             <DialogFooter>
-              <Button variant="outline" onClick={() => setRenameTarget(null)}>Cancel</Button>
-              <Button onClick={handleRename}>Rename</Button>
+              <Button variant="outline" onClick={() => setRenameTarget(null)}>{t('common.cancel')}</Button>
+              <Button onClick={handleRename}>{t('common.action.rename')}</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -518,13 +545,15 @@ export default function FileRequestDetailPage() {
       {deleteTarget && (
         <Dialog open onOpenChange={() => setDeleteTarget(null)}>
           <DialogContent className="max-w-sm">
-            <DialogHeader><DialogTitle>Delete file?</DialogTitle></DialogHeader>
+            <DialogHeader><DialogTitle>{t('file-request-detail.heading.deleteFile')}</DialogTitle></DialogHeader>
             <p className="text-sm text-muted-foreground">
-              <span className="font-medium text-foreground">{deleteTarget.name}</span> will be moved to trash.
+              {richText(t('file-request-detail.description.deletetargetnameWillBeMovedToTrash'), {
+                deleteTargetName: <span className="font-medium text-foreground">{deleteTarget.name}</span>,
+              })}
             </p>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setDeleteTarget(null)}>Cancel</Button>
-              <Button variant="destructive" onClick={handleDelete}>Delete</Button>
+              <Button variant="outline" onClick={() => setDeleteTarget(null)}>{t('common.cancel')}</Button>
+              <Button variant="destructive" onClick={handleDelete}>{t('common.delete')}</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -534,11 +563,11 @@ export default function FileRequestDetailPage() {
       {bulkDeleteOpen && (
         <Dialog open onOpenChange={() => setBulkDeleteOpen(false)}>
           <DialogContent className="max-w-sm">
-            <DialogHeader><DialogTitle>Delete {selected.size} file{selected.size === 1 ? '' : 's'}?</DialogTitle></DialogHeader>
-            <p className="text-sm text-muted-foreground">The selected files will be moved to trash.</p>
+            <DialogHeader><DialogTitle>{t('file-request-detail.heading.deleteSelectedsizePluralOneFileOtherFiles', { selectedSize: selected.size })}</DialogTitle></DialogHeader>
+            <p className="text-sm text-muted-foreground">{t('file-request-detail.description.theSelectedFilesWillBeMovedToTrash')}</p>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setBulkDeleteOpen(false)}>Cancel</Button>
-              <Button variant="destructive" onClick={bulkDelete}>Delete</Button>
+              <Button variant="outline" onClick={() => setBulkDeleteOpen(false)}>{t('common.cancel')}</Button>
+              <Button variant="destructive" onClick={bulkDelete}>{t('common.delete')}</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>

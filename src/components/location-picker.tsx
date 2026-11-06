@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Input } from '@/components/ui/input';
+import { useT } from '@/lib/i18n';
 
 export interface RegionInfo { code: string; city: string; country: string; continent: string; flag?: string }
 
@@ -9,6 +10,7 @@ export interface RegionInfo { code: string; city: string; country: string; conti
  * server's `suggested` code.
  */
 export function LocationPicker({ regions, value, onChange }: { regions: RegionInfo[]; value: string; onChange: (code: string) => void }) {
+  const t = useT();
   const [query, setQuery] = useState('');
   const groups = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -24,8 +26,8 @@ export function LocationPicker({ regions, value, onChange }: { regions: RegionIn
   }, [regions, query]);
   return (
     <div>
-      <Input value={query} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setQuery(e.target.value)} placeholder="Search a city or country" className="h-9 mb-2" aria-label="Search locations" />
-      <div role="listbox" aria-label="Location" className="max-h-56 overflow-y-auto rounded-lg border">
+      <Input value={query} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setQuery(e.target.value)} placeholder={t('create-workspace.placeholder.searchACityOrCountry')} className="h-9 mb-2" aria-label={t('create-workspace.accessibility.searchLocations')} />
+      <div role="listbox" aria-label={t('create-workspace.accessibility.location')} className="max-h-56 overflow-y-auto rounded-lg border">
         {/* A listbox may own only options and groups, so the per-continent
             wrapper carries the role its markup already implies; the visible
             heading is hidden from AT because the group's name already says it. */}
@@ -39,7 +41,7 @@ export function LocationPicker({ regions, value, onChange }: { regions: RegionIn
                 role="option"
                 aria-selected={r.code === value}
                 onClick={() => onChange(r.code)}
-                className={`w-full flex items-center justify-between px-3 py-2 text-xs text-left hover:bg-muted/50 ${r.code === value ? 'bg-primary/10 font-medium' : ''}`}
+                className={`w-full flex items-center justify-between px-3 py-2 text-xs text-start hover:bg-muted/50 ${r.code === value ? 'bg-primary/10 font-medium' : ''}`}
               >
                 <span>{r.flag ? `${r.flag} ` : ''}{r.city}, {r.country}</span>
                 <span className="text-muted-foreground">{r.code}</span>
@@ -49,8 +51,8 @@ export function LocationPicker({ regions, value, onChange }: { regions: RegionIn
         ))}
         {/* Branch on the input, not the output: an empty list means there was
             nothing to search, which is not the same as a query that missed. */}
-        {regions.length === 0 && <div className="px-3 py-6 text-center text-xs text-muted-foreground">No locations available.</div>}
-        {regions.length > 0 && groups.length === 0 && <div className="px-3 py-6 text-center text-xs text-muted-foreground">No location matches.</div>}
+        {regions.length === 0 && <div className="px-3 py-6 text-center text-xs text-muted-foreground">{t('create-workspace.description.noLocationsAvailable')}</div>}
+        {regions.length > 0 && groups.length === 0 && <div className="px-3 py-6 text-center text-xs text-muted-foreground">{t('create-workspace.label.noLocationMatches')}</div>}
       </div>
     </div>
   );

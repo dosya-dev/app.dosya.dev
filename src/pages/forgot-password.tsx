@@ -8,8 +8,11 @@ import { PublicNav } from '@/components/public-nav';
 import { TurnstileWidget, type TurnstileHandle } from '@/components/turnstile-widget';
 import { resolveTurnstileToken, turnstileFailureMessage, isTurnstileRejection } from '@/lib/turnstile-submit';
 import { Logo } from "@/components/brand/logo";
+import { useT } from '@/lib/i18n';
+import { richText } from '@/lib/rich-text';
 
 export default function ForgotPasswordPage() {
+  const t = useT();
   const [email, setEmail] = useState('');
   const [error, setError] = useState('');
   const [sent, setSent] = useState(false);
@@ -37,10 +40,10 @@ export default function ForgotPasswordPage() {
       turnstileRef.current?.reset();
       if (res.ok && data.ok) setSent(true);
       else if (isTurnstileRejection(data)) setError(turnstileFailureMessage(turnstileRef.current));
-      else setError(data.error ?? 'Could not send reset link');
+      else setError(data.error ?? t('forgot-password.error.couldNotSendResetLink'));
     } catch {
       turnstileRef.current?.reset();
-      setError('Network error');
+      setError(t('common.error.networkError'));
     }
     setLoading(false);
   };
@@ -57,9 +60,9 @@ export default function ForgotPasswordPage() {
                   <Logo className="h-7 w-7" />
                   dosya.dev
                 </a>
-                <h1 className="text-2xl font-bold mt-2">Reset your password</h1>
+                <h1 className="text-2xl font-bold mt-2">{t('forgot-password.heading.resetYourPassword')}</h1>
                 <p className="text-sm text-muted-foreground mt-1">
-                  Enter your account email and we'll send you a reset link.
+                  {t('forgot-password.description.enterYourAccountEmailAndWeLlSendYouAResetLink')}
                 </p>
               </div>
 
@@ -69,28 +72,32 @@ export default function ForgotPasswordPage() {
                     <MailCheck className="size-6 text-green-600 dark:text-green-400" />
                   </div>
                   <p className="text-sm text-muted-foreground">
-                    If an account exists for <span className="font-medium text-foreground">{email}</span>, a password reset link is on its way. Check your inbox (and spam).
+                    {richText(t('forgot-password.description.ifAnAccountExistsForEmailAPasswordResetLinkIs', { email: '{email}' }), {
+                      email: <span className="font-medium text-foreground">{email}</span>,
+                    })}
                   </p>
                 </div>
               ) : (
                 <>
-                  {error && <div className="bg-destructive/10 border border-destructive/30 text-destructive text-sm rounded-lg px-4 py-2.5 mb-4">{error}</div>}
+                  {error && <div dir="auto" className="bg-destructive/10 border border-destructive/30 text-destructive text-sm rounded-lg px-4 py-2.5 mb-4">{error}</div>}
                   <form onSubmit={submit} className="space-y-4">
                     <div className="space-y-2">
-                      <label htmlFor="email" className="text-sm font-medium">Email</label>
-                      <Input id="email" type="email" placeholder="name@example.com" value={email} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEmail(e.target.value)} required autoFocus className="h-10" />
+                      <label htmlFor="email" className="text-sm font-medium">{t('common.label.email')}</label>
+                      <Input id="email" type="email" placeholder={t('common.placeholder.nameExampleCom')} value={email} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEmail(e.target.value)} required autoFocus className="h-10" />
                     </div>
                     <TurnstileWidget action="forgot-password" ref={turnstileRef} />
                     <Button type="submit" className="w-full h-10" disabled={loading}>
-                      {loading ? <Loader2 className="size-4 animate-spin mr-2" /> : null}
-                      Send reset link
+                      {loading ? <Loader2 className="size-4 animate-spin me-2" /> : null}
+                      {t('forgot-password.action.sendResetLink')}
                     </Button>
                   </form>
                 </>
               )}
 
               <p className="mt-6 text-center text-sm text-muted-foreground">
-                Remembered it? <a href="/login" className="font-medium underline underline-offset-4 hover:text-foreground">Back to login</a>
+                {richText(t('forgot-password.label.rememberedItLink1', { link1: '{link1}' }), {
+                  link1: <a href="/login" className="font-medium underline underline-offset-4 hover:text-foreground">{t('common.action.backToLogin')}</a>,
+                })}
               </p>
             </CardContent>
           </Card>

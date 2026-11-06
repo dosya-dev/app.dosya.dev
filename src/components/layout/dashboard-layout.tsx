@@ -1,3 +1,5 @@
+import { API_BASE } from '@/api/client';
+import { sendAcquisition } from '@/lib/acquisition-context';
 import { useState, useEffect, useLayoutEffect, useRef, useCallback, Suspense } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { SidebarProvider, SidebarInset } from '@/components/ui/sidebar';
@@ -21,13 +23,23 @@ import type { MaintenanceInfo } from '@/lib/maintenance-signal';
 import { beginLoading } from '@/lib/loading-bar';
 import { Hairline } from '@/components/ui/hairline';
 import { SealLoader } from '@/components/ui/seal-loader';
+import { LoadingEscape } from '@/components/ui/loading-escape';
+import { useT } from '@/lib/i18n';
+import { SupportChatPanel } from '@/components/support-chat/panel';
 import { ReportProblemDialog } from '@/components/support/report-problem-dialog';
 
+/** The pathname of a remembered same-origin path ("/files?folder=x" -> "/files"). */
+function pathOf(path: string): string {
+  return path.split(/[?#]/, 1)[0] || '/';
+}
+
 export function DashboardLayout() {
+  const t = useT();
   const navigate = useNavigate();
   const location = useLocation();
   const initialPathname = useRef(location.pathname);
   const initialSearch = useRef(location.search);
+  const handoffPath = useRef<string | null>(null);
   const [authed, setAuthed] = useState<boolean | null>(null);
   const [wsReady, setWsReady] = useState(false);
   const [bootMaintenance, setBootMaintenance] = useState<MaintenanceInfo | null>(null);
@@ -77,18 +89,35 @@ export function DashboardLayout() {
         useWorkspace.getState().setActiveId(boot.activeWorkspaceId);
       }
       setAuthed(boot.authed);
+      if (boot.authed) void sendAcquisition(import.meta.env.VITE_ACQUISITION_MEASUREMENT_ENABLED === 'true', API_BASE);
       if (boot.authed && initialPathname.current === '/') {
-        const next = pendingPostAuthPath() ?? consumePostAuthPath();
-        if (next) {
+        // A held redemption claim wins, and /redeem lives outside this layout.
+        const pending = pendingPostAuthPath();
+        if (pending) {
+          navigate(pending, { replace: true });
+          return;
+        }
+        const next = consumePostAuthPath();
+        if (next && boot.redirect) {
+          // The tour or a first workspace comes first. Keep the path for the
+          // boot that runs when that screen sends the visitor back to /.
+          rememberPostAuthPath(next);
+        } else if (next && pathOf(next) !== '/') {
+          // Most remembered paths (/save/:token, /settings, a /files deep
+          // link) are children of THIS layout, which stays mounted across the
+          // navigation, so the gate has to open once the route has moved.
+          // Opening it now would mount the dashboard page for a frame.
+          handoffPath.current = pathOf(next);
           navigate(next, { replace: true });
           return;
         }
       }
       if (boot.redirect) {
-        // A signed-out deep link (the "Sign in and manage settings" button on
-        // dosya.dev/unsubscribe, a bookmark, a link in an email) comes back to
-        // where it was going once the login completes, instead of the dashboard.
-        if (boot.redirect === '/login' && initialPathname.current !== '/') {
+        // A deep link (the "Sign in and manage settings" button on
+        // dosya.dev/unsubscribe, a bookmark, a link in an email, a "Save to
+        // dosya" link) comes back to where it was going once the login, the
+        // tour or the first workspace is done, instead of the dashboard.
+        if (initialPathname.current !== '/') {
           rememberPostAuthPath(`${initialPathname.current}${initialSearch.current}`);
         }
         navigate(boot.redirect, { replace: true });
@@ -103,6 +132,15 @@ export function DashboardLayout() {
     };
   }, [navigate, bootKey]);
 
+  // Second half of the post-auth handoff above: open the gate once the
+  // router has actually left /.
+  useEffect(() => {
+    if (handoffPath.current && location.pathname === handoffPath.current) {
+      handoffPath.current = null;
+      setWsReady(true);
+    }
+  }, [location.pathname]);
+
   // The boot gate asks about the session once. After that, a 401 from any
   // request or a logout in another tab re-asks, and a session that is gone
   // sends the tab to /login instead of leaving the page on a "Try again" error
@@ -113,8 +151,9 @@ export function DashboardLayout() {
       verify: async () => (await useSession.getState().fetchMe()).status,
       onExpired: () => {
         rememberPostAuthPath(`${window.location.pathname}${window.location.search}`);
-        clearClientSession();
-        window.location.href = '/login';
+        void clearClientSession().then(() => {
+          window.location.href = '/login';
+        });
       },
     });
   }, [authed]);
@@ -156,7 +195,10 @@ export function DashboardLayout() {
     return (
       <div className="relative h-screen flex items-center justify-center">
         <Hairline />
-        <SealLoader size="xl" label="Loading dosya" />
+        <div className="relative">
+          <SealLoader size="xl" label={t('common.label.loadingDosya')} />
+          <LoadingEscape />
+        </div>
       </div>
     );
   }
@@ -183,6 +225,7 @@ export function DashboardLayout() {
         <NotificationPoller />
         <DashboardTopbar />
         <ReportProblemDialog />
+        <SupportChatPanel />
         {/* Above the scroll container on purpose: a pending deletion must stay
             visible while the user scrolls, not scroll away with the page. */}
         <DeletionBanner />
@@ -204,7 +247,10 @@ export function DashboardLayout() {
             <Suspense
               fallback={
                 <div className="h-full flex items-center justify-center">
-                  <SealLoader size="lg" delay />
+                  <div className="relative">
+                    <SealLoader size="lg" delay />
+                    <LoadingEscape />
+                  </div>
                 </div>
               }
             >

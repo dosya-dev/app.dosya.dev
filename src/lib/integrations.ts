@@ -1,6 +1,7 @@
 import {
-  RefreshCw, HardDrive, Server, Cloud, Monitor, Terminal, Code2, Webhook, CloudDownload, Zap, Puzzle, DatabaseBackup, Workflow, Aperture, type LucideIcon,
+  RefreshCw, HardDrive, Server, Cloud, Monitor, Terminal, Code2, Webhook, CloudDownload, Zap, Puzzle, DatabaseBackup, Workflow, Aperture, FolderInput, Globe, FileArchive, type LucideIcon,
 } from 'lucide-react';
+import { t } from '@/lib/i18n';
 
 export interface IntegrationCtx {
   workspaceId: string;
@@ -10,8 +11,8 @@ export interface IntegrationCtx {
 }
 
 export type IntegrationSlug =
-  | 'rclone' | 'webdav' | 'sftp' | 's3' | 'desktop' | 'cli' | 'rest-api' | 'extension' | 'zapier' | 'n8n' | 'lightroom' | 'wordpress' | 'google'
-  | 'onedrive' | 'dropbox' | 'webhooks' | 'remote-download';
+  | 'rclone' | 'webdav' | 'sftp' | 's3' | 'desktop' | 'cli' | 'rest-api' | 'extension' | 'zapier' | 'n8n' | 'lightroom' | 'wordpress' | 'google' | 'google-takeout'
+  | 'onedrive' | 'dropbox' | 'webhooks' | 'remote-download' | 'remote-rclone';
 
 export interface IntegrationMeta {
   slug: IntegrationSlug;
@@ -21,8 +22,20 @@ export interface IntegrationMeta {
   icon: LucideIcon;
   /** Optional brand-logo image (public path). When set, cards/headers render it instead of `icon`. */
   iconSrc?: string;
+  /**
+   * Small icon pinned to the corner of the logo tile. remote-rclone wears a
+   * globe over the rclone mark: the copy runs on dosya's servers, so a user who
+   * knows rclone as a command-line tool sees nothing to install.
+   */
+  badge?: LucideIcon;
   /** External marketing docs page for this integration (omitted when none exists, e.g. Google Drive). */
   docsUrl?: string;
+  /**
+   * Still behind a server-side rollout gate: the directory card and search
+   * entry appear only once the API says the feature is on for this user
+   * (remote-rclone: GET /api/rclone/backends -> enabled). Drop the flag at GA.
+   */
+  rollout?: boolean;
 }
 
 export const API_HOST = 'https://api.dosya.dev';
@@ -43,12 +56,12 @@ export const ZAPIER_INVITE_URL =
   'https://zapier.com/developer/public-invite/247442/f692cdfd82a0f6db941dab2e3aa8f952/';
 
 /**
- * The WordPress plugin zip, served by the marketing site while the plugin
- * waits for WordPress.org review. Duplicated from WORDPRESS_ZIP_PATH in
- * src/lib/wordpress-integration.ts, which integrations.test.ts compares,
- * because a download link that drifts is a 404 in the middle of a setup.
+ * The WordPress plugin's WordPress.org listing. Duplicated from
+ * WORDPRESS_ORG_URL in src/lib/wordpress-integration.ts, which
+ * integrations.test.ts compares, because a link that drifts is a 404 in the
+ * middle of a setup.
  */
-export const WORDPRESS_ZIP_URL = 'https://dosya.dev/downloads/wordpress/dosya-backup.zip';
+export const WORDPRESS_ORG_URL = 'https://wordpress.org/plugins/dosya-backup-restore-migration/';
 
 /**
  * Store listings for the desktop app.
@@ -77,10 +90,13 @@ export const N8N_EXAMPLES_URL = 'https://github.com/dosya-dev/n8n-nodes-dosya/tr
 export const N8N_KEY_NAME = 'n8n';
 
 /**
- * The Lightroom Classic plug-in (apps/lightroom). The marketing site hosts the
- * zip at this address; until it is uploaded the link 404s. The key prefix is
- * how the page finds the keys the plug-in's connect flow created.
+ * The Lightroom Classic plug-in (apps/lightroom). The Adobe Exchange listing is
+ * the main install path; the marketing site also hosts the zip. Both are
+ * duplicated from src/lib/lightroom-integration.ts, whose unit test checks
+ * they match. The key prefix is how the page finds the keys the plug-in's
+ * connect flow created.
  */
+export const LIGHTROOM_EXCHANGE_URL = 'https://exchange.adobe.com/apps/cc/206096';
 export const LIGHTROOM_PLUGIN_URL = 'https://dosya.dev/downloads/lightroom/dosya-lightroom.zip';
 export const LIGHTROOM_KEY_PREFIX = 'Lightroom Classic:';
 
@@ -95,8 +111,8 @@ export const INTEGRATIONS: IntegrationMeta[] = [
   {
     slug: 'rclone',
     title: 'rclone',
-    description: 'Copy, sync and mount your files from the command line with rclone.',
-    tag: 'Sync & mount',
+    get description() { return t('common.description.copySyncAndMountYourFilesFromTheCommand'); },
+    get tag() { return t('common.label.syncMount'); },
     icon: RefreshCw,
     iconSrc: '/rclone-color.svg',
     docsUrl: 'https://dosya.dev/developer/rclone',
@@ -104,64 +120,64 @@ export const INTEGRATIONS: IntegrationMeta[] = [
   {
     slug: 'webdav',
     title: 'WebDAV',
-    description: 'Mount your workspace as a network drive on macOS, Windows or Linux.',
-    tag: 'Mount as drive',
+    get description() { return t('common.description.mountYourWorkspaceAsANetworkDriveOnMacOS'); },
+    get tag() { return t('common.label.mountAsDrive'); },
     icon: HardDrive,
     docsUrl: 'https://dosya.dev/developer/webdav',
   },
   {
     slug: 'sftp',
     title: 'SFTP',
-    description: 'Upload and manage files with any SFTP client - FileZilla, WinSCP, Cyberduck or the terminal.',
-    tag: 'Secure transfer',
+    get description() { return t('common.description.uploadAndManageFilesWithAnySFTPClientFileZilla'); },
+    get tag() { return t('common.label.secureTransfer'); },
     icon: Server,
     docsUrl: 'https://dosya.dev/developer/sftp',
   },
   {
     slug: 's3',
     title: 'S3',
-    description: 'Point any S3-compatible tool or SDK at your workspace.',
-    tag: 'S3 API',
+    get description() { return t('common.description.pointAnyS3CompatibleToolOrSDKAtYour'); },
+    get tag() { return t('common.label.s3API'); },
     icon: Cloud,
     docsUrl: 'https://dosya.dev/developer/s3',
   },
   {
     slug: 'desktop',
-    title: 'Desktop apps',
-    description: 'Download the desktop app for macOS, Windows and Linux.',
-    tag: 'Apps',
+    get title() { return t('common.heading.desktopApps'); },
+    get description() { return t('common.description.downloadTheDesktopAppForMacosWindowsAndLinux'); },
+    get tag() { return t('common.label.apps'); },
     icon: Monitor,
     docsUrl: 'https://dosya.dev/desktop',
   },
   {
     slug: 'cli',
-    title: 'CLI',
-    description: 'Script uploads, downloads and folder sync from your terminal with the dosya CLI.',
-    tag: 'Terminal',
+    get title() { return t('common.heading.cli'); },
+    get description() { return t('common.description.scriptUploadsDownloadsAndFolderSyncFromYourTerminal'); },
+    get tag() { return t('common.label.terminal'); },
     icon: Terminal,
     docsUrl: 'https://dosya.dev/developer/cli',
   },
   {
     slug: 'rest-api',
-    title: 'REST API',
-    description: 'Automate everything with the dosya REST API and bearer tokens.',
-    tag: 'HTTP API',
+    get title() { return t('common.heading.restAPI'); },
+    get description() { return t('common.description.automateEverythingWithTheDosyaRESTAPIAndBearer'); },
+    get tag() { return t('common.label.httpAPI'); },
     icon: Code2,
     docsUrl: 'https://dosya.dev/developer/api',
   },
   {
     slug: 'extension',
-    title: 'Browser extension',
-    description: 'Right-click any image, selection or page and save it straight into dosya, with no download and re-upload.',
-    tag: 'Browser',
+    get title() { return t('common.heading.browserExtension'); },
+    get description() { return t('common.description.rightClickAnyImageSelectionOrPageAndSaveItStraightInto'); },
+    get tag() { return t('common.label.browser'); },
     icon: Puzzle,
     docsUrl: 'https://dosya.dev/browser-extension',
   },
   {
     slug: 'zapier',
     title: 'Zapier',
-    description: 'Connect dosya to thousands of other apps without writing code. A new file can start a Zap, and other apps can upload, share and request files.',
-    tag: 'No-code',
+    get description() { return t('common.description.connectDosyaToThousandsOfOtherAppsWithoutWritingCodeA'); },
+    get tag() { return t('common.label.noCode'); },
     icon: Zap,
     iconSrc: '/zapier-color.svg',
     docsUrl: 'https://dosya.dev/integration/zapier',
@@ -169,17 +185,17 @@ export const INTEGRATIONS: IntegrationMeta[] = [
   {
     slug: 'n8n',
     title: 'n8n',
-    description: 'Save files from your n8n workflows into dosya, and create folders and share links, with ready-made workflows to import.',
-    tag: 'Automation',
+    get description() { return t('common.description.saveFilesFromYourN8nWorkflowsIntoDosyaAndCreateFolders'); },
+    get tag() { return t('common.label.automation'); },
     icon: Workflow,
     iconSrc: '/n8n-color.svg',
     docsUrl: 'https://dosya.dev/integration/n8n',
   },
   {
     slug: 'lightroom',
-    title: 'Lightroom Classic',
-    description: 'Publish albums from Lightroom Classic as client galleries on dosya, with selections coming back to your catalog.',
-    tag: 'Photography',
+    get title() { return t('common.heading.lightroomClassic'); },
+    get description() { return t('common.description.publishAlbumsFromLightroomClassicAsClientGalleriesOnDosyaWith'); },
+    get tag() { return t('common.label.photography'); },
     icon: Aperture,
     iconSrc: '/lightroom-color.svg',
     docsUrl: 'https://dosya.dev/integration/lightroom/',
@@ -187,8 +203,8 @@ export const INTEGRATIONS: IntegrationMeta[] = [
   {
     slug: 'wordpress',
     title: 'WordPress',
-    description: 'Back up your WordPress site into dosya with the free plugin, and restore or move it at any size.',
-    tag: 'Backups',
+    get description() { return t('common.description.backUpYourWordpressSiteIntoDosyaWithTheFreePlugin'); },
+    get tag() { return t('common.label.backups'); },
     icon: DatabaseBackup,
     // Not /wordpress-color.svg: the edge firewall blocks every root path
     // starting with /wordpress or /wp- (scanner traffic), and served our
@@ -199,41 +215,59 @@ export const INTEGRATIONS: IntegrationMeta[] = [
   {
     slug: 'google',
     title: 'Google Drive',
-    description: 'Import folders and files from Google Drive, with your folder structure preserved.',
-    tag: 'Import',
+    get description() { return t('common.description.importFoldersAndFilesFromGoogleDriveWithYour'); },
+    get tag() { return t('common.label.import'); },
     icon: HardDrive,
     iconSrc: '/google-color.svg',
   },
   {
+    slug: 'google-takeout',
+    title: 'Google Takeout',
+    get description() { return t('integrations-takeout.description.cardDescription'); },
+    get tag() { return t('common.label.import'); },
+    icon: FileArchive,
+    iconSrc: '/google-takeout-color.svg',
+  },
+  {
     slug: 'onedrive',
     title: 'OneDrive',
-    description: 'Import folders and files from OneDrive, with your folder structure preserved.',
-    tag: 'Import',
+    get description() { return t('common.description.importFoldersAndFilesFromOneDriveWithYourFolder'); },
+    get tag() { return t('common.label.import'); },
     icon: HardDrive,
     iconSrc: '/onedrive-color.svg',
   },
   {
     slug: 'dropbox',
     title: 'Dropbox',
-    description: 'Import folders and files from Dropbox, with your folder structure preserved.',
-    tag: 'Import',
+    get description() { return t('common.description.importFoldersAndFilesFromDropboxWithYourFolder'); },
+    get tag() { return t('common.label.import'); },
     icon: HardDrive,
     iconSrc: '/dropbox-color.svg',
   },
   {
     slug: 'webhooks',
-    title: 'Webhooks',
-    description: 'Get realtime HTTP notifications when files are uploaded, deleted, or shares are accessed.',
-    tag: 'Events',
+    get title() { return t('common.heading.webhooks'); },
+    get description() { return t('common.description.getRealtimeHTTPNotificationsWhenFilesAreUploadedDeleted'); },
+    get tag() { return t('common.label.events'); },
     icon: Webhook,
     docsUrl: 'https://dosya.dev/developer/api#webhooks',
   },
   {
     slug: 'remote-download',
-    title: 'Remote download',
-    description: 'Paste a direct file link and dosya downloads it into your workspace server-side - ideal on slow connections.',
-    tag: 'Import',
+    get title() { return t('common.heading.remoteDownload'); },
+    get description() { return t('common.description.pasteADirectFileLinkAndDosyaDownloadsIt'); },
+    get tag() { return t('common.label.import'); },
     icon: CloudDownload,
+  },
+  {
+    slug: 'remote-rclone',
+    get title() { return t('profile.heading.importFromAnotherCloud'); },
+    get description() { return t('profile.description.rcloneSectionBody'); },
+    get tag() { return t('common.label.import'); },
+    icon: FolderInput,
+    iconSrc: '/rclone-color.svg',
+    badge: Globe,
+    rollout: true,
   },
 ];
 

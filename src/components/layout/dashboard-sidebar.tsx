@@ -22,7 +22,11 @@ import { usePermissions, permissionsQueryKey } from '@/hooks/use-permissions';
 import { useQueryClient } from '@tanstack/react-query';
 import { RemoteDownloadIndicator } from '@/components/layout/remote-download-indicator';
 import { CloudImportIndicator } from '@/components/layout/cloud-import-indicator';
+import { RcloneImportIndicator } from '@/components/layout/rclone-import-indicator';
+import { TakeoutImportIndicator } from '@/components/layout/takeout-import-indicator';
 import { formatBytes } from '@/lib/billing/cart-math';
+import { useT } from '@/lib/i18n';
+import type { MessageKey } from '@/i18n/keys';
 
 type Workspace = SessionWorkspace;
 
@@ -36,27 +40,28 @@ const EMPTY_WORKSPACES: Workspace[] = [];
 // switched off still saw Uploads in this list and got a 403 on arrival. Items
 // with no `perm` (Vault, Integrations) are per-user surfaces, not workspace
 // pages, and are not role-gated.
-const navItems = [
-  { title: 'Dashboard', url: '/', icon: LayoutDashboard, perm: 'access_dashboard' },
-  { title: 'Files', url: '/files', icon: FolderOpen, perm: 'access_files' },
-  { title: 'Uploads', url: '/uploads', icon: Upload, perm: 'access_upload' },
-  { title: 'Shared', url: '/shared', icon: Share2, perm: 'access_shared' },
-  { title: 'Vault', url: '/vault', icon: Lock },
+// `title` is a catalog key; Vault is a product name (no entry, the same in every language).
+const navItems: { title?: MessageKey; name?: string; url: string; icon: typeof Lock; perm?: string }[] = [
+  { title: 'common.heading.dashboard', url: '/', icon: LayoutDashboard, perm: 'access_dashboard' },
+  { title: 'common.heading.files', url: '/files', icon: FolderOpen, perm: 'access_files' },
+  { title: 'common.heading.uploads', url: '/uploads', icon: Upload, perm: 'access_upload' },
+  { title: 'common.heading.shared', url: '/shared', icon: Share2, perm: 'access_shared' },
+  { name: 'Vault', url: '/vault', icon: Lock },
 ];
 
-const workspaceItems = [
-  { title: 'Team', url: '/teams', icon: Users, perm: 'access_team' },
-  { title: 'Integrations', url: '/integrations', icon: Plug },
-  { title: 'Settings', url: '/settings', icon: Settings, perm: 'access_settings' },
+const workspaceItems: { title: MessageKey; url: string; icon: typeof Lock; perm?: string }[] = [
+  { title: 'common.heading.team', url: '/teams', icon: Users, perm: 'access_team' },
+  { title: 'common.heading.integrations', url: '/integrations', icon: Plug },
+  { title: 'common.heading.settings', url: '/settings', icon: Settings, perm: 'access_settings' },
 ];
 
 // Fast labels for the built-in roles so the header doesn't flash before the
 // roles list resolves; custom roles fall back to their fetched name.
-const ROLE_LABELS: Record<string, string> = {
-  role_owner: 'Owner',
-  role_admin: 'Admin',
-  role_member: 'Member',
-  role_viewer: 'Viewer',
+const ROLE_LABELS: Record<string, MessageKey> = {
+  role_owner: 'common.label.owner',
+  role_admin: 'common.label.admin',
+  role_member: 'common.label.member',
+  role_viewer: 'common.label.viewer',
 };
 
 // Match the profile-page nav treatment: xs muted text, active = accent pill
@@ -74,6 +79,7 @@ const NAV_BTN_CLASS =
   'data-active:active:bg-transparent data-active:active:text-accent-foreground';
 
 export function DashboardSidebar() {
+  const t = useT();
   const location = useLocation();
   const navigate = useNavigate();
   const { activeId, setActiveId } = useWorkspace();
@@ -87,7 +93,7 @@ export function DashboardSidebar() {
 
   // Sliding active pill: measure the active menu button and glide one shared
   // indicator to it whenever the route changes. It runs in the icon rail too -
-  // a collapsed menu button is exactly as wide as the pill's left-2/right-2
+  // a collapsed menu button is exactly as wide as the pill's inset-s-2/inset-e-2
   // inset, so the same element fits both widths.
   const { state: sidebarState } = useSidebar();
   const contentRef = useRef<HTMLDivElement>(null);
@@ -134,7 +140,7 @@ export function DashboardSidebar() {
 
   const activeWs = workspaces.find((w) => w.id === activeId);
   const roleLabel = activeWs
-    ? ROLE_LABELS[activeWs.role_id] ?? roleName ?? 'Member'
+    ? (ROLE_LABELS[activeWs.role_id] ? t(ROLE_LABELS[activeWs.role_id]) : roleName ?? t('common.label.member'))
     : '';
 
   // Bumped whenever the workspace icon changes, to break the browser's cache on
@@ -181,13 +187,13 @@ export function DashboardSidebar() {
   // Resolve the current user's role name (covers custom roles, not just built-ins)
   useEffect(() => {
     if (!activeId || !activeWs) { setRoleName(null); return; }
-    if (ROLE_LABELS[activeWs.role_id]) { setRoleName(ROLE_LABELS[activeWs.role_id]); return; }
+    if (ROLE_LABELS[activeWs.role_id]) { setRoleName(null); return; }
     (async () => {
       try {
         const data = await api<{ ok: boolean; roles?: { id: string; name: string }[] }>(`/api/roles?workspace_id=${activeId}`);
         const match = data.roles?.find((r) => r.id === activeWs.role_id);
-        setRoleName(match?.name ?? 'Member');
-      } catch { setRoleName('Member'); }
+        setRoleName(match?.name ?? null);
+      } catch { setRoleName(null); }
     })();
   }, [activeId, activeWs?.role_id]);
 
@@ -228,9 +234,9 @@ export function DashboardSidebar() {
           {switchingWs.icon_initials}
         </div>
         <div className="text-center">
-          <p className="text-sm font-semibold">{switchingWs.name}</p>
+          <p className="text-sm font-semibold"><bdi>{switchingWs.name}</bdi></p>
           <p className="text-xs text-muted-foreground mt-1 flex items-center justify-center gap-1.5">
-            <Loader2 className="size-3 animate-spin" /> Switching workspace…
+            <Loader2 className="size-3 animate-spin" /> {t('common.status.switchingWorkspace')}
           </p>
         </div>
       </div>
@@ -248,8 +254,8 @@ export function DashboardSidebar() {
                       ? <img src={`${API_BASE}/api/workspaces/${activeWs.id}/icon?v=${iconVersion}`} alt="" className="w-full h-full object-cover" />
                       : activeWs.icon_initials}
                   </div>
-                  <div className="min-w-0 flex-1 text-left group-data-[collapsible=icon]:hidden">
-                    <p className="truncate text-sm font-medium leading-tight">{activeWs.name}</p>
+                  <div className="min-w-0 flex-1 text-start group-data-[collapsible=icon]:hidden">
+                    <p className="truncate text-sm font-medium leading-tight" dir="auto">{activeWs.name}</p>
                     {/* A folder-confined member sees a workspace that looks
                         half empty - correctly, but with nothing anywhere
                         saying why. Their listings, search and dashboard are
@@ -257,29 +263,29 @@ export function DashboardSidebar() {
                         leave them to conclude files went missing. */}
                     <p className="truncate text-[11px] leading-tight text-muted-foreground">
                       {rootFolderId
-                        ? `${roleLabel} · ${rootFolderName ?? 'one folder'}`
+                        ? `${roleLabel} · ${rootFolderName ?? t('common.label.oneFolder')}`
                         : roleLabel}
                     </p>
                   </div>
                   <ChevronsUpDown className="h-3.5 w-3.5 text-muted-foreground shrink-0 group-data-[collapsible=icon]:hidden" />
                 </>
               ) : (
-                <p className="text-xs text-muted-foreground">Loading...</p>
+                <p className="text-xs text-muted-foreground">{t('common.status.loading.loading')}</p>
               )}
             </div>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="w-56">
-            <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider px-2 py-1.5">Your workspaces</p>
+            <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider px-2 py-1.5">{t('common.label.yourWorkspaces')}</p>
             {workspaces.map((ws) => (
               <DropdownMenuItem key={ws.id} onClick={() => switchWorkspace(ws.id)} className="gap-2.5">
                 <div className="w-6 h-6 rounded-[5px] flex items-center justify-center text-[10px] font-bold text-white shrink-0" style={{ background: ws.icon_color }}>
                   {ws.icon_initials}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-xs leading-tight">{ws.name}</p>
+                  <p className="truncate text-xs leading-tight" dir="auto">{ws.name}</p>
                   {ws.storage && ws.storage.total > 0 && (
                     <p className="text-[10px] leading-tight text-muted-foreground">
-                      {formatBytes(Math.max(0, ws.storage.free ?? ws.storage.total - ws.storage.used))} free of {formatBytes(ws.storage.total)}
+                      {t('common.action.formattedvalueFreeOfStoragetotal', { free: formatBytes(Math.max(0, ws.storage.free ?? ws.storage.total - ws.storage.used)), total: formatBytes(ws.storage.total) })}
                     </p>
                   )}
                 </div>
@@ -292,7 +298,7 @@ export function DashboardSidebar() {
                 <div className="w-6 h-6 rounded-[5px] bg-muted flex items-center justify-center shrink-0">
                   <LayoutGrid className="size-3 text-muted-foreground" />
                 </div>
-                <span className="text-xs text-muted-foreground">Workspace dashboard</span>
+                <span className="text-xs text-muted-foreground">{t('common.action.workspaceDashboard')}</span>
               </DropdownMenuItem>
             </Link>
             <Link to="/create-workspace">
@@ -300,7 +306,7 @@ export function DashboardSidebar() {
                 <div className="w-6 h-6 rounded-[5px] bg-muted flex items-center justify-center shrink-0">
                   <Plus className="size-3 text-muted-foreground" />
                 </div>
-                <span className="text-xs text-muted-foreground">Create new workspace</span>
+                <span className="text-xs text-muted-foreground">{t('common.action.createNewWorkspace')}</span>
               </DropdownMenuItem>
             </Link>
           </DropdownMenuContent>
@@ -314,7 +320,7 @@ export function DashboardSidebar() {
           <div
             aria-hidden
             data-slot="sidebar-active-pill"
-            className={`absolute left-2 right-2 rounded-md bg-accent ${
+            className={`absolute inset-s-2 inset-e-2 rounded-md bg-accent ${
               settling ? '' : 'transition-[top,height] duration-200 ease-out'
             }`}
             style={{ top: pill.top, height: pill.height }}
@@ -329,7 +335,7 @@ export function DashboardSidebar() {
                   <Link to={item.url} className="w-full">
                     <SidebarMenuButton className={NAV_BTN_CLASS} isActive={location.pathname === item.url || (item.url !== '/' && location.pathname.startsWith(item.url))}>
                       <item.icon className="size-4" />
-                      <span>{item.title}</span>
+                      <span>{item.title ? t(item.title) : item.name}</span>
                     </SidebarMenuButton>
                   </Link>
                 </SidebarMenuItem>
@@ -340,7 +346,7 @@ export function DashboardSidebar() {
 
         {/* Workspace nav */}
         <SidebarGroup className="mt-2">
-          <SidebarGroupLabel className="px-3 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Workspace</SidebarGroupLabel>
+          <SidebarGroupLabel className="px-3 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{t('common.label.workspace')}</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               {workspaceItems.filter((item) => !item.perm || can(item.perm)).map((item) => (
@@ -348,11 +354,13 @@ export function DashboardSidebar() {
                   <Link to={item.url} className="w-full">
                     <SidebarMenuButton className={NAV_BTN_CLASS} isActive={location.pathname === item.url || location.pathname.startsWith(item.url + '/')}>
                       <item.icon className="size-4" />
-                      <span>{item.title}</span>
+                      <span>{t(item.title!)}</span>
                       {item.url === '/integrations' && (
-                        <span className="ml-auto flex items-center gap-1">
+                        <span className="ms-auto flex items-center gap-1">
                           <RemoteDownloadIndicator />
                           <CloudImportIndicator />
+                          <RcloneImportIndicator />
+                          <TakeoutImportIndicator />
                         </span>
                       )}
                     </SidebarMenuButton>
@@ -370,9 +378,9 @@ export function DashboardSidebar() {
           <>
             {/* Expanded: linear bar */}
             <div className="group-data-[collapsible=icon]:hidden">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs text-muted-foreground">Storage</span>
-                <span className="text-[11px] text-muted-foreground">{formatBytes(storage.used)} / {formatBytes(storage.total)}</span>
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <span className="min-w-0 truncate text-xs text-muted-foreground" title={t('common.label.storage')}>{t('common.label.storage')}</span>
+                <span className="shrink-0 whitespace-nowrap text-[11px] text-muted-foreground">{formatBytes(storage.used)} / {formatBytes(storage.total)}</span>
               </div>
               <Progress
                 value={Math.min(storagePct, 100)}
@@ -381,10 +389,10 @@ export function DashboardSidebar() {
               />
               {storagePct >= 80 && (
                 <p className={`text-[10px] font-medium ${storagePct >= 95 ? 'text-red-600' : 'text-amber-600'}`}>
-                  {storagePct >= 95 ? 'Storage almost full. Upgrade your plan.' : `${Math.round(100 - storagePct)}% remaining`}
+                  {storagePct >= 95 ? t('common.description.storageAlmostFullUpgradeYourPlan') : t('common.label.mathroundRemaining', { MathRound: Math.round(100 - storagePct) })}
                 </p>
               )}
-              <p className="text-[10px] text-muted-foreground mt-1">{activeWs?.name}</p>
+              <p className="text-[10px] text-muted-foreground mt-1"><bdi>{activeWs?.name}</bdi></p>
             </div>
             {/* Collapsed: circle progress */}
             <div className="hidden group-data-[collapsible=icon]:block">
@@ -405,17 +413,17 @@ export function DashboardSidebar() {
                     </text>
                   </svg>
                 </TooltipTrigger>
-                <TooltipContent side="right">
+                <TooltipContent side="inline-end">
                   <div className="text-xs leading-relaxed">
                     <p className="font-semibold">{formatBytes(storage.used)} / {formatBytes(storage.total)}</p>
-                    <p className="opacity-70">{activeWs?.name}</p>
+                    <p className="opacity-70"><bdi>{activeWs?.name}</bdi></p>
                   </div>
                 </TooltipContent>
               </Tooltip>
             </div>
           </>
         ) : (
-          <p className="text-[11px] text-muted-foreground">Loading...</p>
+          <p className="text-[11px] text-muted-foreground">{t('common.status.loading.loading')}</p>
         )}
       </SidebarFooter>
     </Sidebar>

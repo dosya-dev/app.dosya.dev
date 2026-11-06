@@ -1,3 +1,5 @@
+import { formatNumber } from '@/lib/format-locale';
+import { useT } from '@/lib/i18n';
 import { useEffect, useRef, useState, type MutableRefObject } from 'react';
 import { Send, X, AtSign } from 'lucide-react';
 import { Textarea } from '@/components/ui/textarea';
@@ -37,10 +39,13 @@ const isComposing = (e: React.KeyboardEvent) => e.nativeEvent.isComposing || e.n
 type Picker = { start: number; query: string; items: MentionCandidate[]; active: number; failed: boolean } | null;
 
 export function MentionComposer({
-  workspaceId, fileId, placeholder = 'Write a comment… Use @ to mention', autoFocus,
+  workspaceId, fileId, placeholder: placeholderProp, autoFocus,
   initialBody = '', initialMentions = [], anchor = null, onClearAnchor, onFocus,
-  submitLabel = 'Send', onSubmit, onCancel, inputRef,
+  submitLabel: submitLabelProp, onSubmit, onCancel, inputRef,
 }: MentionComposerProps) {
+  const t = useT();
+  const placeholder = placeholderProp ?? t('common.description.writeACommentUseToMention');
+  const submitLabel = submitLabelProp ?? t('common.label.send');
   const [body, setBody] = useState(initialBody);
   const [picked, setPicked] = useState<Map<string, string>>(() => new Map(initialMentions.map((m) => [m.id, m.name])));
   const [picker, setPicker] = useState<Picker>(null);
@@ -121,8 +126,8 @@ export function MentionComposer({
     <div className="relative">
       {anchor && (
         <div className="mb-1.5 inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
-          {anchor.kind === 'time' ? `at ${formatMs(anchor.ms)}` : `p. ${anchor.page}`}
-          <button type="button" aria-label="Remove anchor" className="rounded-full hover:bg-primary/15" onClick={onClearAnchor}>
+          {anchor.kind === 'time' ? t('common.label.atAnchorms', { time: formatMs(anchor.ms) }) : `p. ${anchor.page}`}
+          <button type="button" aria-label={t('common.action.removeAnchor')} className="rounded-full hover:bg-primary/15" onClick={onClearAnchor}>
             <X className="size-3" />
           </button>
         </div>
@@ -141,7 +146,7 @@ export function MentionComposer({
           aria-describedby={body.length > COMMENT_COUNTER_FROM ? 'comment-length' : undefined}
         />
         <Button type="button" size="icon" aria-label={submitLabel} disabled={busy || !body.trim() || overLimit} onClick={() => void submit()}>
-          <Send className="size-4" />
+          <Send className="size-4 rtl:-scale-x-100" />
         </Button>
       </div>
       {/* Silent until the cap is close, so it is information rather than
@@ -152,13 +157,13 @@ export function MentionComposer({
           aria-live="polite"
           className={`mt-1 text-xs tabular-nums ${overLimit ? 'text-destructive' : 'text-muted-foreground'}`}
         >
-          {body.length.toLocaleString()} / {LIMITS.COMMENT_BODY_MAX.toLocaleString()}
+          {formatNumber(body.length)} / {formatNumber(LIMITS.COMMENT_BODY_MAX)}
         </p>
       )}
       {picker && (picker.items.length > 0 || picker.failed) && (
-        <ul role="listbox" aria-label="Mention someone" className="absolute bottom-full left-0 z-20 mb-1 w-64 overflow-hidden rounded-lg border bg-popover shadow-lg">
+        <ul role="listbox" aria-label={t('common.accessibility.mentionSomeone')} className="absolute bottom-full inset-s-0 z-20 mb-1 w-64 overflow-hidden rounded-lg border bg-popover shadow-lg">
           {picker.failed ? (
-            <li className="px-3 py-2 text-xs text-muted-foreground">Couldn't load people</li>
+            <li className="px-3 py-2 text-xs text-muted-foreground">{t('common.error.couldnTLoadPeople')}</li>
           ) : picker.items.map((c, i) => (
             <li
               key={c.id}
@@ -169,7 +174,7 @@ export function MentionComposer({
             >
               <AtSign className="size-3.5 text-muted-foreground" />
               <span className="truncate">{c.name}</span>
-              {c.email && <span className="ml-auto truncate text-[11px] text-muted-foreground">{c.email}</span>}
+              {c.email && <span className="ms-auto truncate text-[11px] text-muted-foreground">{c.email}</span>}
             </li>
           ))}
         </ul>

@@ -11,10 +11,15 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Mail, Link2, X, Loader2, Copy, ChevronDown, Files, Folder } from 'lucide-react';
+import { Mail, Link2, X, Loader2, Copy, ChevronDown, Files, Folder, Lock } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { toast } from '@/lib/toast';
 import { validateSharePassword, validateShareExpiryAt, validateShareBundle } from '@/lib/validation-policy.generated';
+import { translateExternal } from '@/lib/external-text';
 import { useWorkspace } from '@/stores/workspace';
+import { useSession } from '@/stores/session';
+import { useT } from '@/lib/i18n';
+import type { MessageKey } from '@/i18n/keys';
 import { rememberShareDefault, readShareDefault, clearShareDefaultsCache } from '@/lib/share-defaults';
 
 // Re-exported so callers (and this component's tests) have one import for the
@@ -53,20 +58,35 @@ type Tab = 'email' | 'link';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+/** The share page note's ceilings, mirrored from the API (share_title_too_long
+ *  at 120, SHARE_MESSAGE_MAX at 500) so a long note is refused here first. */
+export const SHARE_TITLE_MAX = 120;
+export const SHARE_MESSAGE_MAX = 500;
+
 /**
  * Values are seconds from now, except 'never' and 'custom'. The API takes an
  * absolute `expires_at`, so anything expressible as an instant works here -
  * which is what makes sub-day options and a picked date possible at all.
  */
-const EXPIRY_OPTIONS = [
-  { value: '3600', label: '1 hour' },
-  { value: '86400', label: '24 hours' },
-  { value: '604800', label: '7 days' },
-  { value: '2592000', label: '30 days' },
-  { value: '7776000', label: '90 days' },
-  { value: 'custom', label: 'Custom date…' },
-  { value: 'never', label: 'Never' },
+const EXPIRY_OPTIONS: { value: string; labelKey: MessageKey }[] = [
+  { value: '3600', labelKey: 'common.label.oneHour' },
+  { value: '86400', labelKey: 'common.label.24Hours' },
+  { value: '604800', labelKey: 'common.label.sevenDays' },
+  { value: '2592000', labelKey: 'common.label.thirtyDays' },
+  { value: '7776000', labelKey: 'common.label.ninetyDays' },
+  { value: 'custom', labelKey: 'files.label.customDate' },
+  { value: 'never', labelKey: 'common.label.never' },
 ];
+
+/**
+ * Splits a translated "Lead sentence. Rest of it." message at the first
+ * sentence end so the lead can stay bold; a message with no such break is
+ * returned whole.
+ */
+function leadAndRest(message: string): [string, string] {
+  const m = /^(.+?[.!?\u3002])\s+([\s\S]*)$/.exec(message);
+  return m ? [m[1], m[2]] : [message, ''];
+}
 
 /** `datetime-local` value (local wall time) → unix seconds. */
 function localInputToUnix(value: string): number | null {
@@ -75,6 +95,20 @@ function localInputToUnix(value: string): number | null {
 }
 
 const FALLBACK_EXPIRY_DAYS = 7;
+
+/**
+ * The API clamps a Free creator's links to 7 days (create.ts
+ * FREE_SHARE_LINK_MAX_EXPIRY_DAYS) without refusing, so a longer pick used to
+ * come back as 7 days with nothing said. The picker locks those options instead.
+ */
+export const FREE_MAX_EXPIRY_DAYS = 7;
+
+/** True when `value` (an EXPIRY_OPTIONS value) is closed to a Free creator:
+ *  anything past the cap, and a custom date, which is a paid-plan choice. */
+export function isExpiryLockedOnFree(value: string): boolean {
+  if (value === 'never' || value === 'custom') return true;
+  return Number(value) > FREE_MAX_EXPIRY_DAYS * 86400;
+}
 
 /** Now + `days`, formatted for a `datetime-local` input's initial value. */
 function defaultCustomExpiry(days: number = FALLBACK_EXPIRY_DAYS): string {
@@ -88,14 +122,22 @@ function defaultCustomExpiry(days: number = FALLBACK_EXPIRY_DAYS): string {
  * default that matches a preset selects it; any other whole number becomes a
  * pre-filled custom date; no default falls back to 7 days.
  */
-export function initialExpiryFor(days: number | null | undefined): { expiry: string; customExpiry: string } {
-  const d = days != null && Number.isFinite(days) && days > 0 ? days : FALLBACK_EXPIRY_DAYS;
+export function initialExpiryFor(days: number | null | undefined, maxDays?: number): { expiry: string; customExpiry: string } {
+  let d = days != null && Number.isFinite(days) && days > 0 ? days : FALLBACK_EXPIRY_DAYS;
+  if (maxDays != null && d > maxDays) d = maxDays;
   const seconds = String(d * 86400);
   if (EXPIRY_OPTIONS.some((o) => o.value === seconds)) return { expiry: seconds, customExpiry: defaultCustomExpiry(d) };
+  // A capped (Free) picker has no custom date to fall back on, so a default
+  // between presets takes the longest preset that does not outlast it.
+  if (maxDays != null) {
+    const fit = EXPIRY_OPTIONS.filter((o) => /^\d+$/.test(o.value) && Number(o.value) <= d * 86400).pop();
+    return { expiry: fit?.value ?? '3600', customExpiry: defaultCustomExpiry(d) };
+  }
   return { expiry: 'custom', customExpiry: defaultCustomExpiry(d) };
 }
 
 export function ShareModal({ open, target, name, workspaceId: targetWorkspaceId, onClose }: ShareModalProps) {
+  const t = useT();
   const isFolder = target?.kind === 'folder';
   const isBundle = target?.kind === 'bundle';
   const [excludedCount, setExcludedCount] = useState(0);
@@ -113,6 +155,12 @@ export function ShareModal({ open, target, name, workspaceId: targetWorkspaceId,
   // Set the moment the user touches the expiry select, so a slow settings
   // response cannot overwrite a choice they already made.
   const userPickedExpiryRef = useRef(false);
+  // The effective (lapse-aware) plan from /api/me, the same answer the API's
+  // isUserEffectivelyFree gives. A ref too, so the open/reset paths below
+  // read it without re-running the settings fetch.
+  const isFreePlan = useSession((s) => s.user?.plan?.id === 'free');
+  const maxDaysRef = useRef<number | undefined>(undefined);
+  maxDaysRef.current = isFreePlan ? FREE_MAX_EXPIRY_DAYS : undefined;
   const [restrictToRecipients, setRestrictToRecipients] = useState(true);
   const [password, setPassword] = useState('');
   const [title, setTitle] = useState('');
@@ -139,6 +187,7 @@ export function ShareModal({ open, target, name, workspaceId: targetWorkspaceId,
   const [error, setError] = useState('');
   const [resultUrl, setResultUrl] = useState('');
   const emailRef = useRef<HTMLInputElement>(null);
+  const expiryItems = EXPIRY_OPTIONS.map((o) => ({ value: o.value, label: t(o.labelKey) }));
 
   // What a link for this folder will NOT include. Fetched when the modal opens
   // so the sharer sees it before committing, rather than discovering a partial
@@ -163,7 +212,7 @@ export function ShareModal({ open, target, name, workspaceId: targetWorkspaceId,
 
     const apply = (days: number | null) => {
       defaultDaysRef.current = days;
-      const next = initialExpiryFor(days);
+      const next = initialExpiryFor(days, maxDaysRef.current);
       setExpiry(next.expiry);
       setCustomExpiry(next.customExpiry);
     };
@@ -189,7 +238,7 @@ export function ShareModal({ open, target, name, workspaceId: targetWorkspaceId,
     setTab('email');
     setEmails([]);
     setEmailInput('');
-    const initial = initialExpiryFor(defaultDaysRef.current);
+    const initial = initialExpiryFor(defaultDaysRef.current, maxDaysRef.current);
     setExpiry(initial.expiry);
     setCustomExpiry(initial.customExpiry);
     setRestrictToRecipients(true);
@@ -251,7 +300,7 @@ export function ShareModal({ open, target, name, workspaceId: targetWorkspaceId,
     setError('');
 
     if (tab === 'email' && emails.length === 0) {
-      setError('Add at least one email address.');
+      setError(t('common.error.addAtLeastOneEmailAddress'));
       emailRef.current?.focus();
       return;
     }
@@ -261,7 +310,7 @@ export function ShareModal({ open, target, name, workspaceId: targetWorkspaceId,
     // sent, and refused.
     if (target.kind === 'bundle') {
       const bundleError = validateShareBundle(target.fileIds.length);
-      if (bundleError) { setError(bundleError); return; }
+      if (bundleError) { setError(translateExternal(bundleError, 'error')); return; }
     }
 
     // The shared rule rather than a local copy of its length clause. This page
@@ -270,7 +319,7 @@ export function ShareModal({ open, target, name, workspaceId: targetWorkspaceId,
     // lib/share/create.ts applies on the server.
     const pw = password.trim();
     const pwError = validateSharePassword(pw);
-    if (pwError) { setError(pwError); return; }
+    if (pwError) { setError(translateExternal(pwError, 'error')); return; }
 
     // Parsed here rather than trusted to the input's `type=number`: a browser
     // lets "1e3" and "  " through, and the API refuses 0 outright.
@@ -278,7 +327,7 @@ export function ShareModal({ open, target, name, workspaceId: targetWorkspaceId,
     if (maxDownloads.trim()) {
       const n = Number(maxDownloads);
       if (!Number.isInteger(n) || n < 1) {
-        setError('Download limit must be a whole number of at least 1.');
+        setError(t('files.error.downloadLimitMustBeAWholeNumberOfAtLeast1'));
         return;
       }
       capField = n;
@@ -289,7 +338,7 @@ export function ShareModal({ open, target, name, workspaceId: targetWorkspaceId,
     if (expiry === 'custom') {
       expiresAt = localInputToUnix(customExpiry);
       if (!expiresAt) {
-        setError('Pick a valid expiry date.');
+        setError(t('files.error.pickAValidExpiryDate'));
         return;
       }
       // Covers "in the future" AND the 3650-day ceiling, which nothing on the
@@ -298,7 +347,13 @@ export function ShareModal({ open, target, name, workspaceId: targetWorkspaceId,
       // on the server and is deliberately invisible here: there is no refusal to
       // pre-empt, only a value quietly lowered.
       const expiryError = validateShareExpiryAt(expiresAt, nowSeconds + 60);
-      if (expiryError) { setError(expiryError); return; }
+      if (expiryError) { setError(translateExternal(expiryError, 'error')); return; }
+      // The Free cap is the one clamp the user can see coming, so a typed
+      // date past it is stopped here rather than quietly cut to 7 days.
+      if (isFreePlan && expiresAt > nowSeconds + FREE_MAX_EXPIRY_DAYS * 86400) {
+        setError(t('sharing.label.freePlanLinksLastUpTo7Days'));
+        return;
+      }
     } else if (expiry !== 'never') {
       expiresAt = nowSeconds + Number(expiry);
     }
@@ -311,6 +366,23 @@ export function ShareModal({ open, target, name, workspaceId: targetWorkspaceId,
     // 0` is the API's own spelling of never (lib/share/expiry.ts).
     const expiryFields: { expires_at?: number; expires_in_days?: number } =
       expiry === 'never' ? { expires_in_days: 0 } : (expiresAt ? { expires_at: expiresAt } : {});
+
+    // The note the recipient sees on the share page. Trimmed and dropped when
+    // empty so a blank field never stores "" where the API stores null; the
+    // ceilings match the API's (share_title_too_long / SHARE_MESSAGE_MAX).
+    const noteTitle = title.trim();
+    const noteMessage = message.trim();
+    if (noteTitle.length > SHARE_TITLE_MAX) {
+      setError(t('shared.error.keepTheTitleUnderMaxCharacters', { max: SHARE_TITLE_MAX }));
+      return;
+    }
+    if (noteMessage.length > SHARE_MESSAGE_MAX) {
+      setError(t('shared.error.keepTheMessageUnderMaxCharacters', { max: SHARE_MESSAGE_MAX }));
+      return;
+    }
+    const noteFields: { title?: string; message?: string } = {};
+    if (noteTitle) noteFields.title = noteTitle;
+    if (noteMessage) noteFields.message = noteMessage;
 
     setSubmitting(true);
 
@@ -325,14 +397,15 @@ export function ShareModal({ open, target, name, workspaceId: targetWorkspaceId,
               file_ids: target.fileIds,
               notify: true,
               recipient_emails: emails,
-              message: message.trim(),
+              message: noteMessage,
               access_mode: restrictToRecipients ? 'restricted' : 'public',
             }
           : {
               emails,
-              message: message.trim(),
+              message: noteMessage,
               restrict_to_recipients: restrictToRecipients,
             };
+        if (noteTitle) body.title = noteTitle;
         if (pw) body.password = pw;
         if (viewOnly) body.lock_mode = 'view_only';
         if (stripMetadata) body.strip_metadata = true;
@@ -353,20 +426,22 @@ export function ShareModal({ open, target, name, workspaceId: targetWorkspaceId,
           const failedCount = res.failed?.length ?? 0;
           const sentCount = emails.length - failedCount;
           toast.success(
-            restrictToRecipients ? 'Private share sent' : 'Share sent',
+            restrictToRecipients ? t('files.feedback.privateShareSent') : t('files.feedback.shareSent'),
             failedCount
-              ? `Sent to ${sentCount} of ${emails.length}. Could not reach: ${res.failed!.join(', ')}.`
-              : `Shared with ${sentCount} recipient${sentCount === 1 ? '' : 's'}.`,
+              ? t('sharing.error.sentToSentOfEmailCountCouldNotReachFailed', {
+                  sent: String(sentCount), emailCount: String(emails.length), failed: res.failed!.join(', '),
+                })
+              : t('files.feedback.sharedWithSentcountPluralOneRecipientOtherRecipients', { sentCount }),
           );
           reset();
           onClose();
         } else {
-          setError(res.error ?? 'Could not send.');
+          setError(res.error ?? t('sharing.error.couldNotSend'));
           setSubmitting(false);
         }
       } else {
         const linkBody: Record<string, unknown> = isBundle ? { file_ids: target.fileIds } : {};
-        Object.assign(linkBody, expiryFields);
+        Object.assign(linkBody, expiryFields, noteFields);
         if (pw) linkBody.password = pw;
         if (viewOnly) linkBody.lock_mode = 'view_only';
         if (stripMetadata) linkBody.strip_metadata = true;
@@ -386,13 +461,13 @@ export function ShareModal({ open, target, name, workspaceId: targetWorkspaceId,
           setResultUrl(data.link.url);
           try {
             await navigator.clipboard.writeText(data.link.url);
-            toast.success('Link copied', 'Share link copied to clipboard.');
+            toast.success(t('common.feedback.linkCopied'), t('files.feedback.shareLinkCopiedToClipboard'));
           } catch {
-            toast.info('Link created', 'Share link created.');
+            toast.info(t('files.feedback.linkCreated'), t('files.feedback.shareLinkCreated'));
           }
           setSubmitting(false);
         } else {
-          setError(data.error ?? 'Something went wrong.');
+          setError(data.error ?? t('sharing.error.somethingWentWrong'));
           setSubmitting(false);
         }
       }
@@ -407,7 +482,7 @@ export function ShareModal({ open, target, name, workspaceId: targetWorkspaceId,
   const handleCopyUrl = async () => {
     try {
       await navigator.clipboard.writeText(resultUrl);
-      toast.success('Link copied', 'Copied to clipboard.');
+      toast.success(t('common.feedback.linkCopied'), t('files.feedback.copiedToClipboard'));
     } catch {}
   };
 
@@ -415,17 +490,17 @@ export function ShareModal({ open, target, name, workspaceId: targetWorkspaceId,
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>Share</DialogTitle>
+          <DialogTitle>{t('common.heading.share')}</DialogTitle>
         </DialogHeader>
 
         {/* Tabs */}
         <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)} className="-mx-4">
           <TabsList variant="line" className="w-full gap-0 border-b p-0 group-data-horizontal/tabs:h-auto">
             <TabsTrigger value="email" className="flex-1 rounded-none py-2.5 text-xs group-data-horizontal/tabs:after:-bottom-px">
-              <Mail className="size-3.5" /> By email
+              <Mail className="size-3.5" /> {t('common.action.byEmail')}
             </TabsTrigger>
             <TabsTrigger value="link" className="flex-1 rounded-none py-2.5 text-xs group-data-horizontal/tabs:after:-bottom-px">
-              <Link2 className="size-3.5" /> By link
+              <Link2 className="size-3.5" /> {t('common.action.byLink')}
             </TabsTrigger>
           </TabsList>
         </Tabs>
@@ -442,21 +517,21 @@ export function ShareModal({ open, target, name, workspaceId: targetWorkspaceId,
               <path d="M8.5 1v3.5h3.5" stroke="currentColor" strokeWidth="1.1" />
             </svg>
           )}
-          <span className="truncate font-medium text-foreground">{name}</span>
-          {isBundle && <span className="shrink-0">· one link for all of them</span>}
+          <span className="truncate font-medium text-foreground" dir="auto">{name}</span>
+          {isBundle && <span className="shrink-0">{t('files.description.oneLinkForAllOfThem')}</span>}
         </div>
 
         {/* Email tab */}
         {tab === 'email' && (
           <div>
-            <Label className="text-xs font-medium text-muted-foreground mb-1.5 block">Recipients</Label>
+            <Label className="text-xs font-medium text-muted-foreground mb-1.5 block">{t('common.label.recipients')}</Label>
             <div
               className="flex flex-wrap gap-1 min-h-9 border rounded-md px-2 py-1.5 cursor-text focus-within:ring-1 focus-within:ring-ring"
               onClick={() => emailRef.current?.focus()}
             >
               {emails.map((e, i) => (
                 <span key={i} className="inline-flex items-center gap-1 bg-muted rounded px-1.5 py-0.5 text-[11px] font-medium">
-                  {e}
+                  <bdi dir="ltr">{e}</bdi>
                   <button onClick={() => removeEmail(i)} className="hover:text-destructive">
                     <X className="size-2.5" />
                   </button>
@@ -465,12 +540,13 @@ export function ShareModal({ open, target, name, workspaceId: targetWorkspaceId,
               <input
                 ref={emailRef}
                 type="email"
+                dir="ltr"
                 value={emailInput}
                 onChange={(e) => setEmailInput(e.target.value)}
                 onKeyDown={handleEmailKeyDown}
                 onBlur={handleEmailBlur}
                 onPaste={handleEmailPaste}
-                placeholder={emails.length === 0 ? 'name@example.com, press Enter' : ''}
+                placeholder={emails.length === 0 ? t('sharing.placeholder.nameExampleComPressEnter') : ''}
                 className="flex-1 min-w-24 bg-transparent outline-none text-xs"
                 autoComplete="off"
               />
@@ -484,9 +560,10 @@ export function ShareModal({ open, target, name, workspaceId: targetWorkspaceId,
                 className="mt-0.5 size-3.5 accent-green-600"
               />
               <span className="text-[11px] leading-relaxed text-muted-foreground">
-                <span className="font-medium text-foreground">Only these people can open it.</span>{' '}
-                Recipients confirm their email with a one-time code, so forwarding the link
-                gives no one else access.
+                {(() => {
+                  const [lead, rest] = leadAndRest(t('files.description.onlyThesePeopleCanOpenItRecipientsConfirmTheirEmailWith'));
+                  return (<><span className="font-medium text-foreground">{lead}</span>{rest ? <>{' '}{rest}</> : null}</>);
+                })()}
               </span>
             </label>
           </div>
@@ -495,24 +572,28 @@ export function ShareModal({ open, target, name, workspaceId: targetWorkspaceId,
         {/* Link tab */}
         {tab === 'link' && !resultUrl && (
           <p className="text-xs text-muted-foreground">
-            Anyone with the link can access {isFolder ? 'this folder' : isBundle ? 'these files' : 'this file'}.
+            {t('files.description.anyoneWithTheLinkCanAccessIsfolderSelectTrueThisFolder', { isFolder: String(isFolder), isBundle: String(isBundle) })}
           </p>
         )}
 
         {/* Expiry */}
         {!resultUrl && (
           <div>
-            <Label className="text-xs font-medium text-muted-foreground mb-1.5 block">Expires in</Label>
-            <Select value={expiry} onValueChange={(value) => { userPickedExpiryRef.current = true; setExpiry(value ?? 'never'); }} items={EXPIRY_OPTIONS}>
+            <Label className="text-xs font-medium text-muted-foreground mb-1.5 block">{t('sharing.label.expiresIn')}</Label>
+            <Select value={expiry} onValueChange={(value) => { userPickedExpiryRef.current = true; setExpiry(value ?? 'never'); }} items={expiryItems}>
               <SelectTrigger className="w-full h-9 border rounded-md px-2.5 text-xs bg-background">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {EXPIRY_OPTIONS.map((opt) => (
-                  <SelectItem key={opt.value} value={opt.value} className="text-xs">
-                    {opt.label}
-                  </SelectItem>
-                ))}
+                {expiryItems.map((opt) => {
+                  const locked = isFreePlan && isExpiryLockedOnFree(opt.value);
+                  return (
+                    <SelectItem key={opt.value} value={opt.value} disabled={locked} className="text-xs">
+                      {opt.label}
+                      {locked && <Lock aria-label={t('sharing.label.freePlanLinksLastUpTo7Days')} className="ms-auto size-3" />}
+                    </SelectItem>
+                  );
+                })}
               </SelectContent>
             </Select>
             {expiry === 'custom' && (
@@ -520,8 +601,18 @@ export function ShareModal({ open, target, name, workspaceId: targetWorkspaceId,
                 type="datetime-local"
                 value={customExpiry}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setCustomExpiry(e.target.value)}
+                max={isFreePlan ? defaultCustomExpiry(FREE_MAX_EXPIRY_DAYS) : undefined}
                 className="mt-2 h-9 text-xs"
               />
+            )}
+            {isFreePlan && (
+              <p className="mt-1.5 flex flex-wrap items-center gap-1 text-[11px] text-muted-foreground">
+                <Lock className="size-3" aria-hidden="true" />
+                {t('sharing.label.freePlanLinksLastUpTo7Days')}
+                <Link to="/billing?upgrade=1" className="font-medium text-foreground underline underline-offset-2">
+                  {t('dashboard.action.upgradeNow')}
+                </Link>
+              </p>
             )}
           </div>
         )}
@@ -534,19 +625,19 @@ export function ShareModal({ open, target, name, workspaceId: targetWorkspaceId,
               onClick={() => setShowAdvanced(!showAdvanced)}
             >
               <ChevronDown className={`size-3 transition-transform ${showAdvanced ? 'rotate-180' : ''}`} />
-              Advanced options
+              {t('common.action.advancedOptions')}
             </button>
             {showAdvanced && (
               <div className="mt-2 space-y-3">
                 <div>
                   <Label className="text-xs font-medium text-muted-foreground mb-1 block">
-                    Password <span className="font-normal">(optional)</span>
+                    {t('common.label.passwordOptional')}
                   </Label>
                   <Input
                     type="password"
                     value={password}
                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPassword(e.target.value)}
-                    placeholder="Min 8 characters"
+                    placeholder={t('common.placeholder.min8Characters')}
                     className="h-8 text-xs"
                     autoComplete="off"
                   />
@@ -560,10 +651,10 @@ export function ShareModal({ open, target, name, workspaceId: targetWorkspaceId,
                     data-testid="share-view-only"
                   />
                   <span className="text-[11px] leading-relaxed text-muted-foreground">
-                    <span className="font-medium text-foreground">View only.</span>{' '}
-                    People can open {isFolder ? 'the folder' : isBundle ? 'the files' : 'the file'} with
-                    no download button, and images open as a reduced-size preview rather than the original.
-                    Anything shown on screen can still be screenshotted.
+                    {(() => {
+                      const [lead, rest] = leadAndRest(t('files.description.viewOnlyPeopleCanOpenIsfolderSelectTrueTheFolderOther', { isFolder: String(isFolder), isBundle: String(isBundle) }));
+                      return (<><span className="font-medium text-foreground">{lead}</span>{rest ? <>{' '}{rest}</> : null}</>);
+                    })()}
                   </span>
                 </label>
                 <label className="flex items-start gap-2 cursor-pointer">
@@ -575,53 +666,63 @@ export function ShareModal({ open, target, name, workspaceId: targetWorkspaceId,
                     data-testid="share-strip-metadata"
                   />
                   <span className="text-[11px] leading-relaxed text-muted-foreground">
-                    <span className="font-medium text-foreground">Remove photo metadata.</span>{' '}
-                    Photos are handed over without location, camera and capture-time details.
-                    Your originals stay as they are.
+                    {(() => {
+                      const [lead, rest] = leadAndRest(t('files.description.removePhotoMetadataPhotosAreHandedOverWithoutLocationCameraAnd'));
+                      return (<><span className="font-medium text-foreground">{lead}</span>{rest ? <>{' '}{rest}</> : null}</>);
+                    })()}
                   </span>
                 </label>
                 <div>
                   <Label className="text-xs font-medium text-muted-foreground mb-1 block">
-                    Download limit <span className="font-normal">(optional)</span>
+                    {t('files.label.downloadLimitOptional')}
                   </Label>
                   <Input
                     type="number"
                     min={1}
                     value={maxDownloads}
                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => setMaxDownloads(e.target.value)}
-                    placeholder="Unlimited"
+                    placeholder={t('common.placeholder.unlimited')}
                     className="h-8 text-xs"
                     data-testid="share-max-downloads"
                   />
                   <p className="text-[11px] text-muted-foreground mt-1">
-                    The link stops serving the {isFolder ? 'folder' : isBundle ? 'files' : 'file'} once it has been
-                    downloaded this many times.
+                    {t('files.description.theLinkStopsServingTheIsfolderSelectTrueFolderOtherIsbundle', { isFolder: String(isFolder), isBundle: String(isBundle) })}
                   </p>
                 </div>
+                {/* The note. Both fields travel with the link itself and are
+                    shown to the recipient on the share page as a card above the
+                    file; a share by email also puts the message in the email. */}
                 <div>
-                  <Label className="text-xs font-medium text-muted-foreground mb-1 block">
-                    Title <span className="font-normal">(optional)</span>
+                  <Label className="text-xs font-medium text-muted-foreground mb-1 flex items-center justify-between">
+                    <span>{t('common.label.titleOptional')}</span>
+                    <span className="font-normal tabular-nums" data-testid="share-title-count">{title.trim().length}/{SHARE_TITLE_MAX}</span>
                   </Label>
                   <Input
                     value={title}
                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => setTitle(e.target.value)}
-                    placeholder="Share link title"
+                    placeholder={t('sharing.placeholder.shareLinkTitle')}
+                    maxLength={SHARE_TITLE_MAX}
                     className="h-8 text-xs"
+                    data-testid="share-title"
                   />
                 </div>
-                {tab === 'email' && (
-                  <div>
-                    <Label className="text-xs font-medium text-muted-foreground mb-1 block">
-                      Message <span className="font-normal">(optional)</span>
-                    </Label>
-                    <Textarea
-                      value={message}
-                      onChange={(e) => setMessage(e.target.value)}
-                      placeholder="Add a message for the recipient..."
-                      className="w-full h-14 min-h-14 rounded-md px-2.5 py-2 text-xs bg-background resize-y"
-                    />
-                  </div>
-                )}
+                <div>
+                  <Label className="text-xs font-medium text-muted-foreground mb-1 flex items-center justify-between">
+                    <span>{t('common.label.messageOptional')}</span>
+                    <span className="font-normal tabular-nums" data-testid="share-message-count">{message.trim().length}/{SHARE_MESSAGE_MAX}</span>
+                  </Label>
+                  <Textarea
+                    value={message}
+                    onChange={(e) => setMessage(e.target.value)}
+                    placeholder={t('sharing.placeholder.addAMessageForTheRecipient')}
+                    maxLength={SHARE_MESSAGE_MAX}
+                    className="w-full h-14 min-h-14 rounded-md px-2.5 py-2 text-xs bg-background resize-y"
+                    data-testid="share-message"
+                  />
+                  <p className="text-[11px] text-muted-foreground mt-1">
+                    {tab === 'email' ? t('shared.description.shownToTheRecipientOnTheSharePageLowercase') : t('shared.description.shownToTheRecipientOnTheSharePage')}
+                  </p>
+                </div>
               </div>
             )}
           </div>
@@ -633,9 +734,9 @@ export function ShareModal({ open, target, name, workspaceId: targetWorkspaceId,
             rather than something that was always there. */}
         {resultUrl && (
           <div className="animate-result-in">
-            <Label className="text-xs font-medium text-muted-foreground mb-1.5 block">Share link created</Label>
+            <Label className="text-xs font-medium text-muted-foreground mb-1.5 block">{t('sharing.label.shareLinkCreated')}</Label>
             <div className="flex items-center gap-2 bg-muted/50 border rounded-md px-3 py-2">
-              <span className="flex-1 text-[11px] font-mono text-muted-foreground truncate">{resultUrl}</span>
+              <span dir="ltr" className="flex-1 text-[11px] font-mono text-muted-foreground truncate">{resultUrl}</span>
               <button onClick={handleCopyUrl} className="text-xs font-semibold text-green-600 hover:text-green-700 shrink-0">
                 <Copy className="size-3.5" />
               </button>
@@ -645,32 +746,31 @@ export function ShareModal({ open, target, name, workspaceId: targetWorkspaceId,
 
         {/* Error */}
         {error && (
-          <div className="text-xs text-destructive bg-destructive/10 border border-destructive/20 rounded-md px-3 py-2">
+          <div dir="auto" className="text-xs text-destructive bg-destructive/10 border border-destructive/20 rounded-md px-3 py-2">
             {error}
           </div>
         )}
 
         {isFolder && excludedCount > 0 && (
           <p className="text-xs text-muted-foreground">
-            {excludedCount} hidden or locked {excludedCount === 1 ? 'item' : 'items'} in this
-            folder or its subfolders will not be shared.
+            {t('files.description.excludedcountHiddenOrLockedExcludedcountPluralOneItemOtherItemsIn', { excludedCount })}
           </p>
         )}
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => { reset(); onClose(); }}>Cancel</Button>
+          <Button variant="outline" onClick={() => { reset(); onClose(); }}>{t('common.cancel')}</Button>
           {resultUrl ? (
-            <Button onClick={() => { reset(); onClose(); }}>Done</Button>
+            <Button onClick={() => { reset(); onClose(); }}>{t('common.done')}</Button>
           ) : (
             <Button onClick={handleSubmit} disabled={submitting}>
               {submitting ? (
-                <Loader2 className="size-4 animate-spin mr-1.5" />
+                <Loader2 className="size-4 animate-spin me-1.5" />
               ) : tab === 'email' ? (
-                <Mail className="size-3.5 mr-1.5" />
+                <Mail className="size-3.5 me-1.5" />
               ) : (
-                <Link2 className="size-3.5 mr-1.5" />
+                <Link2 className="size-3.5 me-1.5" />
               )}
-              {submitting ? (tab === 'email' ? 'Sending...' : 'Creating...') : (tab === 'email' ? 'Send' : 'Generate link')}
+              {submitting ? (tab === 'email' ? t('common.action.sending') : t('common.action.creating')) : (tab === 'email' ? t('sharing.action.send') : t('common.action.generateLink'))}
             </Button>
           )}
         </DialogFooter>

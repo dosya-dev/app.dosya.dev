@@ -16,6 +16,7 @@ vi.mock('@/stores/report-problem', () => ({ openReport: (...args: unknown[]) => 
 const { ProfileMenu } = await import('./profile-menu');
 const { useSession } = await import('@/stores/session');
 const { useWorkspace } = await import('@/stores/workspace');
+const { useSupportChat } = await import('@/stores/support-chat');
 type SessionWorkspace = import('@/stores/session').SessionWorkspace;
 
 const GB = 1024 ** 3;
@@ -164,5 +165,32 @@ describe('ProfileMenu', () => {
     await mount({ workspaces: [{ ...WS, storage: { used: 10 * GB, total: 50 * GB } }] });
     await open();
     expect(menu()!.textContent).toContain('10 GB of 50 GB used');
+  });
+
+  it('shows Live chat above Get help only when features.support_chat is true', async () => {
+    useSupportChat.setState({ unread: 0, staffOnline: false, refreshSummary: async () => {} } as never);
+    await mount();
+    await open();
+    expect(item('Live chat')).toBeNull();
+    act(() => root!.unmount());
+    container?.remove();
+    root = null;
+    await mount({ user: { ...USER, features: { support_chat: true } } as never });
+    await open();
+    const labels = items().map((el) => el.textContent?.trim() ?? '');
+    const live = labels.findIndex((l) => l.startsWith('Live chat'));
+    const help = labels.findIndex((l) => l.startsWith('Get help'));
+    expect(live).toBeGreaterThanOrEqual(0);
+    expect(live).toBe(help - 1);
+  });
+
+  it('renders the unread badge when the summary has unread > 0, and refreshes the summary on open', async () => {
+    const refresh = vi.fn(async () => {});
+    useSupportChat.setState({ unread: 3, staffOnline: true, refreshSummary: refresh } as never);
+    await mount({ user: { ...USER, features: { support_chat: true } } as never });
+    await open();
+    const badge = document.querySelector('[aria-label="3 unread"]');
+    expect(badge?.textContent).toBe('3');
+    expect(refresh).toHaveBeenCalled();
   });
 });

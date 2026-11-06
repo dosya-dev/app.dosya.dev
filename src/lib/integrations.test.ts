@@ -1,8 +1,9 @@
+import { Globe } from 'lucide-react';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, it, expect } from 'vitest';
 import {
-  INTEGRATIONS, getIntegration, API_HOST, S3_REGION, ZAPIER_INVITE_URL, WORDPRESS_ZIP_URL,
+  INTEGRATIONS, getIntegration, API_HOST, S3_REGION, ZAPIER_INVITE_URL, WORDPRESS_ORG_URL,
   MAC_APP_STORE_URL, MS_STORE_URL, SNAP_STORE_URL, N8N_NODE_PUBLISHED, N8N_PACKAGE_NAME, N8N_EXAMPLES_URL,
   rcloneConfig, webdavUrl, webdavWindowsMount, webdavLinuxMount,
   sftpConnect, sftpConfig, s3Endpoint, s3Examples, desktopDownload,
@@ -13,10 +14,10 @@ import { ZAPIER_BRAND } from './zapier-brand';
 const ctx = { workspaceId: 'ws_abc123', workspaceName: 'My Team', email: 'ada@example.com' };
 
 describe('integrations metadata', () => {
-  it('exposes exactly the seventeen integrations in order', () => {
+  it('exposes exactly the nineteen integrations in order', () => {
     expect(INTEGRATIONS.map((i) => i.slug)).toEqual([
       'rclone', 'webdav', 'sftp', 's3', 'desktop', 'cli', 'rest-api', 'extension', 'zapier', 'n8n', 'lightroom', 'wordpress',
-      'google', 'onedrive', 'dropbox', 'webhooks', 'remote-download',
+      'google', 'google-takeout', 'onedrive', 'dropbox', 'webhooks', 'remote-download', 'remote-rclone',
     ]);
   });
   it('resolves a slug, and returns undefined for unknown', () => {
@@ -27,10 +28,20 @@ describe('integrations metadata', () => {
   it('google uses a brand-logo iconSrc', () => {
     expect(getIntegration('google')?.iconSrc).toBe('/google-color.svg');
   });
+  it('google-takeout sits beside Google Drive with its own mark', () => {
+    expect(getIntegration('google-takeout')?.iconSrc).toBe('/google-takeout-color.svg');
+    expect(getIntegration('google-takeout')?.tag).toBe(getIntegration('google')?.tag);
+  });
 
   it('rclone and zapier use their own marks rather than a generic glyph', () => {
     expect(getIntegration('rclone')?.iconSrc).toBe('/rclone-color.svg');
     expect(getIntegration('zapier')?.iconSrc).toBe('/zapier-color.svg');
+  });
+
+  it('remote import wears the rclone mark with a globe badge: it runs on our servers, nothing to install', () => {
+    const meta = getIntegration('remote-rclone')!;
+    expect(meta.iconSrc).toBe('/rclone-color.svg');
+    expect(meta.badge).toBe(Globe);
   });
 
   /**
@@ -98,19 +109,15 @@ describe('integrations metadata', () => {
     expect(wp.docsUrl).toBe('https://dosya.dev/integration/wordpress');
   });
 
-  /**
-   * The plugin zip is served by the marketing site and linked from here. Read
-   * that module so the two cannot drift, and check the file is really there.
-   */
-  it('links the plugin zip the marketing site serves', () => {
+  /** The marketing site holds the listing URL too. Read that module so the two cannot drift. */
+  it('links the same WordPress.org listing as the marketing site', () => {
     const marketing = readFileSync(
       resolve(import.meta.dirname, '../../../../src/lib/wordpress-integration.ts'),
       'utf8',
     );
-    const path = marketing.match(/WORDPRESS_ZIP_PATH\s*=\s*"([^"]+)"/)?.[1];
-    expect(path, 'could not find WORDPRESS_ZIP_PATH on the marketing site').toBeTruthy();
-    expect(WORDPRESS_ZIP_URL).toBe(`https://dosya.dev${path}`);
-    expect(existsSync(resolve(import.meta.dirname, '../../../../public', `.${path}`))).toBe(true);
+    const url = marketing.match(/WORDPRESS_ORG_URL\s*=\s*"([^"]+)"/)?.[1];
+    expect(url, 'could not find WORDPRESS_ORG_URL on the marketing site').toBeTruthy();
+    expect(WORDPRESS_ORG_URL).toBe(url);
   });
 
   it('n8n uses its own mark and points at its own marketing page', () => {

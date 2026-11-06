@@ -1,8 +1,10 @@
 import { useEffect } from 'react';
+import { localDigits } from '@/lib/format-locale';
 import { X } from 'lucide-react';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { useT } from '@/lib/i18n';
 import { useWorkspace } from '@/stores/workspace';
 import { useOnboarding } from '@/stores/onboarding';
 import { OnboardingChecklist, completedCount } from './onboarding-checklist';
@@ -19,6 +21,7 @@ import { OnboardingChecklist, completedCount } from './onboarding-checklist';
  * finished - it must never become furniture.
  */
 export function SetupPill() {
+  const t = useT();
   const wsId = useWorkspace((s: { activeId: string }) => s.activeId);
   const purpose = useOnboarding((s) => s.purpose);
   const steps = useOnboarding((s) => s.steps);
@@ -63,7 +66,9 @@ export function SetupPill() {
     <DropdownMenu>
       <DropdownMenuTrigger
         data-testid="setup-pill"
-        className="flex items-center gap-1.5 h-7 px-2.5 rounded-full border text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+        aria-label={`${t('common.label.setup')} ${localDigits(done)}/${localDigits(total)}`}
+        title={`${t('common.label.setup')} ${localDigits(done)}/${localDigits(total)}`}
+        className="flex shrink-0 items-center gap-1.5 h-7 px-2 sm:px-2.5 rounded-full border text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
       >
         <span className="relative flex size-3.5 shrink-0">
           <svg viewBox="0 0 20 20" className="size-3.5 -rotate-90">
@@ -74,7 +79,11 @@ export function SetupPill() {
             />
           </svg>
         </span>
-        Setup {done}/{total}
+        {/* Below sm only the ring and the count stay: long languages (de "Einrichtung") would push the bell and avatar off a 360 px screen. */}
+        <span className="whitespace-nowrap">
+          <span data-testid="setup-pill-label" className="hidden sm:inline">{t('common.label.setup')}{' '}</span>
+          {localDigits(done)}/{localDigits(total)}
+        </span>
       </DropdownMenuTrigger>
 
       <DropdownMenuContent align="end" className="w-80 p-3">
@@ -85,7 +94,7 @@ export function SetupPill() {
           onClick={() => { void dismiss(); }}
           className="mt-3 w-full flex items-center justify-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
         >
-          <X className="size-3" /> Hide this
+          <X className="size-3" /> {t('common.action.hideThis')}
         </button>
       </DropdownMenuContent>
     </DropdownMenu>

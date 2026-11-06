@@ -5,6 +5,7 @@ import { ACTIVE_CLOUD_STATUSES, jobProgress, useCloudImports } from '@/stores/cl
 import { PROVIDER_LABELS } from '@/lib/cloud-providers';
 import { describeJob } from '@/components/cloud-import/import-progress-card';
 import { hadActiveJobs } from '@/lib/job-activity';
+import { useT } from '@/lib/i18n';
 
 const RADIUS = 5;
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
@@ -22,6 +23,7 @@ const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
  * request. An import started from this client refreshes the store itself.
  */
 export function CloudImportIndicator() {
+  const t = useT();
   const activeId = useWorkspace((s) => s.activeId);
   const jobs = useCloudImports((s) => s.jobs);
   const refresh = useCloudImports((s) => s.refresh);
@@ -41,7 +43,7 @@ export function CloudImportIndicator() {
   return (
     <Tooltip>
       <TooltipTrigger>
-        <span className="flex items-center" aria-label="Cloud imports in progress">
+        <span className="flex items-center" aria-label={t('common.accessibility.cloudImportsInProgress')}>
           <svg
             width="14"
             height="14"
@@ -68,9 +70,9 @@ export function CloudImportIndicator() {
           </svg>
         </span>
       </TooltipTrigger>
-      <TooltipContent side="right" className="p-2">
+      <TooltipContent side="inline-end" className="p-2">
         <p className="mb-1 text-[11px] font-medium">
-          {active.length === 1 ? '1 import in progress' : `${active.length} imports in progress`}
+          {active.length === 1 ? t('common.label.1ImportInProgress') : t('common.label.activecountImportsInProgress', { activeCount: active.length })}
           {pct !== null ? ` - ${pct}%` : ''}
         </p>
         <div className="space-y-0.5">
@@ -88,7 +90,7 @@ export function CloudImportIndicator() {
             );
           })}
           {active.length > 4 && (
-            <p className="text-[11px] text-muted-foreground">+{active.length - 4} more</p>
+            <p className="text-[11px] text-muted-foreground">{t('common.label.activelengthMore', { activeLength: active.length - 4 })}</p>
           )}
         </div>
       </TooltipContent>

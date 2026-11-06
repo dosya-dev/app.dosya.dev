@@ -20,12 +20,15 @@ import { fileURLToPath } from 'node:url';
 
 const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const vendorRoot = path.join(appRoot, 'vendor');
+// Test helpers outside src/ hit the same walk (tests/helpers/i18n-sweep.tsx
+// broke CI the same way), so they carry the same kind of config.
+const testsRoot = path.join(appRoot, 'tests');
 
 function vendoredTsFiles(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) return vendoredTsFiles(full);
-    return entry.isFile() && full.endsWith('.ts') && !full.endsWith('.d.ts') ? [full] : [];
+    return entry.isFile() && /\.tsx?$/.test(full) && !full.endsWith('.d.ts') ? [full] : [];
   });
 }
 
@@ -69,19 +72,41 @@ describe('vendored TypeScript tsconfig resolution', () => {
   });
 
   it('keeps the vendor tsconfig extends chain inside apps/web', () => {
-    let config = path.join(vendorRoot, 'tsconfig.json');
-    expect(existsSync(config)).toBe(true);
-    // A bare specifier ("astro/tsconfigs/strict") is what broke CI; only
-    // relative hops that land inside apps/web are safe here.
-    for (let hop = 0; hop < 10; hop++) {
-      const parent = readTsconfig(config).extends;
-      if (parent === undefined) return;
-      expect(typeof parent).toBe('string');
-      expect(parent as string).toMatch(/^\.\.?\//);
-      config = path.resolve(path.dirname(config), parent as string);
-      expect(config.startsWith(appRoot + path.sep)).toBe(true);
-      expect(existsSync(config)).toBe(true);
-    }
-    throw new Error('tsconfig extends chain did not terminate');
+    expectExtendsChainInsideApp(path.join(vendorRoot, 'tsconfig.json'));
   });
 });
+
+describe('test helper tsconfig resolution', () => {
+  it('finds test helper .ts sources to guard', () => {
+    expect(vendoredTsFiles(testsRoot).length).toBeGreaterThan(0);
+  });
+
+  it('never escapes apps/web looking for a tsconfig', () => {
+    const escaping = vendoredTsFiles(testsRoot).filter((file) => {
+      const found = nearestConfiguringTsconfig(file);
+      return found === null || !found.startsWith(appRoot + path.sep);
+    });
+    expect(escaping.map((f) => path.relative(appRoot, f))).toEqual([]);
+  });
+
+  it('keeps the tests tsconfig extends chain inside apps/web', () => {
+    expectExtendsChainInsideApp(path.join(testsRoot, 'tsconfig.json'));
+  });
+});
+
+function expectExtendsChainInsideApp(start: string): void {
+  let config = start;
+  expect(existsSync(config)).toBe(true);
+  // A bare specifier ("astro/tsconfigs/strict") is what broke CI; only
+  // relative hops that land inside apps/web are safe here.
+  for (let hop = 0; hop < 10; hop++) {
+    const parent = readTsconfig(config).extends;
+    if (parent === undefined) return;
+    expect(typeof parent).toBe('string');
+    expect(parent as string).toMatch(/^\.\.?\//);
+    config = path.resolve(path.dirname(config), parent as string);
+    expect(config.startsWith(appRoot + path.sep)).toBe(true);
+    expect(existsSync(config)).toBe(true);
+  }
+  throw new Error('tsconfig extends chain did not terminate');
+}

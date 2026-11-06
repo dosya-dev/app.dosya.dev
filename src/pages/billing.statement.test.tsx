@@ -78,6 +78,7 @@ function status(overrides: Record<string, unknown> = {}) {
       status: 'active', current_period_end: 1_800_000_000, has_subscription: true,
       cancel_at_period_end: false, grace_period_end: null,
     },
+    currency: 'usd',
     interval: 'month',
     items: [
       { kind: 'plan', ref_id: 'pro', quantity: 1, storage_bytes: 2 * TB, total_bytes: 2 * TB, total_label: '2 TB', interval: 'month' },
@@ -213,15 +214,17 @@ describe('billing statement', () => {
     expect(text).toContain('Choose a plan');
     expect(text).toContain('No invoices yet');
     expect(text).not.toContain('Cancel subscription');
-    expect(api).not.toHaveBeenCalled();
+    // No card lookup (the AI processing card's own GET /api/me/ai-search is not Stripe).
+    expect(api.mock.calls.filter(([path]) => path === '/api/billing/receipt')).toEqual([]);
   });
 
-  it('leaves family places out of the storage ledger', async () => {
+  it('leaves family places and Smart Search units out of the storage ledger', async () => {
     getBillingStatus.mockResolvedValue(status({
       items: [
         { kind: 'plan', ref_id: 'pro', quantity: 1, storage_bytes: TB, total_bytes: TB, total_label: '1 TB', interval: 'month', unit_amount: 999, addon_kind: null },
         { kind: 'addon', ref_id: 'addon_1tb', quantity: 1, storage_bytes: TB, total_bytes: TB, total_label: '1 TB', interval: 'month', unit_amount: 500, addon_kind: 'storage' },
         { kind: 'addon', ref_id: 'family_places', quantity: 3, storage_bytes: 0, total_bytes: 0, total_label: '0 B', interval: 'month', unit_amount: 100, addon_kind: 'family_places' },
+        { kind: 'addon', ref_id: 'ai_photos', quantity: 2, storage_bytes: 0, total_bytes: 0, total_label: '0 B', interval: 'month', unit_amount: 200, addon_kind: 'ai_photos' },
       ],
     }));
     api.mockResolvedValue({ card: null });
@@ -229,6 +232,7 @@ describe('billing statement', () => {
     const text = container!.textContent!;
     expect(text).toContain('addon_1tb × 1');
     expect(text).not.toContain('family_places');
+    expect(text).not.toContain('ai_photos');
   });
 
   it('quotes the price Stripe charges for the plan, not the list price', async () => {

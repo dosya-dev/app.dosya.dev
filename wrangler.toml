@@ -1,6 +1,26 @@
-# Cloudflare Pages configuration for app.dosya.dev
-# Deploy: cd apps/web && npm run build && wrangler pages deploy dist --project-name=dosya-web
+# Worker for app.dosya.dev (moved off the dosya-web Pages project 2026-11-04).
+# Deploy: cd apps/web && npm run deploy   (build, then wrangler deploy)
+#
+# The Vite build in dist is served as static assets. Navigations to a path
+# that is not a file get index.html (single-page-application); the script in
+# src/edge/worker.ts runs only for a non-navigation request that matched no
+# file, so a missing /assets/ chunk is a 404 instead of cached HTML.
+# public/_headers (CSP, HSTS, immutable /assets/*) applies as it did on Pages.
 
-name = "dosya-web"
-compatibility_date = "2025-09-06"
-pages_build_output_dir = "dist"
+name = "dosya-app"
+main = "src/edge/worker.ts"
+compatibility_date = "2026-04-27"
+workers_dev = false
+preview_urls = false
+
+routes = [
+  { pattern = "app.dosya.dev/*", zone_name = "dosya.dev" },
+]
+
+[assets]
+directory = "./dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+
+[observability]
+enabled = true

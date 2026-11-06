@@ -2,8 +2,10 @@
  * The drop/pick entry point the pages call: expand what was dropped, recreate
  * its folder structure server-side, and queue every file into the right folder.
  */
+import { formatNumber } from '@/lib/format-locale';
 import { api, apiErrorMessage } from '@/api/client';
 import { toast } from '@/lib/toast';
+import { t } from '@/lib/i18n';
 import { enqueue, enqueueByFolder, enqueueRejected } from '@/lib/upload-runner';
 import type { UploadInput } from '@/lib/upload-types';
 import {
@@ -24,7 +26,9 @@ export interface DropUploadResult {
   hadDirectory: boolean;
 }
 
-const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+// "3 files" and "2 folders" in the chosen language.
+const filesLabel = (n: number) => t('file-requests.status.ruploadCountPluralOneFileOtherFiles', { rUpload_count: n });
+const foldersLabel = (n: number) => t('files.label.folders', { count: n });
 
 function createFolderVia(workspaceId: string) {
   return async (name: string, parentId: string | null): Promise<string> => {
@@ -36,12 +40,12 @@ function createFolderVia(workspaceId: string) {
           body: JSON.stringify({ workspace_id: workspaceId, parent_id: parentId, name }),
         },
       );
-      if (!res.ok || !res.folder?.id) throw new Error(res.error ?? 'Could not create folder');
+      if (!res.ok || !res.folder?.id) throw new Error(res.error ?? t('common.error.couldNotCreateFolder'));
       return res.folder.id;
     } catch (err) {
       // Surfaces the server's sentence ("...is too long", a permission refusal)
       // rather than a generic failure, since that is what the user has to act on.
-      throw new Error(apiErrorMessage(err, 'Could not create folder'), { cause: err });
+      throw new Error(apiErrorMessage(err, t('common.error.couldNotCreateFolder')), { cause: err });
     }
   };
 }
@@ -71,8 +75,8 @@ export async function uploadTree(
     if (screened.rejected.length > 0) {
       toast.error(
         screened.accepted.length > 0
-          ? `${plural(screened.rejected.length, 'file')} left out`
-          : 'Nothing could be uploaded',
+          ? t('common.error.rejectedcountLeftOut', { rejectedCount: filesLabel(screened.rejected.length) })
+          : t('common.error.nothingCouldBeUploaded'),
         summariseRejections(screened.rejected),
       );
       // The toast is a summary that disappears; the rows stay. Each refused
@@ -87,7 +91,7 @@ export async function uploadTree(
       }
     }
     if (screened.quotaWarning) {
-      toast.info('This may not all fit', screened.quotaWarning);
+      toast.info(t('common.feedback.thisMayNotAllFit'), screened.quotaWarning);
     }
   }
   if (tree.entries.length === 0) {
@@ -99,11 +103,11 @@ export async function uploadTree(
       orderedDirs(tree), input.folder_id, createFolderVia(input.workspace_id),
     );
     if (plan.failed.length > 0) {
-      toast.error('Folder could not be created', plan.error ?? 'Please try again.');
+      toast.error(t('common.error.folderCouldNotBeCreated'), plan.error ?? t('common.error.pleaseTryAgain'));
     } else {
       toast.info(
-        `Created ${plural(plan.ids.size, 'folder')}`,
-        'There were no files inside to upload.',
+        t('common.feedback.createdIdssize', { idsSize: foldersLabel(plan.ids.size) }),
+        t('common.feedback.thereWereNoFilesInsideToUpload'),
       );
     }
     return { ...empty, folders: plan.ids.size };
@@ -113,8 +117,8 @@ export async function uploadTree(
   if (!tree.hadDirectory) {
     enqueue(tree.entries.map((e) => e.file), input);
     toast.info(
-      `Uploading ${plural(tree.entries.length, 'file')}`,
-      `Progress is shown in the upload dock.${note}`,
+      t('common.feedback.uploadingEntriescount', { entriesCount: filesLabel(tree.entries.length) }),
+      t('common.feedback.progressIsShownInTheUploadDockNote', { note }),
     );
     return { ...empty, queued: tree.entries.length };
   }
@@ -123,8 +127,10 @@ export async function uploadTree(
   // Said up front, not after: recreating a deep tree is a round trip per folder,
   // and silence in between reads as a dead drop.
   toast.info(
-    `Uploading ${plural(tree.entries.length, 'file')}`,
-    `Recreating ${plural(dirs.length, 'folder')}, then uploading. Progress is shown in the upload dock.${note}`,
+    t('common.feedback.uploadingEntriescount', { entriesCount: filesLabel(tree.entries.length) }),
+    t('common.feedback.recreatingDirscountThenUploadingProgressIsShownInTheUploadDockNote', {
+      dirsCount: foldersLabel(dirs.length), note,
+    }),
   );
 
   const plan = await createFolderTree(dirs, input.folder_id, createFolderVia(input.workspace_id));
@@ -134,14 +140,18 @@ export async function uploadTree(
 
   if (plan.failed.length > 0) {
     toast.error(
-      queued > 0 ? 'Some folders could not be created' : 'Folders could not be created',
-      `${plural(plan.failed.length, 'folder')} failed, so ${plural(skipped, 'file')} ${skipped === 1 ? 'was' : 'were'} left out. ${plan.error ?? ''}`.trim(),
+      queued > 0 ? t('common.error.someFoldersCouldNotBeCreated') : t('common.error.foldersCouldNotBeCreated'),
+      t('common.error.failedcountPluralFolderFailedSoSkippedPluralFileWasLeftOut', {
+        failedCount: plan.failed.length, skipped, planError: plan.error ?? '',
+      }).trim(),
     );
   }
   if (tree.skipped > 0) {
     toast.error(
-      'Too many files in one go',
-      `Only the first ${MAX_DROPPED_FILES.toLocaleString()} files were queued - ${plural(tree.skipped, 'file')} left out. Drop the rest separately.`,
+      t('common.error.tooManyFilesInOneGo'),
+      t('common.error.onlyTheFirstMaxDroppedFilestolocalestringFilesWereQueuedTreeskippedLeftOut', {
+        MAX_DROPPED_FILESToLocaleString: formatNumber(MAX_DROPPED_FILES), treeSkipped: filesLabel(tree.skipped),
+      }),
     );
   }
 

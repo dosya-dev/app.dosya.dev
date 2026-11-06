@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
+import { useT } from '@/lib/i18n';
 
 const THUMB_WIDTH = 120;
 
@@ -15,7 +16,7 @@ interface PdfThumbnailsProps {
 
 export function PdfThumbnails({ doc, numPages, current, baseSize, onSelect, badges }: PdfThumbnailsProps) {
   return (
-    <div data-testid="pdf-thumbs" className="w-40 shrink-0 border-r bg-background overflow-y-auto p-3 flex flex-col gap-3">
+    <div data-testid="pdf-thumbs" className="w-40 shrink-0 border-e bg-background overflow-y-auto p-3 flex flex-col gap-3">
       {Array.from({ length: numPages }, (_, i) => (
         <Thumb key={i + 1} doc={doc} page={i + 1} active={current === i + 1} baseSize={baseSize} onSelect={onSelect} badge={badges?.[i + 1]} />
       ))}
@@ -31,6 +32,7 @@ function Thumb({ doc, page, active, baseSize, onSelect, badge }: {
   onSelect: (page: number) => void;
   badge?: number;
 }) {
+  const t = useT();
   // Render lazily as thumbs scroll into view; environments without
   // IntersectionObserver (jsdom) just render immediately.
   const [visible, setVisible] = useState(typeof IntersectionObserver === 'undefined');
@@ -77,7 +79,7 @@ function Thumb({ doc, page, active, baseSize, onSelect, badge }: {
       data-thumb={page}
       onClick={() => onSelect(page)}
       className={`group relative flex flex-col items-center gap-1 rounded-md p-1 ${active ? 'bg-muted' : 'hover:bg-muted/60'}`}
-      title={`Page ${page}`}
+      title={t('common.action.pagePage', { page })}
     >
       <canvas
         ref={canvasRef}
@@ -85,7 +87,7 @@ function Thumb({ doc, page, active, baseSize, onSelect, badge }: {
         className={`w-full bg-white rounded-sm ring-1 ${active ? 'ring-ring' : 'ring-border'}`}
       />
       {badge ? (
-        <span data-testid="pdf-thumb-badge" className="absolute right-1 top-1 rounded-full bg-primary px-1.5 text-[10px] font-semibold text-primary-foreground">
+        <span data-testid="pdf-thumb-badge" className="absolute inset-e-1 top-1 rounded-full bg-primary px-1.5 text-[10px] font-semibold text-primary-foreground">
           {badge}
         </span>
       ) : null}

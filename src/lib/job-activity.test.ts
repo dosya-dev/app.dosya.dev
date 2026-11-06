@@ -20,8 +20,9 @@ describe('job activity flag', () => {
     expect(hadActiveJobs('remote', store)).toBe(false);
     rememberActiveJobs('remote', true, store);
     expect(hadActiveJobs('remote', store)).toBe(true);
-    // The two kinds are independent.
+    // The kinds are independent.
     expect(hadActiveJobs('cloud', store)).toBe(false);
+    expect(hadActiveJobs('rclone', store)).toBe(false);
   });
 
   it('clears once a refresh sees nothing active, and writes only on a change', () => {

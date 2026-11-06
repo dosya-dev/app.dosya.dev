@@ -10,10 +10,13 @@ vi.mock('@/api/client', async (importOriginal) => {
   return { ...actual, api: (...args: unknown[]) => apiMock(...args) };
 });
 
+// The engine is not under test here (people are covered in global-search.persons.test.tsx).
+vi.mock('@/lib/personas-device/engine-host', () => import('@/lib/personas-device/__fixtures__/fake-host'));
 const { GlobalSearch } = await import('./global-search');
 const { useWorkspace } = await import('@/stores/workspace');
 const { useSession } = await import('@/stores/session');
 const { recordRecent } = await import('@/lib/search/recent');
+const { resetContentSearchState } = await import('@/lib/ai-search');
 
 const HELP = { ok: true, articles: [{ slug: 'wp', category: 'integrations', title: 'Back up a WordPress site', summary: 'Plugin setup', keywords: [] }] };
 const FILES = { ok: true, files: [{ id: 'f1', name: 'wordpress-backup.zip', size_bytes: 10, extension: 'zip', folder_id: 'd1', uploader_name: 'Firat' }], folders: [], shared: [], file_requests: [] };
@@ -77,12 +80,17 @@ beforeEach(() => {
   apiMock.mockImplementation(routeApi);
   useWorkspace.setState({ activeId: 'ws_1' });
   useSession.setState({ user: { id: 'u_1' } } as never);
+  // Content search (raw fetch) answers as a workspace without AI search;
+  // global-search.content.test.tsx covers the content group itself.
+  resetContentSearchState();
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ ok: false, error: 'ai_search_off' }), { status: 409 })));
 });
 afterEach(() => {
   if (root) act(() => root!.unmount());
   container.remove();
   root = null;
   apiMock.mockReset();
+  vi.unstubAllGlobals();
   vi.useRealTimers();
 });
 
@@ -285,8 +293,9 @@ describe('GlobalSearch', () => {
     await mount();
     await focus();
     await type('xyzzy');
-    await flush(300);
-    expect(container.textContent).toContain("No results for 'xyzzy'");
+    // The empty state waits for the content search too (400 ms debounce).
+    await flush(400);
+    expect(container.textContent).toContain('No results for "xyzzy"');
     const link = container.querySelector('a[href^="https://help.dosya.dev/search"]') as HTMLAnchorElement;
     expect(link.href).toBe('https://help.dosya.dev/search?q=xyzzy');
     expect(link.target).toBe('_blank');

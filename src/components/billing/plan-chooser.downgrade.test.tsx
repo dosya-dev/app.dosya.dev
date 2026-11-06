@@ -121,13 +121,15 @@ describe('plan chooser downgrade guard', () => {
   it('hides the plan cards when opened from Add storage', async () => {
     await render({ mode: 'addons' });
 
-    expect(container!.textContent).toContain('Add storage to your Plus plan');
+    expect(container!.textContent).toContain('Stacks on top of your Plus plan. Your plan does not change.');
+    expect(container!.textContent).toContain('Storage on top of Plus · 500 GB');
     expect(button('Starter')).toBeUndefined();
-    expect(container!.textContent).not.toContain('Picking a plan replaces your current one');
+    expect(container!.textContent).not.toContain('Pick a size');
   });
 
-  it('explains that picking a plan replaces the current one', async () => {
+  it('says that add-ons stack on whichever size is picked', async () => {
     await render();
-    expect(container!.textContent).toContain('Picking a plan replaces your current one');
+    expect(container!.textContent).toContain('Pick a size, then how to pay. Add-ons stack on top of whichever size you pick.');
+    expect(container!.textContent).toContain('Everything in Plus');
   });
 });

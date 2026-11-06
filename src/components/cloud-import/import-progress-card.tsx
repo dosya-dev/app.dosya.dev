@@ -6,6 +6,7 @@ import { PROVIDER_LABELS } from '@/lib/cloud-providers';
 import { humanDuration, jobRate } from '@/lib/import-rate';
 import { humanSize } from '@/lib/helpers';
 import type { CloudJob } from '@/api/cloud-import';
+import { t, useT } from '@/lib/i18n';
 
 type JobCounts = Pick<
   CloudJob, 'status' | 'total_files' | 'completed_files' | 'failed_files' | 'skipped_files'
@@ -13,20 +14,27 @@ type JobCounts = Pick<
 
 export function describeJob(job: JobCounts): string {
   if (job.status === 'discovering') {
-    return `Preparing import - ${job.total_files} files found so far`;
+    return t('common.description.preparingImportJobtotalFilesFilesFoundSoFar', { jobTotal_files: String(job.total_files) });
   }
   if (job.status === 'running') {
-    return `Importing ${job.completed_files} of ${job.total_files} files`;
+    return t('common.label.importingJobcompletedFilesOfJobtotalFilesFiles', {
+      jobCompleted_files: String(job.completed_files),
+      jobTotal_files: String(job.total_files),
+    });
   }
-  if (job.status === 'cancelled') return 'Import cancelled';
-  if (job.status === 'failed') return 'Import failed';
+  if (job.status === 'cancelled') return t('common.label.importCancelled');
+  if (job.status === 'failed') return t('common.error.importFailed');
 
   const problems: string[] = [];
-  if (job.failed_files > 0) problems.push(`${job.failed_files} failed`);
-  if (job.skipped_files > 0) problems.push(`${job.skipped_files} skipped`);
+  if (job.failed_files > 0) problems.push(t('common.error.jobfailedFilesFailed', { count: String(job.failed_files) }));
+  if (job.skipped_files > 0) problems.push(t('common.label.jobskippedFilesSkipped', { count: String(job.skipped_files) }));
 
-  if (problems.length === 0) return `Imported ${job.completed_files} files`;
-  return `Imported ${job.completed_files} of ${job.total_files} files - ${problems.join(', ')}`;
+  if (problems.length === 0) return t('common.label.importedJobcompletedFilesFiles', { jobCompleted_files: String(job.completed_files) });
+  return t('common.description.importedJobcompletedFilesOfJobtotalFilesFilesProblemsjoin', {
+    jobCompleted_files: String(job.completed_files),
+    jobTotal_files: String(job.total_files),
+    problemsJoin: problems.join(', '),
+  });
 }
 
 /** Renders nothing when no cloud import is active. */
@@ -38,27 +46,38 @@ export function describeJob(job: JobCounts): string {
  * so far: the total is still growing, so a percent or ETA would be fiction.
  */
 function JobStats({ job }: { job: CloudJob }) {
+  useT();
   if (job.status === 'discovering') {
     if (job.total_bytes <= 0) return null;
     return (
       <p className="text-xs text-muted-foreground" data-testid="job-stats">
-        {humanSize(job.total_bytes)} found so far
+        {t('common.label.jobtotalBytesFoundSoFar', { jobTotal_bytes: humanSize(job.total_bytes) })}
       </p>
     );
   }
   if (job.status !== 'running' || job.total_bytes <= 0) return null;
 
   const rate = jobRate(job);
+  const hasRate = rate.bytesPerSec != null && rate.bytesPerSec > 0;
+  const hasEta = rate.etaSeconds !== null;
+  // Template-only tidy: some languages leave a doubled or trailing space around an empty branch.
+  const line = t('common.description.jobcompletedBytesOfJobtotalBytesHasrateHaseta', {
+    jobCompleted_bytes: humanSize(job.completed_bytes),
+    jobTotal_bytes: humanSize(job.total_bytes),
+    hasRate: hasRate ? 'true' : 'false',
+    rateBytesPerSec: hasRate ? humanSize(rate.bytesPerSec as number) : '',
+    hasEta: hasEta ? 'true' : 'false',
+    rateEtaDuration: hasEta ? humanDuration(rate.etaSeconds as number) : '',
+  }).replace(/ {2,}/g, ' ').trim();
   return (
     <p className="text-xs text-muted-foreground tabular-nums" data-testid="job-stats">
-      {humanSize(job.completed_bytes)} of {humanSize(job.total_bytes)}
-      {rate.bytesPerSec != null && rate.bytesPerSec > 0 ? ` - ${humanSize(rate.bytesPerSec)}/s` : ''}
-      {rate.etaSeconds !== null ? ` - about ${humanDuration(rate.etaSeconds)} left` : ''}
+      {line}
     </p>
   );
 }
 
 export function ImportProgressCard({ provider }: { provider?: string } = {}) {
+  const t = useT();
   const jobs = useCloudImports((s) => s.jobs);
   const refresh = useCloudImports((s) => s.refresh);
   const cancel = useCloudImports((s) => s.cancel);
@@ -81,12 +100,12 @@ export function ImportProgressCard({ provider }: { provider?: string } = {}) {
             <div className="flex items-center justify-between gap-3 text-sm">
               <span>{describeJob(job)}</span>
               <Button variant="ghost" size="sm" onClick={() => void cancel(job.id)}>
-                Cancel
+                {t('common.cancel')}
               </Button>
             </div>
             <p className="text-xs text-muted-foreground" data-testid="job-source">
               {PROVIDER_LABELS[job.provider] ?? job.provider}
-              {job.account_email ? ` - from ${job.account_email}` : ''}
+              {job.account_email ? ` ${t('common.label.fromJobaccountEmail', { jobAccount_email: job.account_email })}` : ''}
             </p>
             <JobStats job={job} />
             {/*

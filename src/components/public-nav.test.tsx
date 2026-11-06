@@ -38,20 +38,20 @@ describe('PublicNav session probe', () => {
     expect(api).toHaveBeenCalledWith('/api/me');
     const link = [...container!.querySelectorAll('a')].find((a) => a.textContent?.includes('Open dashboard'))!;
     expect(link.getAttribute('href')).toBe('/');
-    expect(container!.textContent).not.toContain('Login');
+    expect(container!.textContent).not.toContain('Sign in');
   });
 
-  it('keeps Login when the probe is rejected', async () => {
+  it('keeps Sign in when the probe is rejected', async () => {
     api.mockRejectedValueOnce(new ApiError(401, '{"error":"Not authenticated"}'));
     await render();
-    expect(container!.textContent).toContain('Login');
+    expect(container!.textContent).toContain('Sign in');
     expect(container!.textContent).not.toContain('Open dashboard');
   });
 
-  it('keeps Sign Up for the signup variant when signed out', async () => {
+  it('keeps Sign up for the signup variant when signed out', async () => {
     api.mockRejectedValueOnce(new Error('offline'));
     await render('signup');
-    expect(container!.textContent).toContain('Sign Up');
+    expect(container!.textContent).toContain('Sign up');
   });
 
   it('trusts the account the page already probed instead of fetching again', async () => {
@@ -69,8 +69,31 @@ describe('PublicNav session probe', () => {
   it('reserves the slot while the probe is pending', async () => {
     api.mockReturnValueOnce(new Promise(() => {}));
     await render();
-    expect(container!.textContent).not.toContain('Login');
+    expect(container!.textContent).not.toContain('Sign in');
     expect(container!.textContent).not.toContain('Open dashboard');
     expect(container!.querySelector('[data-session-probe="pending"]')).not.toBeNull();
+  });
+});
+
+describe('PublicNav language picker', () => {
+  it('shows the language menu next to the theme toggle', async () => {
+    api.mockRejectedValueOnce(new ApiError(401, '{"error":"Not authenticated"}'));
+    await render();
+    expect(container!.querySelector('[data-testid=language-menu-button]')).not.toBeNull();
+  });
+
+  it('keeps the actions on screen at 360 px: tight gaps, non-shrinking group, icon-only Open dashboard with a name', async () => {
+    api.mockResolvedValueOnce({ ok: true, user: { id: 'usr_1' } });
+    await render();
+    const nav = container!.querySelector('nav')!;
+    expect(nav.querySelector('a[aria-label="dosya.dev"] span')!.className).toContain('hidden');
+    expect(nav.className).toContain('px-3');
+    expect(nav.className).toContain('sm:px-6');
+    const group = container!.querySelector('[data-testid=language-menu-button]')!.parentElement!.parentElement!;
+    expect(group.className).toContain('shrink-0');
+    expect(group.className).toContain('sm:gap-6');
+    const link = container!.querySelector('a[aria-label="Open dashboard"]')!;
+    expect(link.querySelector('span')!.className).toContain('hidden sm:inline');
+    expect(container!.querySelector('button[aria-label]:not([data-testid])')).not.toBeNull();
   });
 });

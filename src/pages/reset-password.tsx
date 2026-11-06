@@ -8,9 +8,12 @@ import { API_BASE } from '@/api/client';
 import { PublicNav } from '@/components/public-nav';
 import { PasswordStrengthMeter } from '@/components/password-strength-meter';
 import { validatePassword } from '@/lib/validation-policy.generated';
+import { translateExternal } from '@/lib/external-text';
 import { TurnstileWidget, type TurnstileHandle } from '@/components/turnstile-widget';
 import { resolveTurnstileToken, turnstileFailureMessage, isTurnstileRejection } from '@/lib/turnstile-submit';
 import { Logo } from "@/components/brand/logo";
+import { useT } from '@/lib/i18n';
+import { richText } from '@/lib/rich-text';
 
 /**
  * Reset tokens arrive in the URL fragment (`#token=…`) so they stay out of
@@ -24,6 +27,7 @@ function readResetToken(hash: string, searchParams: URLSearchParams): string {
 }
 
 export default function ResetPasswordPage() {
+  const t = useT();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [token] = useState(() => readResetToken(window.location.hash, searchParams));
@@ -49,12 +53,12 @@ export default function ResetPasswordPage() {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    if (newPw !== confirm) { setError('Passwords do not match.'); return; }
+    if (newPw !== confirm) { setError(t('reset-password.error.passwordsDoNotMatch')); return; }
     // All four clauses, not just length - the API applies the same function, so
     // a password rejected here would have been rejected there with this exact
     // sentence.
     const passwordError = validatePassword(newPw);
-    if (passwordError) { setError(passwordError); return; }
+    if (passwordError) { setError(translateExternal(passwordError, 'error')); return; }
     setLoading(true);
     try {
       const challengeToken = await resolveTurnstileToken(turnstileRef.current);
@@ -76,10 +80,10 @@ export default function ResetPasswordPage() {
       // /login would make them type the brand-new password straight back in.
       if (res.ok && data.ok) navigate(data.requires_2fa ? '/login/2fa' : '/login?reset=1');
       else if (isTurnstileRejection(data)) setError(turnstileFailureMessage(turnstileRef.current));
-      else setError(data.error ?? 'Could not reset password');
+      else setError(data.error ?? t('reset-password.error.couldNotResetPassword'));
     } catch {
       turnstileRef.current?.reset();
-      setError('Network error');
+      setError(t('common.error.networkError'));
     }
     setLoading(false);
   };
@@ -96,44 +100,45 @@ export default function ResetPasswordPage() {
                   <Logo className="h-7 w-7" />
                   dosya.dev
                 </a>
-                <h1 className="text-2xl font-bold mt-2">Set a new password</h1>
-                <p className="text-sm text-muted-foreground mt-1">Choose a strong password for your account.</p>
+                <h1 className="text-2xl font-bold mt-2">{t('common.heading.setANewPassword')}</h1>
+                <p className="text-sm text-muted-foreground mt-1">{t('reset-password.description.chooseAStrongPasswordForYourAccount')}</p>
               </div>
 
               {!token ? (
                 <div className="bg-destructive/10 border border-destructive/30 text-destructive text-sm rounded-lg px-4 py-3 text-center">
-                  Missing or invalid reset link. Please use the link from your email, or{' '}
-                  <a href="/forgot-password" className="font-medium underline underline-offset-4">request a new one</a>.
+                  {richText(t('reset-password.error.missingOrInvalidResetLinkPleaseUseTheLinkFromYour', { link1: '{link1}' }), {
+                    link1: <a href="/forgot-password" className="font-medium underline underline-offset-4">{t('reset-password.action.requestANewOne')}</a>,
+                  })}
                 </div>
               ) : (
                 <>
-                  {error && <div className="bg-destructive/10 border border-destructive/30 text-destructive text-sm rounded-lg px-4 py-2.5 mb-4">{error}</div>}
+                  {error && <div dir="auto" className="bg-destructive/10 border border-destructive/30 text-destructive text-sm rounded-lg px-4 py-2.5 mb-4">{error}</div>}
                   <form onSubmit={submit} className="space-y-4">
                     <div className="space-y-2">
-                      <label htmlFor="new-password" className="text-sm font-medium">New password</label>
+                      <label htmlFor="new-password" className="text-sm font-medium">{t('common.label.newPassword')}</label>
                       <div className="relative">
-                        <Input id="new-password" type={showPassword ? 'text' : 'password'} placeholder="••••••••" value={newPw} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewPw(e.target.value)} required autoFocus className="h-10 pr-10" />
-                        <button type="button" tabIndex={-1} onClick={() => setShowPassword((v) => !v)} aria-label={showPassword ? 'Hide password' : 'Show password'} className="absolute inset-y-0 right-0 flex items-center justify-center w-10 text-muted-foreground hover:text-foreground transition-colors">
+                        <Input id="new-password" type={showPassword ? 'text' : 'password'} placeholder="••••••••" value={newPw} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewPw(e.target.value)} required autoFocus className="h-10 pe-10" />
+                        <button type="button" tabIndex={-1} onClick={() => setShowPassword((v) => !v)} aria-label={showPassword ? t('common.accessibility.hidePassword') : t('common.accessibility.showPassword')} className="absolute inset-y-0 inset-e-0 flex items-center justify-center w-10 text-muted-foreground hover:text-foreground transition-colors">
                           {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
                         </button>
                       </div>
                       <PasswordStrengthMeter password={newPw} />
                     </div>
                     <div className="space-y-2">
-                      <label htmlFor="confirm-password" className="text-sm font-medium">Confirm password</label>
+                      <label htmlFor="confirm-password" className="text-sm font-medium">{t('forgot-password.label.confirmPassword')}</label>
                       <Input id="confirm-password" type={showPassword ? 'text' : 'password'} placeholder="••••••••" value={confirm} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setConfirm(e.target.value)} required className="h-10" onKeyDown={(e) => e.key === 'Enter' && submit(e)} />
                     </div>
                     <TurnstileWidget action="reset-password" ref={turnstileRef} />
                     <Button type="submit" className="w-full h-10" disabled={loading}>
-                      {loading ? <Loader2 className="size-4 animate-spin mr-2" /> : null}
-                      Reset password
+                      {loading ? <Loader2 className="size-4 animate-spin me-2" /> : null}
+                      {t('forgot-password.action.resetPassword')}
                     </Button>
                   </form>
                 </>
               )}
 
               <p className="mt-6 text-center text-sm text-muted-foreground">
-                <a href="/login" className="font-medium underline underline-offset-4 hover:text-foreground">Back to login</a>
+                <a href="/login" className="font-medium underline underline-offset-4 hover:text-foreground">{t('common.action.backToLogin')}</a>
               </p>
             </CardContent>
           </Card>

@@ -1,4 +1,9 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+
+const wipePersonasDevice = vi.fn(async (_u: string | null) => {});
+const stopPersonas = vi.fn();
+vi.mock('@/lib/personas-device/teardown', () => ({ stopPersonas: () => stopPersonas() }));
+vi.mock('@/lib/personas-device/wipe', () => ({ wipePersonasDevice: (u: string | null) => wipePersonasDevice(u) }));
 import { useE2ee, type E2eeEngine, type EncryptedEntry, type KnownWorkspace } from './e2ee';
 import { useWorkspace } from '@/stores/workspace';
 import { ApiError } from '@/api/client';
@@ -798,8 +803,25 @@ describe('useE2ee: unlockWithRecoveryKey', () => {
 });
 
 describe('useE2ee: destroyIdentity', () => {
+  it('clears the cached personas key once the server confirms, not when it refuses', async () => {
+    const { useSession } = await import('@/stores/session');
+    useSession.setState({ user: { id: 'u_9' } as never });
+    wipePersonasDevice.mockClear();
+    stopPersonas.mockClear();
+    useE2ee.getState().__setEngine(makeFakeEngine({ destroyIdentity: async () => { throw new ApiError(401, 'Wrong password'); } }));
+    expect(await useE2ee.getState().destroyIdentity('bad')).toBe(false);
+    expect(wipePersonasDevice).not.toHaveBeenCalled();
+    expect(stopPersonas).not.toHaveBeenCalled();
+    useE2ee.getState().__setEngine(makeFakeEngine());
+    expect(await useE2ee.getState().destroyIdentity('good')).toBe(true);
+    expect(wipePersonasDevice).toHaveBeenCalledWith('u_9');
+    // Running engines stop first, so nothing re-persists the key.
+    expect(stopPersonas).toHaveBeenCalledTimes(1);
+    expect(stopPersonas.mock.invocationCallOrder[0]).toBeLessThan(wipePersonasDevice.mock.invocationCallOrder.at(-1)!);
+  });
+
   it('passes password and code to the engine, then returns the user to setup', async () => {
-    const calls: [string, string | undefined][] = [];
+    const calls: [unknown, string | undefined][] = [];
     useE2ee.getState().__setEngine(makeFakeEngine({ destroyIdentity: async (pw, code) => { calls.push([pw, code]); } }));
     useE2ee.setState({ hasIdentity: true, status: 'locked', workspaces: [{ id: 'w', name: 'S', selfFounded: true, shared: false, globalWorkspaceId: null }] });
     const ok = await useE2ee.getState().destroyIdentity('hunter22', '123456');

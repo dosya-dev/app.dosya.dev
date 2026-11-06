@@ -4,6 +4,9 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Bot, Loader2 } from 'lucide-react';
 import { toast } from '@/lib/toast';
+import { useT } from '@/lib/i18n';
+import { richText } from '@/lib/rich-text';
+import type { MessageKey } from '@/i18n/keys';
 import { timeAgo } from '@/lib/helpers';
 import { SectionSkeleton } from './shared';
 
@@ -18,22 +21,24 @@ export interface AiConnection {
   createdAt: number;
 }
 
-const SCOPE_CHIPS: Record<string, string> = {
-  'files.read': 'Read files',
-  'account.read': 'Plan and storage',
+const SCOPE_CHIPS: Record<string, MessageKey> = {
+  'files.read': 'profile.label.readFiles',
+  'account.read': 'profile.label.planAndStorage',
 };
 
 export const MCP_SERVER_URL = 'https://mcp.dosya.dev/mcp';
 
 export default function AiAppsPage() {
+  const t = useT();
   const [connections, setConnections] = useState<AiConnection[] | null>(null);
-  const [loadError, setLoadError] = useState('');
+  // The server's own message when it sent one; the fallback is translated at render.
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [disconnecting, setDisconnecting] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const res = await req<{ ok: boolean; error?: string; connections?: AiConnection[] }>('/api/me/ai-connections');
-    if (res.ok) { setConnections(res.connections ?? []); setLoadError(''); }
-    else { setConnections((c) => c ?? []); setLoadError(res.error ?? 'Connected apps could not be loaded.'); }
+    if (res.ok) { setConnections(res.connections ?? []); setLoadError(null); }
+    else { setConnections((c) => c ?? []); setLoadError(res.error ?? ''); }
   }, []);
 
   useEffect(() => { void load(); }, [load]);
@@ -42,10 +47,10 @@ export default function AiAppsPage() {
     setDisconnecting(c.id);
     const res = await req(`/api/me/ai-connections/${encodeURIComponent(c.id)}`, { method: 'DELETE' });
     if (res.ok) {
-      toast.success('App disconnected', `${c.clientName} can no longer read ${c.workspaceName}.`);
+      toast.success(t('profile.feedback.appDisconnected'), t('profile.feedback.cclientnameCanNoLongerReadCworkspacename', { cClientName: c.clientName, cWorkspaceName: c.workspaceName }));
       void load();
     } else {
-      toast.error('Disconnect failed', res.error ?? 'The app could not be disconnected.');
+      toast.error(t('common.error.disconnectFailed'), res.error ?? t('profile.error.theAppCouldNotBeDisconnected'));
     }
     setDisconnecting(null);
   };
@@ -54,17 +59,16 @@ export default function AiAppsPage() {
 
   return (
     <section id="section-ai-apps">
-      <h2 className="text-base font-semibold mb-3">Connected AI apps</h2>
+      <h2 className="text-base font-semibold mb-3">{t('profile.heading.connectedAiApps')}</h2>
       <p className="mb-3 text-xs text-muted-foreground">
-        AI assistants such as Claude and ChatGPT you allowed to read one of your workspaces. They are read-only.
-        Disconnecting stops access immediately.
+        {t('profile.description.aiAssistantsSuchAsClaudeAndChatgptYouAllowedToRead')}
       </p>
       <Card>
         <CardContent>
-          {loadError && <p role="alert" className="py-3 text-xs text-destructive">{loadError}</p>}
-          {connections.length === 0 && !loadError ? (
+          {loadError !== null && <p role="alert" className="py-3 text-xs text-destructive">{loadError || t('profile.error.connectedAppsCouldNotBeLoaded')}</p>}
+          {connections.length === 0 && loadError === null ? (
             <p className="py-4 text-center text-xs text-muted-foreground">
-              No AI apps are connected. Connect one from Claude or ChatGPT using <span className="font-mono">{MCP_SERVER_URL}</span>.
+              {richText(t('profile.description.noAiAppsAreConnectedConnectOneFromClaudeOrChatgpt', { MCP_SERVER_URL: '{MCP_SERVER_URL}' }), { MCP_SERVER_URL: <span dir="ltr" className="font-mono">{MCP_SERVER_URL}</span> })}
             </p>
           ) : (
             connections.map((c) => (
@@ -75,10 +79,10 @@ export default function AiAppsPage() {
                   </div>
                   <div className="min-w-0">
                     <p className="text-xs font-medium truncate">{c.clientName}</p>
-                    <p className="text-[11px] text-muted-foreground truncate">{c.workspaceName} · connected {timeAgo(c.createdAt)}</p>
+                    <p className="text-[11px] text-muted-foreground truncate">{t('profile.label.cworkspacenameConnectedCcreatedat', { cWorkspaceName: c.workspaceName, cCreatedAt: timeAgo(c.createdAt) })}</p>
                     <div className="mt-1 flex flex-wrap gap-1">
                       {c.scopes.map((s) => (
-                        <span key={s} className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{SCOPE_CHIPS[s] ?? s}</span>
+                        <span key={s} className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{SCOPE_CHIPS[s] ? t(SCOPE_CHIPS[s]) : s}</span>
                       ))}
                     </div>
                   </div>
@@ -87,7 +91,7 @@ export default function AiAppsPage() {
                   variant="outline" size="sm" className="text-xs text-destructive border-destructive/30 shrink-0"
                   onClick={() => disconnect(c)} disabled={disconnecting === c.id}
                 >
-                  {disconnecting === c.id ? <Loader2 className="size-3 animate-spin" /> : 'Disconnect'}
+                  {disconnecting === c.id ? <Loader2 className="size-3 animate-spin" /> : t('common.action.disconnect')}
                 </Button>
               </div>
             ))

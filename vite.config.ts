@@ -45,6 +45,16 @@ export default defineConfig({
   ],
   build: {
     sourcemap: SENTRY_UPLOAD ? 'hidden' : false,
+    rollupOptions: {
+      // The app, and the face reader page the mobile app loads in a hidden
+      // WebView for on-device Personas (src/personas-reader/main.ts): Hermes
+      // cannot run WebAssembly, so the phone reads faces through this page.
+      input: {
+        // `index` keeps the app's entry chunk named index-*.js, as before.
+        index: path.resolve(__dirname, 'index.html'),
+        'personas-reader': path.resolve(__dirname, 'personas-reader.html'),
+      },
+    },
   },
   worker: {
     // The client-side HEIC decoder is a Web Worker that dynamically imports a
@@ -77,10 +87,22 @@ export default defineConfig({
       // so a plain `npm ci && tsc -b && vite build` needs nothing outside apps/web.
       '@dosya-dev/e2ee-core': path.resolve(__dirname, './vendor/e2ee-core/index.js'),
       '@dosya-dev/e2ee-client': path.resolve(__dirname, './vendor/e2ee-client/index.js'),
+      // On-device Personas (scripts/vendor-personas.mjs): the engine bundle,
+      // which imports @dosya-dev/e2ee-core and so shares the alias above, and
+      // the face reader's wasm-bindgen glue (the wasm itself is fetched).
+      '@dosya-dev/personas-engine': path.resolve(__dirname, './vendor/personas-engine/index.js'),
+      '@dosya-dev/face-reader': path.resolve(__dirname, './vendor/face-reader/face_reader.js'),
+      '@dosya-dev/onnxruntime-web': path.resolve(__dirname, './vendor/onnxruntime-web/ort.webgpu.bundle.min.mjs'),
       // Vendored for the same reason (scripts/vendor-audio-player.mjs), but as
       // plain source rather than a bundled dist - the package has no build step
       // and no third-party dependency.
       '@dosya-dev/audio-player': path.resolve(__dirname, './vendor/audio-player/index.ts'),
+      // Same again (scripts/vendor-video-player.mjs). Its one dependency,
+      // video.js, is an apps/web dependency. Longer keys first: Vite matches
+      // aliases in order, and the bare key is a prefix of the subpaths.
+      '@dosya-dev/video-player/react': path.resolve(__dirname, './vendor/video-player/react.tsx'),
+      '@dosya-dev/video-player/skin.css': path.resolve(__dirname, './vendor/video-player/skin.css'),
+      '@dosya-dev/video-player': path.resolve(__dirname, './vendor/video-player/index.ts'),
     },
   },
   server: {
@@ -91,12 +113,22 @@ export default defineConfig({
     },
     proxy: {
       '/api': {
-        target: 'http://localhost:4322',
+        target: process.env.VITE_API_PROXY_TARGET || 'http://localhost:4322',
+        // The live chat panel opens a WebSocket on /api/support/chat/socket;
+        // without this the dev proxy answers the upgrade with a plain 404.
+        ws: true,
         changeOrigin: true,
         cookieDomainRewrite: { '*': '' },
         configure: (proxy) => {
+          // The API only trusts its own origins. Against a production BUILD of
+          // the worker (wrangler dev) the dev origins are compiled out, so set
+          // VITE_API_PROXY_ORIGIN=https://app.dosya.dev for that case.
+          const origin = process.env.VITE_API_PROXY_ORIGIN || 'http://localhost:5173';
           proxy.on('proxyReq', (proxyReq) => {
-            proxyReq.setHeader('Origin', 'http://localhost:5173');
+            proxyReq.setHeader('Origin', origin);
+          });
+          proxy.on('proxyReqWs', (proxyReq) => {
+            proxyReq.setHeader('Origin', origin);
           });
           // Rewrite Set-Cookie to work on the proxy's port
           proxy.on('proxyRes', (proxyRes) => {

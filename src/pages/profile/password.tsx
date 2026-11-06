@@ -11,6 +11,7 @@ import {
 import { Loader2, ShieldCheck, Smartphone, Download, RefreshCw } from 'lucide-react';
 import { CopyCheck } from '@/components/ui/copy-check';
 import { toast } from '@/lib/toast';
+import { useT } from '@/lib/i18n';
 import { SettingRow, type ProfileContext, type TfaStatus } from './shared';
 
 export default function PasswordPage({ user }: ProfileContext) {
@@ -31,6 +32,7 @@ export default function PasswordPage({ user }: ProfileContext) {
 // ── Password & 2FA ─────────────────────────────────────────
 
 export function PasswordSection({ tfa, onTfaChanged, hasPassword }: { tfa: TfaStatus | null; onTfaChanged: () => void; hasPassword: boolean }) {
+  const t = useT();
   const [passwordModal, setPasswordModal] = useState(false);
   const [current, setCurrent] = useState('');
   const [newPw, setNewPw] = useState('');
@@ -48,24 +50,27 @@ export function PasswordSection({ tfa, onTfaChanged, hasPassword }: { tfa: TfaSt
   // while password_set_at IS NULL. The dialog reads "Set a password" and asks
   // only for the new one.
   const changePassword = async () => {
-    if (newPw !== confirm) { toast.error('Passwords do not match', 'The new password and confirmation are different.'); return; }
-    if (newPw.length < 8) { toast.error('Password too short', 'Password must be at least 8 characters'); return; }
+    if (newPw !== confirm) { toast.error(t('profile.error.passwordsDoNotMatch'), t('profile.error.theNewPasswordAndConfirmationAreDifferent')); return; }
+    if (newPw.length < 8) { toast.error(t('profile.error.passwordTooShort'), t('profile.error.passwordMustBeAtLeast8Characters', { min: 8 })); return; }
     setSaving(true);
     const body = hasPassword ? { current_password: current, new_password: newPw } : { new_password: newPw };
     const res = await req('/api/me/password', { method: 'PUT', body: JSON.stringify(body) });
     if (res.ok) {
-      toast.success(hasPassword ? 'Password changed' : 'Password set', hasPassword ? 'Your password has been updated.' : 'You can now sign in with your email and password too.');
+      toast.success(
+        hasPassword ? t('profile.feedback.passwordChanged') : t('profile.feedback.passwordSet'),
+        hasPassword ? t('profile.feedback.yourPasswordHasBeenUpdated') : t('profile.feedback.youCanNowSignInWithYourEmailAndPasswordToo'),
+      );
       setPasswordModal(false); setCurrent(''); setNewPw(''); setConfirm('');
       if (!hasPassword) onTfaChanged();
-    } else toast.error('Update failed', res.error ?? (hasPassword ? 'The password could not be changed.' : 'The password could not be set.'));
+    } else toast.error(t('common.error.updateFailed'), res.error ?? (hasPassword ? t('profile.error.thePasswordCouldNotBeChanged') : t('profile.error.thePasswordCouldNotBeSet')));
     setSaving(false);
   };
-  const passwordVerb = hasPassword ? 'Change password' : 'Set a password';
+  const passwordVerb = hasPassword ? t('profile.label.changePassword') : t('profile.label.setAPassword');
 
   const enableEmail = async () => {
     setEnablingEmail(true);
     const res = await req('/api/me/2fa/enable-email', { method: 'POST' });
-    if (res.ok) { toast.success('Enabled', 'Email two-factor authentication is now on.'); onTfaChanged(); } else toast.error('Update failed', res.error ?? 'Email two-factor authentication could not be enabled.');
+    if (res.ok) { toast.success(t('profile.feedback.enabled'), t('profile.feedback.emailTwoFactorAuthenticationIsNowOn')); onTfaChanged(); } else toast.error(t('common.error.updateFailed'), res.error ?? t('profile.error.emailTwoFactorAuthenticationCouldNotBeEnabled'));
     setEnablingEmail(false);
   };
 
@@ -73,7 +78,7 @@ export function PasswordSection({ tfa, onTfaChanged, hasPassword }: { tfa: TfaSt
 
   return (
     <section id="section-password">
-      <h2 className="text-base font-semibold mb-3">Password & two-factor auth</h2>
+      <h2 className="text-base font-semibold mb-3">{t('profile.heading.passwordTwoFactorAuth')}</h2>
       <Card>
         <CardContent className="divide-y">
           {hasPassword ? (
@@ -82,47 +87,47 @@ export function PasswordSection({ tfa, onTfaChanged, hasPassword }: { tfa: TfaSt
             // from the shared policy - they push people toward short mangled
             // passwords and reject strong passphrases - so promising them here
             // would describe a check that no longer exists.
-            <SettingRow label="Password" desc="At least 8 characters. A long passphrase is stronger than a short mix of symbols.">
-              <Button variant="outline" size="sm" className="text-xs" onClick={() => setPasswordModal(true)}>Change password</Button>
+            <SettingRow label={t('common.label.password')} desc={t('profile.description.atLeast8CharactersALongPassphraseIsStrongerThanA')}>
+              <Button variant="outline" size="sm" className="text-xs" onClick={() => setPasswordModal(true)}>{t('profile.action.changePassword')}</Button>
             </SettingRow>
           ) : (
             <SettingRow
-              label="Password"
-              desc="You signed in with Google, GitHub or Apple, so this account has no password yet. Set one to also sign in with email, and to turn two-factor authentication off later."
+              label={t('common.label.password')}
+              desc={t('profile.description.youSignedInWithGoogleGithubOrAppleSoThisAccount')}
             >
               <div className="flex items-center gap-2">
-                <Badge variant="secondary" className="text-[10px]">Not set</Badge>
-                <Button variant="outline" size="sm" className="text-xs" onClick={() => setPasswordModal(true)}>Set a password</Button>
+                <Badge variant="secondary" className="text-[10px]">{t('profile.status.notSet')}</Badge>
+                <Button variant="outline" size="sm" className="text-xs" onClick={() => setPasswordModal(true)}>{t('profile.action.setAPassword')}</Button>
               </div>
             </SettingRow>
           )}
 
           <SettingRow
-            label="Two-factor authentication"
+            label={t('common.heading.twoFactorAuthentication')}
             desc={
-              method === 'email' ? 'Enabled via email. A code is sent on each login.'
-                : method === 'totp' ? 'Enabled via authenticator app.'
-                : 'Not enabled. Add a second verification step to secure your account.'
+              method === 'email' ? t('profile.description.enabledViaEmailACodeIsSentOnEachLogin')
+                : method === 'totp' ? t('profile.description.enabledViaAuthenticatorApp')
+                : t('profile.description.notEnabledAddASecondVerificationStepToSecureYourAccount')
             }
           >
             {method ? (
               <div className="flex items-center gap-2">
-                <Badge className="text-[10px] gap-1"><ShieldCheck className="size-3" />{method === 'totp' ? 'Authenticator' : 'Email'}</Badge>
-                <Button variant="outline" size="sm" className="text-xs" onClick={() => setDisableModal(true)} disabled={!hasPassword}>Disable</Button>
+                <Badge className="text-[10px] gap-1"><ShieldCheck className="size-3" />{method === 'totp' ? t('profile.status.authenticator') : t('profile.status.email')}</Badge>
+                <Button variant="outline" size="sm" className="text-xs" onClick={() => setDisableModal(true)} disabled={!hasPassword}>{t('profile.action.disable')}</Button>
               </div>
             ) : !hasPassword ? (
               // Enrolling needs no password but disabling verifies one, so without a
               // password this is a one-way door. Block the door, don't just warn later.
-              <p className="text-[11px] text-muted-foreground max-w-[16rem] text-right">
-                Set your password first (above) - turning 2FA off later requires one.
+              <p className="text-[11px] text-muted-foreground max-w-[16rem] text-end">
+                {t('profile.description.setYourPasswordFirstAboveTurning2faOffLaterRequires')}
               </p>
             ) : (
               <div className="flex items-center gap-2">
                 <Button variant="outline" size="sm" className="text-xs" onClick={enableEmail} disabled={enablingEmail}>
-                  {enablingEmail ? <Loader2 className="size-3 animate-spin mr-1" /> : null} Enable email 2FA
+                  {enablingEmail ? <Loader2 className="size-3 animate-spin me-1" /> : null} {t('profile.action.enableEmail2fa')}
                 </Button>
                 <Button variant="outline" size="sm" className="text-xs gap-1" onClick={() => setTotpModal(true)}>
-                  <Smartphone className="size-3" /> Enable authenticator
+                  <Smartphone className="size-3" /> {t('profile.action.enableAuthenticator')}
                 </Button>
               </div>
             )}
@@ -130,17 +135,17 @@ export function PasswordSection({ tfa, onTfaChanged, hasPassword }: { tfa: TfaSt
 
           {method && !hasPassword && (
             <SettingRow
-              label="Password required"
-              desc="Turning two-factor authentication off requires a password. Set one above first."
+              label={t('common.error.passwordRequired')}
+              desc={t('profile.description.turningTwoFactorAuthenticationOffRequiresAPasswordSetOneAboveFirst')}
             >
               <span />
             </SettingRow>
           )}
 
           {method === 'totp' && (
-            <SettingRow label="Recovery codes" desc={`${tfa?.recovery_codes_remaining ?? 0} of 10 codes remaining`}>
+            <SettingRow label={t('profile.heading.recoveryCodes')} desc={t('profile.label.tfarecoveryCodesRemainingOf10CodesRemaining', { tfaRecovery_codes_remaining: tfa?.recovery_codes_remaining ?? 0 })}>
               <Button variant="outline" size="sm" className="text-xs gap-1" onClick={() => setRegenModal(true)} disabled={!hasPassword}>
-                <RefreshCw className="size-3" /> Regenerate codes
+                <RefreshCw className="size-3" /> {t('profile.action.regenerateCodes')}
               </Button>
             </SettingRow>
           )}
@@ -153,16 +158,16 @@ export function PasswordSection({ tfa, onTfaChanged, hasPassword }: { tfa: TfaSt
           <DialogHeader><DialogTitle>{passwordVerb}</DialogTitle></DialogHeader>
           <div className="space-y-3">
             {hasPassword && (
-              <Input type="password" placeholder="Current password" value={current} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setCurrent(e.target.value)} className="h-9 text-sm" />
+              <Input type="password" placeholder={t('profile.placeholder.currentPassword')} value={current} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setCurrent(e.target.value)} className="h-9 text-sm" />
             )}
-            <Input type="password" placeholder="New password" value={newPw} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewPw(e.target.value)} className="h-9 text-sm" />
-            <Input type="password" placeholder="Confirm new password" value={confirm} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setConfirm(e.target.value)} className="h-9 text-sm" onKeyDown={(e) => e.key === 'Enter' && changePassword()} />
-            <p className="text-[11px] text-muted-foreground">At least 8 characters. A long passphrase is stronger than a short mix of symbols.</p>
+            <Input type="password" placeholder={t('profile.placeholder.newPassword')} value={newPw} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewPw(e.target.value)} className="h-9 text-sm" />
+            <Input type="password" placeholder={t('profile.placeholder.confirmNewPassword')} value={confirm} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setConfirm(e.target.value)} className="h-9 text-sm" onKeyDown={(e) => e.key === 'Enter' && changePassword()} />
+            <p className="text-[11px] text-muted-foreground">{t('profile.description.atLeast8CharactersALongPassphraseIsStrongerThanA')}</p>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setPasswordModal(false)}>Cancel</Button>
+            <Button variant="outline" onClick={() => setPasswordModal(false)}>{t('common.cancel')}</Button>
             <Button onClick={changePassword} disabled={saving}>
-              {saving ? <Loader2 className="size-4 animate-spin mr-1.5" /> : null} {passwordVerb}
+              {saving ? <Loader2 className="size-4 animate-spin me-1.5" /> : null} {passwordVerb}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -178,13 +183,15 @@ export function PasswordSection({ tfa, onTfaChanged, hasPassword }: { tfa: TfaSt
 // ── Recovery codes view (shared) ───────────────────────────
 
 function RecoveryCodes({ codes }: { codes: string[] }) {
+  const t = useT();
   const [copied, setCopied] = useState(false);
   const copyAll = async () => {
     await navigator.clipboard.writeText(codes.join('\n'));
     setCopied(true); setTimeout(() => setCopied(false), 2000);
   };
   const download = () => {
-    const blob = new Blob([`dosya.dev Recovery Codes\n${'='.repeat(30)}\n\n${codes.join('\n')}\n\nKeep these codes safe. Each can only be used once.\n`], { type: 'text/plain' });
+    const body = `${t('profile.description.dosyaDevRecoveryCodesFile', { codesJoin: codes.join('\n') })}\n`;
+    const blob = new Blob([body], { type: 'text/plain' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
     a.download = 'dosya-recovery-codes.txt';
@@ -192,16 +199,16 @@ function RecoveryCodes({ codes }: { codes: string[] }) {
   };
   return (
     <div className="space-y-3">
-      <p className="text-xs text-muted-foreground">Save these recovery codes somewhere safe. Each can be used once if you lose your authenticator.</p>
+      <p className="text-xs text-muted-foreground">{t('profile.description.saveTheseRecoveryCodesSomewhereSafeEachCanBeUsedOnce')}</p>
       <div className="grid grid-cols-2 gap-1.5 bg-muted p-3 rounded-md">
-        {codes.map((c) => <code key={c} className="text-[11px] font-mono text-center">{c}</code>)}
+        {codes.map((c) => <code dir="ltr" key={c} className="text-[11px] font-mono text-center">{c}</code>)}
       </div>
       <div className="flex gap-2">
         <Button variant="outline" size="sm" className="text-xs flex-1 gap-1" onClick={copyAll}>
-          <CopyCheck copied={copied} className="size-3" /> {copied ? 'Copied' : 'Copy all'}
+          <CopyCheck copied={copied} className="size-3" /> {copied ? t('common.action.copied') : t('profile.action.copyAll')}
         </Button>
         <Button variant="outline" size="sm" className="text-xs flex-1 gap-1" onClick={download}>
-          <Download className="size-3" /> Download
+          <Download className="size-3" /> {t('common.action.download')}
         </Button>
       </div>
     </div>
@@ -209,6 +216,7 @@ function RecoveryCodes({ codes }: { codes: string[] }) {
 }
 
 function TotpSetupModal({ open, onOpenChange, onEnabled }: { open: boolean; onOpenChange: (v: boolean) => void; onEnabled: () => void }) {
+  const t = useT();
   const [secret, setSecret] = useState('');
   const [uri, setUri] = useState('');
   const [code, setCode] = useState('');
@@ -221,7 +229,7 @@ function TotpSetupModal({ open, onOpenChange, onEnabled }: { open: boolean; onOp
     (async () => {
       const res = await req<{ ok: boolean; secret?: string; uri?: string; error?: string }>('/api/me/2fa/setup-totp', { method: 'POST' });
       if (res.ok && res.secret && res.uri) { setSecret(res.secret); setUri(res.uri); }
-      else toast.error('Setup failed', res.error ?? 'Authenticator setup could not be started.');
+      else toast.error(t('profile.error.setupFailed'), res.error ?? t('profile.error.authenticatorSetupCouldNotBeStarted'));
     })();
   }, [open]);
 
@@ -256,7 +264,7 @@ function TotpSetupModal({ open, onOpenChange, onEnabled }: { open: boolean; onOp
         } catch { /* logo unavailable - ship the plain QR */ }
         if (!cancelled) setQrDataUrl(canvas.toDataURL('image/png'));
       } catch {
-        if (!cancelled) toast.error('Setup failed', 'Could not render the QR code.');
+        if (!cancelled) toast.error(t('profile.error.setupFailed'), t('profile.error.couldNotRenderTheQrCode'));
       }
     })();
     return () => { cancelled = true; };
@@ -269,39 +277,39 @@ function TotpSetupModal({ open, onOpenChange, onEnabled }: { open: boolean; onOp
       method: 'POST', body: JSON.stringify({ code }),
     });
     if (res.ok && res.recovery_codes) { setCodes(res.recovery_codes); onEnabled(); }
-    else toast.error('Verification failed', res.error ?? 'The code could not be verified.');
+    else toast.error(t('common.error.verificationFailed'), res.error ?? t('profile.error.theCodeCouldNotBeVerified'));
     setVerifying(false);
   };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-sm">
-        <DialogHeader><DialogTitle>{codes ? 'Recovery codes' : 'Set up authenticator app'}</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>{codes ? t('profile.heading.recoveryCodes') : t('profile.heading.setUpAuthenticatorApp')}</DialogTitle></DialogHeader>
         {codes ? (
           <>
             <RecoveryCodes codes={codes} />
-            <DialogFooter><Button onClick={() => onOpenChange(false)}>Done</Button></DialogFooter>
+            <DialogFooter><Button onClick={() => onOpenChange(false)}>{t('common.done')}</Button></DialogFooter>
           </>
         ) : (
           <>
-            <p className="text-xs text-muted-foreground">Scan this QR code with your authenticator app, then enter the 6-digit code.</p>
+            <p className="text-xs text-muted-foreground">{t('profile.description.scanThisQrCodeWithYourAuthenticatorAppThenEnterThe')}</p>
             <div className="flex justify-center">
               {qrDataUrl ? (
-                <img src={qrDataUrl} alt="QR code" width={180} height={180} className="rounded-md border" />
+                <img src={qrDataUrl} alt={t('profile.alternative.qrCode')} width={180} height={180} className="rounded-md border" />
               ) : <Skeleton className="size-[180px]" />}
             </div>
-            {secret && <code className="block text-[11px] bg-muted px-3 py-2 rounded-md break-all text-center font-mono">{secret}</code>}
+            {secret && <code dir="ltr" className="block text-[11px] bg-muted px-3 py-2 rounded-md break-all text-center font-mono">{secret}</code>}
             <Input
               value={code}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-              placeholder="6-digit code" inputMode="numeric"
+              placeholder={t('common.placeholder.6DigitCode')} inputMode="numeric"
               className="h-9 text-sm text-center tracking-[6px] font-semibold"
               onKeyDown={(e) => e.key === 'Enter' && verify()}
             />
             <DialogFooter>
-              <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+              <Button variant="outline" onClick={() => onOpenChange(false)}>{t('common.cancel')}</Button>
               <Button onClick={verify} disabled={verifying || code.length !== 6}>
-                {verifying ? <Loader2 className="size-4 animate-spin mr-1.5" /> : null} Verify & enable
+                {verifying ? <Loader2 className="size-4 animate-spin me-1.5" /> : null} {t('profile.action.verifyEnable')}
               </Button>
             </DialogFooter>
           </>
@@ -312,29 +320,30 @@ function TotpSetupModal({ open, onOpenChange, onEnabled }: { open: boolean; onOp
 }
 
 function DisableTfaModal({ open, onOpenChange, onDisabled }: { open: boolean; onOpenChange: (v: boolean) => void; onDisabled: () => void }) {
+  const t = useT();
   const [pw, setPw] = useState('');
   const [busy, setBusy] = useState(false);
   useEffect(() => { if (!open) setPw(''); }, [open]);
 
   const disable = async () => {
-    if (!pw) { toast.error('Password required', 'Enter your current password to continue.'); return; }
+    if (!pw) { toast.error(t('common.error.passwordRequired'), t('profile.error.enterYourCurrentPasswordToContinue')); return; }
     setBusy(true);
     const res = await req('/api/me/2fa/disable', { method: 'POST', body: JSON.stringify({ password: pw }) });
-    if (res.ok) { toast.success('Disabled', 'Two-factor authentication is now off.'); onOpenChange(false); onDisabled(); }
-    else toast.error('Update failed', res.error ?? 'Two-factor authentication could not be disabled.');
+    if (res.ok) { toast.success(t('profile.feedback.disabled'), t('profile.feedback.twoFactorAuthenticationIsNowOff')); onOpenChange(false); onDisabled(); }
+    else toast.error(t('common.error.updateFailed'), res.error ?? t('profile.error.twoFactorAuthenticationCouldNotBeDisabled'));
     setBusy(false);
   };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-sm">
-        <DialogHeader><DialogTitle>Disable two-factor authentication</DialogTitle></DialogHeader>
-        <p className="text-xs text-muted-foreground">Enter your password to turn off 2FA. Your account will be less secure.</p>
-        <Input type="password" placeholder="Current password" value={pw} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPw(e.target.value)} className="h-9 text-sm" onKeyDown={(e) => e.key === 'Enter' && disable()} />
+        <DialogHeader><DialogTitle>{t('profile.heading.disableTwoFactorAuthentication')}</DialogTitle></DialogHeader>
+        <p className="text-xs text-muted-foreground">{t('profile.description.enterYourPasswordToTurnOff2faYourAccountWillBe')}</p>
+        <Input type="password" placeholder={t('profile.placeholder.currentPassword')} value={pw} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPw(e.target.value)} className="h-9 text-sm" onKeyDown={(e) => e.key === 'Enter' && disable()} />
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>{t('common.cancel')}</Button>
           <Button variant="destructive" onClick={disable} disabled={busy}>
-            {busy ? <Loader2 className="size-4 animate-spin mr-1.5" /> : null} Disable 2FA
+            {busy ? <Loader2 className="size-4 animate-spin me-1.5" /> : null} {t('profile.action.disable2FA')}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -343,39 +352,40 @@ function DisableTfaModal({ open, onOpenChange, onDisabled }: { open: boolean; on
 }
 
 function RegenCodesModal({ open, onOpenChange, onDone }: { open: boolean; onOpenChange: (v: boolean) => void; onDone: () => void }) {
+  const t = useT();
   const [pw, setPw] = useState('');
   const [busy, setBusy] = useState(false);
   const [codes, setCodes] = useState<string[] | null>(null);
   useEffect(() => { if (!open) { setPw(''); setCodes(null); } }, [open]);
 
   const regen = async () => {
-    if (!pw) { toast.error('Password required', 'Enter your current password to continue.'); return; }
+    if (!pw) { toast.error(t('common.error.passwordRequired'), t('profile.error.enterYourCurrentPasswordToContinue')); return; }
     setBusy(true);
     const res = await req<{ ok: boolean; recovery_codes?: string[]; error?: string }>('/api/me/2fa/recovery-codes', {
       method: 'POST', body: JSON.stringify({ password: pw }),
     });
     if (res.ok && res.recovery_codes) { setCodes(res.recovery_codes); onDone(); }
-    else toast.error('Update failed', res.error ?? 'Your recovery codes could not be regenerated.');
+    else toast.error(t('common.error.updateFailed'), res.error ?? t('profile.error.yourRecoveryCodesCouldNotBeRegenerated'));
     setBusy(false);
   };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-sm">
-        <DialogHeader><DialogTitle>Regenerate recovery codes</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>{t('profile.heading.regenerateRecoveryCodes')}</DialogTitle></DialogHeader>
         {codes ? (
           <>
             <RecoveryCodes codes={codes} />
-            <DialogFooter><Button onClick={() => onOpenChange(false)}>Done</Button></DialogFooter>
+            <DialogFooter><Button onClick={() => onOpenChange(false)}>{t('common.done')}</Button></DialogFooter>
           </>
         ) : (
           <>
-            <p className="text-xs text-muted-foreground">This invalidates your existing codes. Enter your password to continue.</p>
-            <Input type="password" placeholder="Current password" value={pw} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPw(e.target.value)} className="h-9 text-sm" onKeyDown={(e) => e.key === 'Enter' && regen()} />
+            <p className="text-xs text-muted-foreground">{t('profile.error.thisInvalidatesYourExistingCodesEnterYourPasswordToContinue')}</p>
+            <Input type="password" placeholder={t('profile.placeholder.currentPassword')} value={pw} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPw(e.target.value)} className="h-9 text-sm" onKeyDown={(e) => e.key === 'Enter' && regen()} />
             <DialogFooter>
-              <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+              <Button variant="outline" onClick={() => onOpenChange(false)}>{t('common.cancel')}</Button>
               <Button onClick={regen} disabled={busy}>
-                {busy ? <Loader2 className="size-4 animate-spin mr-1.5" /> : null} Regenerate
+                {busy ? <Loader2 className="size-4 animate-spin me-1.5" /> : null} {t('profile.action.regenerate')}
               </Button>
             </DialogFooter>
           </>

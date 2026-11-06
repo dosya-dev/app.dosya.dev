@@ -8,10 +8,13 @@ import { ProviderPickerDialog } from '@/components/cloud-import/provider-picker-
 import { ConnectedAccountsCard } from '@/components/cloud-import/connected-accounts-card';
 import { CloudConnectNotice } from '@/components/cloud-import/cloud-connect-notice';
 import { ImportProgressCard } from '@/components/cloud-import/import-progress-card';
+import { useT } from '@/lib/i18n';
+import { richText } from '@/lib/rich-text';
 
 const meta = getIntegration('google')!;
 
 export default function GoogleSetup() {
+  const t = useT();
   const [pickerOpen, setPickerOpen] = useState(false);
   // Which account the picker preselects; null = the picker's own default.
   const [pickerAccountId, setPickerAccountId] = useState<string | null>(null);
@@ -19,33 +22,34 @@ export default function GoogleSetup() {
   return (
     <IntegrationLayout icon={meta.icon} iconSrc={meta.iconSrc} title={meta.title} description={meta.description}>
       <CloudConnectNotice />
-      <Step n={1} title="Connect your Google account">
-        <p>Connect your Google account, then choose the files and folders to copy into dosya:</p>
+      <Step n={1} title={t('integrations-google.tooltip.connectYourGoogleAccount')}>
+        <p>{t('integrations-google.description.connectYourGoogleAccountThenChooseTheFilesAndFoldersTo')}</p>
         <a
           href={`${API_BASE}/api/cloud/connect/google`}
-          className="mt-1 inline-flex items-center gap-2 rounded-lg border bg-card px-3 py-2 text-sm font-medium transition-colors hover:bg-muted/50"
+          className="whitespace-nowrap mt-1 inline-flex items-center gap-2 rounded-lg border bg-card px-3 py-2 text-sm font-medium transition-colors hover:bg-muted/50"
         >
-          <img src="/google-color.svg" alt="" className="size-4" /> Connect Google Drive
+          <img src="/google-color.svg" alt="" className="size-4" /> {t('integrations-google.action.connectGoogleDrive')}
         </a>
         <ConnectedAccountsCard
           provider="google"
           onImport={(accountId) => { setPickerAccountId(accountId); setPickerOpen(true); }}
         />
       </Step>
-      <Step n={2} title="Import your files">
+      <Step n={2} title={t('common.tooltip.importYourFiles')}>
         <p>
-          Once connected, import files straight from Drive into any workspace. Manage or disconnect your
-          Google accounts anytime in{' '}
-          <Link to="/profile/integrations" className="underline underline-offset-2 hover:text-foreground">
-            Profile → Integrations
-          </Link>
-          .
+          {richText(t('integrations-google.description.onceConnectedImportFilesStraightFromDriveIntoAnyWorkspaceManage'), {
+            link1: (
+              <Link to="/profile/integrations" className="underline underline-offset-2 hover:text-foreground">
+                {t('common.action.profileIntegrations')}
+              </Link>
+            ),
+          })}
         </p>
       </Step>
-      <Step n={3} title="Choose what to import">
-        <p>Browse your Drive and pick the folders or files you want. Folder structure is preserved.</p>
+      <Step n={3} title={t('common.tooltip.chooseWhatToImport')}>
+        <p>{t('integrations-google.description.browseYourDriveAndPickTheFoldersOrFilesYouWant')}</p>
         <Button className="mt-2" onClick={() => { setPickerAccountId(null); setPickerOpen(true); }}>
-          Import from Google Drive
+          {t('common.action.importFromGoogleDrive')}
         </Button>
       </Step>
       <div className="mt-4 empty:hidden">

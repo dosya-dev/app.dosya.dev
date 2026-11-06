@@ -1,4 +1,6 @@
 import { CHART, quotaState } from '@/lib/palette';
+import { t } from '@/lib/i18n';
+import type { MessageKey } from '@/i18n/keys';
 // Types mirror GET /api/workspace-dashboard (apps/api/src/lib/workspace-dashboard.ts).
 export interface DashboardSource {
   kind: 'plan' | 'package' | 'custom' | 'license' | 'referral';
@@ -77,8 +79,9 @@ export function stackedSegments(owned: OwnedWorkspace[], usedBytes: number): Sta
     }));
 }
 
-const ROLE_LABELS: Record<string, string> = {
-  role_owner: 'Owner', role_admin: 'Admin', role_member: 'Member', role_viewer: 'Viewer',
+const ROLE_LABELS: Record<string, MessageKey> = {
+  role_owner: 'common.label.owner', role_admin: 'common.label.admin',
+  role_member: 'common.label.member', role_viewer: 'common.label.viewer',
 };
 
 /**
@@ -93,5 +96,6 @@ const ROLE_LABELS: Record<string, string> = {
  * this.
  */
 export function roleLabel(roleId: string): string {
-  return ROLE_LABELS[roleId] ?? 'Custom role';
+  const key = ROLE_LABELS[roleId];
+  return key ? t(key) : t('common.label.customRole');
 }

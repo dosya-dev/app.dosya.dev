@@ -1,3 +1,4 @@
+import { t } from '@/lib/i18n';
 import type { Comment, CommentMention } from './types';
 
 export function formatMs(ms: number): string {
@@ -26,7 +27,7 @@ export function isOlderVersion(c: Pick<Comment, 'anchor_version'>, currentVersio
  * onSelectComment, which is the one caller.
  */
 export function olderVersionNote(c: Pick<Comment, 'anchor_version'>, currentVersion: number | null): string | null {
-  return isOlderVersion(c, currentVersion) ? `Comment was left on v${c.anchor_version}` : null;
+  return isOlderVersion(c, currentVersion) ? t('common.label.commentWasLeftOnVCanchorVersion', { cAnchor_version: c.anchor_version ?? '' }) : null;
 }
 
 /** The ids whose `@Name` is still in the text: deleting the text unmentions. */

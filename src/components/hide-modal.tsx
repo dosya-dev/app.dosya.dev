@@ -8,6 +8,7 @@ import {
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Eye, EyeOff, UserMinus, Shield, Loader2, Check } from 'lucide-react';
 import { toast } from '@/lib/toast';
+import { useT, useLocale } from '@/lib/i18n';
 
 interface HideModalProps {
   open: boolean;
@@ -22,6 +23,8 @@ interface Member { user_id: string; name: string; email: string; role_id: string
 interface Role { id: string; name: string }
 
 export function HideModal({ open, target, onClose, onDone }: HideModalProps) {
+  const t = useT();
+  const { locale } = useLocale();
   const wsId = useWorkspace((s: { activeId: string }) => s.activeId);
   const [mode, setMode] = useState<HiddenMode>('none');
   const [selectedTargets, setSelectedTargets] = useState<Set<string>>(new Set());
@@ -69,7 +72,7 @@ export function HideModal({ open, target, onClose, onDone }: HideModalProps) {
       const body: Record<string, unknown> = { hidden_mode: mode };
       if (mode === 'users' || mode === 'roles') {
         if (selectedTargets.size === 0) {
-          setError(`Select at least one ${mode === 'users' ? 'user' : 'role'}.`);
+          setError(t('files.error.selectAtLeastOneModeusersSelectTrueUserOtherRole', { modeUsers: mode === 'users' ? 'true' : 'false' }));
           setLoading(false);
           return;
         }
@@ -80,14 +83,14 @@ export function HideModal({ open, target, onClose, onDone }: HideModalProps) {
         body: JSON.stringify(body),
       });
       if (res.ok) {
-        toast.success(mode === 'none' ? 'File unhidden' : 'File hidden', mode === 'none' ? 'This file is now visible to everyone.' : 'This file is now hidden.');
+        toast.success(mode === 'none' ? t('files.feedback.fileUnhidden') : t('files.feedback.fileHidden'), mode === 'none' ? t('files.feedback.thisFileIsNowVisibleToEveryone') : t('files.feedback.thisFileIsNowHidden'));
         onDone();
         onClose();
       } else {
-        setError(res.error ?? 'Failed');
+        setError(res.error ?? t('common.error.failed'));
       }
     } catch {
-      setError('Failed to update visibility');
+      setError(t('file-security.error.failedToUpdateVisibility'));
     }
     setLoading(false);
   };
@@ -96,17 +99,17 @@ export function HideModal({ open, target, onClose, onDone }: HideModalProps) {
   const myRoleId = members.find((m) => m.is_you)?.role_id;
 
   const MODES: { value: HiddenMode; label: string; desc: string; icon: React.ReactNode }[] = [
-    { value: 'none', label: 'Visible', desc: 'Everyone can see this', icon: <Eye className="size-4 text-muted-foreground" /> },
-    { value: 'everyone', label: 'Hidden from everybody', desc: 'Only you can see this', icon: <EyeOff className="size-4 text-red-500" /> },
-    { value: 'users', label: 'Hidden from specific users', desc: 'Select which users can\'t see this', icon: <UserMinus className="size-4 text-blue-500" /> },
-    { value: 'roles', label: 'Hidden from specific roles', desc: 'Select which roles can\'t see this', icon: <Shield className="size-4 text-violet-500" /> },
+    { value: 'none', label: t('files.label.visible'), desc: t('files.description.everyoneCanSeeThis'), icon: <Eye className="size-4 text-muted-foreground" /> },
+    { value: 'everyone', label: t('file-security.label.hiddenFromEverybody'), desc: t('files.description.onlyYouCanSeeThis'), icon: <EyeOff className="size-4 text-red-500" /> },
+    { value: 'users', label: t('file-security.label.hiddenFromSpecificUsers'), desc: t('files.error.selectWhichUsersCanTSeeThis'), icon: <UserMinus className="size-4 text-blue-500" /> },
+    { value: 'roles', label: t('file-security.label.hiddenFromSpecificRoles'), desc: t('files.error.selectWhichRolesCanTSeeThis'), icon: <Shield className="size-4 text-violet-500" /> },
   ];
 
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
       <DialogContent className="max-w-sm">
         <DialogHeader>
-          <DialogTitle>Hide {target?.type}</DialogTitle>
+          <DialogTitle>{t('files.heading.hideTargettype', { targetType: target ? (target.type === 'file' ? t('common.label.fileTitleCase') : t('common.label.folder')).toLocaleLowerCase(locale) : '' })}</DialogTitle>
         </DialogHeader>
 
         {fetching ? (
@@ -132,16 +135,16 @@ export function HideModal({ open, target, onClose, onDone }: HideModalProps) {
             {mode === 'users' && (
               <div className="border rounded-lg max-h-40 overflow-y-auto">
                 {members.length === 0 ? (
-                  <p className="text-xs text-muted-foreground text-center py-3">No members found</p>
+                  <p className="text-xs text-muted-foreground text-center py-3">{t('file-security.empty.noMembersFound')}</p>
                 ) : members.map((m) => (
                   <button
                     key={m.user_id}
                     disabled={m.is_you}
-                    className={`w-full flex items-center gap-2 px-3 py-2 text-xs border-b last:border-b-0 text-left ${m.is_you ? 'opacity-50 cursor-not-allowed' : 'hover:bg-muted/50'} ${selectedTargets.has(m.user_id) ? 'bg-blue-50 dark:bg-blue-950/30' : ''}`}
+                    className={`w-full flex items-center gap-2 px-3 py-2 text-xs border-b last:border-b-0 text-start ${m.is_you ? 'opacity-50 cursor-not-allowed' : 'hover:bg-muted/50'} ${selectedTargets.has(m.user_id) ? 'bg-blue-50 dark:bg-blue-950/30' : ''}`}
                     onClick={() => { if (!m.is_you) toggleTarget(m.user_id); }}
                   >
                     {selectedTargets.has(m.user_id) && <Check className="size-3 text-blue-600 shrink-0" />}
-                    <span className="flex-1 truncate">{m.name}{m.is_you && ' (you)'}</span>
+                    <span className="flex-1 truncate">{m.name}{m.is_you && ` ${t('files.action.you')}`}</span>
                     <span className="text-muted-foreground truncate">{m.email}</span>
                   </button>
                 ))}
@@ -152,18 +155,18 @@ export function HideModal({ open, target, onClose, onDone }: HideModalProps) {
             {mode === 'roles' && (
               <div className="border rounded-lg max-h-40 overflow-y-auto">
                 {roles.length === 0 ? (
-                  <p className="text-xs text-muted-foreground text-center py-3">No roles found</p>
+                  <p className="text-xs text-muted-foreground text-center py-3">{t('file-security.empty.noRolesFound')}</p>
                 ) : roles.map((r) => {
                   const isMine = r.id === myRoleId;
                   return (
                   <button
                     key={r.id}
                     disabled={isMine}
-                    className={`w-full flex items-center gap-2 px-3 py-2 text-xs border-b last:border-b-0 text-left ${isMine ? 'opacity-50 cursor-not-allowed' : 'hover:bg-muted/50'} ${selectedTargets.has(r.id) ? 'bg-violet-50 dark:bg-violet-950/30' : ''}`}
+                    className={`w-full flex items-center gap-2 px-3 py-2 text-xs border-b last:border-b-0 text-start ${isMine ? 'opacity-50 cursor-not-allowed' : 'hover:bg-muted/50'} ${selectedTargets.has(r.id) ? 'bg-violet-50 dark:bg-violet-950/30' : ''}`}
                     onClick={() => { if (!isMine) toggleTarget(r.id); }}
                   >
                     {selectedTargets.has(r.id) && <Check className="size-3 text-violet-600 shrink-0" />}
-                    <span className="flex-1 truncate">{r.name}{isMine && ' (your role)'}</span>
+                    <span className="flex-1 truncate">{r.name}{isMine && ` ${t('files.action.yourRole')}`}</span>
                   </button>
                   );
                 })}
@@ -171,20 +174,20 @@ export function HideModal({ open, target, onClose, onDone }: HideModalProps) {
             )}
 
             {(mode === 'users' || mode === 'roles') && selectedTargets.size > 0 && (
-              <p className="text-xs text-muted-foreground">{selectedTargets.size} selected</p>
+              <p className="text-xs text-muted-foreground">{t('common.label.totalselectedSelected', { totalSelected: selectedTargets.size })}</p>
             )}
 
             {error && (
-              <p className="text-xs text-destructive bg-destructive/10 border border-destructive/20 rounded-md px-3 py-2">{error}</p>
+              <p dir="auto" className="text-xs text-destructive bg-destructive/10 border border-destructive/20 rounded-md px-3 py-2">{error}</p>
             )}
           </div>
         )}
 
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button variant="outline" onClick={onClose}>{t('common.cancel')}</Button>
           <Button onClick={handleSubmit} disabled={loading || fetching}>
-            {loading && <Loader2 className="size-4 animate-spin mr-1.5" />}
-            Apply
+            {loading && <Loader2 className="size-4 animate-spin me-1.5" />}
+            {t('common.apply')}
           </Button>
         </DialogFooter>
       </DialogContent>

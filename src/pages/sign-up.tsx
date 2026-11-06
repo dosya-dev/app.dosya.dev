@@ -1,3 +1,4 @@
+import { consumeAcquisition } from '@/lib/acquisition-context';
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
@@ -11,12 +12,17 @@ import { AlreadySignedInDialog } from '@/components/already-signed-in-dialog';
 import { useSessionAccount } from '@/hooks/use-session-probe';
 import { PasswordStrengthMeter } from '@/components/password-strength-meter';
 import { validateEmail, validatePassword } from '@/lib/validation-policy.generated';
+import { translateExternal } from '@/lib/external-text';
 import { TurnstileWidget, type TurnstileHandle } from '@/components/turnstile-widget';
 import { resolveTurnstileToken, turnstileFailureMessage, isTurnstileRejection } from '@/lib/turnstile-submit';
 import { LegalLinks, LegalNotice } from '@/components/legal-notice';
 import { Logo } from "@/components/brand/logo";
+import { useT } from '@/lib/i18n';
+import { richText } from '@/lib/rich-text';
 
 export default function SignUpPage() {
+  useEffect(() => { consumeAcquisition(import.meta.env.VITE_ACQUISITION_MEASUREMENT_ENABLED === 'true'); }, []);
+  const t = useT();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [name, setName] = useState('');
@@ -43,7 +49,7 @@ export default function SignUpPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    if (!terms) { setError('Please accept the Terms of Service to continue.'); return; }
+    if (!terms) { setError(t('sign-up.error.pleaseAcceptTheTermsOfServiceToContinue')); return; }
     // The shared policy, not a hand-written subset of it. This page used to
     // check the length clause only and let the other three round-trip, so
     // "12345678" was caught locally but "password123" was not - and the type=
@@ -51,9 +57,9 @@ export default function SignUpPage() {
     // entirely under a scripted POST. Both now fail here with the sentence the
     // API would have returned.
     const emailError = validateEmail(email.trim());
-    if (emailError) { setError(emailError); return; }
+    if (emailError) { setError(translateExternal(emailError, 'error')); return; }
     const passwordError = validatePassword(password);
-    if (passwordError) { setError(passwordError); return; }
+    if (passwordError) { setError(translateExternal(passwordError, 'error')); return; }
     setLoading(true);
     try {
       const ref = searchParams.get('ref') ?? sessionStorage.getItem('dosya_ref') ?? undefined;
@@ -81,11 +87,11 @@ export default function SignUpPage() {
       } else if (isTurnstileRejection(data)) {
         setError(turnstileFailureMessage(turnstileRef.current));
       } else {
-        setError(data.error ?? 'Sign-up failed');
+        setError(data.error ?? t('sign-up.error.signUpFailed'));
       }
     } catch {
       turnstileRef.current?.reset();
-      setError('Network error');
+      setError(t('common.error.networkError'));
     }
     setLoading(false);
   };
@@ -108,7 +114,7 @@ export default function SignUpPage() {
 
   const lastUsedBadge = (
     <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 rounded-full bg-primary text-primary-foreground text-[10px] font-semibold px-2 py-0.5 leading-none whitespace-nowrap z-10">
-      Last used
+      {t('common.label.lastUsed')}
     </span>
   );
 
@@ -127,12 +133,12 @@ export default function SignUpPage() {
                   <Logo className="h-7 w-7" />
                   dosya.dev
                 </a>
-                <h1 className="text-2xl font-bold mt-2">Create an account</h1>
-                <p className="text-sm text-muted-foreground mt-1">Start storing, sharing and transferring your files</p>
+                <h1 className="text-2xl font-bold mt-2">{t('sign-up.heading.createAnAccount')}</h1>
+                <p className="text-sm text-muted-foreground mt-1">{t('sign-up.description.startStoringSharingAndTransferringYourFiles')}</p>
               </div>
 
               {error && (
-                <div className="bg-destructive/10 border border-destructive/30 text-destructive text-sm rounded-lg px-4 py-2.5 mb-4">
+                <div dir="auto" className="bg-destructive/10 border border-destructive/30 text-destructive text-sm rounded-lg px-4 py-2.5 mb-4">
                   {error}
                 </div>
               )}
@@ -141,21 +147,21 @@ export default function SignUpPage() {
                 <div className="relative">
                   <Button variant="outline" className="w-full h-11 text-sm font-medium gap-2" onClick={handleGoogle} type="button">
                     <svg className="size-5" viewBox="0 0 16 16" fill="none"><path d="M8 6.54541V9.6436H12.3054C12.1164 10.64 11.549 11.4836 10.6981 12.0509L13.2945 14.0655C14.8072 12.6691 15.68 10.6182 15.68 8.18185C15.68 7.61459 15.6291 7.06908 15.5345 6.5455L8 6.54541Z" fill="#4285F4"/><path d="M3.51576 9.52246L2.93018 9.97071L0.857422 11.5852C2.17378 14.1961 4.87176 15.9998 7.99901 15.9998C10.159 15.9998 11.9698 15.287 13.2935 14.0653L10.6972 12.0507C9.98443 12.5307 9.07533 12.8216 7.99901 12.8216C5.91902 12.8216 4.1518 11.418 3.51903 9.52708L3.51576 9.52246Z" fill="#34A853"/><path d="M0.858119 4.41455C0.312695 5.49087 0 6.70543 0 7.99996C0 9.29448 0.312695 10.509 0.858119 11.5854C0.858119 11.5926 3.51998 9.51991 3.51998 9.51991C3.35998 9.03991 3.26541 8.53085 3.26541 7.99987C3.26541 7.46889 3.35998 6.95984 3.51998 6.47984L0.858119 4.41455Z" fill="#FBBC05"/><path d="M7.99918 3.18545C9.17737 3.18545 10.2246 3.59271 11.061 4.37818L13.3519 2.0873C11.9628 0.792777 10.1592 0 7.99918 0C4.87193 0 2.17378 1.79636 0.857422 4.41455L3.5192 6.48001C4.15189 4.58908 5.91919 3.18545 7.99918 3.18545Z" fill="#EA4335"/></svg>
-                    Continue with Google
+                    {t('common.action.continueWithGoogle')}
                   </Button>
                   {lastUsed === 'google' && lastUsedBadge}
                 </div>
                 <div className="relative">
                   <Button variant="outline" className="w-full h-11 text-sm font-medium gap-2 bg-black text-white hover:bg-black/85 hover:text-white dark:bg-white dark:text-black dark:hover:bg-white/90 dark:hover:text-black" onClick={handleGithub} type="button">
                     <svg className="size-5" viewBox="0 0 16 16" fill="currentColor"><path fillRule="evenodd" clipRule="evenodd" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
-                    Continue with GitHub
+                    {t('common.action.continueWithGitHub')}
                   </Button>
                   {lastUsed === 'github' && lastUsedBadge}
                 </div>
                 <div className="relative">
                   <Button variant="outline" className="w-full h-11 text-sm font-medium gap-2 bg-black text-white hover:bg-black/85 dark:bg-white dark:text-black dark:hover:bg-white/90" onClick={handleApple} type="button">
                     <svg className="size-5" viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
-                    Continue with Apple
+                    {t('common.action.continueWithApple')}
                   </Button>
                   {lastUsed === 'apple' && lastUsedBadge}
                 </div>
@@ -163,23 +169,23 @@ export default function SignUpPage() {
 
               <div className="relative mb-6">
                 <div className="absolute inset-0 flex items-center"><span className="w-full border-t" /></div>
-                <div className="relative flex justify-center text-xs uppercase"><span className="bg-card px-2 text-muted-foreground">Or</span></div>
+                <div className="relative flex justify-center text-xs uppercase"><span className="bg-card px-2 text-muted-foreground">{t('common.label.or')}</span></div>
               </div>
 
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div className="space-y-2">
-                  <label htmlFor="name" className="text-sm font-medium">Name</label>
-                  <Input id="name" type="text" placeholder="Jane Doe" value={name} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setName(e.target.value)} required className="h-10" />
+                  <label htmlFor="name" className="text-sm font-medium">{t('common.label.name.person')}</label>
+                  <Input id="name" type="text" placeholder={t('sign-up.placeholder.janeDoe')} value={name} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setName(e.target.value)} required className="h-10" />
                 </div>
                 <div className="space-y-2">
-                  <label htmlFor="email" className="text-sm font-medium">Email</label>
-                  <Input id="email" type="email" placeholder="name@example.com" value={email} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEmail(e.target.value)} required className="h-10" />
+                  <label htmlFor="email" className="text-sm font-medium">{t('common.label.email')}</label>
+                  <Input id="email" type="email" placeholder={t('common.placeholder.nameExampleCom')} value={email} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEmail(e.target.value)} required className="h-10" />
                 </div>
                 <div className="space-y-2">
-                  <label htmlFor="password" className="text-sm font-medium">Password</label>
+                  <label htmlFor="password" className="text-sm font-medium">{t('common.label.password')}</label>
                   <div className="relative">
-                    <Input id="password" type={showPassword ? 'text' : 'password'} placeholder="••••••••" value={password} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPassword(e.target.value)} required className="h-10 pr-10" />
-                    <button type="button" tabIndex={-1} onClick={() => setShowPassword((v) => !v)} aria-label={showPassword ? 'Hide password' : 'Show password'} className="absolute inset-y-0 right-0 flex items-center justify-center w-10 text-muted-foreground hover:text-foreground transition-colors">
+                    <Input id="password" type={showPassword ? 'text' : 'password'} placeholder="••••••••" value={password} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPassword(e.target.value)} required className="h-10 pe-10" />
+                    <button type="button" tabIndex={-1} onClick={() => setShowPassword((v) => !v)} aria-label={showPassword ? t('common.accessibility.hidePassword') : t('common.accessibility.showPassword')} className="absolute inset-y-0 inset-e-0 flex items-center justify-center w-10 text-muted-foreground hover:text-foreground transition-colors">
                       {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
                     </button>
                   </div>
@@ -188,13 +194,13 @@ export default function SignUpPage() {
                 <label className="flex items-start gap-2 text-sm text-muted-foreground">
                   <Checkbox checked={terms} onCheckedChange={(checked) => setTerms(checked)} className="mt-0.5 size-4" />
                   <span>
-                    I agree to the <LegalLinks />
+                    {t('sign-up.label.iAgreeToThe')} <LegalLinks />
                   </span>
                 </label>
                 <TurnstileWidget action="signup" ref={turnstileRef} />
                 <Button type="submit" className="w-full h-10" disabled={loading}>
-                  {loading ? <Loader2 className="size-4 animate-spin mr-2" /> : null}
-                  Create Account
+                  {loading ? <Loader2 className="size-4 animate-spin me-2" /> : null}
+                  {t('sign-up.action.createAccount')}
                 </Button>
               </form>
 
@@ -203,7 +209,9 @@ export default function SignUpPage() {
               <LegalNotice className="mt-6" />
 
               <p className="mt-4 text-center text-sm text-muted-foreground">
-                Already have an account? <a href="/login" className="font-medium underline underline-offset-4 hover:text-foreground">Log in</a>
+                {richText(t('sign-up.label.alreadyHaveAnAccountLink1', { link1: '{link1}' }), {
+                  link1: <a href="/login" className="font-medium underline underline-offset-4 hover:text-foreground">{t('sign-up.action.logIn')}</a>,
+                })}
               </p>
             </CardContent>
           </Card>

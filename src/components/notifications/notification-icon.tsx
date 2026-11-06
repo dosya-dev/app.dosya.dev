@@ -2,6 +2,9 @@ import { cn } from "@/lib/utils";
 import { notificationTone, resolveNotificationIcon } from "../../lib/notification-icons.generated";
 import { NOTIFICATION_ICON_COMPONENTS } from "./notification-icon-map";
 
+/** Glyphs that point somewhere; they mirror in right-to-left. */
+const DIRECTIONAL_KEYS: ReadonlySet<string> = new Set(["log-out", "send", "undo-2"]);
+
 /**
  * The inbox row's glyph: a hairline ring around a 16px line icon.
  *
@@ -40,7 +43,7 @@ export function NotificationIcon({
         className,
       )}
     >
-      <Glyph className="size-4" strokeWidth={1.75} />
+      <Glyph className={cn("size-4", DIRECTIONAL_KEYS.has(key) && "rtl:-scale-x-100")} strokeWidth={1.75} />
     </span>
   );
 }

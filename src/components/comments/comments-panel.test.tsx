@@ -84,7 +84,7 @@ describe('CommentsPanel', () => {
     const ta = el!.querySelector('textarea')!;
     act(() => { ta.focus(); });
     expect(t.pause).toHaveBeenCalled();
-    expect(el!.textContent).toContain('at 0:42');
+    expect(el!.textContent).toContain('At 0:42');
   });
 
   it('posting sends the anchor and the viewing version', async () => {
@@ -144,11 +144,11 @@ describe('CommentsPanel', () => {
     await setup([], t);
     const ta = el!.querySelector('textarea')!;
     act(() => { ta.focus(); });
-    expect(el!.textContent).toContain('at 0:42');
+    expect(el!.textContent).toContain('At 0:42');
     act(() => (el!.querySelector('[aria-label="Remove anchor"]') as HTMLButtonElement).click());
     act(() => { ta.blur(); });
     act(() => { ta.focus(); });
-    expect(el!.textContent).not.toContain('at 0:42');
+    expect(el!.textContent).not.toContain('At 0:42');
     const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!;
     act(() => { set.call(ta, 'general note'); ta.dispatchEvent(new Event('input', { bubbles: true })); });
     act(() => { ta.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); });
@@ -157,6 +157,6 @@ describe('CommentsPanel', () => {
     // Posted: the next comment captures the moment again.
     act(() => { ta.blur(); });
     act(() => { ta.focus(); });
-    expect(el!.textContent).toContain('at 0:42');
+    expect(el!.textContent).toContain('At 0:42');
   });
 });

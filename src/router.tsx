@@ -20,11 +20,14 @@ const ApiAnalyticsPage = lazyChunk(() => import('@/pages/api-analytics'));
 const FilesPage = lazyChunk(() => import('@/pages/files'));
 const EncryptedPage = lazyChunk(() => import('@/pages/encrypted'));
 const MapPage = lazyChunk(() => import('@/pages/map'));
+const PersonasPage = lazyChunk(() => import('@/pages/personas'));
+const PersonasSettingsPage = lazyChunk(() => import('@/pages/personas/settings-page'));
 const DuplicatesPage = lazyChunk(() => import('@/pages/duplicates'));
 const CreateWorkspacePage = lazyChunk(() => import('@/pages/create-workspace'));
 const TeamsPage = lazyChunk(() => import('@/pages/teams'));
 const SharedPage = lazyChunk(() => import('@/pages/shared'));
 const ShareAnalyticsPage = lazyChunk(() => import('@/pages/share-analytics'));
+const SaveSharePage = lazyChunk(() => import('@/pages/save-share'));
 const CommentsPage = lazyChunk(() => import('@/pages/comments'));
 const ActivityPage = lazyChunk(() => import('@/pages/activity'));
 const NotificationsPage = lazyChunk(() => import('@/pages/notifications'));
@@ -48,12 +51,15 @@ const WordPressSetup = lazyChunk(() => import('@/pages/integrations/wordpress'))
 const N8nSetup = lazyChunk(() => import('@/pages/integrations/n8n'));
 const LightroomSetup = lazyChunk(() => import('@/pages/integrations/lightroom'));
 const GoogleSetup = lazyChunk(() => import('@/pages/integrations/google'));
+const GoogleTakeoutImport = lazyChunk(() => import('@/pages/integrations/google-takeout'));
 const OneDriveSetup = lazyChunk(() => import('@/pages/integrations/onedrive'));
 const DropboxSetup = lazyChunk(() => import('@/pages/integrations/dropbox'));
 const WebhooksPage = lazyChunk(() => import('@/pages/integrations/webhooks'));
 const RemoteDownloadPage = lazyChunk(() => import('@/pages/integrations/remote-download'));
+const RemoteRclonePage = lazyChunk(() => import('@/pages/integrations/remote-rclone'));
 const FileRequestDetailPage = lazyChunk(() => import('@/pages/file-request-detail'));
 const SupportPage = lazyChunk(() => import('@/pages/support'));
+const SupportChatPage = lazyChunk(() => import('@/pages/support-chat'));
 const SupportTicketPage = lazyChunk(() => import('@/pages/support-ticket'));
 const LoginPage = lazyChunk(() => import('@/pages/login'));
 const Login2faPage = lazyChunk(() => import('@/pages/login-2fa'));
@@ -66,11 +72,14 @@ const ResetPasswordPage = lazyChunk(() => import('@/pages/reset-password'));
 const NotFoundPage = lazyChunk(() => import('@/pages/not-found'));
 const WelcomePage = lazyChunk(() => import('@/pages/welcome'));
 const EditorPage = lazyChunk(() => import('@/pages/editor'));
+// CodeMirror, marked and DOMPurify ride in this chunk only.
+const TextEditorPage = lazyChunk(() => import('@/pages/text-editor'));
 const ConnectExtensionPage = lazyChunk(() => import('@/pages/connect/extension'));
 const ConnectLightroomPage = lazyChunk(() => import('@/pages/connect/lightroom'));
 const ConnectWordPressPage = lazyChunk(() => import('@/pages/connect/wordpress'));
 const ConnectAiPage = lazyChunk(() => import('@/pages/connect/ai'));
 const ConnectExtensionDonePage = lazyChunk(() => import('@/pages/connect/extension-done'));
+const TvPage = lazyChunk(() => import('@/pages/tv'));
 
 // Navigation spans and route names for crash reports. Requires Sentry.init to
 // have run already - main.tsx imports instrument.ts before this module.
@@ -89,10 +98,17 @@ export const router = createBrowserRouter([
       { path: '/', element: <RequirePermission perm="access_dashboard"><DashboardPage /></RequirePermission> },
       { path: '/files', element: <RequirePermission perm="access_files"><FilesPage /></RequirePermission> },
       { path: '/map', element: <MapPage /> },
+      // Personas (face grouping, on the member's own devices): the first run
+      // while off, the grid while on, one persona, and this member's Personas
+      // settings. Gated the way /files is: it reads the member's photos.
+      { path: '/personas', element: <RequirePermission perm="access_files"><PersonasPage /></RequirePermission> },
+      { path: '/personas/settings', element: <RequirePermission perm="access_files"><PersonasSettingsPage /></RequirePermission> },
+      { path: '/personas/:personaId', element: <RequirePermission perm="access_files"><PersonasPage /></RequirePermission> },
       { path: '/duplicates', element: <DuplicatesPage /> },
       { path: '/file-requests', element: <FileRequestsPage /> },
       { path: '/file-requests/:id', element: <FileRequestDetailPage /> },
       { path: '/support', element: <SupportPage /> },
+      { path: '/support/chat', element: <SupportChatPage /> },
       { path: '/support/:id', element: <SupportTicketPage /> },
       { path: '/uploads', element: <RequirePermission perm="access_upload"><UploadsPage /></RequirePermission> },
       {
@@ -124,12 +140,17 @@ export const router = createBrowserRouter([
       { path: '/integrations/n8n', element: <N8nSetup /> },
       { path: '/integrations/lightroom', element: <LightroomSetup /> },
       { path: '/integrations/google', element: <GoogleSetup /> },
+      { path: '/integrations/google-takeout', element: <GoogleTakeoutImport /> },
       { path: '/integrations/onedrive', element: <OneDriveSetup /> },
       { path: '/integrations/dropbox', element: <DropboxSetup /> },
       { path: '/integrations/webhooks', element: <WebhooksPage /> },
       { path: '/integrations/remote-download', element: <RemoteDownloadPage /> },
+      { path: '/integrations/remote-rclone', element: <RemoteRclonePage /> },
       { path: '/shared', element: <RequirePermission perm="access_shared"><SharedPage /></RequirePermission> },
       { path: '/shared/:id', element: <ShareAnalyticsPage /> },
+      // "Save to dosya" from a share page. Inside this layout on purpose: a
+      // signed-out visitor is sent to /login and brought back here.
+      { path: '/save/:token', element: <SaveSharePage /> },
       { path: '/vault', element: <EncryptedPage /> },
       { path: '/comments', element: <CommentsPage /> },
       // GET /api/activity answers 403 for the whole page without
@@ -157,6 +178,10 @@ export const router = createBrowserRouter([
   { path: '/connect/lightroom', element: <ConnectLightroomPage /> },
   { path: '/connect/ai', element: <ConnectAiPage /> },
   { path: '/connect/extension/done', element: <ConnectExtensionDonePage /> },
+  // Signing in a dosya TV app: its QR code opens /tv?code=..., and the typed
+  // dosya.dev/tv redirects here. Outside DashboardLayout for the same reason
+  // as the /connect pages; the page sends a signed-out visitor through /login.
+  { path: '/tv', element: <TvPage /> },
   // Outside DashboardLayout, on purpose: bootDashboard redirects tour-less
   // users here, and the boot gate lives inside DashboardLayout. Nesting this
   // route under it would put the gate above the route it redirects to - the
@@ -166,6 +191,10 @@ export const router = createBrowserRouter([
   // sidebar. Auth is enforced by the API - an unauthenticated visitor gets
   // the page shell with the error card ("Not authenticated").
   { path: '/editor/:fileId', element: <EditorPage /> },
+  // The Markdown and plain-text editor, full-viewport for the same reason.
+  // A data router is what lets it ask before leaving with unsaved changes
+  // (useBlocker).
+  { path: '/text-editor/:fileId', element: <TextEditorPage /> },
   { path: '/login/2fa', element: <Login2faPage /> },
   { path: '/sign-up', element: <SignUpPage /> },
   { path: '/verify', element: <VerifyPage /> },

@@ -1,3 +1,4 @@
+import { formatDateWith } from '@/lib/format-locale';
 import { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api, apiErrorMessage } from '@/api/client';
@@ -24,6 +25,9 @@ import {
   ChevronDown, FolderOpen, Home, X, Search, Inbox,
 } from 'lucide-react';
 import { timeAgo } from '@/lib/helpers';
+import { useT } from '@/lib/i18n';
+import { richText } from '@/lib/rich-text';
+import type { MessageKey } from '@/i18n/keys';
 import { toast } from '@/lib/toast';
 import { FolderPickerDialog } from '@/components/folder-picker-dialog';
 import { FileRequestEditDialog } from '@/components/file-request-edit-dialog';
@@ -60,6 +64,7 @@ interface Recipient {
 // ── Page ──────────────────────────────────────────────────
 
 export default function FileRequestsPage() {
+  const t = useT();
   const workspaceId = useWorkspace((s: { activeId: string }) => s.activeId);
   const navigate = useNavigate();
   const [requests, setRequests] = useState<FileRequest[]>([]);
@@ -102,27 +107,27 @@ export default function FileRequestsPage() {
       {/* Header */}
       <div className="flex items-start justify-between mb-5 gap-4">
         <div>
-          <h1 className="text-xl font-bold">File requests</h1>
+          <h1 className="text-xl font-bold">{t('common.heading.fileRequests')}</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            {loading ? 'Loading...' : `${requests.length} request${requests.length === 1 ? '' : 's'}`}
+            {loading ? t('common.label.loading') : t('file-requests.description.requestscountPluralOneRequestOtherRequests', { requestsCount: requests.length })}
           </p>
         </div>
         <div className="flex items-center gap-2">
           <div className="relative w-44">
-            <Search className="size-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <Search className="size-3.5 absolute inset-s-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
             <Input
-              placeholder="Search requests..."
+              placeholder={t('file-requests.placeholder.searchRequests')}
               value={search}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearch(e.target.value)}
-              className="h-8 text-xs pl-8"
+              className="h-8 text-xs ps-8"
             />
           </div>
           <Button size="sm" className="gap-1.5" onClick={() => setCreateOpen(true)}>
-            <Plus className="size-4" /> New request
+            <Plus className="size-4" /> {t('file-requests.action.newRequest')}
           </Button>
           <Link to="/files">
             <Button variant="outline" size="sm" className="gap-1.5">
-              <ArrowLeft className="size-4" /> Files
+              <ArrowLeft className="size-4 rtl:-scale-x-100" /> {t('common.label.files.files')}
             </Button>
           </Link>
         </div>
@@ -144,13 +149,13 @@ export default function FileRequestsPage() {
           </div>
         ) : filtered.length === 0 ? (
           search ? (
-            <div className="py-12 text-center text-muted-foreground text-sm">No requests match your search</div>
+            <div className="py-12 text-center text-muted-foreground text-sm">{t('file-requests.label.noRequestsMatchYourSearch')}</div>
           ) : (
             <EmptyState
               icon={Inbox}
-              title="No file requests yet"
-              description="A file request collects files from people who do not have an account. Send them a link and their uploads land in the folder you choose."
-              actions={<Button size="sm" className="h-7 text-xs" onClick={() => setCreateOpen(true)}>Create a request</Button>}
+              title={t('file-requests.tooltip.noFileRequestsYet')}
+              description={t('file-requests.description.aFileRequestCollectsFilesFromPeopleWhoDoNotHave')}
+              actions={<Button size="sm" className="h-7 text-xs" onClick={() => setCreateOpen(true)}>{t('file-requests.action.createARequest')}</Button>}
             />
           )
         ) : (
@@ -206,6 +211,7 @@ function RequestRow({ request: r, revoked, expired, isActive, onRevoke, onOpenRe
   request: FileRequest; revoked: boolean; expired: boolean; isActive: boolean;
   onRevoke: () => void; onOpenRecipients: () => void; onEdit: () => void;
 }) {
+  const t = useT();
   const navigate = useNavigate();
   const [revoking, setRevoking] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -222,15 +228,22 @@ function RequestRow({ request: r, revoked, expired, isActive, onRevoke, onOpenRe
   const handleCopy = async () => {
     await navigator.clipboard.writeText(r.url);
     setCopied(true);
-    toast.success('Link copied', 'The request link is on your clipboard.');
+    toast.success(t('common.feedback.linkCopied'), t('common.feedback.theRequestLinkIsOnYourClipboard'));
     setTimeout(() => setCopied(false), 2000);
   };
 
   const expiryText = r.expires_at
     ? expired
-      ? `Expired ${timeAgo(r.expires_at)}`
-      : `Expires ${new Date(r.expires_at * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`
-    : 'No expiry';
+      ? t('file-requests.label.expiredRexpiresAt', { rExpires_at: timeAgo(r.expires_at) })
+      : t('common.label.expiresDate', { date: formatDateWith(r.expires_at, { month: 'short', day: 'numeric' }) })
+    : t('common.label.noExpiry');
+
+  // Template-only tidy: some languages leave a doubled or trailing space when the creator part is empty.
+  const createdText = t('file-requests.description.createdRcreatedAtHascreator', {
+    rCreated_at: timeAgo(r.created_at),
+    hasCreator: r.created_by_name ? 'true' : 'other',
+    rCreated_by_name: r.created_by_name ?? '',
+  }).replace(/ {2,}/g, ' ').trim();
 
   return (
     <div className={`flex items-center gap-3 px-5 py-3.5 border-b last:border-b-0 hover:bg-muted/50 transition-colors ${revoked ? 'opacity-50' : ''}`}>
@@ -239,43 +252,43 @@ function RequestRow({ request: r, revoked, expired, isActive, onRevoke, onOpenRe
       </div>
       <div className="flex-1 min-w-0 cursor-pointer" onClick={() => navigate(`/file-requests/${r.id}`)}>
         <p className={`text-sm font-medium truncate ${revoked ? 'line-through' : ''}`}>
-          {r.title || 'Untitled request'}
+          {r.title || t('common.label.untitledRequest')}
         </p>
         <div className="flex items-center gap-2 mt-1 flex-wrap">
           {revoked ? (
-            <Badge variant="secondary" className="text-[10px]">Revoked</Badge>
+            <Badge variant="secondary" className="text-[10px]">{t('common.status.revoked')}</Badge>
           ) : expired ? (
-            <Badge variant="destructive" className="text-[10px]">Expired</Badge>
+            <Badge variant="destructive" className="text-[10px]">{t('common.status.expired')}</Badge>
           ) : (
-            <Badge className="bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-400 text-[10px]">Active</Badge>
+            <Badge className="bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-400 text-[10px]">{t('common.status.active')}</Badge>
           )}
-          <Badge variant="secondary" className="text-[10px]">{r.upload_count} file{r.upload_count === 1 ? '' : 's'}</Badge>
-          {r.is_password_protected ? <Badge variant="secondary" className="text-[10px]">Password</Badge> : null}
+          <Badge variant="secondary" className="text-[10px]">{t('file-requests.status.ruploadCountPluralOneFileOtherFiles', { rUpload_count: r.upload_count })}</Badge>
+          {r.is_password_protected ? <Badge variant="secondary" className="text-[10px]">{t('common.status.password')}</Badge> : null}
           <span className="text-[11px] text-muted-foreground">{expiryText}</span>
           <span className="text-[11px] text-muted-foreground">
-            Created {timeAgo(r.created_at)} {r.created_by_name ? `by ${r.created_by_name}` : ''}
+            {createdText}
           </span>
         </div>
       </div>
       <div className="flex gap-1.5 shrink-0">
-        <Button variant="outline" size="sm" className="h-7 text-xs" onClick={onOpenRecipients}>Recipients</Button>
+        <Button variant="outline" size="sm" className="h-7 text-xs" onClick={onOpenRecipients}>{t('file-requests.action.recipients')}</Button>
         {r.upload_count > 0 && (
           <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => navigate(`/file-requests/${r.id}`)}>
-            Uploads ({r.upload_count})
+            {t('file-requests.action.uploadsRuploadCount', { uploadCount: String(r.upload_count) })}
           </Button>
         )}
         {!revoked && (
-          <Button variant="outline" size="sm" className="h-7 text-xs" onClick={onEdit}>Edit</Button>
+          <Button variant="outline" size="sm" className="h-7 text-xs" onClick={onEdit}>{t('common.edit')}</Button>
         )}
         {!revoked && (
           <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={handleCopy}>
             {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
-            {copied ? 'Copied!' : 'Copy link'}
+            {copied ? t('common.action.copied.copied') : t('common.action.copyLink')}
           </Button>
         )}
         {isActive && (
           <Button variant="outline" size="sm" className="h-7 text-xs text-destructive border-destructive/30 hover:bg-destructive/10" onClick={handleRevoke} disabled={revoking}>
-            {revoking ? <Loader2 className="size-3 animate-spin" /> : 'Revoke'}
+            {revoking ? <Loader2 className="size-3 animate-spin" /> : t('common.action.revoke')}
           </Button>
         )}
       </div>
@@ -285,17 +298,19 @@ function RequestRow({ request: r, revoked, expired, isActive, onRevoke, onOpenRe
 
 // ── Create Request Dialog ─────────────────────────────────
 
-const EXPIRY_OPTIONS = [
-  { value: '0', label: 'Never' },
-  { value: '1', label: '1 day' },
-  { value: '7', label: '7 days' },
-  { value: '30', label: '30 days' },
-  { value: '90', label: '90 days' },
+const EXPIRY_OPTIONS: { value: string; labelKey: MessageKey }[] = [
+  { value: '0', labelKey: 'common.label.never' },
+  { value: '1', labelKey: 'common.label.oneDay' },
+  { value: '7', labelKey: 'common.label.sevenDays' },
+  { value: '30', labelKey: 'common.label.thirtyDays' },
+  { value: '90', labelKey: 'common.label.ninetyDays' },
 ];
 
 function CreateRequestDialog({ workspaceId, onClose, onCreated }: {
   workspaceId: string; onClose: () => void; onCreated: () => void;
 }) {
+  const t = useT();
+  const expiryItems = EXPIRY_OPTIONS.map((o) => ({ value: o.value, label: t(o.labelKey) }));
   const [tab, setTab] = useState<'email' | 'link'>('email');
   const [title, setTitle] = useState('');
   const [message, setMessage] = useState('');
@@ -338,11 +353,11 @@ function CreateRequestDialog({ workspaceId, onClose, onCreated }: {
   const handleSubmit = async () => {
     setError('');
     if (tab === 'email' && emails.length === 0) {
-      setError('Add at least one email address.');
+      setError(t('common.error.addAtLeastOneEmailAddress'));
       return;
     }
     const pw = password.trim();
-    if (pw && pw.length < 8) { setError('Password must be at least 8 characters.'); return; }
+    if (pw && pw.length < 8) { setError(t('file-requests.error.passwordMustBeAtLeastMinCharactersFullStop', { min: '8' })); return; }
 
     setSubmitting(true);
     try {
@@ -366,16 +381,16 @@ function CreateRequestDialog({ workspaceId, onClose, onCreated }: {
       if (res.ok) {
         const url = res.url ?? res.request?.url ?? '';
         if (tab === 'email') {
-          toast.success('Request sent', `Request sent to ${emails.length} recipient${emails.length === 1 ? '' : 's'}`);
+          toast.success(t('file-requests.feedback.requestSent'), t('file-requests.feedback.requestSentToEmailscountPluralOneRecipientOtherRecipients', { emailsCount: emails.length }));
           onCreated();
         } else {
           // Link mode: show the URL inline
           setResultUrl(url);
           setSubmitting(false);
-          try { await navigator.clipboard.writeText(url); toast.success('Link copied', 'The request link is on your clipboard.'); } catch {}
+          try { await navigator.clipboard.writeText(url); toast.success(t('common.feedback.linkCopied'), t('common.feedback.theRequestLinkIsOnYourClipboard')); } catch {}
         }
       } else {
-        setError(res.error ?? 'Failed to create');
+        setError(res.error ?? t('file-requests.error.failedToCreate'));
         setSubmitting(false);
       }
     } catch (err) {
@@ -385,7 +400,7 @@ function CreateRequestDialog({ workspaceId, onClose, onCreated }: {
   };
 
   const handleCopyResult = async () => {
-    try { await navigator.clipboard.writeText(resultUrl); toast.success('Link copied', 'The link is on your clipboard.'); } catch {}
+    try { await navigator.clipboard.writeText(resultUrl); toast.success(t('common.feedback.linkCopied'), t('file-requests.feedback.theLinkIsOnYourClipboard')); } catch {}
   };
 
   return (
@@ -393,7 +408,7 @@ function CreateRequestDialog({ workspaceId, onClose, onCreated }: {
     <Dialog open onOpenChange={() => onClose()}>
       <DialogContent className="max-w-md max-h-[85vh] flex flex-col">
         <DialogHeader>
-          <DialogTitle>Request files</DialogTitle>
+          <DialogTitle>{t('file-requests.heading.requestFiles')}</DialogTitle>
         </DialogHeader>
 
         {/* Tabs */}
@@ -404,10 +419,10 @@ function CreateRequestDialog({ workspaceId, onClose, onCreated }: {
         >
           <TabsList variant="line" className="w-full gap-0 border-b p-0 group-data-horizontal/tabs:h-auto">
             <TabsTrigger value="email" className="flex-1 rounded-none py-2.5 text-xs group-data-horizontal/tabs:after:-bottom-px">
-              <Mail className="size-3.5" /> By email
+              <Mail className="size-3.5" /> {t('common.action.byEmail')}
             </TabsTrigger>
             <TabsTrigger value="link" className="flex-1 rounded-none py-2.5 text-xs group-data-horizontal/tabs:after:-bottom-px">
-              <Copy className="size-3.5" /> By link
+              <Copy className="size-3.5" /> {t('common.action.byLink')}
             </TabsTrigger>
           </TabsList>
         </Tabs>
@@ -416,7 +431,7 @@ function CreateRequestDialog({ workspaceId, onClose, onCreated }: {
           {/* Email tab: recipients */}
           {tab === 'email' && (
             <div>
-              <Label className="text-xs font-medium text-muted-foreground mb-1 block">Email addresses</Label>
+              <Label className="text-xs font-medium text-muted-foreground mb-1 block">{t('common.label.emailAddresses')}</Label>
               <div className="flex flex-wrap gap-1 min-h-9 border rounded-md px-2 py-1.5 cursor-text focus-within:ring-1 focus-within:ring-ring">
                 {emails.map((e, i) => (
                   <span key={i} className="inline-flex items-center gap-1 bg-muted rounded px-1.5 py-0.5 text-[11px] font-medium">
@@ -429,7 +444,7 @@ function CreateRequestDialog({ workspaceId, onClose, onCreated }: {
                   onChange={(e) => setEmailInput(e.target.value)}
                   onKeyDown={handleEmailKeyDown}
                   onBlur={() => { if (emailInput.trim()) { addEmail(emailInput); setEmailInput(''); } }}
-                  placeholder={emails.length === 0 ? 'name@example.com (press Enter to add)' : ''}
+                  placeholder={emails.length === 0 ? t('file-requests.placeholder.nameExampleComPressEnterToAdd') : ''}
                   className="flex-1 min-w-24 bg-transparent outline-none text-xs"
                 />
               </div>
@@ -438,7 +453,7 @@ function CreateRequestDialog({ workspaceId, onClose, onCreated }: {
 
           {/* Link tab: info */}
           {tab === 'link' && !resultUrl && (
-            <p className="text-xs text-muted-foreground">Generate a link anyone can use to upload files to your workspace.</p>
+            <p className="text-xs text-muted-foreground">{t('file-requests.description.generateALinkAnyoneCanUseToUploadFilesToYour')}</p>
           )}
 
           {/* Shared fields (hidden after link result) */}
@@ -446,30 +461,30 @@ function CreateRequestDialog({ workspaceId, onClose, onCreated }: {
             <>
               {/* Title */}
               <div>
-                <Label className="text-xs font-medium text-muted-foreground mb-1 block">Title <span className="font-normal">(optional)</span></Label>
-                <Input value={title} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setTitle(e.target.value)} placeholder="e.g. Q1 invoices" className="h-8 text-xs" />
+                <Label className="text-xs font-medium text-muted-foreground mb-1 block">{t('common.label.titleOptional')}</Label>
+                <Input value={title} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setTitle(e.target.value)} placeholder={t('common.placeholder.eGQ1Invoices')} className="h-8 text-xs" />
               </div>
 
               {/* Message */}
               <div>
-                <Label className="text-xs font-medium text-muted-foreground mb-1 block">Message <span className="font-normal">(optional)</span></Label>
-                <Textarea value={message} onChange={(e) => setMessage(e.target.value)} placeholder="Please send the signed contracts..." className="h-14 min-h-0 px-3 text-xs md:text-xs resize-y" />
+                <Label className="text-xs font-medium text-muted-foreground mb-1 block">{t('common.label.messageOptional')}</Label>
+                <Textarea value={message} onChange={(e) => setMessage(e.target.value)} placeholder={t('common.placeholder.pleaseSendTheSignedContracts')} className="h-14 min-h-0 px-3 text-xs md:text-xs resize-y" />
               </div>
 
               {/* Password + Expiry row */}
               <div className="flex gap-3">
                 <div className="flex-1">
-                  <Label className="text-xs font-medium text-muted-foreground mb-1 block">Password <span className="font-normal">(opt)</span></Label>
-                  <Input type="password" value={password} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPassword(e.target.value)} placeholder="Min 8 chars" className="h-8 text-xs" autoComplete="off" />
+                  <Label className="text-xs font-medium text-muted-foreground mb-1 block">{t('file-requests.label.passwordOpt')}</Label>
+                  <Input type="password" value={password} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPassword(e.target.value)} placeholder={t('file-requests.placeholder.min8Chars')} className="h-8 text-xs" autoComplete="off" />
                 </div>
                 <div className="flex-1">
-                  <Label className="text-xs font-medium text-muted-foreground mb-1 block">Expires</Label>
-                  <Select value={expiry} onValueChange={(v) => setExpiry(v as string)} items={EXPIRY_OPTIONS}>
+                  <Label className="text-xs font-medium text-muted-foreground mb-1 block">{t('common.label.expires')}</Label>
+                  <Select value={expiry} onValueChange={(v) => setExpiry(v as string)} items={expiryItems}>
                     <SelectTrigger className="w-full h-8 text-xs">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {EXPIRY_OPTIONS.map((o) => (
+                      {expiryItems.map((o) => (
                         <SelectItem key={o.value} value={o.value} className="text-xs">{o.label}</SelectItem>
                       ))}
                     </SelectContent>
@@ -479,21 +494,21 @@ function CreateRequestDialog({ workspaceId, onClose, onCreated }: {
 
               {/* Upload destination */}
               <div>
-                <Label className="text-xs font-medium text-muted-foreground mb-1 block">Upload destination</Label>
+                <Label className="text-xs font-medium text-muted-foreground mb-1 block">{t('common.label.uploadDestination')}</Label>
                 <button
                   type="button"
-                  className="w-full h-8 border rounded-md px-2.5 text-xs bg-background flex items-center gap-2 hover:bg-muted/50 text-left"
+                  className="w-full h-8 border rounded-md px-2.5 text-xs bg-background flex items-center gap-2 hover:bg-muted/50 text-start"
                   onClick={() => setPickerOpen(true)}
                 >
                   {folderId ? (
                     <>
                       <FolderOpen className="size-3 text-muted-foreground shrink-0" />
-                      <span className="flex-1 truncate">{folderName || 'Selected folder'}</span>
+                      <span className="flex-1 truncate">{folderName || t('common.action.selectedFolder')}</span>
                     </>
                   ) : (
                     <>
                       <Home className="size-3 text-muted-foreground shrink-0" />
-                      <span className="flex-1 truncate">Root (workspace top level)</span>
+                      <span className="flex-1 truncate">{t('common.action.rootWorkspaceTopLevel')}</span>
                     </>
                   )}
                   <ChevronDown className="size-3 text-muted-foreground shrink-0" />
@@ -506,11 +521,14 @@ function CreateRequestDialog({ workspaceId, onClose, onCreated }: {
                     data-testid="uploader-folders"
                   />
                   <span>
-                    <span className="font-medium">Put each uploader in their own folder</span>
+                    <span className="font-medium">{t('file-requests.description.putEachUploaderInTheirOwnFolder')}</span>
                     <span className="block text-muted-foreground">
                       {title.trim()
-                        ? <>Files go to <span className="font-medium text-foreground">{title.trim()}/</span> with a folder per person, named after them.</>
-                        : 'Files go into a folder per person, named after them.'}
+                        ? richText(
+                            t('file-requests.description.filesGoToTitletrimWithAFolderPerPersonNamedAfter'),
+                            { titleTrim: <span className="font-medium text-foreground">{title.trim()}</span> },
+                          )
+                        : t('file-requests.description.filesGoIntoAFolderPerPersonNamedAfterThem')}
                     </span>
                   </span>
                 </label>
@@ -519,22 +537,22 @@ function CreateRequestDialog({ workspaceId, onClose, onCreated }: {
               {/* Advanced options */}
               <div>
                 <button className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground" onClick={() => setShowAdvanced(!showAdvanced)}>
-                  <ChevronDown className={`size-3 transition-transform ${showAdvanced ? 'rotate-180' : ''}`} /> Advanced options
+                  <ChevronDown className={`size-3 transition-transform ${showAdvanced ? 'rotate-180' : ''}`} /> {t('common.action.advancedOptions')}
                 </button>
                 {showAdvanced && (
                   <div className="mt-2 space-y-3">
                     <div>
-                      <Label className="text-xs font-medium text-muted-foreground mb-1 block">Allowed extensions</Label>
-                      <Input value={allowedExts} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setAllowedExts(e.target.value)} placeholder=".pdf, .docx, .jpg" className="h-8 text-xs" />
+                      <Label className="text-xs font-medium text-muted-foreground mb-1 block">{t('common.label.allowedExtensions')}</Label>
+                      <Input value={allowedExts} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setAllowedExts(e.target.value)} placeholder={t('common.placeholder.pdfDocxJpg')} className="h-8 text-xs" />
                     </div>
                     <div className="flex gap-3">
                       <div className="flex-1">
-                        <Label className="text-xs font-medium text-muted-foreground mb-1 block">Max file size (MB)</Label>
-                        <Input type="number" value={maxSizeMb} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setMaxSizeMb(e.target.value)} placeholder="No limit" className="h-8 text-xs" />
+                        <Label className="text-xs font-medium text-muted-foreground mb-1 block">{t('common.label.maxFileSizeMb')}</Label>
+                        <Input type="number" value={maxSizeMb} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setMaxSizeMb(e.target.value)} placeholder={t('common.placeholder.noLimit')} className="h-8 text-xs" />
                       </div>
                       <div className="flex-1">
-                        <Label className="text-xs font-medium text-muted-foreground mb-1 block">Max files</Label>
-                        <Input type="number" value={maxFiles} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setMaxFiles(e.target.value)} placeholder="Unlimited" className="h-8 text-xs" />
+                        <Label className="text-xs font-medium text-muted-foreground mb-1 block">{t('common.label.maxFiles')}</Label>
+                        <Input type="number" value={maxFiles} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setMaxFiles(e.target.value)} placeholder={t('common.placeholder.unlimited')} className="h-8 text-xs" />
                       </div>
                     </div>
                   </div>
@@ -546,25 +564,25 @@ function CreateRequestDialog({ workspaceId, onClose, onCreated }: {
           {/* Result URL (link mode) */}
           {resultUrl && (
             <div>
-              <Label className="text-xs font-medium text-muted-foreground mb-1.5 block">Request link</Label>
+              <Label className="text-xs font-medium text-muted-foreground mb-1.5 block">{t('file-requests.label.requestLink')}</Label>
               <div className="flex gap-2">
-                <Input value={resultUrl} readOnly className="h-8 text-xs font-mono flex-1" />
-                <Button variant="outline" size="sm" className="h-8 text-xs shrink-0" onClick={handleCopyResult}>Copy</Button>
+                <Input value={resultUrl} readOnly dir="ltr" className="h-8 text-xs font-mono flex-1" />
+                <Button variant="outline" size="sm" className="h-8 text-xs shrink-0" onClick={handleCopyResult}>{t('common.copy')}</Button>
               </div>
             </div>
           )}
 
-          {error && <p className="text-xs text-destructive bg-destructive/10 border border-destructive/20 rounded-md px-3 py-2">{error}</p>}
+          {error && <p dir="auto" className="text-xs text-destructive bg-destructive/10 border border-destructive/20 rounded-md px-3 py-2">{error}</p>}
         </div>
 
         <DialogFooter>
           <Button variant="outline" onClick={() => { if (resultUrl) { onCreated(); } else { onClose(); } }}>
-            {resultUrl ? 'Done' : 'Cancel'}
+            {resultUrl ? t('common.done') : t('common.cancel')}
           </Button>
           {!resultUrl && (
             <Button onClick={handleSubmit} disabled={submitting}>
-              {submitting ? <Loader2 className="size-4 animate-spin mr-1.5" /> : tab === 'email' ? <Send className="size-3.5 mr-1.5" /> : <Copy className="size-3.5 mr-1.5" />}
-              {submitting ? (tab === 'email' ? 'Sending...' : 'Creating...') : (tab === 'email' ? 'Send request' : 'Generate link')}
+              {submitting ? <Loader2 className="size-4 animate-spin me-1.5" /> : tab === 'email' ? <Send className="size-3.5 me-1.5 rtl:-scale-x-100" /> : <Copy className="size-3.5 me-1.5" />}
+              {submitting ? (tab === 'email' ? t('common.action.sending') : t('common.action.creating')) : (tab === 'email' ? t('file-requests.action.sendRequest') : t('common.action.generateLink'))}
             </Button>
           )}
         </DialogFooter>
@@ -587,8 +605,9 @@ function CreateRequestDialog({ workspaceId, onClose, onCreated }: {
 // ── Recipients Dialog ─────────────────────────────────────
 
 function RecipientsDialog({ requestId, onClose }: { requestId: string; onClose: () => void }) {
+  const t = useT();
   const [recipients, setRecipients] = useState<Recipient[]>([]);
-  const [title, setTitle] = useState('Recipients');
+  const [dataTitle, setDataTitle] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [email, setEmail] = useState('');
   const [error, setError] = useState('');
@@ -602,7 +621,7 @@ function RecipientsDialog({ requestId, onClose }: { requestId: string; onClose: 
       );
       if (data.ok) {
         setRecipients(data.recipients);
-        if (data.title) setTitle(`Recipients: ${data.title}`);
+        if (data.title) setDataTitle(data.title);
       }
     } catch {}
     setLoading(false);
@@ -613,7 +632,7 @@ function RecipientsDialog({ requestId, onClose }: { requestId: string; onClose: 
   const addRecipient = async () => {
     const trimmed = email.trim().toLowerCase();
     if (!trimmed || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
-      setError('Enter a valid email address'); return;
+      setError(t('file-requests.error.enterAValidEmailAddress')); return;
     }
     setError('');
     setAdding(true);
@@ -621,7 +640,7 @@ function RecipientsDialog({ requestId, onClose }: { requestId: string; onClose: 
       const data = await api<{ ok: boolean; error?: string }>(`/api/file-requests/${requestId}/recipients`, {
         method: 'POST', body: JSON.stringify({ email: trimmed }),
       });
-      if (data.ok) { setEmail(''); load(); } else setError(data.error ?? 'Failed');
+      if (data.ok) { setEmail(''); load(); } else setError(data.error ?? t('common.error.failed'));
     } catch (err) { setError(apiErrorMessage(err)); }
     setAdding(false);
   };
@@ -642,13 +661,14 @@ function RecipientsDialog({ requestId, onClose }: { requestId: string; onClose: 
         sent++;
       } catch (err) { lastError = apiErrorMessage(err); }
     }
-    if (sent > 0) toast.success('Reminders sent', `Sent to ${sent} of ${pending.length} recipient${pending.length === 1 ? '' : 's'}`);
-    else toast.error('No reminders sent', lastError || 'Try again later');
+    if (sent > 0) toast.success(t('file-requests.feedback.remindersSent'), t('file-requests.feedback.sentToSentOfPendingcountPluralOneRecipientOther', { sent: String(sent), pendingCount: pending.length }));
+    else toast.error(t('file-requests.error.noRemindersSent'), lastError || t('file-requests.error.tryAgainLater'));
     load();
     setResendingAll(false);
   };
 
   const pendingCount = recipients.filter((r) => !r.uploaded_at).length;
+  const title = dataTitle ? t('file-requests.label.recipientsDatatitle', { dataTitle }) : t('common.label.recipients');
 
   return (
     <Dialog open onOpenChange={() => onClose()}>
@@ -659,29 +679,29 @@ function RecipientsDialog({ requestId, onClose }: { requestId: string; onClose: 
 
         {/* Add recipient */}
         <div className="flex gap-2">
-          <Input type="email" placeholder="Add email address..." value={email}
+          <Input type="email" placeholder={t('file-requests.placeholder.addEmailAddress')} value={email}
             onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEmail(e.target.value)}
             onKeyDown={(e: React.KeyboardEvent) => e.key === 'Enter' && addRecipient()}
             className="h-8 text-xs flex-1"
           />
           <Button size="sm" className="h-8 text-xs gap-1" onClick={addRecipient} disabled={adding}>
-            {adding ? <Loader2 className="size-3 animate-spin" /> : <Send className="size-3" />} Add & send
+            {adding ? <Loader2 className="size-3 animate-spin" /> : <Send className="size-3 rtl:-scale-x-100" />} {t('file-requests.action.addSend')}
           </Button>
           {pendingCount > 0 && (
             <Button variant="outline" size="sm" className="h-8 text-xs" onClick={resendAll} disabled={resendingAll}>
-              {resendingAll ? <Loader2 className="size-3 animate-spin mr-1" /> : null}
-              Resend all
+              {resendingAll ? <Loader2 className="size-3 animate-spin me-1" /> : null}
+              {t('file-requests.action.resendAll')}
             </Button>
           )}
         </div>
-        {error && <p className="text-xs text-destructive">{error}</p>}
+        {error && <p dir="auto" className="text-xs text-destructive">{error}</p>}
 
         {/* List */}
         <div className="max-h-64 overflow-y-auto -mx-4 px-4">
           {loading ? (
             <div className="space-y-2 py-4">{[1, 2].map((i) => <Skeleton key={i} className="h-10 w-full" />)}</div>
           ) : recipients.length === 0 ? (
-            <p className="py-8 text-center text-xs text-muted-foreground">No recipients yet. Add one above.</p>
+            <p className="py-8 text-center text-xs text-muted-foreground">{t('file-requests.description.noRecipientsYetAddOneAbove')}</p>
           ) : (
             recipients.map((r) => (
               <RecipientRow key={r.id} recipient={r} requestId={requestId} onUpdate={load} />
@@ -696,6 +716,7 @@ function RecipientsDialog({ requestId, onClose }: { requestId: string; onClose: 
 function RecipientRow({ recipient: r, requestId, onUpdate }: {
   recipient: Recipient; requestId: string; onUpdate: () => void;
 }) {
+  const t = useT();
   const [resending, setResending] = useState(false);
   const [removing, setRemoving] = useState(false);
   const uploaded = r.uploaded_at !== null;
@@ -706,9 +727,9 @@ function RecipientRow({ recipient: r, requestId, onUpdate }: {
       await api(`/api/file-requests/${requestId}/resend`, {
         method: 'POST', body: JSON.stringify({ recipient_id: r.id }),
       });
-      toast.success('Reminder sent', `Sent to ${r.email}`);
+      toast.success(t('file-requests.feedback.reminderSent'), t('file-requests.feedback.sentToRemail', { rEmail: r.email }));
       onUpdate();
-    } catch (err) { toast.error('Reminder not sent', apiErrorMessage(err)); }
+    } catch (err) { toast.error(t('file-requests.error.reminderNotSent'), apiErrorMessage(err)); }
     setResending(false);
   };
 
@@ -726,13 +747,13 @@ function RecipientRow({ recipient: r, requestId, onUpdate }: {
       <div className="flex-1 min-w-0">
         <p className="text-xs font-medium truncate">{r.email}</p>
         <p className="text-[10px] text-muted-foreground">
-          {uploaded ? 'Uploaded' : 'Pending'} · {r.sent_at ? `Sent ${timeAgo(r.sent_at)}` : 'Not sent'}
+          {uploaded ? t('common.status.uploaded') : t('common.label.pending')} · {r.sent_at ? t('file-requests.label.sentRsentAt', { rSent_at: timeAgo(r.sent_at) }) : t('file-requests.label.notSent')}
         </p>
       </div>
       <div className="flex gap-1 shrink-0">
         {!uploaded && (
           <Button variant="outline" size="sm" className="h-6 px-2 text-[10px]" onClick={resend} disabled={resending}>
-            {resending ? <Loader2 className="size-3 animate-spin" /> : 'Resend'}
+            {resending ? <Loader2 className="size-3 animate-spin" /> : t('common.action.resend')}
           </Button>
         )}
         <Button variant="outline" size="sm" className="h-6 px-2 text-[10px] text-destructive border-destructive/30 hover:bg-destructive/10" onClick={remove} disabled={removing}>

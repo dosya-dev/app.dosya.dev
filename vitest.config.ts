@@ -8,13 +8,19 @@ export default defineConfig({
       // See vite.config.ts for why these resolve to the in-tree vendored bundle.
       '@dosya-dev/e2ee-core': path.resolve(__dirname, './vendor/e2ee-core/index.js'),
       '@dosya-dev/e2ee-client': path.resolve(__dirname, './vendor/e2ee-client/index.js'),
+      '@dosya-dev/personas-engine': path.resolve(__dirname, './vendor/personas-engine/index.js'),
+      '@dosya-dev/face-reader': path.resolve(__dirname, './vendor/face-reader/face_reader.js'),
+      '@dosya-dev/onnxruntime-web': path.resolve(__dirname, './vendor/onnxruntime-web/ort.webgpu.bundle.min.mjs'),
       '@dosya-dev/audio-player': path.resolve(__dirname, './vendor/audio-player/index.ts'),
+      '@dosya-dev/video-player/react': path.resolve(__dirname, './vendor/video-player/react.tsx'),
+      '@dosya-dev/video-player/skin.css': path.resolve(__dirname, './vendor/video-player/skin.css'),
+      '@dosya-dev/video-player': path.resolve(__dirname, './vendor/video-player/index.ts'),
     },
   },
   test: {
     environment: 'jsdom',
     globals: false,
-    include: ['src/**/*.test.{ts,tsx}'],
+    include: ['src/**/*.test.{ts,tsx}', 'scripts/**/*.test.mjs'],
     // TurnstileWidget deliberately renders nothing when no sitekey is
     // configured, and .env is gitignored so CI has none - without this the
     // widget's own tests would silently exercise the skip path and fail on a

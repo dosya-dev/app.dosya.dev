@@ -1,4 +1,5 @@
 import { cn } from '@/lib/utils';
+import { useT } from '@/lib/i18n';
 
 /**
  * sm 14px: inside a button, next to its label.
@@ -35,7 +36,8 @@ interface SealLoaderProps {
  * without wearing on anyone. The animation lives in index.css next to the
  * other motion rules and their reduced-motion policy.
  */
-export function SealLoader({ size = 'md', label = 'Loading', delay = false, className }: SealLoaderProps) {
+export function SealLoader({ size = 'md', label, delay = false, className }: SealLoaderProps) {
+  const t = useT();
   return (
     <span
       role="status"
@@ -54,7 +56,7 @@ export function SealLoader({ size = 'md', label = 'Loading', delay = false, clas
         <circle className="seal-loader-ping" cx="16.6" cy="14.6" r="2.1" />
         <circle className="seal-loader-dot fill-[#16a34a] dark:fill-[#22c55e]" cx="16.6" cy="14.6" r="2.1" />
       </svg>
-      <span className="sr-only">{label}</span>
+      <span className="sr-only">{label ?? t('common.status.loading.loading2')}</span>
     </span>
   );
 }

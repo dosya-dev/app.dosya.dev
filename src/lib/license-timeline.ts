@@ -1,28 +1,32 @@
+import { formatDateWith } from '@/lib/format-locale';
+import { t } from '@/lib/i18n';
+import type { MessageKey } from '@/i18n/keys';
 // One wording for redeemed-license dates, shared by billing and the workspace
 // dashboard so a package never reads "Active" in one place and "Ending" in another.
 
 export type LicenseIntervalValue = 'month' | 'quarter' | 'half_year' | 'year' | 'two_years' | 'unknown';
 
-export const LICENSE_INTERVAL_LABELS: Record<LicenseIntervalValue, string> = {
-  month: 'Monthly',
-  quarter: 'Quarterly',
-  half_year: 'Every 6 months',
-  year: 'Yearly',
-  two_years: 'Every 2 years',
-  unknown: 'Recurring',
+// Keys, translated when asked for, so a language switch never leaves a stale label.
+const LICENSE_INTERVAL_KEYS: Record<LicenseIntervalValue, MessageKey> = {
+  month: 'common.label.monthly',
+  quarter: 'common.label.quarterly',
+  half_year: 'common.label.every6Months',
+  year: 'common.label.yearly',
+  two_years: 'common.label.every2Years',
+  unknown: 'common.label.recurring',
 };
 
 export function licenseIntervalLabel(interval: string | null | undefined): string {
-  return LICENSE_INTERVAL_LABELS[(interval ?? 'unknown') as LicenseIntervalValue] ?? 'Recurring';
+  return t(LICENSE_INTERVAL_KEYS[(interval ?? 'unknown') as LicenseIntervalValue] ?? 'common.label.recurring');
 }
 
 /** How to name the source of a redeemed grant: Gumroad packages vs. admin-minted coupon codes. */
 export function licenseProviderLabel(provider: string | null | undefined): string {
-  if (provider === 'voucher') return 'Coupon code';
-  if (!provider || provider === 'gumroad') return 'Gumroad';
+  if (provider === 'voucher') return t('common.label.couponCode');
+  if (!provider || provider === 'gumroad') return t('common.label.gumroad');
   // A provider we have no wording for is still something the person redeemed;
   // printing the raw column value at them explains nothing.
-  return 'Redeemed code';
+  return t('common.label.redeemedCode');
 }
 
 /**
@@ -47,7 +51,7 @@ export type LicenseTimeline = {
 };
 
 export function formatLicenseDate(unix: number): string {
-  return new Date(unix * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  return formatDateWith(unix, { month: 'short', day: 'numeric', year: 'numeric' }, 'en-US');
 }
 
 export function licenseTimeline(
@@ -66,29 +70,31 @@ export function licenseTimeline(
   if (status === 'revoked') {
     return {
       tone: 'revoked',
-      badge: 'Revoked',
+      badge: t('common.status.revoked'),
       text: endsAt
-        ? (gumroad ? `Refunded or disputed on Gumroad · Ended ${formatLicenseDate(endsAt)}` : `Revoked · Ended ${formatLicenseDate(endsAt)}`)
-        : (gumroad ? 'Refunded or disputed on Gumroad' : 'Revoked'),
+        ? (gumroad
+          ? t('common.description.refundedOrDisputedOnGumroadEndedEndsat', { endsAt: formatLicenseDate(endsAt) })
+          : t('common.label.revokedEndedEndsat', { endsAt: formatLicenseDate(endsAt) }))
+        : (gumroad ? t('common.label.refundedOrDisputedOnGumroad') : t('common.label.revoked')),
     };
   }
   if (status === 'ended') {
     return {
       tone: 'ended',
-      badge: 'Ended',
-      text: endsAt ? `Ended ${formatLicenseDate(endsAt)}` : (gumroad ? 'Membership ended on Gumroad' : 'Ended'),
+      badge: t('common.status.ended'),
+      text: endsAt ? t('common.label.endedEndsat', { endsAt: formatLicenseDate(endsAt) }) : (gumroad ? t('common.label.membershipEndedOnGumroad') : t('common.label.ended')),
     };
   }
   if (endsAt !== null) {
     // The daily check flips status shortly after the end passes; until then it has still ended.
-    if (endsAt <= nowUnix) return { tone: 'ended', badge: 'Ended', text: `Ended ${formatLicenseDate(endsAt)}` };
+    if (endsAt <= nowUnix) return { tone: 'ended', badge: t('common.status.ended'), text: t('common.label.endedEndsat', { endsAt: formatLicenseDate(endsAt) }) };
     if (!gumroad && endsAt - nowUnix > LICENSE_ENDING_SOON_DAYS * 86_400) {
-      return { tone: 'renews', badge: 'Active', text: `Ends ${formatLicenseDate(endsAt)}` };
+      return { tone: 'renews', badge: t('common.status.active.subscription'), text: t('common.label.endsEndsat', { endsAt: formatLicenseDate(endsAt) }) };
     }
-    return { tone: 'ending', badge: 'Ending', text: `Ends ${formatLicenseDate(endsAt)}` };
+    return { tone: 'ending', badge: t('common.status.ending'), text: t('common.label.endsEndsat', { endsAt: formatLicenseDate(endsAt) }) };
   }
   if (grant.renews_at) {
-    return { tone: 'renews', badge: 'Active', text: `Renews around ${formatLicenseDate(grant.renews_at)}` };
+    return { tone: 'renews', badge: t('common.status.active.subscription'), text: t('common.label.renewsAroundGrantrenewsAt', { grantRenews_at: formatLicenseDate(grant.renews_at) }) };
   }
-  return { tone: 'renews', badge: 'Active', text: gumroad ? 'Renews through Gumroad' : 'Does not end' };
+  return { tone: 'renews', badge: t('common.status.active.subscription'), text: gumroad ? t('common.label.renewsThroughGumroad') : t('common.label.doesNotEnd') };
 }

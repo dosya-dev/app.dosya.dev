@@ -1,4 +1,4 @@
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 
@@ -35,6 +35,8 @@ vi.mock('@/components/pdf-viewer/pdf-viewer', () => {
   return { PdfViewer, default: PdfViewer };
 });
 
+vi.mock('@/lib/personas-device/engine-host', () => import('@/lib/personas-device/__fixtures__/fake-host'));
+const { fakeHost } = await import('@/lib/personas-device/__fixtures__/fake-host');
 const { FileViewer } = await import('./file-viewer');
 
 beforeAll(() => {
@@ -440,6 +442,25 @@ describe('FileViewer inspector', () => {
     expect(text).toContain('Share links');
   });
 
+  it('shows "In this photo" chips from this device\'s Personas, and nothing while Personas is off', async () => {
+    fakeHost.reset();
+    fakeHost.engine.faces.set('f1', [{ persona_id: 'p1', name: 'Emma', face_id: 'fa', box: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 } }]);
+    apiMock.mockImplementation(() => Promise.resolve(versionRows()));
+    await mountViewer();
+    const inspector = container!.querySelector('[data-testid="viewer-inspector"]')!;
+    expect(inspector.textContent).toContain('In this photo');
+    expect(inspector.querySelector('a[href="/personas/p1"]')!.textContent).toContain('Emma');
+    expect(apiMock.mock.calls.filter(([p]) => /personas|\/people/.test(String(p)))).toEqual([]);
+    act(() => root!.unmount());
+    container!.remove();
+    root = null;
+
+    fakeHost.reset({ state: 'off' });
+    fakeHost.engine.faces.set('f1', [{ persona_id: 'p1', name: 'Emma', face_id: 'fa', box: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 } }]);
+    await mountViewer();
+    expect(container!.querySelector('[data-testid="viewer-inspector"]')!.textContent).not.toContain('In this photo');
+  });
+
   it('switches to the Versions tab and lists versions with a Latest badge', async () => {
     apiMock.mockImplementation(() => Promise.resolve(versionRows()));
     await mountViewer();
@@ -653,70 +674,253 @@ describe('Comments tab layout and navigation', () => {
   });
 });
 
-describe('Video comment markers', () => {
-  it('draws a marker strip positioned from anchor_ms / duration once metadata loads', async () => {
-    const { listComments } = await import('@/components/comments/api');
-    (listComments as ReturnType<typeof vi.fn>).mockImplementation(async () => [
-      { id: 'c1', file_id: 'f1', folder_id: null, workspace_id: 'w1', user_id: 'u1', parent_id: null, body: 'at twenty five', is_edited: 0,
-        created_at: 1, updated_at: 1, user_name: 'U', user_email: 'u@x', user_avatar: null, anchor_ms: 25_000, anchor_page: null,
-        anchor_version: 1, mention_user_ids: null, mentions: [] }]);
-    container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container);
+// ── Video (Video.js player) ───────────────────────────────────────
+
+/**
+ * jsdom has no media pipeline. Same stubs as audio-player.test.tsx, plus
+ * canPlayType so Video.js believes the Html5 tech can play the source.
+ */
+const mediaProps = ['play', 'pause', 'load', 'canPlayType'] as const;
+let savedMedia: Partial<Record<(typeof mediaProps)[number], PropertyDescriptor | undefined>> = {};
+let loadSpy: ReturnType<typeof vi.fn>;
+let hadMatchMedia = true;
+
+function stubMedia() {
+  savedMedia = {};
+  for (const k of mediaProps) savedMedia[k] = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, k);
+  loadSpy = vi.fn();
+  Object.defineProperty(HTMLMediaElement.prototype, 'play', { configurable: true, writable: true, value: vi.fn(() => Promise.resolve()) });
+  Object.defineProperty(HTMLMediaElement.prototype, 'pause', { configurable: true, writable: true, value: vi.fn() });
+  Object.defineProperty(HTMLMediaElement.prototype, 'load', { configurable: true, writable: true, value: loadSpy });
+  Object.defineProperty(HTMLMediaElement.prototype, 'canPlayType', { configurable: true, writable: true, value: () => 'maybe' });
+  hadMatchMedia = typeof window.matchMedia === 'function';
+  if (!hadMatchMedia) {
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true, writable: true,
+      value: (query: string) => ({
+        matches: false, media: query, onchange: null, addListener() {}, removeListener() {},
+        addEventListener() {}, removeEventListener() {}, dispatchEvent: () => false,
+      }),
+    });
+  }
+}
+
+function restoreMedia() {
+  for (const k of mediaProps) {
+    const d = savedMedia[k];
+    if (d) Object.defineProperty(HTMLMediaElement.prototype, k, d);
+    else delete (HTMLMediaElement.prototype as unknown as Record<string, unknown>)[k];
+  }
+  if (!hadMatchMedia) delete (window as unknown as Record<string, unknown>).matchMedia;
+}
+
+function videoFile(overrides: Record<string, unknown> = {}) {
+  return { ...htmlFile(), name: 'clip.mp4', mime_type: 'video/mp4', extension: 'mp4', ...overrides };
+}
+
+function commentAt(ms: number, body: string) {
+  return { id: 'c1', file_id: 'f1', folder_id: null, workspace_id: 'w1', user_id: 'u1', parent_id: null, body, is_edited: 0,
+    created_at: 1, updated_at: 1, user_name: 'U', user_email: 'u@x', user_avatar: null, anchor_ms: ms, anchor_page: null,
+    anchor_version: 1, mention_user_ids: null, mentions: [] };
+}
+
+async function mountVideoViewer(file: ReturnType<typeof videoFile>) {
+  container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container);
+  const el = () => createElement(FileViewer, {
+    file: file as never, files: [file] as never, workspaceId: 'w1',
+    onClose: () => {}, onNavigate: () => {}, onRefresh: () => {},
+  });
+  await act(async () => { root!.render(el()); await flush(); });
+  return { rerender: async () => { await act(async () => { root!.render(el()); await flush(); }); } };
+}
+
+/** Give the <video> a duration and fire loadedmetadata, as a real decode would. */
+async function loadMetadata(video: HTMLVideoElement, seconds = 100) {
+  Object.defineProperty(video, 'duration', { configurable: true, value: seconds });
+  await act(async () => { video.dispatchEvent(new Event('loadedmetadata')); await flush(); });
+}
+
+describe('Video player in the file viewer', () => {
+  beforeEach(stubMedia);
+  afterEach(restoreMedia);
+
+  it('keeps the same video element across re-renders and after versions arrive', async () => {
+    // Versions land a tick after mount, which changes stableRawUrl's cache
+    // token. The old player was keyed on the url and remounted right there.
+    apiMock.mockImplementation((path: string) => new Promise((resolve) => {
+      setTimeout(() => resolve(String(path).endsWith('/versions') ? versionRows() : { ok: true }), 5);
+    }));
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network disabled in test')));
-    const file = { ...htmlFile(), name: 'clip.mp4', mime_type: 'video/mp4', extension: 'mp4' };
+    const srcSets: string[] = [];
+    const realSetAttribute = Element.prototype.setAttribute;
+    const setAttr = vi.spyOn(Element.prototype, 'setAttribute').mockImplementation(function (this: Element, name: string, value: string) {
+      if (this instanceof HTMLMediaElement && name === 'src') srcSets.push(value);
+      return realSetAttribute.call(this, name, value);
+    });
+    try {
+      const { rerender } = await mountVideoViewer(videoFile({ current_version: 2 }));
+      const video = container!.querySelector('video');
+      expect(video, 'expected the player to render a <video>').not.toBeNull();
+      const src = video!.getAttribute('src');
+      await act(async () => { await new Promise((r) => setTimeout(r, 20)); await flush(); });
+      expect(apiMock.mock.calls.some(([p]) => String(p).endsWith('/versions'))).toBe(true);
+      await rerender();
+      expect(container!.querySelector('video')).toBe(video);
+      expect(video!.isConnected).toBe(true);
+      expect(video!.getAttribute('src')).toBe(src);
+      expect(srcSets).toHaveLength(1);
+      expect(loadSpy.mock.calls.length).toBeLessThanOrEqual(1);
+    } finally {
+      setAttr.mockRestore();
+    }
+  });
+
+  it('decode failure shows download and unregisters the anchor target', async () => {
+    const { VideoPlayer } = await import('./video/video-player');
+    const { AnchorProvider, useAnchorTarget } = await import('@/components/comments/anchor-context');
+    function Probe() {
+      const t = useAnchorTarget();
+      return createElement('span', { 'data-testid': 'probe', 'data-target': t ? t.kind : 'none' });
+    }
+    const file = videoFile();
+    const downloadUrl = 'https://api.example.test/api/files/f1/download';
+    container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container);
     await act(async () => {
-      root!.render(createElement(FileViewer, {
-        file: file as never, files: [file] as never, workspaceId: 'w1',
-        onClose: () => {}, onNavigate: () => {}, onRefresh: () => {},
+      root!.render(createElement(AnchorProvider, {
+        markers: [], pending: null, onPendingApplied: () => {}, onSelectComment: () => {},
+        children: [
+          createElement(VideoPlayer, { key: 'v', file: file as never, stableRawUrl: 'https://api.example.test/api/files/f1/raw?_t=1', downloadUrl }),
+          createElement(Probe, { key: 'p' }),
+        ],
       }));
       await flush();
     });
+    const probe = () => container!.querySelector('[data-testid="probe"]')!.getAttribute('data-target');
     const video = container.querySelector('video')!;
+    expect(probe()).toBe('none');
+    await loadMetadata(video);
+    expect(probe()).toBe('time');
+    expect(container.querySelector('.dp-download')).toBeNull();
+    await act(async () => { video.dispatchEvent(new Event('error')); await flush(); });
+    expect(container.querySelector(`.dp-download[href="${downloadUrl}"]`)).not.toBeNull();
+    expect(container.textContent).toContain("This browser can't decode this video. Download it and open it in a player like VLC, which decodes everything.");
+    expect(probe()).toBe('none');
+  });
+
+  it('a version switch drops the anchor target until the new player reports a duration', async () => {
+    const { VideoPlayer } = await import('./video/video-player');
+    const { AnchorProvider, useAnchorTarget } = await import('@/components/comments/anchor-context');
+    function Probe() {
+      const t = useAnchorTarget();
+      return createElement('span', { 'data-testid': 'probe', 'data-target': t ? t.kind : 'none' });
+    }
+    const file = videoFile({ current_version: 2 });
+    container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container);
+    const render = (version: number) => act(async () => {
+      root!.render(createElement(AnchorProvider, {
+        markers: [], pending: null, onPendingApplied: () => {}, onSelectComment: () => {},
+        children: [
+          createElement(VideoPlayer, { key: 'v', file: file as never, version, stableRawUrl: `https://api.example.test/api/files/f1/raw?v=${version}`, downloadUrl: 'https://api.example.test/dl' }),
+          createElement(Probe, { key: 'p' }),
+        ],
+      }));
+      await flush();
+    });
+    const probe = () => container!.querySelector('[data-testid="probe"]')!.getAttribute('data-target');
+    await render(2);
+    const first = container.querySelector('video')!;
+    await loadMetadata(first);
+    expect(probe()).toBe('time');
+    await render(1);
+    const second = container.querySelector('video')!;
+    expect(second).not.toBe(first);
+    expect(probe()).toBe('none');
+    await loadMetadata(second);
+    expect(probe()).toBe('time');
+  });
+
+  it('sends a playback report to the signed-in route and shows the API error when it fails', async () => {
+    const { VideoPlayer } = await import('./video/video-player');
+    const { ApiError } = await import('@/api/client');
+    apiMock.mockImplementation(() => Promise.resolve({ ok: true, reference: 'R-1' }));
+    const file = videoFile();
+    container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container);
+    await act(async () => {
+      root!.render(createElement(VideoPlayer, { file: file as never, stableRawUrl: 'https://api.example.test/raw', downloadUrl: 'https://api.example.test/dl' }));
+      await flush();
+    });
+    const q = <T extends HTMLElement = HTMLElement>(s: string) => container!.querySelector<T>(s);
+    const send = async (details: string) => {
+      await click(q('.dp-report-btn'));
+      await click(q('button.dp-opt[data-reason="playback"]'));
+      const box = q<HTMLTextAreaElement>('[data-step="playback"] textarea[name="details"]')!;
+      box.value = details; box.dispatchEvent(new Event('input', { bubbles: true }));
+      await click(q('[data-step="playback"] .dp-send'));
+    };
+    expect(container.querySelectorAll('button.dp-opt').length).toBe(1);
+    await send('stutters');
+    const call = apiMock.mock.calls.find(([p]) => String(p) === '/api/files/f1/report');
+    expect(call, 'expected a POST to the report route').toBeDefined();
+    expect(call![1]).toMatchObject({ method: 'POST' });
+    expect(JSON.parse(String((call![1] as RequestInit).body))).toMatchObject({ reason: 'playback', details: 'stutters' });
+    expect(q('[data-step="done"]')!.hidden).toBe(false);
+
+    apiMock.mockImplementation(() => Promise.reject(new ApiError(429, JSON.stringify({ ok: false, error: 'Too many reports' }))));
+    // The done step closes the popover; the next press reopens it on a clean pick.
+    if (!q('.dp-report-anchor.dp-open')) await click(q('.dp-report-btn'));
+    await click(q('button.dp-opt[data-reason="playback"]'));
+    await click(q('[data-step="playback"] .dp-send'));
+    expect(q('.dp-error')?.textContent).toContain('Too many reports');
+  });
+});
+
+describe('Video comment markers', () => {
+  beforeEach(stubMedia);
+  afterEach(restoreMedia);
+
+  it('draws a .dp-marker per timestamped comment, positioned from anchor_ms / duration, and a click seeks and selects', async () => {
+    const { listComments } = await import('@/components/comments/api');
+    (listComments as ReturnType<typeof vi.fn>).mockImplementation(async () => [commentAt(25_000, 'at twenty five')]);
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network disabled in test')));
+    await mountVideoViewer(videoFile());
+    const video = container!.querySelector('video')!;
     expect(video).not.toBeNull();
-    expect(container.querySelector('[data-testid="video-marker-strip"]')).toBeNull();
-    Object.defineProperty(video, 'duration', { configurable: true, value: 100 });
-    await act(async () => { video.dispatchEvent(new Event('loadedmetadata')); await flush(); });
-    const strip = container.querySelector('[data-testid="video-marker-strip"]');
-    expect(strip).not.toBeNull();
-    const dot = strip!.querySelector<HTMLButtonElement>('button')!;
-    expect(dot.style.left).toBe('25%');
+    expect(container!.querySelector('.dp-marker')).toBeNull();
+    await loadMetadata(video);
+    const dot = container!.querySelector<HTMLButtonElement>('.dp-marker[data-id="c1"]');
+    expect(dot).not.toBeNull();
+    expect(dot!.getAttribute('aria-label')).toBe('Comment: at twenty five');
+    expect(dot!.style.left).toBe('25%');
+    expect(container!.querySelector('[data-testid="viewer-inspector"]')?.textContent ?? '').not.toContain('at twenty five');
+    await click(dot);
+    expect(video.currentTime).toBe(25);
+    // selectComment opened the comments panel on that comment.
+    expect(container!.querySelector('[data-testid="viewer-inspector"]')?.textContent).toContain('at twenty five');
   });
 
   it('clicking a marker left on an older version says so, once, like the panel chip', async () => {
     const { toast } = await import('@/lib/toast');
     const info = vi.spyOn(toast, 'info').mockImplementation(() => {});
     const { listComments } = await import('@/components/comments/api');
-    (listComments as ReturnType<typeof vi.fn>).mockImplementation(async () => [
-      { id: 'c1', file_id: 'f1', folder_id: null, workspace_id: 'w1', user_id: 'u1', parent_id: null, body: 'old take', is_edited: 0,
-        created_at: 1, updated_at: 1, user_name: 'U', user_email: 'u@x', user_avatar: null, anchor_ms: 25_000, anchor_page: null,
-        anchor_version: 1, mention_user_ids: null, mentions: [] }]);
-    container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container);
+    (listComments as ReturnType<typeof vi.fn>).mockImplementation(async () => [commentAt(25_000, 'old take')]);
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network disabled in test')));
-    const file = { ...htmlFile(), name: 'clip.mp4', mime_type: 'video/mp4', extension: 'mp4', current_version: 2 };
-    await act(async () => {
-      root!.render(createElement(FileViewer, {
-        file: file as never, files: [file] as never, workspaceId: 'w1',
-        onClose: () => {}, onNavigate: () => {}, onRefresh: () => {},
-      }));
-      await flush();
-    });
-    const video = container.querySelector('video')!;
-    Object.defineProperty(video, 'duration', { configurable: true, value: 100 });
-    await act(async () => { video.dispatchEvent(new Event('loadedmetadata')); await flush(); });
-    await click(container.querySelector<HTMLButtonElement>('[data-testid="video-marker-strip"] button')!);
+    await mountVideoViewer(videoFile({ current_version: 2 }));
+    const video = container!.querySelector('video')!;
+    await loadMetadata(video);
+    await click(container!.querySelector<HTMLButtonElement>('.dp-marker[data-id="c1"]'));
     expect(info).toHaveBeenCalledTimes(1);
     expect(info).toHaveBeenCalledWith('Comment was left on v1');
-    // The panel opened on the comment; its chip goes through the same path.
-    // Opening the inspector re-lays the stage, so give the (possibly new)
-    // <video> its metadata again before the chip can seek it.
+    // The panel opened on the comment; its chip seeks through the anchor
+    // target and goes through the same note.
     info.mockClear();
-    const video2 = container.querySelector('video')!;
-    Object.defineProperty(video2, 'duration', { configurable: true, value: 100 });
-    await act(async () => { video2.dispatchEvent(new Event('loadedmetadata')); await flush(); });
-    const chip = [...container.querySelectorAll<HTMLButtonElement>('[data-testid="viewer-inspector"] button')]
+    const video2 = container!.querySelector('video')!;
+    if (video2 !== video) await loadMetadata(video2);
+    const chip = [...container!.querySelectorAll<HTMLButtonElement>('[data-testid="viewer-inspector"] button')]
       .find((b) => b.textContent?.includes('0:25'))!;
     await click(chip);
     expect(info).toHaveBeenCalledTimes(1);
     expect(info).toHaveBeenCalledWith('Comment was left on v1');
+    expect(video2.currentTime).toBe(25);
     info.mockRestore();
   });
 });

@@ -1,0 +1,12 @@
+{
+  "applinks": {
+    "details": [
+      {
+        "appIDs": ["53HFF44WQ8.dev.dosya.app"],
+        "components": [
+          { "/": "/tv", "comment": "dosya TV sign-in QR code: opens the app's approval screen (apps/mobile/app/tv.tsx)" }
+        ]
+      }
+    ]
+  }
+}

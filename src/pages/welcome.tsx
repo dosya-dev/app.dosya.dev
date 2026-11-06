@@ -13,6 +13,7 @@ import WebDemo, { type WebView } from '@/components/demo/WebDemo';
 import DesktopDemo from '@/components/demo/DesktopDemo';
 import MobileDemo from '@/components/demo/MobileDemo';
 import type { DemoThemeId } from '@/components/demo/engine/demoData';
+import { useT } from '@/lib/i18n';
 
 // Which page each non-welcome step's preview opens to. Steps not listed here
 // (welcome, ready) keep the demo's own default (dashboard). Values are the
@@ -40,6 +41,7 @@ const STEP_VIEW: Record<TourStepId, WebView> = {
  * the frame in tour-layout, and the two interactive pages in their own files.
  */
 export default function WelcomePage() {
+  const t = useT();
   const navigate = useNavigate();
   const [index, setIndex] = useState(0);
   const [demoTheme, setDemoTheme] = useState<string>(() => readCache().theme);
@@ -92,14 +94,14 @@ export default function WelcomePage() {
             <div className="flex flex-wrap items-center gap-2">
               <a href="https://dosya.dev/desktop" target="_blank" rel="noreferrer"
                  className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border text-xs font-medium hover:bg-muted/50 transition-colors">
-                <Download className="size-3.5" /> Download for desktop
+                <Download className="size-3.5" /> {t('welcome.action.downloadForDesktop')}
               </a>
               {/* The mobile app is not on the App Store yet, so this is a
                   link to the product page, not a download. When it ships,
                   this becomes a store link and nothing else changes. */}
               <a href="https://dosya.dev/mobile" target="_blank" rel="noreferrer"
                  className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border text-xs font-medium text-muted-foreground hover:bg-muted/50 transition-colors">
-                <Smartphone className="size-3.5" /> Mobile app, coming to the App Store
+                <Smartphone className="size-3.5" /> {t('welcome.action.mobileAppComingToTheAppStore')}
               </a>
             </div>
           </div>
@@ -109,7 +111,8 @@ export default function WelcomePage() {
       }
       preview={
         step.id === 'welcome' ? (
-          <div className="space-y-4">
+          <div className="space-y-4" dir="ltr">
+            {/* The demos are vendored from the marketing site and stay left to right in every language. */}
             {/* showThemeControls=false: the tour's own picker above already
                 changes the real app, so the demos' in-preview pickers would
                 just be a second, non-functional one. ctaHref=null: the
@@ -122,12 +125,14 @@ export default function WelcomePage() {
             </div>
           </div>
         ) : (
-          <WebDemo
-            theme={previewTheme}
-            showThemeControls={false}
-            ctaHref={null}
-            initialView={STEP_VIEW[step.id]}
-          />
+          <div className="contents" dir="ltr">
+            <WebDemo
+              theme={previewTheme}
+              showThemeControls={false}
+              ctaHref={null}
+              initialView={STEP_VIEW[step.id]}
+            />
+          </div>
         )
       }
     />

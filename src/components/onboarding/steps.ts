@@ -13,6 +13,8 @@
  * literals on the API side and pinned by tests on both.
  */
 
+import type { MessageKey } from '@/i18n/keys';
+
 export type DerivationKey =
   | 'upload'
   | 'share'
@@ -35,43 +37,44 @@ export type Purpose = 'personal' | 'dev' | 'team' | 'media';
 export interface OnboardingStep {
   /** The derivation that proves this step is done. */
   key: DerivationKey;
-  title: string;
-  /** One line on why it is worth doing. Not a description of the click. */
-  why: string;
-  cta: string;
+  /** Catalog key of the title. Translated when rendered. */
+  titleKey: MessageKey;
+  /** Key of one line on why it is worth doing. Not a description of the click. */
+  whyKey: MessageKey;
+  ctaKey: MessageKey;
   /** Where the button goes. The doing place, never a docs page. */
   href: string;
 }
 
 const UPLOAD: OnboardingStep = {
   key: 'upload',
-  title: 'Upload your first file',
-  why: 'Drag anything in. It is stored encrypted at rest and stays yours.',
-  cta: 'Go to Files',
+  titleKey: 'dashboard.heading.uploadYourFirstFile',
+  whyKey: 'dashboard.description.dragAnythingInItIsStoredEncryptedAtRestAndStays',
+  ctaKey: 'dashboard.label.goToFiles',
   href: '/files',
 };
 
 const SHARE: OnboardingStep = {
   key: 'share',
-  title: 'Create a share link',
-  why: 'Send a file to anyone. They do not need an account to open it.',
-  cta: 'Go to Files',
+  titleKey: 'dashboard.heading.createAShareLink',
+  whyKey: 'dashboard.description.sendAFileToAnyoneTheyDoNotNeedAnAccount',
+  ctaKey: 'dashboard.label.goToFiles',
   href: '/files',
 };
 
 const CLIENT_USED: OnboardingStep = {
   key: 'client_used',
-  title: 'Connect a client',
-  why: 'Mount dosya on your machine with the CLI, rclone, WebDAV or S3.',
-  cta: 'See setup guides',
+  titleKey: 'dashboard.heading.connectAClient',
+  whyKey: 'dashboard.description.mountDosyaOnYourMachineWithTheCliRcloneWebdavOr',
+  ctaKey: 'dashboard.label.seeSetupGuides',
   href: '/integrations',
 };
 
 const INVITE: OnboardingStep = {
   key: 'invite',
-  title: 'Invite a teammate',
-  why: 'A shared workspace keeps everyone on the same files and permissions.',
-  cta: 'Invite someone',
+  titleKey: 'dashboard.heading.inviteATeammate',
+  whyKey: 'dashboard.description.aSharedWorkspaceKeepsEveryoneOnTheSameFilesAndPermissions',
+  ctaKey: 'dashboard.label.inviteSomeone',
   href: '/teams',
 };
 
@@ -80,16 +83,16 @@ export const STEP_SETS: Record<Purpose | 'generic', OnboardingStep[]> = {
     UPLOAD,
     {
       key: 'desktop',
-      title: 'Install the desktop app',
-      why: 'Keep a folder on your Mac or PC in sync automatically.',
-      cta: 'Get the app',
+      titleKey: 'dashboard.heading.installTheDesktopApp',
+      whyKey: 'dashboard.description.keepAFolderOnYourMacOrPcInSyncAutomatically',
+      ctaKey: 'dashboard.label.getTheApp',
       href: '/integrations/desktop',
     },
     {
       key: 'import',
-      title: 'Import from Google Drive',
-      why: 'Bring what you already have across in one pass.',
-      cta: 'Start an import',
+      titleKey: 'dashboard.heading.importFromGoogleDrive',
+      whyKey: 'dashboard.description.bringWhatYouAlreadyHaveAcrossInOnePass',
+      ctaKey: 'dashboard.label.startAnImport',
       href: '/integrations/google',
     },
     SHARE,
@@ -102,9 +105,9 @@ export const STEP_SETS: Record<Purpose | 'generic', OnboardingStep[]> = {
     UPLOAD,
     {
       key: 'api_key',
-      title: 'Create an API key',
-      why: 'One key authenticates the CLI, rclone, WebDAV and the REST API.',
-      cta: 'Create a key',
+      titleKey: 'dashboard.heading.createAnApiKey',
+      whyKey: 'dashboard.description.oneKeyAuthenticatesTheCliRcloneWebdavAndTheRestApi',
+      ctaKey: 'dashboard.label.createAKey',
       href: '/profile/api',
     },
     CLIENT_USED,
@@ -117,9 +120,9 @@ export const STEP_SETS: Record<Purpose | 'generic', OnboardingStep[]> = {
     SHARE,
     {
       key: 'file_request',
-      title: 'Set up a file request',
-      why: 'Collect files from people who do not have a dosya account.',
-      cta: 'Create a request',
+      titleKey: 'dashboard.heading.setUpAFileRequest',
+      whyKey: 'dashboard.description.collectFilesFromPeopleWhoDoNotHaveADosyaAccount',
+      ctaKey: 'dashboard.label.createARequest',
       href: '/file-requests',
     },
   ],
@@ -128,16 +131,16 @@ export const STEP_SETS: Record<Purpose | 'generic', OnboardingStep[]> = {
     UPLOAD,
     {
       key: 'geo',
-      title: 'See your photos on the map',
-      why: 'Photos carrying GPS data appear where they were taken.',
-      cta: 'Open the map',
+      titleKey: 'dashboard.heading.seeYourPhotosOnTheMap',
+      whyKey: 'dashboard.description.photosCarryingGpsDataAppearWhereTheyWereTaken',
+      ctaKey: 'dashboard.label.openTheMap',
       href: '/map',
     },
     {
       key: 'mobile',
-      title: 'Install the mobile app',
-      why: 'Back up your camera roll in the background.',
-      cta: 'Get the app',
+      titleKey: 'dashboard.heading.installTheMobileApp',
+      whyKey: 'dashboard.description.backUpYourCameraRollInTheBackground',
+      ctaKey: 'dashboard.label.getTheApp',
       href: 'https://dosya.dev/mobile',
     },
     SHARE,

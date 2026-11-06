@@ -1,4 +1,6 @@
+import { formatDateWith, formatNumberWith } from '@/lib/format-locale';
 import { useState } from 'react';
+import { useT } from '@/lib/i18n';
 import { requestRefund, type BillingStatus } from '@/api/billing';
 import { ApiError, apiErrorMessage } from '@/api/client';
 import { formatBytes } from '@/lib/billing/cart-math';
@@ -12,12 +14,11 @@ import { Loader2 } from 'lucide-react';
 const FREE_BYTES = 5 * 1024 * 1024 * 1024;
 
 function money(cents: number, currency: string | null): string {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: (currency ?? 'usd').toUpperCase() })
-    .format(cents / 100);
+  return formatNumberWith(cents / 100, { style: 'currency', currency: (currency ?? 'usd').toUpperCase() }, 'en-US');
 }
 
 function day(unix: number): string {
-  return new Date(unix * 1000).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+  return formatDateWith(unix, { month: 'long', day: 'numeric', year: 'numeric' }, 'en-US');
 }
 
 function errorCode(e: unknown): string | null {
@@ -39,6 +40,7 @@ export function RefundDialog({ data, familyMembers, onClose, onRefunded, onStale
    */
   onStale?: () => void;
 }) {
+  const t = useT();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Money has moved (partial or cancel_failed): another click can only earn a
@@ -67,7 +69,7 @@ export function RefundDialog({ data, familyMembers, onClose, onRefunded, onStale
     <Dialog open onOpenChange={(o) => { if (!o && !busy) onClose(); }}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Refund {total} and end your plan?</DialogTitle>
+          <DialogTitle>{t('billing.heading.refundTotalAndEndYourPlan', { total })}</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-3 text-sm">
@@ -84,29 +86,29 @@ export function RefundDialog({ data, familyMembers, onClose, onRefunded, onStale
               ))}
             </ul>
           )}
-          <p>Your plan ends now and your account goes back to {formatBytes(FREE_BYTES)}. Your files are not deleted. Items in Trash older than 7 days are removed, as on the free plan.</p>
+          <p>{t('billing.description.yourPlanEndsNowAndYourAccountGoesBackToFreeBytes', { FREE_BYTES: formatBytes(FREE_BYTES) })}</p>
           {overFreeLimit && (
             <p className="text-muted-foreground">
-              You store {formatBytes(data.usage.used_bytes)}. Uploads pause until you are under {formatBytes(FREE_BYTES)}.
+              {t('billing.description.youStoreUsageusedBytesUploadsPauseUntilYouAreUnderFreeBytes', { usageUsed_bytes: formatBytes(data.usage.used_bytes), FREE_BYTES: formatBytes(FREE_BYTES) })}
             </p>
           )}
           {familyMembers > 0 && (
             <p className="text-muted-foreground">
-              {familyMembers} family {familyMembers === 1 ? 'member goes' : 'members go'} back to the free plan.
+              {t('billing.description.familymembersFamilyFamilymembersPluralOneMemberGoesOtherMembersGoBack', { familyMembers })}
             </p>
           )}
           <p className="text-muted-foreground">
-            The money returns to your original payment method in 5 to 10 business days.
+            {t('billing.description.theMoneyReturnsToYourOriginalPaymentMethodIn5To')}
           </p>
-          <p className="text-muted-foreground">You can use a self-serve refund once.</p>
-          {error && <p className="text-red-600">{error}</p>}
+          <p className="text-muted-foreground">{t('billing.description.youCanUseASelfServeRefundOnce')}</p>
+          {error && <p dir="auto" className="text-red-600">{error}</p>}
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={onClose} disabled={busy}>Keep my plan</Button>
+          <Button variant="outline" onClick={onClose} disabled={busy}>{t('billing.action.keepMyPlan')}</Button>
           <Button variant="destructive" onClick={confirm} disabled={busy || moneyMoved}>
             {busy && <Loader2 className="size-4 animate-spin" />}
-            Refund {total}
+            {t('billing.action.refundTotal', { total })}
           </Button>
         </DialogFooter>
       </DialogContent>

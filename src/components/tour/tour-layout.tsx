@@ -3,6 +3,7 @@ import { ArrowLeft, ArrowRight, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { TourStep } from './tour-steps';
 import { Logo } from "@/components/brand/logo";
+import { useT } from '@/lib/i18n';
 
 /**
  * Isolates the demo preview from the rest of the page.
@@ -57,6 +58,7 @@ interface TourLayoutProps {
 export function TourLayout({
   step, index, total, onBack, onNext, onSkip, preview, extra,
 }: TourLayoutProps) {
+  const t = useT();
   const isFirst = index === 0;
   const isLast = index === total - 1;
 
@@ -73,7 +75,7 @@ export function TourLayout({
           onClick={onSkip}
           className="text-xs text-muted-foreground hover:text-foreground transition-colors"
         >
-          Skip
+          {t('welcome.action.skip')}
         </button>
       </header>
 
@@ -96,13 +98,13 @@ export function TourLayout({
           any individual page's content height.
         */}
         <div className="max-w-md lg:min-h-screen">
-          <h1 className="text-2xl font-bold tracking-tight mb-6">{step.heading}</h1>
+          <h1 className="text-2xl font-bold tracking-tight mb-6">{t(step.headingKey)}</h1>
 
           <ul className="space-y-4">
             {step.points.map((p) => (
-              <li key={p.title}>
-                <p className="text-sm font-medium">{p.title}</p>
-                <p className="text-sm text-muted-foreground leading-snug">{p.body}</p>
+              <li key={p.titleKey}>
+                <p className="text-sm font-medium">{t(p.titleKey)}</p>
+                <p className="text-sm text-muted-foreground leading-snug">{t(p.bodyKey)}</p>
               </li>
             ))}
           </ul>
@@ -121,15 +123,15 @@ export function TourLayout({
             <div className="flex items-center gap-2">
               {!isFirst && (
                 <Button variant="outline" data-testid="tour-back" onClick={onBack} className="gap-1.5">
-                  <ArrowLeft className="size-4" /> Back
+                  <ArrowLeft className="size-4 rtl:-scale-x-100" /> {t('common.back')}
                 </Button>
               )}
               <Button data-testid="tour-next" onClick={onNext} className="gap-1.5">
-                {isLast ? <><Check className="size-4" /> Finish</> : <>Next <ArrowRight className="size-4" /></>}
+                {isLast ? <><Check className="size-4" /> {t('welcome.action.finish')}</> : <>{t('common.next')} <ArrowRight className="size-4 rtl:-scale-x-100" /></>}
               </Button>
             </div>
 
-            <div className="flex items-center gap-1.5 mt-8" aria-label={`Step ${index + 1} of ${total}`}>
+            <div className="flex items-center gap-1.5 mt-8" aria-label={t('welcome.accessibility.stepIndexOfTotal', { shown: index + 1, total })}>
               {Array.from({ length: total }, (_, i) => (
                 <span
                   key={i}

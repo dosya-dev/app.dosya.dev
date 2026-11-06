@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useE2ee, type WorkspaceMember } from '@/stores/e2ee';
 import { api } from '@/api/client';
+import { useT } from '@/lib/i18n';
+import { richText } from '@/lib/rich-text';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -27,6 +29,7 @@ export function MembersPanel({
   onOpenChange: (open: boolean) => void;
   workspaceName: string;
 }) {
+  const t = useT();
   const members = useE2ee((s) => s.members);
   const busy = useE2ee((s) => s.busy);
   const inviteMember = useE2ee((s) => s.inviteMember);
@@ -65,13 +68,13 @@ export function MembersPanel({
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Users className="size-4" /> Members - {workspaceName}
+              <Users className="size-4" /> {t('vault.heading.membersWorkspacename', { workspaceName })}
             </DialogTitle>
           </DialogHeader>
 
           <div className="max-h-64 space-y-1.5 overflow-y-auto">
             {members.length === 0 ? (
-              <p className="py-4 text-center text-xs text-muted-foreground">No members yet.</p>
+              <p className="py-4 text-center text-xs text-muted-foreground">{t('vault.label.noMembersYet')}</p>
             ) : (
               members.map((m) => {
                 const isYou = currentUserId != null && m.userId === currentUserId;
@@ -82,7 +85,7 @@ export function MembersPanel({
                   >
                     <div className="flex min-w-0 items-center gap-1.5">
                       <span className="truncate text-sm">{m.email}</span>
-                      {isYou && <Badge variant="secondary" className="text-[9px]">you</Badge>}
+                      {isYou && <Badge variant="secondary" className="text-[9px]">{t('common.status.you')}</Badge>}
                     </div>
                     {!isYou && (
                       <Button
@@ -91,7 +94,7 @@ export function MembersPanel({
                         className="shrink-0 text-destructive hover:text-destructive"
                         disabled={busy}
                         onClick={() => setRevokeTarget(m)}
-                        title="Revoke access"
+                        title={t('vault.action.revokeAccess')}
                       >
                         <Trash2 className="size-3.5" />
                       </Button>
@@ -105,15 +108,14 @@ export function MembersPanel({
           <div className="flex items-start gap-2 rounded-lg border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
             <ShieldAlert className="mt-0.5 size-3.5 shrink-0" />
             <p>
-              Access is granted by trust-on-first-use. Verify a contact out of band; automatic
-              key-transparency protection is coming.
+              {t('vault.description.accessIsGrantedByTrustOnFirstUseVerify')}
             </p>
           </div>
 
           <div className="flex items-center gap-1.5">
             <Input
               type="email"
-              placeholder="teammate@example.com"
+              placeholder={t('vault.placeholder.teammateExampleCom')}
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') handleInvite(); }}
@@ -126,7 +128,7 @@ export function MembersPanel({
               onClick={handleInvite}
               disabled={busy || !email.trim()}
             >
-              <UserPlus className="size-3.5" /> Invite
+              <UserPlus className="size-3.5" /> {t('common.action.invite')}
             </Button>
           </div>
         </DialogContent>
@@ -139,23 +141,27 @@ export function MembersPanel({
       >
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>Revoke access?</DialogTitle>
+            <DialogTitle>{t('vault.heading.revokeAccess')}</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
-            Revoke <span className="font-semibold text-foreground">{revokeTarget?.email}</span>'s
-            access to &ldquo;{workspaceName}&rdquo;?
+            {richText(
+              t('vault.description.revokeRevoketargetemailSAccessToLdquoWorkspacenameRdquo'),
+              {
+                revokeTargetEmail: <span className="font-semibold text-foreground">{revokeTarget?.email}</span>,
+                workspaceName,
+              },
+            )}
           </p>
           <div className="flex items-start gap-2 rounded-lg border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
             <ShieldAlert className="mt-0.5 size-3.5 shrink-0" />
             <p>
-              Revoking re-keys this Space so future content is unreadable to them. Anything they
-              already downloaded stays with them. Re-keying a large Space can take a while.
+              {t('vault.description.revokingReKeysThisSpaceSoFutureContentIs')}
             </p>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setRevokeTarget(null)}>Cancel</Button>
+            <Button variant="outline" onClick={() => setRevokeTarget(null)}>{t('common.cancel')}</Button>
             <Button variant="destructive" className="gap-1.5" onClick={handleRevoke} disabled={busy}>
-              <Trash2 className="size-3.5" /> Revoke
+              <Trash2 className="size-3.5" /> {t('common.action.revoke')}
             </Button>
           </DialogFooter>
         </DialogContent>

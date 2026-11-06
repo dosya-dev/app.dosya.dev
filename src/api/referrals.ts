@@ -1,4 +1,5 @@
 import { api } from "@/api/client";
+import { t } from "@/lib/i18n";
 
 export type ReferralFriend = { email_masked: string; status: string; joined_at: number };
 export type ReferralSummary = {
@@ -22,9 +23,9 @@ export const getReferralSummary = () =>
  */
 export function friendStatusLabel(status: string): string {
   switch (status) {
-    case 'credited': return 'Counted';
-    case 'pending': return 'Waiting for activity';
-    case 'held': return 'Under review';
-    default: return 'Not eligible';
+    case 'credited': return t('referrals.label.counted');
+    case 'pending': return t('referrals.label.waitingForActivity');
+    case 'held': return t('referrals.label.underReview');
+    default: return t('referrals.label.notEligible');
   }
 }

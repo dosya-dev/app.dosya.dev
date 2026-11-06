@@ -9,6 +9,7 @@ import { colorFor, initials } from '@/lib/helpers';
 import { parseVCards, serializeVCards, applyEdits, type ParsedVCard, type VPhone, type VEmail } from '@/lib/vcard';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { t, useT } from '@/lib/i18n';
 
 interface Props {
   file: { id: string; name: string; mime_type: string };
@@ -21,6 +22,7 @@ const PHONE_TYPES = ['mobile', 'home', 'work', 'main', 'fax', 'other'];
 const EMAIL_TYPES = ['home', 'work', 'other'];
 
 export function VCardView({ file, rawUrl, workspaceId, onSaved }: Props) {
+  const tr = useT();
   const [cards, setCards] = useState<ParsedVCard[] | null>(null);
   const [state, setState] = useState<'loading' | 'ok' | 'error'>('loading');
   const [selected, setSelected] = useState(0);
@@ -54,14 +56,14 @@ export function VCardView({ file, rawUrl, workspaceId, onSaved }: Props) {
   }, [cards, query]);
 
   if (state === 'loading') {
-    return <div className="text-sm text-muted-foreground">Loading contact…</div>;
+    return <div className="text-sm text-muted-foreground">{tr('common.status.loadingContact')}</div>;
   }
   if (state === 'error' || !cards) {
     return (
       <div className="bg-background border rounded-xl p-10 text-center min-w-70">
-        <p className="text-4xl font-bold text-muted-foreground/30 tracking-wider mb-3">VCF</p>
+        <p className="text-4xl font-bold text-muted-foreground/30 tracking-wider mb-3">{tr('common.label.vcf')}</p>
         <p className="text-sm text-muted-foreground break-all">{file.name}</p>
-        <p className="text-xs text-muted-foreground mt-2">This contact file couldn't be read.</p>
+        <p className="text-xs text-muted-foreground mt-2">{tr('common.error.thisContactFileCouldnTBeRead')}</p>
       </div>
     );
   }
@@ -89,13 +91,13 @@ export function VCardView({ file, rawUrl, workspaceId, onSaved }: Props) {
         mime_type: 'text/vcard',
       }),
     });
-    if (!init.ok || !init.session_id) { toast.error('Save failed', init.error ?? 'Could not start upload'); return; }
+    if (!init.ok || !init.session_id) { toast.error(t('common.error.saveFailed'), init.error ?? t('common.error.couldNotStartUpload')); return; }
     const put = await fetch(`${API_BASE}/api/upload/${init.session_id}`, {
       method: 'PUT', credentials: 'include', headers: { 'Content-Type': 'text/vcard' }, body: blob,
     });
     const putData = await put.json() as { ok: boolean; error?: string };
-    if (!put.ok || !putData.ok) { toast.error('Save failed', putData.error ?? 'Failed to save'); return; }
-    toast.success('Saved', 'Contact saved as new version.');
+    if (!put.ok || !putData.ok) { toast.error(t('common.error.saveFailed'), putData.error ?? t('common.error.failedToSave')); return; }
+    toast.success(t('common.feedback.saved'), t('common.feedback.contactSavedAsNewVersion'));
     handleSaved(edited);
     onSaved();
   };
@@ -106,8 +108,8 @@ export function VCardView({ file, rawUrl, workspaceId, onSaved }: Props) {
         <div className="w-60 shrink-0 border rounded-xl bg-background flex flex-col overflow-hidden">
           <div className="p-2 border-b">
             <div className="relative">
-              <Search className="size-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
-              <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search contacts" className="h-8 pl-8 text-xs" />
+              <Search className="size-3.5 absolute inset-s-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={tr('common.placeholder.searchContacts')} className="h-8 ps-8 text-xs" />
             </div>
           </div>
           <div className="flex-1 overflow-y-auto p-1.5">
@@ -115,13 +117,13 @@ export function VCardView({ file, rawUrl, workspaceId, onSaved }: Props) {
               <button
                 key={i}
                 onClick={() => { setSelected(i); setEditing(false); }}
-                className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-left transition-colors ${i === selected ? 'bg-muted' : 'hover:bg-muted/50'}`}
+                className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-start transition-colors ${i === selected ? 'bg-muted' : 'hover:bg-muted/50'}`}
               >
                 <Avatar card={c} px={28} />
-                <span className="text-xs font-medium truncate">{c.fullName || '(no name)'}</span>
+                <span className="text-xs font-medium truncate">{c.fullName || tr('common.action.noName')}</span>
               </button>
             ))}
-            {filtered.length === 0 && <p className="text-xs text-muted-foreground text-center py-4">No matches</p>}
+            {filtered.length === 0 && <p className="text-xs text-muted-foreground text-center py-4">{tr('common.empty.noMatches')}</p>}
           </div>
         </div>
       )}
@@ -153,15 +155,16 @@ function Avatar({ card, px }: { card: ParsedVCard; px: number }) {
 
 // ── Read-only card ─────────────────────────────────────────
 function ContactCard({ card, onEdit }: { card: ParsedVCard; onEdit: () => void }) {
+  const tr = useT();
   return (
     <div className="border rounded-2xl bg-background overflow-hidden">
       <div className="flex flex-col items-center text-center gap-2 p-6 pb-5 bg-muted/30 relative">
-        <button onClick={onEdit} className="absolute top-3 right-3 h-8 px-2.5 rounded-md border bg-background flex items-center gap-1.5 text-xs font-medium hover:bg-muted">
-          <Pencil className="size-3 text-muted-foreground" /> Edit
+        <button onClick={onEdit} className="absolute top-3 inset-e-3 h-8 px-2.5 rounded-md border bg-background flex items-center gap-1.5 text-xs font-medium hover:bg-muted">
+          <Pencil className="size-3 text-muted-foreground" /> {tr('common.edit')}
         </button>
         <Avatar card={card} px={80} />
         <div>
-          <h2 className="text-lg font-semibold">{card.fullName || '(no name)'}</h2>
+          <h2 className="text-lg font-semibold">{card.fullName || tr('common.heading.noName')}</h2>
           {(card.title || card.org) && (
             <p className="text-sm text-muted-foreground">
               {[card.title, card.org].filter(Boolean).join(' · ')}
@@ -201,6 +204,7 @@ function ContactCard({ card, onEdit }: { card: ParsedVCard; onEdit: () => void }
 }
 
 function FieldRow({ icon, type, value, href, external }: { icon: React.ReactNode; type: string; value: string; href?: string; external?: boolean }) {
+  const tr = useT();
   const [copied, setCopied] = useState(false);
   const copy = () => {
     navigator.clipboard?.writeText(value).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1200); }).catch(() => {});
@@ -214,7 +218,7 @@ function FieldRow({ icon, type, value, href, external }: { icon: React.ReactNode
           ? <a href={href} {...(external ? { target: '_blank', rel: 'noreferrer' } : {})} className="text-sm text-primary hover:underline break-all">{value}</a>
           : <p className="text-sm break-all">{value}</p>}
       </div>
-      <button onClick={copy} title="Copy" className="opacity-0 group-hover:opacity-100 transition-opacity size-7 rounded-md flex items-center justify-center hover:bg-muted shrink-0">
+      <button onClick={copy} title={tr('common.copy')} className="opacity-0 group-hover:opacity-100 transition-opacity size-7 rounded-md flex items-center justify-center hover:bg-muted shrink-0">
         <CopyCheck copied={copied} className="size-3.5 text-muted-foreground" checkClassName="text-green-600" />
       </button>
     </div>
@@ -227,6 +231,7 @@ function ContactEditor({ card, onCancel, onSave }: {
   onCancel: () => void;
   onSave: (edits: { fullName: string; phones: VPhone[]; emails: VEmail[] }) => Promise<void>;
 }) {
+  const tr = useT();
   const [fullName, setFullName] = useState(card.fullName);
   const [phones, setPhones] = useState<VPhone[]>(card.phones.length ? card.phones : [{ type: 'mobile', value: '' }]);
   const [emails, setEmails] = useState<VEmail[]>(card.emails.length ? card.emails : [{ type: 'home', value: '' }]);
@@ -241,7 +246,7 @@ function ContactEditor({ card, onCancel, onSave }: {
         emails: emails.filter((e) => e.value.trim()),
       });
     } catch (err) {
-      toast.error('Save failed', apiErrorMessage(err));
+      toast.error(tr('common.error.saveFailed'), apiErrorMessage(err));
     } finally {
       setSaving(false);
     }
@@ -250,34 +255,34 @@ function ContactEditor({ card, onCancel, onSave }: {
   return (
     <div className="border rounded-2xl bg-background p-5 space-y-5">
       <div>
-        <label className="text-xs font-medium text-muted-foreground">Name</label>
-        <Input value={fullName} onChange={(e) => setFullName(e.target.value)} className="mt-1" placeholder="Full name" />
+        <label className="text-xs font-medium text-muted-foreground">{tr('common.label.name.person')}</label>
+        <Input value={fullName} onChange={(e) => setFullName(e.target.value)} className="mt-1" placeholder={tr('common.placeholder.fullName')} />
       </div>
 
       <EditList
-        label="Phone"
+        label={tr('common.label.phone')}
         icon={<Phone className="size-3.5" />}
         rows={phones}
         types={PHONE_TYPES}
-        placeholder="Phone number"
+        placeholder={tr('common.placeholder.phoneNumber')}
         onChange={setPhones}
         emptyRow={{ type: 'mobile', value: '' }}
       />
       <EditList
-        label="Email"
+        label={tr('common.label.email')}
         icon={<Mail className="size-3.5" />}
         rows={emails}
         types={EMAIL_TYPES}
-        placeholder="email@example.com"
+        placeholder={tr('common.placeholder.emailExampleCom')}
         onChange={setEmails}
         emptyRow={{ type: 'home', value: '' }}
       />
 
-      <p className="text-[11px] text-muted-foreground">Other fields (address, organization, notes, photo…) are preserved unchanged.</p>
+      <p className="text-[11px] text-muted-foreground">{tr('common.description.otherFieldsAddressOrganizationNotesPhotoArePreservedUnchanged')}</p>
 
       <div className="flex justify-end gap-2 pt-1">
-        <Button variant="outline" size="sm" onClick={onCancel} disabled={saving}><X className="size-3.5 mr-1.5" /> Cancel</Button>
-        <Button size="sm" onClick={submit} disabled={saving}><Save className="size-3.5 mr-1.5" /> {saving ? 'Saving…' : 'Save'}</Button>
+        <Button variant="outline" size="sm" onClick={onCancel} disabled={saving}><X className="size-3.5 me-1.5" /> {tr('common.cancel')}</Button>
+        <Button size="sm" onClick={submit} disabled={saving}><Save className="size-3.5 me-1.5" /> {saving ? tr('common.status.saving') : tr('common.save')}</Button>
       </div>
     </div>
   );
@@ -292,6 +297,7 @@ function EditList({ label, icon, rows, types, placeholder, onChange, emptyRow }:
   onChange: (rows: { type: string; value: string }[]) => void;
   emptyRow: { type: string; value: string };
 }) {
+  const tr = useT();
   const set = (i: number, patch: Partial<{ type: string; value: string }>) =>
     onChange(rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
   return (
@@ -308,13 +314,13 @@ function EditList({ label, icon, rows, types, placeholder, onChange, emptyRow }:
               {types.map((t) => <option key={t} value={t} className="capitalize">{t}</option>)}
             </select>
             <Input value={r.value} onChange={(e) => set(i, { value: e.target.value })} placeholder={placeholder} className="flex-1" />
-            <button onClick={() => onChange(rows.filter((_, idx) => idx !== i))} title="Remove" className="size-9 rounded-md flex items-center justify-center hover:bg-muted text-muted-foreground shrink-0">
+            <button onClick={() => onChange(rows.filter((_, idx) => idx !== i))} title={tr('common.remove')} className="size-9 rounded-md flex items-center justify-center hover:bg-muted text-muted-foreground shrink-0">
               <Trash2 className="size-4" />
             </button>
           </div>
         ))}
         <button onClick={() => onChange([...rows, { ...emptyRow }])} className="flex items-center gap-1.5 text-xs text-primary hover:underline">
-          <Plus className="size-3.5" /> Add {label.toLowerCase()}
+          <Plus className="size-3.5" /> {tr('common.action.addLabeltolowercase', { labelToLowerCase: label.toLowerCase() })}
         </button>
       </div>
     </div>

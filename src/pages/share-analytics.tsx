@@ -1,3 +1,5 @@
+import { formatDateWith, localDigits } from '@/lib/format-locale';
+import { chartDirection } from '@/lib/chart-rtl';
 import { useState, useMemo } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -23,6 +25,9 @@ import {
 } from 'lucide-react';
 import { humanSize, timeAgo, timeUntil, colorFor, labelFor } from '@/lib/helpers';
 import { toast } from '@/lib/toast';
+import { useDir, useT } from '@/lib/i18n';
+import { richText } from '@/lib/rich-text';
+import type { MessageKey } from '@/i18n/keys';
 
 // ── Types ──────────────────────────────────────────────────
 
@@ -38,6 +43,8 @@ interface LinkMeta {
   is_password_protected: boolean; lock_mode: string; access_mode: string;
   status: 'active' | 'expiring' | 'expired' | 'revoked';
   view_count: number; download_count: number;
+  /** The note the recipient sees on the share page (share_links.title / message). Null or absent when none was set. */
+  title?: string | null; message?: string | null;
 }
 interface Bucket { day: string; opens: number; downloads: number }
 interface Ranked { label: string; count: number }
@@ -80,6 +87,21 @@ function countryName(code: string): string {
   }
 }
 
+const STATUS_LABEL_KEYS: Record<string, MessageKey> = {
+  active: 'common.status.active',
+  expired: 'common.status.expired',
+  revoked: 'common.status.revoked',
+};
+
+/** Splits "Lead sentence. Last sentence." so the last one can be dimmed; whole message otherwise. */
+function splitTail(message: string): [string, string] {
+  const m = /^([\s\S]*[.!?\u3002])\s+([^.!?\u3002]+[.!?\u3002]?)$/.exec(message);
+  return m ? [m[1], m[2]] : [message, ''];
+}
+
+/** Collapses the doubled spaces ICU selects leave between pieces. */
+const tidy = (s: string) => s.replace(/ {2,}/g, ' ').replace(/ \./g, '.').trim();
+
 /* Not exported: this page is the only consumer, and exporting a non-component
    from a route module breaks react-refresh. Invalidation elsewhere targets the
    ['share-analytics', id] prefix rather than importing this. */
@@ -88,6 +110,7 @@ const shareAnalyticsKey = (id: string, range: Range) => ['share-analytics', id, 
 // ── Page ───────────────────────────────────────────────────
 
 export default function ShareAnalyticsPage() {
+  const t = useT();
   const { id = '' } = useParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -107,7 +130,7 @@ export default function ShareAnalyticsPage() {
   // the whole app on exactly that (Sentry dosya-web 150873631), and a dead
   // end it can name beats a blank screen it cannot.
   const data = query.data?.link ? query.data : undefined;
-  useDocumentTitle(data ? `${data.link.display_name} - Shared` : 'Shared');
+  useDocumentTitle(data ? t('share-analytics.label.linkdisplayNameShared', { linkDisplay_name: data.link.display_name }) : t('common.label.shared'));
 
   const copyUrl = async () => {
     if (!data) return;
@@ -120,11 +143,11 @@ export default function ShareAnalyticsPage() {
     try {
       await api(`/api/shares/${id}/revoke`, { method: 'POST' });
       setConfirmRevoke(false);
-      toast.success('Link revoked', 'The share link no longer works.');
+      toast.success(t('common.feedback.linkRevoked'), t('common.feedback.theShareLinkNoLongerWorks'));
       queryClient.invalidateQueries({ queryKey: ['share-analytics', id] });
       queryClient.invalidateQueries({ queryKey: ['shares'] });
     } catch (err) {
-      toast.error('Revoke failed', apiErrorMessage(err, 'The share link could not be revoked.'));
+      toast.error(t('common.error.revokeFailed'), apiErrorMessage(err, t('common.error.theShareLinkCouldNotBeRevoked')));
     }
   };
 
@@ -136,9 +159,9 @@ export default function ShareAnalyticsPage() {
         <BackLink />
         <EmptyState
           icon={Share2}
-          title="This share link is not available"
-          description={apiErrorMessage(query.error, 'It may have been deleted, or you may not have permission to view it.')}
-          actions={<Button size="sm" className="h-7 text-xs" onClick={() => navigate('/shared')}>Back to Shared</Button>}
+          title={t('share-analytics.error.thisShareLinkIsNotAvailable')}
+          description={apiErrorMessage(query.error, t('share-analytics.error.itMayHaveBeenDeletedOrYouMayNotHavePermission'))}
+          actions={<Button size="sm" className="h-7 text-xs" onClick={() => navigate('/shared')}>{t('share-analytics.action.backToShared')}</Button>}
         />
       </div>
     );
@@ -148,6 +171,7 @@ export default function ShareAnalyticsPage() {
   const dead = link.is_revoked;
   const restricted = link.access_mode === 'restricted';
   const hasTraffic = link.view_count > 0 || link.download_count > 0;
+  const firstWord = t('share-analytics.label.first');
   const logRows = log.rows.filter((r) => evFilter === 'all' || r.event === evFilter);
 
   // Counted from the loaded rows, not from `reach`: the reach rollup upstream
@@ -156,6 +180,15 @@ export default function ShareAnalyticsPage() {
   // visitor. Unplaceable rows get their own bucket instead of being dropped
   // (which would inflate the others) or suppressed (which is what the old
   // "not tracked" copy amounted to).
+  const sharedByText = tidy(t('share-analytics.description.hassizeHasregionSharedByLinkisMineLinkcreatedAt', {
+    hasSize: link.size_bytes != null ? 'true' : 'other',
+    linkSize_bytesHumanSize: link.size_bytes != null ? humanSize(link.size_bytes) : '',
+    hasRegion: link.region ? 'true' : 'other',
+    linkRegionLink: link.region ?? '',
+    linkIs_mine: link.is_mine ? 'true' : 'other',
+    linkCreated_by_nameA: link.created_by_name ?? t('share-analytics.label.aTeammate'),
+    linkCreated_at: timeAgo(link.created_at),
+  }));
   const countryTally = new Map<string, number>();
   for (const r of log.rows) {
     const key = r.country ? r.country.toUpperCase() : UNKNOWN_COUNTRY;
@@ -185,25 +218,23 @@ export default function ShareAnalyticsPage() {
           <div className="min-w-0">
             <h1 className="text-xl font-bold tracking-tight leading-tight break-words">{link.display_name}</h1>
             <p className="text-xs text-muted-foreground mt-0.5">
-              {link.size_bytes != null && <>{humanSize(link.size_bytes)} &middot; </>}
-              {link.region && <>{link.region} &middot; </>}
-              shared by {link.is_mine ? 'you' : (link.created_by_name ?? 'a teammate')} {timeAgo(link.created_at)}
+              {sharedByText}
             </p>
           </div>
         </div>
 
-        <div className="ml-auto flex items-center gap-2 flex-wrap">
+        <div className="ms-auto flex items-center gap-2 flex-wrap">
           <StatusPill status={link.status} />
           {!dead && (
             <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={copyUrl}>
               <CopyCheck copied={copied} className="size-3" checkClassName="text-green-600" />
-              {copied ? 'Copied' : 'Copy link'}
+              {copied ? t('common.action.copied') : t('common.action.copyLink')}
             </Button>
           )}
           {dead ? (
             <Link to="/files">
               <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5">
-                <Share2 className="size-3" /> Create a new link
+                <Share2 className="size-3" /> {t('share-analytics.action.createANewLink')}
               </Button>
             </Link>
           ) : (
@@ -212,7 +243,7 @@ export default function ShareAnalyticsPage() {
               className="h-8 text-xs gap-1.5 text-destructive border-destructive/30 hover:bg-destructive/10"
               onClick={() => setConfirmRevoke(true)}
             >
-              <X className="size-3" /> Revoke
+              <X className="size-3" /> {t('common.action.revoke')}
             </Button>
           )}
         </div>
@@ -221,12 +252,12 @@ export default function ShareAnalyticsPage() {
       {/* ── URL bar ── */}
       <div className="flex items-center gap-2.5 flex-wrap mt-4 px-3 py-2 border rounded-t-xl border-b-0 bg-card text-xs">
         <Globe className="size-3.5 text-muted-foreground shrink-0" />
-        <code className="font-mono font-bold tracking-tight break-all">{link.url.replace(/^https?:\/\//, '')}</code>
+        <code dir="ltr" className="font-mono font-bold tracking-tight break-all">{link.url.replace(/^https?:\/\//, '')}</code>
         <span className="w-px h-3.5 bg-border hidden sm:block" />
         <span className="text-muted-foreground">
-          {dead ? 'This link no longer works'
-            : restricted ? `Restricted to ${recipients?.length ?? 0} invited addresses`
-            : 'Open to anyone with the URL'}
+          {dead ? t('share-analytics.label.thisLinkNoLongerWorks')
+            : restricted ? t('share-analytics.label.restrictedToRecipientslengthInvitedAddresses', { recipientsLength: String(recipients?.length ?? 0) })
+            : t('share-analytics.label.openToAnyoneWithTheUrl')}
         </span>
       </div>
       <div className="border-b" />
@@ -243,8 +274,8 @@ export default function ShareAnalyticsPage() {
             </p>
             <p className="text-xs text-muted-foreground mt-3 max-w-[68ch]">
               {restricted
-                ? 'Counted by verified recipient, not by address. Each person proved control of their inbox with a one-time code before any byte of the file was served.'
-                : 'A person is counted once, by a hashed IP address. dosya.dev stores the hash, never the address itself, and cannot recover one from the other.'}
+                ? t('share-analytics.description.countedByVerifiedRecipientNotByAddressEachPersonProvedControl')
+                : t('share-analytics.error.aPersonIsCountedOnceByAHashedIpAddressDosyaDev')}
             </p>
 
             <GuardRail link={link} recipients={recipients} />
@@ -254,23 +285,23 @@ export default function ShareAnalyticsPage() {
           <section className="bg-card border rounded-2xl p-6">
             <div className="flex items-start gap-4 flex-wrap mb-5">
               <div>
-                <h2 className="text-[15px] font-semibold tracking-tight">Access over time</h2>
+                <h2 className="text-[15px] font-semibold tracking-tight">{t('share-analytics.heading.accessOverTime')}</h2>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  {hasTraffic ? `First opens and downloads, by day · last ${range} days` : 'Nothing recorded yet'}
+                  {hasTraffic ? t('share-analytics.description.firstOpensAndDownloadsByDayLastRangeDays', { range: String(range) }) : t('share-analytics.label.nothingRecordedYet')}
                 </p>
               </div>
-              <div className="ml-auto flex items-center gap-3 flex-wrap">
+              <div className="ms-auto flex items-center gap-3 flex-wrap">
                 {hasTraffic && (
                   <div className="flex gap-3 items-center">
-                    <Legend swatch="var(--share-opens)" label="First opens" />
-                    <Legend swatch="var(--share-downloads)" label="Downloads" />
+                    <Legend swatch="var(--share-opens)" label={t('share-analytics.heading.firstOpens')} />
+                    <Legend swatch="var(--share-downloads)" label={t('share-analytics.heading.downloads')} />
                   </div>
                 )}
                 <Segmented
                   value={range}
                   onChange={(v) => setRange(v)}
                   disabled={!hasTraffic}
-                  options={[{ value: 7 as Range, label: '7d' }, { value: 30 as Range, label: '30d' }, { value: 90 as Range, label: '90d' }]}
+                  options={[{ value: 7 as Range, label: t('shared.label.daysD', { days: 7 }) }, { value: 30 as Range, label: t('shared.label.daysD', { days: 30 }) }, { value: 90 as Range, label: t('shared.label.daysD', { days: 90 }) }]}
                 />
               </div>
             </div>
@@ -279,8 +310,8 @@ export default function ShareAnalyticsPage() {
               <div className="border rounded-xl bg-muted/40 py-14 px-5 text-center">
                 <p className="text-xs text-muted-foreground">
                   {hasTraffic
-                    ? `No opens in the last ${range} days. Try a wider range.`
-                    : 'Nothing to chart yet. The first open will appear here within a minute.'}
+                    ? t('share-analytics.description.noOpensInTheLastRangeDaysTryAWiderRange', { range: String(range) })
+                    : t('share-analytics.description.nothingToChartYetTheFirstOpenWillAppearHereWithin')}
                 </p>
               </div>
             ) : (
@@ -290,8 +321,10 @@ export default function ShareAnalyticsPage() {
             <p className="flex gap-2 items-start mt-4 pt-3.5 border-t text-xs text-muted-foreground max-w-[80ch]">
               <TriangleAlert className="size-3.5 mt-0.5 shrink-0" />
               <span>
-                A person who returns is not counted a second time, so this chart shows{' '}
-                <b className="text-foreground font-semibold">first</b> opens, not visits. {gaps.repeat_visits}.
+                {richText(
+                  t('share-analytics.description.aPersonWhoReturnsIsNotCountedASecondTimeSo', { gapsRepeat_visits: gaps.repeat_visits }),
+                  { emphasis1: <b className="text-foreground font-semibold">{firstWord}</b> },
+                )}
               </span>
             </p>
           </section>
@@ -300,18 +333,18 @@ export default function ShareAnalyticsPage() {
           <section className="bg-card border rounded-2xl overflow-hidden">
             <div className="flex items-start gap-4 flex-wrap p-5 pb-3.5">
               <div>
-                <h2 className="text-[15px] font-semibold tracking-tight">Access log</h2>
-                <p className="text-xs text-muted-foreground mt-0.5">Every open and download, newest first</p>
+                <h2 className="text-[15px] font-semibold tracking-tight">{t('share-analytics.heading.accessLog')}</h2>
+                <p className="text-xs text-muted-foreground mt-0.5">{t('share-analytics.label.everyOpenAndDownloadNewestFirst')}</p>
               </div>
               {log.total > 0 && (
-                <div className="ml-auto">
+                <div className="ms-auto">
                   <Segmented
                     value={evFilter}
                     onChange={setEvFilter}
                     options={[
-                      { value: 'all' as EventFilter, label: 'All' },
-                      { value: 'view' as EventFilter, label: 'Opens' },
-                      { value: 'download' as EventFilter, label: 'Downloads' },
+                      { value: 'all' as EventFilter, label: t('common.label.all') },
+                      { value: 'view' as EventFilter, label: t('share-analytics.label.opens') },
+                      { value: 'download' as EventFilter, label: t('share-analytics.heading.downloads') },
                     ]}
                   />
                 </div>
@@ -321,15 +354,14 @@ export default function ShareAnalyticsPage() {
             {log.total === 0 ? (
               <div className="border-t px-6 pt-12 pb-11 flex flex-col items-center text-center gap-1.5">
                 <Eye className="size-5 text-muted-foreground opacity-60 mb-1" />
-                <p className="text-sm font-semibold">No one has opened this link</p>
+                <p className="text-sm font-semibold">{t('share-analytics.label.noOneHasOpenedThisLink')}</p>
                 <p className="text-xs text-muted-foreground max-w-[44ch]">
-                  Send the URL to someone. Every open and download will be listed here with the
-                  device it came from.
+                  {t('share-analytics.description.sendTheUrlToSomeoneEveryOpenAndDownloadWillBe')}
                 </p>
                 {!dead && (
                   <Button variant="outline" size="sm" className="h-7 text-xs mt-3 gap-1.5" onClick={copyUrl}>
                     <CopyCheck copied={copied} className="size-3" checkClassName="text-green-600" />
-                    Copy link
+                    {t('common.action.copyLink')}
                   </Button>
                 )}
               </div>
@@ -339,9 +371,9 @@ export default function ShareAnalyticsPage() {
                   <Table className="min-w-[640px]">
                     <TableHeader>
                       <TableRow className="hover:bg-transparent">
-                        {['When', 'Event', 'Visitor', 'Country', 'Device'].map((h) => (
+                        {[t('common.label.when'), t('common.label.event'), t('share-analytics.label.visitor'), t('common.label.country'), t('common.label.device')].map((h, i) => (
                           <TableHead
-                            key={h}
+                            key={i}
                             className="h-auto text-[10px] font-bold uppercase tracking-wider text-muted-foreground py-2.5 px-4 bg-muted/40 border-t"
                           >
                             {h}
@@ -362,7 +394,7 @@ export default function ShareAnalyticsPage() {
                                 {r.event === 'download'
                                   ? <Download className="size-3.5 text-[var(--share-downloads)]" />
                                   : <Eye className="size-3.5 text-muted-foreground" />}
-                                {r.event === 'download' ? 'Downloaded' : 'Opened'}
+                                {r.event === 'download' ? t('common.status.downloaded') : t('common.label.opened')}
                               </span>
                             </TableCell>
                             <TableCell className="py-2.5 px-4 font-mono text-xs whitespace-nowrap">{r.visitor}</TableCell>
@@ -373,7 +405,7 @@ export default function ShareAnalyticsPage() {
                             <TableCell
                               data-testid="log-country"
                               className="py-2.5 px-4 font-mono text-xs text-muted-foreground whitespace-nowrap"
-                              title={r.country ? countryName(r.country) : 'Not known for this event'}
+                              title={r.country ? countryName(r.country) : t('share-analytics.tooltip.notKnownForThisEvent')}
                             >
                               {r.country ? r.country.toUpperCase() : '-'}
                             </TableCell>
@@ -389,7 +421,7 @@ export default function ShareAnalyticsPage() {
                   </Table>
                 </div>
                 <div className="flex items-center gap-3 px-5 py-3 border-t text-xs text-muted-foreground">
-                  <p>Showing {logRows.length} of {log.total} events</p>
+                  <p>{t('share-analytics.label.showingLogrowscountOfLogtotalEvents', { logRowsCount: String(logRows.length), logTotal: String(log.total) })}</p>
                 </div>
               </>
             )}
@@ -399,30 +431,46 @@ export default function ShareAnalyticsPage() {
         {/* ── Right rail ── */}
         <aside className="flex flex-col gap-5 min-w-0">
           <section className="bg-card border rounded-2xl p-[18px]">
-            <RailHeading>Link controls</RailHeading>
+            <RailHeading>{t('share-analytics.label.linkControls')}</RailHeading>
             <dl className="text-xs">
-              <ControlRow icon={Clock} label={dead ? 'Ended' : 'Expires'}>
-                {dead ? `Revoked ${timeAgo(link.revoked_at ?? link.created_at)}`
-                  : link.expires_at ? timeUntil(link.expires_at) : 'Never'}
+              <ControlRow icon={Clock} label={dead ? t('common.label.ended') : t('common.label.expires')}>
+                {dead ? t('share-analytics.label.revokedFormattedvalue', { formattedValue: timeAgo(link.revoked_at ?? link.created_at) })
+                  : link.expires_at ? timeUntil(link.expires_at) : t('common.label.never')}
               </ControlRow>
-              <ControlRow icon={Globe} label="Access">
-                {restricted ? `${recipients?.length ?? 0} invited people` : 'Anyone with the link'}
+              <ControlRow icon={Globe} label={t('share-analytics.label.access')}>
+                {restricted ? t('share-analytics.label.recipientslengthInvitedPeople', { recipientsLength: String(recipients?.length ?? 0) }) : t('share-analytics.label.anyoneWithTheLink')}
               </ControlRow>
-              <ControlRow icon={Lock} label="Password" warn={!link.is_password_protected}>
-                {link.is_password_protected ? 'Set' : 'Not set'}
+              <ControlRow icon={Lock} label={t('common.label.password')} warn={!link.is_password_protected}>
+                {link.is_password_protected ? t('share-analytics.label.set') : t('share-analytics.label.notSet')}
               </ControlRow>
-              <ControlRow icon={Download} label="Downloads" last>
-                {link.lock_mode === 'view_only' ? 'View only' : 'Allowed'}
+              <ControlRow icon={Download} label={t('sync.label.downloads')} last>
+                {link.lock_mode === 'view_only' ? t('common.status.viewOnly') : t('share-analytics.label.allowed')}
               </ControlRow>
             </dl>
             <p className="text-[11px] text-muted-foreground mt-3.5 pt-3 border-t">
-              Created by {link.is_mine ? 'you' : (link.created_by_name ?? 'a teammate')} {timeAgo(link.created_at)}
+              {tidy(t('share-analytics.description.createdByLinkisMineSelectTrueYouOtherLinkcreatedByNameaLinkcreatedAt', {
+                linkIs_mine: link.is_mine ? 'true' : 'other',
+                linkCreated_by_nameA: link.created_by_name ?? t('share-analytics.label.aTeammate'),
+                linkCreated_at: timeAgo(link.created_at),
+              }))}
             </p>
           </section>
 
+          {/* The note set when the link was created. Read only: the API has
+              no edit path for a link's settings, so there is none here either. */}
+          {(link.title || link.message) && (
+            <section className="bg-card border rounded-2xl p-[18px]" data-testid="share-note">
+              <RailHeading>{t('share-analytics.heading.noteOnTheSharePage')}</RailHeading>
+              {link.title && <p dir="auto" className="text-sm font-semibold break-words">{link.title}</p>}
+              {link.message && (
+                <p dir="auto" className={`text-xs text-muted-foreground whitespace-pre-wrap break-words ${link.title ? 'mt-1.5' : ''}`}>{link.message}</p>
+              )}
+            </section>
+          )}
+
           {restricted && recipients && (
             <section className="bg-card border rounded-2xl p-[18px]">
-              <RailHeading count={recipients.length}>Invited</RailHeading>
+              <RailHeading count={recipients.length}>{t('common.status.invited')}</RailHeading>
               <ul>
                 {recipients.map((r) => (
                   <li key={r.email} className="flex items-center gap-2.5 py-1.5 text-xs">
@@ -431,7 +479,7 @@ export default function ShareAnalyticsPage() {
                     </span>
                     <span className={`flex-1 min-w-0 truncate ${r.verified_at ? '' : 'text-muted-foreground'}`}>{r.email}</span>
                     <span className={`text-[10px] inline-flex items-center gap-1 shrink-0 ${r.verified_at ? 'text-primary' : 'text-muted-foreground'}`}>
-                      {r.verified_at ? <><Check className="size-3" />Verified</> : 'Not opened'}
+                      {r.verified_at ? <><Check className="size-3" />{t('share-analytics.label.verified')}</> : t('share-analytics.label.notOpened')}
                     </span>
                   </li>
                 ))}
@@ -445,7 +493,7 @@ export default function ShareAnalyticsPage() {
               {gaps.per_recipient && (
                 <p className="flex gap-1.5 items-start text-[11px] text-muted-foreground mt-3 pt-3 border-t border-dashed leading-relaxed">
                   <CircleDashed className="size-3 mt-0.5 shrink-0" />
-                  <span>Verification is per person, but individual opens in the log are not: {gaps.per_recipient}.</span>
+                  <span>{t('share-analytics.description.verificationIsPerPersonButIndividualOpensInTheLogAre', { gapsPer_recipient: gaps.per_recipient })}</span>
                 </p>
               )}
             </section>
@@ -453,12 +501,12 @@ export default function ShareAnalyticsPage() {
 
           {reach.visitors > 0 && (
             <section className="bg-card border rounded-2xl p-[18px] bg-muted/30">
-              <RailHeading count={reach.visitors}>Who reached it</RailHeading>
-              <BarList caption="Device" rows={reach.devices} total={reach.visitors} icons />
-              <BarList caption="Browser" rows={reach.browsers} total={reach.visitors} />
+              <RailHeading count={reach.visitors}>{t('share-analytics.label.whoReachedIt')}</RailHeading>
+              <BarList caption={t('common.label.device')} rows={reach.devices} total={reach.visitors} icons />
+              <BarList caption={t('common.label.browser')} rows={reach.browsers} total={reach.visitors} />
               {reach.truncated && (
                 <p className="text-[11px] text-muted-foreground mb-4 -mt-2">
-                  Counted from the first 5,000 visitors.
+                  {t('share-analytics.description.countedFromTheFirst5000Visitors')}
                 </p>
               )}
               {/*
@@ -470,11 +518,9 @@ export default function ShareAnalyticsPage() {
               */}
               {countryRows.length > 0 && (
                 <div className="mt-5 pt-4 border-t border-dashed">
-                  <BarList caption="Country" rows={countryRows} total={log.rows.length} />
+                  <BarList caption={t('common.label.country')} rows={countryRows} total={log.rows.length} />
                   <p className="text-[11px] text-muted-foreground leading-relaxed -mt-2">
-                    From the {log.rows.length} event{log.rows.length === 1 ? '' : 's'} loaded below, placed at
-                    the edge. "{UNKNOWN_COUNTRY}" is an event the edge could not place, or one recorded
-                    before this was kept.
+                    {t('share-analytics.error.fromTheRowscountPluralOneEventOtherEventsLoaded', { rowsCount: log.rows.length, UNKNOWN_COUNTRY: t('common.label.unknown') })}
                   </p>
                 </div>
               )}
@@ -485,14 +531,15 @@ export default function ShareAnalyticsPage() {
 
       <Dialog open={confirmRevoke} onOpenChange={setConfirmRevoke}>
         <DialogContent className="max-w-sm text-center">
-          <DialogHeader><DialogTitle>Revoke this link</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{t('share-analytics.heading.revokeThisLink')}</DialogTitle></DialogHeader>
           <p className="text-sm text-muted-foreground">
-            Anyone holding the link to <span className="font-semibold text-foreground">{link.display_name}</span> loses
-            access the moment you confirm. The access log is kept. This cannot be undone.
+            {richText(t('share-analytics.error.anyoneHoldingTheLinkToLinkdisplayNameLosesAccessTheMomentYou'), {
+              linkDisplay_name: <span className="font-semibold text-foreground">{link.display_name}</span>,
+            })}
           </p>
           <DialogFooter className="justify-center">
-            <Button variant="outline" onClick={() => setConfirmRevoke(false)}>Cancel</Button>
-            <Button variant="destructive" onClick={revoke}>Revoke link</Button>
+            <Button variant="outline" onClick={() => setConfirmRevoke(false)}>{t('common.cancel')}</Button>
+            <Button variant="destructive" onClick={revoke}>{t('common.action.revokeLink')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -513,9 +560,10 @@ function recipientInitials(email: string): string {
 }
 
 function BackLink() {
+  const t = useT();
   return (
-    <Link to="/shared" className="inline-flex items-center gap-1 -ml-1 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors">
-      <ChevronLeft className="size-3.5" /> Shared
+    <Link to="/shared" className="inline-flex items-center gap-1 -ms-1 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors">
+      <ChevronLeft className="size-3.5 rtl:-scale-x-100" /> {t('common.label.shared.shared')}
     </Link>
   );
 }
@@ -528,57 +576,53 @@ function BackLink() {
 function ExposureLine({ link, reach, recipients }: {
   link: LinkMeta; reach: { visitors: number }; recipients: Recipient[] | null;
 }) {
+  const t = useT();
   const dim = 'block text-muted-foreground';
+  // The message is one sentence pair; the second sentence is dimmed on its own line.
+  const pair = (message: string, slots: Record<string, React.ReactNode> = {}) => {
+    const [lead, tail] = splitTail(message);
+    return (
+      <>
+        {richText(lead, slots)}
+        {tail ? <span className={dim}>{tail}</span> : null}
+      </>
+    );
+  };
+  const bold = (n: number | string) => <b className="font-bold">{n}</b>;
 
   if (link.access_mode === 'restricted' && recipients) {
     const opened = recipients.filter((r) => r.verified_at).length;
     if (opened === 0) {
-      return (
-        <>
-          None of the {recipients.length} people you invited have opened this link yet.
-          <span className={dim}>No one else can.</span>
-        </>
-      );
+      return pair(t('share-analytics.description.noneOfTheRecipientscountPeopleYouInvitedHaveOpenedThisLink', { recipientsCount: String(recipients.length) }));
     }
-    return (
-      <>
-        <b className="font-bold">{opened}</b> of the <b className="font-bold">{recipients.length}</b> people
-        you invited {opened === 1 ? 'has' : 'have'} opened this link.
-        <span className={dim}>No one else can.</span>
-      </>
+    return pair(
+      t('share-analytics.description.emphasis1OfTheEmphasis2PeopleYouInvitedOpenedPluralOneHas', { opened }),
+      { emphasis1: bold(opened), emphasis2: bold(recipients.length) },
     );
   }
 
   if (link.is_revoked) {
-    return (
-      <>
-        <b className="font-bold">{reach.visitors}</b> {reach.visitors === 1 ? 'person' : 'people'} opened
-        this link before you revoked it.
-        <span className={dim}>It stopped working {timeAgo(link.revoked_at ?? link.created_at)}.</span>
-      </>
+    return pair(
+      t('share-analytics.description.emphasis1ReachvisitorsPluralOnePersonOtherPeopleOpenedThisLinkBefore', {
+        reachVisitors: reach.visitors, formattedValue: timeAgo(link.revoked_at ?? link.created_at),
+      }),
+      { emphasis1: bold(reach.visitors) },
     );
   }
 
   if (reach.visitors === 0) {
-    return (
-      <>
-        No one has opened this link yet.
-        <span className={dim}>You created it {timeAgo(link.created_at)}.</span>
-      </>
-    );
+    return pair(t('share-analytics.description.noOneHasOpenedThisLinkYetYouCreatedItLinkcreatedAt', { linkCreated_at: timeAgo(link.created_at) }));
   }
 
-  return (
-    <>
-      <b className="font-bold">{reach.visitors}</b> {reach.visitors === 1 ? 'person has' : 'people have'} opened
-      this link.
-      <span className={dim}>You do not know who they are.</span>
-    </>
+  return pair(
+    t('share-analytics.description.emphasis1ReachvisitorsPluralOnePersonHasOtherPeopleHaveOpenedThis', { reachVisitors: reach.visitors }),
+    { emphasis1: bold(reach.visitors) },
   );
 }
 
 /** The security payload: what is or is not protecting this file, with the fix in reach. */
 function GuardRail({ link, recipients }: { link: LinkMeta; recipients: Recipient[] | null }) {
+  const t = useT();
   const base = 'flex gap-3 items-start mt-5 px-4 py-3.5 border rounded-xl flex-wrap';
 
   if (link.is_revoked) {
@@ -587,11 +631,15 @@ function GuardRail({ link, recipients }: { link: LinkMeta; recipients: Recipient
         <X className="size-4 mt-0.5 text-muted-foreground shrink-0" />
         <div className="min-w-[220px] flex-1">
           <p className="text-[13px] font-semibold">
-            Revoked {timeAgo(link.revoked_at ?? link.created_at)}
-            {link.created_by_name && !link.is_mine ? ` by ${link.created_by_name}` : link.is_mine ? ' by you' : ''}.
+            {tidy(t('share-analytics.description.revokedFormattedvalueHascreatorLinkisMine', {
+              formattedValue: timeAgo(link.revoked_at ?? link.created_at),
+              hasCreator: link.created_by_name && !link.is_mine ? 'true' : 'other',
+              linkCreated_by_name: link.created_by_name ?? '',
+              linkIs_mine: link.is_mine ? 'true' : 'other',
+            }))}
           </p>
           <p className="text-xs text-muted-foreground mt-0.5 max-w-[62ch]">
-            The URL now returns 410 Gone. The record below is kept so the access history survives the link.
+            {t('share-analytics.description.theUrlNowReturns410GoneTheRecordBelowIsKept')}
           </p>
         </div>
       </div>
@@ -604,12 +652,13 @@ function GuardRail({ link, recipients }: { link: LinkMeta; recipients: Recipient
         <Shield className="size-4 mt-0.5 text-primary shrink-0" />
         <div className="min-w-[220px] flex-1">
           <p className="text-[13px] font-semibold">
-            This link is restricted to {recipients?.length ?? 0} invited addresses
-            {link.is_password_protected ? ' and needs a password' : ''}.
+            {tidy(t('share-analytics.description.thisLinkIsRestrictedToRecipientslengthInvitedAddressesLinkisPasswordProtectedSelectTrue', {
+              recipientsLength: String(recipients?.length ?? 0),
+              linkIs_password_protected: link.is_password_protected ? 'true' : 'other',
+            }))}
           </p>
           <p className="text-xs text-muted-foreground mt-0.5 max-w-[62ch]">
-            A recipient proves control of their inbox with a one-time code before the file is served.
-            A forwarded URL is useless on its own.
+            {t('share-analytics.description.aRecipientProvesControlOfTheirInboxWithAOneTimeCode')}
           </p>
         </div>
       </div>
@@ -621,10 +670,9 @@ function GuardRail({ link, recipients }: { link: LinkMeta; recipients: Recipient
       <div className={`${base} bg-muted/40`}>
         <Shield className="size-4 mt-0.5 text-primary shrink-0" />
         <div className="min-w-[220px] flex-1">
-          <p className="text-[13px] font-semibold">This link is public but needs a password.</p>
+          <p className="text-[13px] font-semibold">{t('share-analytics.description.thisLinkIsPublicButNeedsAPassword')}</p>
           <p className="text-xs text-muted-foreground mt-0.5 max-w-[62ch]">
-            Anyone forwarded the URL still needs the password you set. Restricting it to named
-            addresses is stronger, because a password can be forwarded too.
+            {t('share-analytics.description.anyoneForwardedTheUrlStillNeedsThePasswordYouSetRestricting')}
           </p>
         </div>
       </div>
@@ -635,21 +683,22 @@ function GuardRail({ link, recipients }: { link: LinkMeta; recipients: Recipient
     <div className={`${base} border-amber-200 bg-amber-50 dark:border-amber-900/60 dark:bg-amber-950/40`}>
       <ShieldAlert className="size-4 mt-0.5 text-amber-600 dark:text-amber-500 shrink-0" />
       <div className="min-w-[220px] flex-1">
-        <p className="text-[13px] font-semibold">This link is public and has no password.</p>
+        <p className="text-[13px] font-semibold">{t('share-analytics.description.thisLinkIsPublicAndHasNoPassword')}</p>
         <p className="text-xs text-muted-foreground mt-0.5 max-w-[62ch]">
-          Anyone who is forwarded the URL can open and download the file, and that forward leaves
-          no trace here.
+          {t('share-analytics.description.anyoneWhoIsForwardedTheUrlCanOpenAndDownloadThe')}
         </p>
       </div>
     </div>
   );
 }
 
-function TimelineChart({ timeline, link, range }: { timeline: Bucket[]; link: LinkMeta; range: Range }) {
+export function TimelineChart({ timeline, link, range }: { timeline: Bucket[]; link: LinkMeta; range: Range }) {
+  const t = useT();
+  const axes = chartDirection(useDir());
   // Recharts needs a label per bucket; the API returns ISO days.
   const data = useMemo(() => timeline.map((b) => ({
     ...b,
-    label: new Date(`${b.day}T00:00:00Z`).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }),
+    label: formatDateWith(`${b.day}T00:00:00Z`, { day: 'numeric', month: 'short' }),
   })), [timeline]);
 
   // The revoke moment, when it falls inside the window on show. Marking it is
@@ -662,26 +711,26 @@ function TimelineChart({ timeline, link, range }: { timeline: Bucket[]; link: Li
 
   return (
     <ResponsiveContainer width="100%" height={220}>
-      <BarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} barGap={2}>
+      <BarChart data={data} margin={axes.margin} barGap={2}>
         <CartesianGrid stroke="var(--border)" vertical={false} strokeDasharray="2 4" />
         <XAxis
-          dataKey="label" tickLine={false} axisLine={{ stroke: 'var(--border)' }}
+          dataKey="label" reversed={axes.xAxis.reversed} tickLine={false} axisLine={{ stroke: 'var(--border)' }}
           tick={{ fill: 'var(--muted-foreground)', fontSize: 11 }}
           minTickGap={range === 90 ? 48 : 24}
         />
         <YAxis
-          width={36} allowDecimals={false} tickLine={false} axisLine={false}
+          orientation={axes.yAxis.orientation} width={36} allowDecimals={false} tickLine={false} axisLine={false}
           tick={{ fill: 'var(--muted-foreground)', fontSize: 11 }}
         />
         <Tooltip content={<ChartTooltip />} cursor={{ fill: 'var(--muted)', opacity: 0.5 }} />
         {revokedLabel && (
           <ReferenceLine
             x={revokedLabel} stroke="var(--muted-foreground)" strokeDasharray="3 3"
-            label={{ value: 'Revoked', position: 'insideTopRight', fill: 'var(--muted-foreground)', fontSize: 10 }}
+            label={{ value: t('common.label.revoked'), position: 'insideTopRight', fill: 'var(--muted-foreground)', fontSize: 10 }}
           />
         )}
-        <Bar dataKey="opens" name="First opens" fill="var(--share-opens)" radius={[2, 2, 0, 0]} maxBarSize={22} isAnimationActive={false} />
-        <Bar dataKey="downloads" name="Downloads" fill="var(--share-downloads)" radius={[2, 2, 0, 0]} maxBarSize={22} isAnimationActive={false} />
+        <Bar dataKey="opens" name={t('share-analytics.heading.firstOpens')} fill="var(--share-opens)" radius={[2, 2, 0, 0]} maxBarSize={22} isAnimationActive={false} />
+        <Bar dataKey="downloads" name={t('share-analytics.heading.downloads')} fill="var(--share-downloads)" radius={[2, 2, 0, 0]} maxBarSize={22} isAnimationActive={false} />
       </BarChart>
     </ResponsiveContainer>
   );
@@ -737,13 +786,14 @@ function Segmented<T extends string | number>({ value, onChange, options, disabl
 }
 
 function StatusPill({ status }: { status: LinkMeta['status'] }) {
+  const t = useT();
   const tone = status === 'active' ? 'bg-green-500'
     : status === 'expiring' ? 'bg-amber-500'
     : 'bg-muted-foreground';
   return (
     <Badge variant="outline" className="h-[26px] gap-1.5 text-xs font-medium px-2.5">
       <span className={`size-1.5 rounded-full ${tone}`} />
-      {status.charAt(0).toUpperCase() + status.slice(1)}
+      {STATUS_LABEL_KEYS[status] ? t(STATUS_LABEL_KEYS[status]) : status.charAt(0).toUpperCase() + status.slice(1)}
     </Badge>
   );
 }
@@ -753,7 +803,7 @@ function RailHeading({ children, count }: { children: React.ReactNode; count?: n
     <h2 className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-3.5">
       {children}
       {count != null && (
-        <span className="font-mono text-[10px] border rounded-full px-1.5 tracking-normal normal-case">{count}</span>
+        <span className="font-mono text-[10px] border rounded-full px-1.5 tracking-normal normal-case">{localDigits(count)}</span>
       )}
     </h2>
   );
@@ -767,7 +817,7 @@ function ControlRow({ icon: Icon, label, children, warn, last }: {
       <dt className="flex items-center gap-2 text-muted-foreground shrink-0">
         <Icon className="size-3.5" />{label}
       </dt>
-      <dd className={`ml-auto font-medium text-right ${warn ? 'text-amber-600 dark:text-amber-500 font-semibold' : ''}`}>
+      <dd className={`ms-auto font-medium text-end ${warn ? 'text-amber-600 dark:text-amber-500 font-semibold' : ''}`}>
         {children}
       </dd>
     </div>
@@ -777,6 +827,7 @@ function ControlRow({ icon: Icon, label, children, warn, last }: {
 function BarList({ caption, rows, total, icons }: {
   caption: string; rows: Ranked[]; total: number; icons?: boolean;
 }) {
+  const t = useT();
   const ICONS: Record<string, typeof Monitor> = { Desktop: Monitor, Mobile: Smartphone, Tablet: Tablet };
   return (
     <>
@@ -789,9 +840,9 @@ function BarList({ caption, rows, total, icons }: {
             <li key={r.label} className="grid grid-cols-[1fr_auto] gap-x-2.5 gap-y-1 items-center text-xs">
               <span className="flex items-center gap-2 min-w-0">
                 {Icon && <Icon className="size-3.5 text-muted-foreground shrink-0" />}
-                <span className="truncate">{r.label}</span>
+                <span className="truncate">{r.label === UNKNOWN_COUNTRY ? t('common.label.unknown') : r.label}</span>
               </span>
-              <span className="font-mono text-[11px] text-muted-foreground">{r.count} · {pct}%</span>
+              <span className="font-mono text-[11px] text-muted-foreground">{localDigits(r.count)} · {localDigits(pct)}%</span>
               <span className="col-span-2 h-[7px] rounded-[3px] bg-muted overflow-hidden">
                 <i className="block h-full rounded-[3px] bg-[var(--share-opens)]" style={{ width: `${pct}%` }} />
               </span>

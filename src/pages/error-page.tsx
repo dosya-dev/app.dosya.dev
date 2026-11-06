@@ -6,6 +6,7 @@ import { isChunkLoadError, recoverFromChunkErrorInBrowser } from '@/lib/chunk-re
 import { reportRouteError } from '@/lib/sentry';
 import { ReportProblemDialog } from '@/components/support/report-problem-dialog';
 import { openReport } from '@/stores/report-problem';
+import { useT } from '@/lib/i18n';
 
 // Fallback only: used when reportRouteError's own result (in eventIdRef) is
 // null, which happens before the effect below has run, or when the SDK is
@@ -25,6 +26,7 @@ function errorText(err: unknown): string | null {
 
 // Router errorElement - renders for thrown render/loader errors (and 404 route responses).
 export default function ErrorPage() {
+  const t = useT();
   const err = useRouteError();
   const staleChunk = isChunkLoadError(err);
   const [recovering, setRecovering] = useState(staleChunk);
@@ -55,7 +57,7 @@ export default function ErrorPage() {
 
   if (isRouteErrorResponse(err) && err.status === 404) {
     return (
-      <ErrorLayout code="404" title="Page not found" message="The page you're looking for doesn't exist or may have moved." />
+      <ErrorLayout code="404" title={t('common.tooltip.pageNotFound')} message={t('common.description.thePageYouReLookingForDoesnTExistOrMayHaveMoved')} />
     );
   }
 
@@ -64,8 +66,8 @@ export default function ErrorPage() {
   if (recovering) {
     return (
       <ErrorLayout
-        title="Updating to the latest version"
-        message="A new version of dosya.dev was just released. Reloading now."
+        title={t('error-page.tooltip.updatingToTheLatestVersion')}
+        message={t('error-page.description.aNewVersionOfDosyaDevWasJustReleasedReloadingNow')}
       />
     );
   }
@@ -75,8 +77,8 @@ export default function ErrorPage() {
   if (staleChunk) {
     return (
       <ErrorLayout
-        title="Couldn't finish loading"
-        message="Part of the app failed to download. Reload the page, and if it keeps happening, clear your cache for this site."
+        title={t('error-page.error.couldnTFinishLoading')}
+        message={t('error-page.error.partOfTheAppFailedToDownloadReloadThePageAnd')}
       />
     );
   }
@@ -85,8 +87,8 @@ export default function ErrorPage() {
     <>
       <ErrorLayout
         code="500"
-        title="Something went wrong"
-        message="An unexpected error occurred. We've been notified and are looking into it - please try again."
+        title={t('error-page.tooltip.somethingWentWrong')}
+        message={t('error-page.description.anUnexpectedErrorOccurredWeVeBeenNotifiedAndAreLookingInto')}
         onReport={() => openReport({ errorRef: eventIdRef.current ?? fallbackErrorRef(), errorMessage: errorText(err) })}
       />
       <ReportProblemDialog />

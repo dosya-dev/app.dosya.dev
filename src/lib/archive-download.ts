@@ -19,6 +19,7 @@
  * which is the failure all of this exists to avoid.
  */
 import { API_BASE } from '@/api/client';
+import { t } from '@/lib/i18n';
 
 export interface ArchiveSelection {
   fileIds?: string[];
@@ -97,8 +98,9 @@ export async function startArchiveDownload(
     // parts. Quoting an id count would have described a limit this selection
     // obeys while being refused anyway.
     opts.onError?.(
-      `That selection would need ${chunks.length} separate downloads, and ${MAX_CHUNKS} is the most `
-      + 'one action will start. Select fewer items and download the rest after.',
+      t('common.description.thatSelectionWouldNeedChunkscountSeparateDownloadsAndMaxChunksIsThe', {
+        chunksCount: chunks.length, MAX_CHUNKS,
+      }),
     );
     return { parts: 0 };
   }
@@ -181,8 +183,9 @@ function runPartsInFrames(urls: string[], onError?: (message: string) => void): 
     const failed = started.filter((ok) => !ok).length;
     if (failed === 0) return;
     onError?.(
-      `${urls.length - failed} of ${urls.length} downloads started. ${failed} could not be prepared - `
-      + 'a part may cover more than the server will archive at once. Select fewer items and try those again.',
+      t('common.error.urlslengthfailedOfUrlscountDownloadsStartedFailedCouldNotBePrepared', {
+        urlsLengthFailed: urls.length - failed, urlsCount: urls.length, failed,
+      }),
     );
   });
 }

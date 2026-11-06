@@ -40,6 +40,9 @@ interface FilePreviewImageProps {
  * resetting the failure state for free - no effect required (a bare
  * `setState` inside a `useEffect` trips `react-hooks/set-state-in-effect`).
  */
+/** Pause before the one thumbnail retry, long enough for a transient 5xx to clear. */
+export const THUMB_RETRY_MS = 700;
+
 export function FilePreviewImage(props: FilePreviewImageProps) {
   const resetKey = `${props.fileId}:${props.version ?? 0}:${props.query ?? ''}:${props.size ?? 256}`;
   return <FilePreviewImageForFile key={resetKey} {...props} />;
@@ -63,6 +66,22 @@ function FilePreviewImageForFile({
   // `thumbFailed` = the server thumbnail didn't load for a non-HEIC image →
   // fall back to the raw original for this file.
   const [thumbFailed, setThumbFailed] = useState(false);
+  // The first `/thumb` request for a file generates the thumbnail, and under
+  // load (a search page asking for 70 at once) the Worker occasionally answers
+  // a transient 5xx. One short-delayed retry turns a blank tile into the
+  // thumbnail instead of falling straight through to a multi-megabyte `/raw`
+  // download or an in-browser HEIC decode. `retry=1` only makes the URL new.
+  const [thumbAttempt, setThumbAttempt] = useState(0);
+  const retryTimer = useRef<number | null>(null);
+  useEffect(() => () => { if (retryTimer.current != null) clearTimeout(retryTimer.current); }, []);
+  const thumbQuery = thumbAttempt ? [query, `retry=${thumbAttempt}`].filter(Boolean).join('&') : query;
+  const onThumbError = (giveUp: () => void) => {
+    if (thumbAttempt === 0) {
+      retryTimer.current = window.setTimeout(() => setThumbAttempt(1), THUMB_RETRY_MS);
+      return;
+    }
+    giveUp();
+  };
 
   if (!isImage(fileName) || failed) return <>{fallback}</>;
 
@@ -70,11 +89,11 @@ function FilePreviewImageForFile({
     if (!serverFailed) {
       return (
         <img
-          src={fileThumbUrl({ fileId, version, query, size })}
+          src={fileThumbUrl({ fileId, version, query: thumbQuery, size })}
           alt={alt}
           className={className}
           loading="lazy"
-          onError={() => setServerFailed(true)}
+          onError={() => onThumbError(() => setServerFailed(true))}
         />
       );
     }
@@ -101,11 +120,11 @@ function FilePreviewImageForFile({
   if (!thumbFailed) {
     return (
       <img
-        src={fileThumbUrl({ fileId, version, query, size })}
+        src={fileThumbUrl({ fileId, version, query: thumbQuery, size })}
         alt={alt}
         className={className}
         loading="lazy"
-        onError={() => setThumbFailed(true)}
+        onError={() => onThumbError(() => setThumbFailed(true))}
       />
     );
   }

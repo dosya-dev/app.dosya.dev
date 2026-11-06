@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { localDigits } from '@/lib/format-locale';
 import { Link, useNavigate } from 'react-router-dom';
 import { api, apiErrorMessage } from '@/api/client';
 import { useWorkspace } from '@/stores/workspace';
@@ -19,6 +20,9 @@ import { Search, X, Share2, Folder, Lock, Users, Eye, Mail, AlertCircle } from '
 import { CopyCheck } from '@/components/ui/copy-check';
 import { humanSize, timeAgo, colorFor, labelFor } from '@/lib/helpers';
 import { toast } from '@/lib/toast';
+import { t as translate, useT } from '@/lib/i18n';
+import { richText } from '@/lib/rich-text';
+import type { MessageKey } from '@/i18n/keys';
 
 // ── Types ──────────────────────────────────────────────────
 
@@ -41,6 +45,8 @@ interface ShareLink {
   lock_mode: string;
   access_mode: string;
   recipient_count: number;
+  /** The note's title, shown to the recipient on the share page. Absent or null when none was set. */
+  title?: string | null;
 }
 
 type Filter = 'all' | 'active' | 'expiring' | 'expired' | 'revoked';
@@ -71,16 +77,30 @@ const STATUS_COLORS: Record<string, string> = {
 };
 const DOT_COLORS: Record<string, string> = { active: 'bg-green-500', expiring: 'bg-amber-500', expired: 'bg-muted-foreground', revoked: 'bg-red-500' };
 
+const STATUS_LABEL_KEYS: Record<string, MessageKey> = {
+  active: 'common.status.active',
+  expiring: 'shared.label.expiring',
+  expired: 'common.status.expired',
+  revoked: 'common.status.revoked',
+};
+
+/** The status badge text. */
+function statusLabel(t: (key: MessageKey) => string, status: string): string {
+  const key = STATUS_LABEL_KEYS[status];
+  return key ? t(key) : status.charAt(0).toUpperCase() + status.slice(1);
+}
+
 function daysLeft(ts: number): string {
   const diff = ts - Math.floor(Date.now() / 1000);
-  if (diff <= 0) return 'Expired';
+  if (diff <= 0) return translate('common.status.expired');
   const d = Math.ceil(diff / 86400);
-  return d === 1 ? '1d' : `${d}d`;
+  return translate('shared.label.daysD', { days: d });
 }
 
 // ── Page ───────────────────────────────────────────────────
 
 export default function SharedPage() {
+  const t = useT();
   const wsId = useWorkspace((s: { activeId: string }) => s.activeId);
   const [links, setLinks] = useState<ShareLink[]>([]);
   const [loading, setLoading] = useState(true);
@@ -104,7 +124,7 @@ export default function SharedPage() {
     } catch (err) {
       // Swallowing this rendered the empty state over a 403, so a role
       // without access_shared read "nothing shared yet" instead of the truth.
-      setLoadError(apiErrorMessage(err, 'Shared links could not be loaded.'));
+      setLoadError(apiErrorMessage(err, t('shared.error.sharedLinksCouldNotBeLoaded')));
     }
     setLoading(false);
   }, [wsId]);
@@ -132,10 +152,10 @@ export default function SharedPage() {
       const res = await api<{ ok: boolean }>(`/api/shares/${revokeTarget.link_id}/revoke`, { method: 'POST' });
       if (res.ok) {
         setLinks((prev) => prev.map((l) => l.link_id === revokeTarget.link_id ? { ...l, status: 'revoked', is_revoked: 1 } : l));
-        toast.success('Link revoked', 'The share link no longer works.');
+        toast.success(t('common.feedback.linkRevoked'), t('common.feedback.theShareLinkNoLongerWorks'));
         setRevokeTarget(null);
       }
-    } catch { toast.error('Revoke failed', 'The share link could not be revoked.'); }
+    } catch { toast.error(t('common.error.revokeFailed'), t('common.error.theShareLinkCouldNotBeRevoked')); }
   };
 
   // Filtered + searched
@@ -155,11 +175,11 @@ export default function SharedPage() {
   const expiringSoon = links.filter((l) => l.status === 'expiring');
 
   const filters: { key: Filter; label: string; warn?: boolean }[] = [
-    { key: 'all', label: 'All' },
-    { key: 'active', label: 'Active' },
-    { key: 'expiring', label: 'Expiring soon', warn: true },
-    { key: 'expired', label: 'Expired' },
-    { key: 'revoked', label: 'Revoked' },
+    { key: 'all', label: t('common.label.all') },
+    { key: 'active', label: t('shared.label.active.request') },
+    { key: 'expiring', label: t('shared-links.label.expiringSoon'), warn: true },
+    { key: 'expired', label: t('shared.label.expired') },
+    { key: 'revoked', label: t('common.label.revoked') },
   ];
 
   return (
@@ -168,14 +188,14 @@ export default function SharedPage() {
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Header */}
         <div className="px-8 pt-7 shrink-0">
-          <h1 className="text-xl font-bold tracking-tight mb-4">Shared</h1>
+          <h1 className="text-xl font-bold tracking-tight mb-4">{t('common.heading.shared')}</h1>
           <Tabs value={tab} onValueChange={(v) => setTab((v ?? 'by-me') as Tab)}>
             <TabsList variant="line" className="w-full justify-start gap-0 border-b p-0 group-data-horizontal/tabs:h-auto">
               <TabsTrigger value="by-me" className="flex-none gap-0 rounded-none px-4 py-2.5 text-sm group-data-horizontal/tabs:after:-bottom-px">
-                By me <Badge variant="default" className="ml-1.5 text-[10px]">{links.filter((l) => l.is_mine).length}</Badge>
+                {t('shared-links.action.byMe')} <Badge variant="default" className="ms-1.5 text-[10px]">{links.filter((l) => l.is_mine).length}</Badge>
               </TabsTrigger>
               <TabsTrigger value="with-me" className="flex-none gap-0 rounded-none px-4 py-2.5 text-sm group-data-horizontal/tabs:after:-bottom-px">
-                With me <Badge variant="secondary" className="ml-1.5 text-[10px]">{withMeLoading ? '-' : withMe.length}</Badge>
+                {t('shared-links.action.withMe')} <Badge variant="secondary" className="ms-1.5 text-[10px]">{withMeLoading ? '-' : withMe.length}</Badge>
               </TabsTrigger>
             </TabsList>
           </Tabs>
@@ -186,20 +206,20 @@ export default function SharedPage() {
         ) : (
         <>
         {/* Toolbar */}
-        <div className="flex items-center gap-2 px-8 py-3 border-b shrink-0">
+        <div className="flex flex-wrap items-center gap-2 px-8 py-3 border-b shrink-0">
           {filters.map((f) => (
             <button
               key={f.key}
               onClick={() => setFilter(f.key)}
-              className={`h-7 px-3 rounded-full text-xs font-medium border transition-colors ${filter === f.key ? 'bg-primary text-primary-foreground border-primary' : f.warn ? 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950 dark:text-amber-400 dark:border-amber-800' : 'bg-card border-border text-muted-foreground hover:bg-muted'}`}
+              className={`h-7 shrink-0 whitespace-nowrap px-3 rounded-full text-xs font-medium border transition-colors ${filter === f.key ? 'bg-primary text-primary-foreground border-primary' : f.warn ? 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950 dark:text-amber-400 dark:border-amber-800' : 'bg-card border-border text-muted-foreground hover:bg-muted'}`}
             >
               {f.label}
             </button>
           ))}
-          <div className="ml-auto" />
+          <div className="ms-auto" />
           <div className="relative">
-            <Search className="size-3 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
-            <Input value={search} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearch(e.target.value)} placeholder="Filter by name or person..." className="h-8 text-xs pl-7 w-64" />
+            <Search className="size-3 absolute inset-s-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <Input value={search} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearch(e.target.value)} placeholder={t('shared.placeholder.filterByNameOrPerson')} className="h-8 text-xs ps-7 w-64" />
           </div>
         </div>
 
@@ -210,27 +230,27 @@ export default function SharedPage() {
           ) : loadError ? (
             <div className="flex flex-col items-center justify-center py-16 text-center">
               <AlertCircle className="size-8 text-destructive/40 mb-3" />
-              <p className="text-sm font-medium mb-1">Could not load shared links</p>
-              <p className="text-xs text-muted-foreground max-w-80 mb-3">{loadError}</p>
-              <Button variant="outline" size="sm" className="h-7 text-xs" onClick={load}>Try again</Button>
+              <p className="text-sm font-medium mb-1">{t('shared.error.couldNotLoadSharedLinks')}</p>
+              <p dir="auto" className="text-xs text-muted-foreground max-w-80 mb-3">{loadError}</p>
+              <Button variant="outline" size="sm" className="h-7 text-xs" onClick={load}>{t('common.action.tryAgain')}</Button>
             </div>
           ) : filtered.length === 0 ? (
             links.length === 0 ? (
               <EmptyState
                 icon={Share2}
-                title="Nothing shared yet"
-                description="A share link lets anyone open a file without a dosya account. You can set an expiry, a password, or limit it to specific email addresses."
-                actions={<Link to="/files"><Button size="sm" className="h-7 text-xs">Go to Files</Button></Link>}
+                title={t('shared.tooltip.nothingSharedYet')}
+                description={t('shared.description.aShareLinkLetsAnyoneOpenAFileWithoutADosya')}
+                actions={<Link to="/files"><Button size="sm" className="h-7 text-xs">{t('common.action.goToFiles')}</Button></Link>}
               />
             ) : (
-              <p className="py-12 text-center text-sm text-muted-foreground">No shared links{filter !== 'all' ? ' with this status' : ''}</p>
+              <p className="py-12 text-center text-sm text-muted-foreground">{t('shared.description.noSharedLinksFilterallSelectTrueWithThisStatusOther', { filterAll: filter !== 'all' ? 'true' : 'other' })}</p>
             )
           ) : (
             <Table className="mt-1">
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
-                  {['File', 'Region', 'Views', 'Expiry', 'Status', ''].map((h, i) => (
-                    <TableHead key={h} className={`h-auto text-[10px] font-semibold text-muted-foreground uppercase tracking-wider py-2.5 px-2 ${i === 0 ? 'pl-0' : ''}`}>{h}</TableHead>
+                  {[t('common.label.fileTitleCase'), t('common.label.region'), t('shared-links.column.views'), t('common.column.expiry'), t('common.column.status'), ''].map((h, i) => (
+                    <TableHead key={i} className={`h-auto text-[10px] font-semibold text-muted-foreground uppercase tracking-wider py-2.5 px-2 ${i === 0 ? 'ps-0' : ''}`}>{h}</TableHead>
                   ))}
                 </TableRow>
               </TableHeader>
@@ -247,16 +267,16 @@ export default function SharedPage() {
       </div>
 
       {/* Right panel */}
-      <div className={`w-64 shrink-0 border-l overflow-y-auto hidden ${tab === 'by-me' ? 'lg:block' : ''}`}>
+      <div className={`w-64 shrink-0 border-s overflow-y-auto hidden ${tab === 'by-me' ? 'lg:block' : ''}`}>
         {/* Overview */}
         <div className="p-5 border-b">
-          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-4">Overview</p>
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-4">{t('shared-links.heading.overview')}</p>
           <div className="grid grid-cols-2 gap-4">
             {[
-              { value: stats.active, label: 'Active links' },
-              { value: stats.views, label: 'Total views' },
-              { value: stats.expiring, label: 'Expiring soon' },
-              { value: stats.total, label: 'Total links' },
+              { value: stats.active, label: t('shared-links.label.activeLinks') },
+              { value: stats.views, label: t('shared-links.label.totalViews') },
+              { value: stats.expiring, label: t('shared-links.label.expiringSoon') },
+              { value: stats.total, label: t('shared-links.label.totalLinks') },
             ].map((s) => (
               <div key={s.label}>
                 <p className="text-2xl font-semibold tracking-tight leading-none">{s.value}</p>
@@ -268,9 +288,9 @@ export default function SharedPage() {
 
         {/* Expiring soon */}
         <div className="p-5">
-          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Expiring soon</p>
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">{t('shared-links.label.expiringSoon')}</p>
           {expiringSoon.length === 0 ? (
-            <p className="text-xs text-muted-foreground">None</p>
+            <p className="text-xs text-muted-foreground">{t('common.label.none')}</p>
           ) : expiringSoon.map((l) => (
             <div key={l.link_id} className="flex items-center gap-2 mb-2.5">
               <div className="w-7 h-7 rounded-md flex items-center justify-center text-[8px] font-bold text-white shrink-0" style={{ background: colorFor(l.display_name) }}>
@@ -286,13 +306,15 @@ export default function SharedPage() {
       {/* Revoke dialog */}
       <Dialog open={!!revokeTarget} onOpenChange={() => setRevokeTarget(null)}>
         <DialogContent className="max-w-sm text-center">
-          <DialogHeader><DialogTitle>Revoke share link</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{t('shared-links.heading.revokeShareLink')}</DialogTitle></DialogHeader>
           <p className="text-sm text-muted-foreground">
-            Anyone with the link to <span className="font-semibold text-foreground">{revokeTarget?.display_name}</span> will lose access immediately. This cannot be undone.
+            {richText(t('shared.error.anyoneWithTheLinkToRevoketargetdisplayNameWillLoseAccessImmediatelyThis'), {
+              revokeTargetDisplay_name: <span className="font-semibold text-foreground">{revokeTarget?.display_name}</span>,
+            })}
           </p>
           <DialogFooter className="justify-center">
-            <Button variant="outline" onClick={() => setRevokeTarget(null)}>Cancel</Button>
-            <Button variant="destructive" onClick={handleRevoke}>Revoke</Button>
+            <Button variant="outline" onClick={() => setRevokeTarget(null)}>{t('common.cancel')}</Button>
+            <Button variant="destructive" onClick={handleRevoke}>{t('common.action.revoke')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -303,6 +325,7 @@ export default function SharedPage() {
 // ── Share Row ──────────────────────────────────────────────
 
 function ShareRow({ link: l, onRevoke }: { link: ShareLink; onRevoke: () => void }) {
+  const t = useT();
   const [copied, setCopied] = useState(false);
   const navigate = useNavigate();
 
@@ -312,8 +335,13 @@ function ShareRow({ link: l, onRevoke }: { link: ShareLink; onRevoke: () => void
     setTimeout(() => setCopied(false), 1500);
   };
 
-  const expiryText = l.is_revoked ? 'Revoked' : (l.expires_at ? (l.status === 'expired' ? 'Expired' : daysLeft(l.expires_at)) : 'Never');
+  const expiryText = l.is_revoked ? t('common.label.revoked') : (l.expires_at ? (l.status === 'expired' ? t('common.status.expired') : daysLeft(l.expires_at)) : t('common.label.never'));
   const isLive = l.status === 'active' || l.status === 'expiring';
+  const sharedText = t('shared.description.hassizeSharedLsharedAt', {
+    hasSize: l.size_bytes != null ? 'true' : 'other',
+    lSize_bytes: l.size_bytes != null ? humanSize(l.size_bytes) : '',
+    lShared_at: timeAgo(l.shared_at),
+  });
 
   return (
     <TableRow
@@ -323,7 +351,7 @@ function ShareRow({ link: l, onRevoke }: { link: ShareLink; onRevoke: () => void
       // a row-level onClick alone would make this page unreachable for them.
       onClick={() => navigate(`/shared/${l.link_id}`)}
     >
-      <TableCell className="py-3 pl-0 pr-2">
+      <TableCell className="py-3 ps-0 pe-2">
         <div className="flex items-center gap-2.5">
           <div className="w-8 h-8 rounded-lg flex items-center justify-center text-[8px] font-bold text-white shrink-0" style={{ background: colorFor(l.display_name) }}>
             {l.is_folder ? <Folder className="size-4" /> : labelFor(l.display_name)}
@@ -336,29 +364,30 @@ function ShareRow({ link: l, onRevoke }: { link: ShareLink; onRevoke: () => void
             >
               {l.display_name}
             </Link>
+            {l.title && <p dir="auto" className="text-[11px] truncate max-w-[200px]" title={l.title}>{l.title}</p>}
             {/* size_bytes is NULL for folder shares - the API has no single
                 size to report for a subtree - so the whole clause drops out
                 rather than rendering a humanSize(null). */}
-            <p className="text-[11px] text-muted-foreground">{l.size_bytes != null ? `${humanSize(l.size_bytes)} · ` : ''}Shared {timeAgo(l.shared_at)}</p>
+            <p className="text-[11px] text-muted-foreground">{sharedText}</p>
           </div>
           {/* How protected this link is, at a glance. Ordered strongest-signal
               first so a narrow column keeps the one that matters most. */}
           <div className="flex items-center gap-1.5 text-muted-foreground shrink-0">
             {l.access_mode === 'restricted' && (
-              <span className="inline-flex items-center gap-0.5" title={`Only ${l.recipient_count} invited ${l.recipient_count === 1 ? 'person' : 'people'} can open this link`}>
+              <span className="inline-flex items-center gap-0.5" title={t('shared.tooltip.onlyLrecipientCountInvitedLrecipientCountPluralOnePersonOtherPeopleCanOpen', { lRecipient_count: l.recipient_count })}>
                 <Users className="size-3" />
-                <span className="text-[10px]">{l.recipient_count}</span>
+                <span className="text-[10px]">{localDigits(l.recipient_count)}</span>
               </span>
             )}
-            {!!l.is_password_protected && <Lock className="size-3" aria-label="Password required" />}
-            {l.lock_mode === 'view_only' && <Eye className="size-3" aria-label="View only, no downloads" />}
+            {!!l.is_password_protected && <Lock className="size-3" aria-label={t('common.error.passwordRequired')} />}
+            {l.lock_mode === 'view_only' && <Eye className="size-3" aria-label={t('shared.accessibility.viewOnlyNoDownloads')} />}
           </div>
         </div>
       </TableCell>
       <TableCell className="py-3 px-2"><Badge variant="secondary" className="text-[10px]">{l.region ?? '-'}</Badge></TableCell>
       <TableCell className="py-3 px-2">
-        <p className="text-sm font-medium">{l.view_count}</p>
-        <p className="text-[11px] text-muted-foreground">{l.download_count} download{l.download_count === 1 ? '' : 's'}</p>
+        <p className="text-sm font-medium">{localDigits(l.view_count)}</p>
+        <p className="text-[11px] text-muted-foreground">{t('shared.description.ldownloadCountPluralOneDownloadOtherDownloads', { lDownload_count: l.download_count })}</p>
       </TableCell>
       <TableCell className="py-3 px-2">
         <span className={`text-xs font-medium ${l.status === 'expiring' ? 'text-amber-600' : l.status === 'expired' || l.status === 'revoked' ? 'text-muted-foreground' : ''}`}>
@@ -368,20 +397,20 @@ function ShareRow({ link: l, onRevoke }: { link: ShareLink; onRevoke: () => void
       <TableCell className="py-3 px-2">
         <Badge className={`text-[10px] gap-1 ${STATUS_COLORS[l.status] ?? ''}`}>
           <span className={`w-1.5 h-1.5 rounded-full ${DOT_COLORS[l.status] ?? ''}`} />
-          {l.status.charAt(0).toUpperCase() + l.status.slice(1)}
+          {statusLabel(t, l.status)}
         </Badge>
       </TableCell>
       {/* Row actions sit inside a clickable row, so they have to swallow the
           click. Without this, Revoke would open the analytics page behind the
           confirm dialog and Copy would navigate away from the list. */}
-      <TableCell className="py-3 pl-2 pr-0" onClick={(e) => e.stopPropagation()}>
+      <TableCell className="py-3 ps-2 pe-0" onClick={(e) => e.stopPropagation()}>
         <div className="flex gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100">
           {isLive && (
             <>
-              <Button variant="outline" size="sm" className="h-7 w-7 p-0" onClick={copyUrl} aria-label="Copy share link">
+              <Button variant="outline" size="sm" className="h-7 w-7 p-0" onClick={copyUrl} aria-label={t('shared.action.copyShareLink')}>
                 <CopyCheck copied={copied} className="size-3" checkClassName="text-green-600" />
               </Button>
-              <Button variant="outline" size="sm" className="h-7 w-7 p-0 text-destructive border-destructive/30" onClick={onRevoke} aria-label="Revoke share link">
+              <Button variant="outline" size="sm" className="h-7 w-7 p-0 text-destructive border-destructive/30" onClick={onRevoke} aria-label={t('shared.action.revokeShareLink')}>
                 <X className="size-3" />
               </Button>
             </>
@@ -408,6 +437,7 @@ function WithMePanel({ rows, loading, emailVerified }: {
   loading: boolean;
   emailVerified: boolean;
 }) {
+  const t = useT();
   if (loading) {
     return <div className="px-8 pt-4 space-y-2">{[1,2,3].map((i) => <Skeleton key={i} className="h-14 w-full" />)}</div>;
   }
@@ -416,8 +446,8 @@ function WithMePanel({ rows, loading, emailVerified }: {
       <div className="flex-1 px-8">
         <EmptyState
           icon={Mail}
-          title="Verify your email to see these"
-          description="Private links are matched to your address, so we only list them once that address is confirmed. Check your inbox for the verification email."
+          title={t('shared.tooltip.verifyYourEmailToSeeThese')}
+          description={t('shared.description.privateLinksAreMatchedToYourAddressSoWeOnlyList')}
         />
       </div>
     );
@@ -427,8 +457,8 @@ function WithMePanel({ rows, loading, emailVerified }: {
       <div className="flex-1 px-8">
         <EmptyState
           icon={Users}
-          title="Nothing shared with you"
-          description="When someone sends you a private link - one limited to specific email addresses - it appears here."
+          title={t('shared.tooltip.nothingSharedWithYou')}
+          description={t('shared.description.whenSomeoneSendsYouAPrivateLinkOneLimitedTo')}
         />
       </div>
     );
@@ -438,8 +468,8 @@ function WithMePanel({ rows, loading, emailVerified }: {
       <Table className="mt-1">
         <TableHeader>
           <TableRow className="hover:bg-transparent">
-            {['File', 'From', 'Received', 'Expiry', 'Status'].map((h, i) => (
-              <TableHead key={h} className={`h-auto text-[10px] font-semibold text-muted-foreground uppercase tracking-wider py-2.5 px-2 ${i === 0 ? 'pl-0' : ''}`}>{h}</TableHead>
+            {[t('common.label.fileTitleCase'), t('shared.label.from'), t('lan-transfer.label.received'), t('common.column.expiry'), t('common.column.status')].map((h, i) => (
+              <TableHead key={i} className={`h-auto text-[10px] font-semibold text-muted-foreground uppercase tracking-wider py-2.5 px-2 ${i === 0 ? 'ps-0' : ''}`}>{h}</TableHead>
             ))}
           </TableRow>
         </TableHeader>
@@ -448,7 +478,7 @@ function WithMePanel({ rows, loading, emailVerified }: {
             const live = l.status === 'active' || l.status === 'expiring';
             return (
               <TableRow key={l.link_id} className="hover:bg-muted/50">
-                <TableCell className="py-3 pl-0 pr-2">
+                <TableCell className="py-3 ps-0 pe-2">
                   <div className="flex items-center gap-2.5">
                     <div className="w-8 h-8 rounded-lg flex items-center justify-center text-[8px] font-bold text-white shrink-0" style={{ background: colorFor(l.display_name) }}>
                       {l.is_folder ? <Folder className="size-4" /> : labelFor(l.display_name)}
@@ -462,9 +492,9 @@ function WithMePanel({ rows, loading, emailVerified }: {
                         <span className="text-sm font-medium truncate max-w-[220px] block text-muted-foreground">{l.display_name}</span>
                       )}
                       <p className="text-[11px] text-muted-foreground flex items-center gap-1.5">
-                        {l.size_bytes != null ? humanSize(l.size_bytes) : (l.is_folder ? 'Folder' : '')}
-                        {!!l.is_password_protected && <Lock className="size-3" aria-label="Password required" />}
-                        {l.lock_mode === 'view_only' && <Eye className="size-3" aria-label="View only, no downloads" />}
+                        {l.size_bytes != null ? humanSize(l.size_bytes) : (l.is_folder ? t('common.label.folder') : '')}
+                        {!!l.is_password_protected && <Lock className="size-3" aria-label={t('common.error.passwordRequired')} />}
+                        {l.lock_mode === 'view_only' && <Eye className="size-3" aria-label={t('shared.accessibility.viewOnlyNoDownloads')} />}
                       </p>
                     </div>
                   </div>
@@ -473,17 +503,17 @@ function WithMePanel({ rows, loading, emailVerified }: {
                 <TableCell className="py-3 px-2">
                   <p className="text-[13px]">{timeAgo(l.invited_at)}</p>
                   {/* Your own fact, not the sender's analytics. */}
-                  <p className="text-[11px] text-muted-foreground">{l.verified_at ? 'Opened' : 'Not opened yet'}</p>
+                  <p className="text-[11px] text-muted-foreground">{l.verified_at ? t('common.label.opened') : t('shared.label.notOpenedYet')}</p>
                 </TableCell>
                 <TableCell className="py-3 px-2">
                   <span className={`text-xs font-medium ${l.status === 'expiring' ? 'text-amber-600' : !live ? 'text-muted-foreground' : ''}`}>
-                    {l.status === 'revoked' ? 'Revoked' : l.expires_at ? (l.status === 'expired' ? 'Expired' : daysLeft(l.expires_at)) : 'Never'}
+                    {l.status === 'revoked' ? t('common.label.revoked') : l.expires_at ? (l.status === 'expired' ? t('common.status.expired') : daysLeft(l.expires_at)) : t('common.label.never')}
                   </span>
                 </TableCell>
                 <TableCell className="py-3 px-2">
                   <Badge className={`text-[10px] gap-1 ${STATUS_COLORS[l.status] ?? ''}`}>
                     <span className={`w-1.5 h-1.5 rounded-full ${DOT_COLORS[l.status] ?? ''}`} />
-                    {l.status.charAt(0).toUpperCase() + l.status.slice(1)}
+                    {statusLabel(t, l.status)}
                   </Badge>
                 </TableCell>
               </TableRow>

@@ -15,6 +15,7 @@ import { FileViewer } from '@/components/file-viewer';
 import { FilesSidebar } from '@/components/files-sidebar';
 import { filterNavParams, groupNavParams } from '@/lib/files-params';
 import { Button } from '@/components/ui/button';
+import { useDir, useT } from '@/lib/i18n';
 import { EmptyState } from '@/components/ui/empty-state';
 
 let pmtilesRegistered = false;
@@ -56,6 +57,7 @@ const isRasterFile = (p: MapPin): p is FilePin =>
   p.kind === 'file' && RASTER_THUMB.has((p.extension || '').toLowerCase());
 
 export default function MapPage() {
+  const t = useT();
   const navigate = useNavigate();
   const wsId = useWorkspace((s) => s.activeId);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -253,7 +255,7 @@ export default function MapPage() {
       zoom: 1.5,
       attributionControl: { compact: true },
     });
-    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
+    // The zoom control is placed by the direction effect below.
     // Use the ref, not the captured closure: this handler is registered once on
     // mount, so a bare renderMarkers() would forever call the first render's
     // version (when pins were empty) and wipe markers on every pan/zoom.
@@ -265,6 +267,17 @@ export default function MapPage() {
     return () => { map.remove(); mapRef.current = null; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // The canvas, tiles and pins never mirror; only the zoom control moves to
+  // the other bottom corner so it keeps clear of the (mirrored) side panel.
+  const dir = useDir();
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const control = new maplibregl.NavigationControl({ showCompass: false });
+    map.addControl(control, dir === 'rtl' ? 'bottom-left' : 'bottom-right');
+    return () => { if (mapRef.current) map.removeControl(control); };
+  }, [dir]);
 
   // Re-render markers when data/index changes and once the map is ready.
   useEffect(() => {
@@ -289,9 +302,9 @@ export default function MapPage() {
     map.once('styledata', () => renderMarkersRef.current());
   }, [dark, hasBasemap]);
 
-  const countParts = [`${counts.gps} located`];
-  if (counts.approximate > 0) countParts.push(`${counts.approximate} approximate`);
-  if (counts.pending > 0) countParts.push(`${counts.pending} scanning…`);
+  const countParts = [t('map.label.gpsLocated', { gps: counts.gps })];
+  if (counts.approximate > 0) countParts.push(t('map.label.approximateApproximate', { approximate: counts.approximate }));
+  if (counts.pending > 0) countParts.push(t('map.label.pendingScanning', { pending: counts.pending }));
 
   return (
     <div className="absolute inset-0 flex overflow-hidden">
@@ -314,7 +327,7 @@ export default function MapPage() {
       <div className="relative flex-1 min-w-0 h-full overflow-hidden">
         <div ref={containerRef} className="h-full w-full" />
 
-      <div className="absolute top-4 left-4 z-10 flex flex-col items-start gap-2">
+      <div className="absolute top-4 inset-s-4 z-10 flex flex-col items-start gap-2">
         {/* Count chip */}
         <div className="rounded-full bg-background/90 backdrop-blur px-3 py-1.5 text-sm shadow flex items-center gap-2">
           <MapPinIcon className="size-4 text-muted-foreground" />
@@ -336,9 +349,9 @@ export default function MapPage() {
           className="rounded-full bg-background/90 backdrop-blur px-3 py-1.5 text-xs shadow flex items-center gap-2 hover:bg-muted/60"
         >
           <span className={`relative w-8 h-4.5 rounded-full transition-colors ${showApprox ? 'bg-green-600' : 'bg-muted'}`}>
-            <span className={`absolute top-0.5 size-3.5 bg-white rounded-full shadow transition-all ${showApprox ? 'left-4' : 'left-0.5'}`} />
+            <span className={`absolute top-0.5 size-3.5 bg-white rounded-full shadow transition-all ${showApprox ? 'inset-s-4' : 'inset-s-0.5'}`} />
           </span>
-          Show approximate locations
+          {t('map.action.showApproximateLocations')}
         </button>
       </div>
 
@@ -357,9 +370,9 @@ export default function MapPage() {
             <div className="pointer-events-auto">
               <EmptyState
                 icon={MapPinIcon}
-                title="No geotagged photos yet"
-                description="Photos taken on a phone usually carry GPS coordinates. Upload some and they will appear here on the map where they were taken."
-                actions={<Link to="/files"><Button size="sm" className="h-7 text-xs">Go to Files</Button></Link>}
+                title={t('map.tooltip.noGeotaggedPhotosYet')}
+                description={t('map.description.photosTakenOnAPhoneUsuallyCarryGpsCoordinatesUploadSome')}
+                actions={<Link to="/files"><Button size="sm" className="h-7 text-xs">{t('common.action.goToFiles')}</Button></Link>}
               />
             </div>
           </div>
@@ -367,12 +380,12 @@ export default function MapPage() {
           <div className="absolute inset-0 z-10 flex flex-col items-center justify-center text-center pointer-events-none">
             <MapPinIcon className="size-12 text-muted-foreground/30 mb-4" />
             <p className="text-sm font-medium text-muted-foreground mb-1">
-              {pins.length > 0 ? 'No pins to show' : 'No files or folders with a location yet'}
+              {pins.length > 0 ? t('map.label.noPinsToShow') : t('map.empty.noFilesOrFoldersWithALocationYet')}
             </p>
             <p className="text-xs text-muted-foreground">
               {pins.length > 0
-                ? 'All located items are approximate - enable the toggle above to see them.'
-                : 'Scanning your files for location…'}
+                ? t('map.description.allLocatedItemsAreApproximateEnableTheToggleAbove')
+                : t('map.status.scanningYourFilesForLocation')}
             </p>
           </div>
         )

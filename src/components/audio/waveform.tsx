@@ -1,5 +1,6 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { mmss } from '@dosya-dev/audio-player';
+import { useT } from '@/lib/i18n';
 
 const BAR_W = 3;
 const BAR_GAP = 2;
@@ -53,6 +54,7 @@ interface Props {
 }
 
 export function Waveform({ peaks, position, duration, loop, onSeek, markers, onMarker }: Props) {
+  const t = useT();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const tipRef = useRef<HTMLSpanElement>(null);
@@ -160,20 +162,22 @@ export function Waveform({ peaks, position, duration, loop, onSeek, markers, onM
   };
 
   return (
-    <div className="mt-[22px]">
+    <div dir="ltr" className="mt-[22px]">
       {/* Above the seek surface, not inside it, so a marker click never
           reaches the wrapper's pointer handlers and seeks twice. */}
       {markers && markers.length > 0 && (
-        <div className="relative mb-1 h-4" aria-label="Comment markers">
+        <div className="relative mb-1 h-4" aria-label={t('common.accessibility.commentMarkers')}>
           {markers.map((m) => (
             <button
               key={m.id}
               type="button"
               data-testid="waveform-marker"
               title={m.excerpt}
-              aria-label={`Comment: ${m.excerpt}`}
+              aria-label={t('common.action.commentMexcerpt', { excerpt: m.excerpt })}
               onClick={() => onMarker?.(m.id)}
+              // rtl-ok: media timeline, time runs left to right in every language
               className="absolute top-0 flex size-4 -translate-x-1/2 items-center justify-center rounded-full bg-primary text-[9px] font-bold text-primary-foreground shadow-sm hover:scale-110 transition-transform"
+              // rtl-ok: media timeline
               style={{ left: `${Math.min(1, Math.max(0, m.ratio)) * 100}%`, opacity: m.dim ? 0.45 : 1 }}
             >
               {m.initial}
@@ -186,11 +190,11 @@ export function Waveform({ peaks, position, duration, loop, onSeek, markers, onM
         className="relative h-[78px] cursor-pointer touch-none rounded focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--ring)]"
         role="slider"
         tabIndex={0}
-        aria-label="Seek"
+        aria-label={t('common.accessibility.seek')}
         aria-valuemin={0}
         aria-valuemax={Math.round(duration)}
         aria-valuenow={Math.round(position)}
-        aria-valuetext={`${mmss(position)} of ${mmss(duration)}`}
+        aria-valuetext={t('common.accessibility.positionOfDuration', { position: mmss(position), duration: mmss(duration) })}
         onPointerDown={(e) => {
           (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
           onSeek(secondsAt(e.clientX));
@@ -215,6 +219,7 @@ export function Waveform({ peaks, position, duration, loop, onSeek, markers, onM
         <canvas ref={canvasRef} className="block w-full h-full" />
         <span
           ref={tipRef}
+          // rtl-ok: media timeline, the tooltip follows the pointer along a physical scale
           className="pointer-events-none absolute -top-2 z-10 -translate-x-1/2 -translate-y-full whitespace-nowrap rounded bg-foreground px-[7px] py-[3px] font-mono text-[11px] font-bold text-background opacity-0 transition-opacity"
         />
       </div>

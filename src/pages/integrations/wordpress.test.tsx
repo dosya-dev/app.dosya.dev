@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vite
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { MemoryRouter } from 'react-router-dom';
-import { WORDPRESS_ZIP_URL } from '@/lib/integrations';
+import { WORDPRESS_ORG_URL } from '@/lib/integrations';
 
 const apiMock = vi.fn();
 vi.mock('@/api/client', async (importOriginal) => ({
@@ -76,17 +76,17 @@ const rows = () => [...container!.querySelectorAll('[data-testid="wp-site-row"]'
 beforeEach(() => { apiMock.mockReset(); });
 
 describe('WordPressSetup', () => {
-  it('shows the empty state with the download and the three steps', async () => {
+  it('shows the empty state with the listing link and the three steps', async () => {
     route({ sites: [] });
     await render();
     expect(text()).toContain('No WordPress site connected yet.');
     expect(text()).toContain('Install it on your site, then press Connect to dosya in wp-admin.');
     expect(text()).toContain('Add a site');
     expect(text()).not.toContain('Add another site');
-    const links = [...container!.querySelectorAll(`a[href="${WORDPRESS_ZIP_URL}"]`)];
-    const primary = links.find((a) => a.textContent?.includes('Download dosya-backup.zip'));
+    const links = [...container!.querySelectorAll(`a[href="${WORDPRESS_ORG_URL}"]`)];
+    const primary = links.find((a) => a.textContent?.includes('View on WordPress.org'));
     expect(primary).toBeTruthy();
-    expect(primary!.hasAttribute('download')).toBe(true);
+    expect(primary!.getAttribute('target')).toBe('_blank');
     for (const s of ['Install', 'Connect', 'Back up']) expect(text()).toContain(s);
     expect(container!.querySelector('[data-testid="wp-site-row"]')).toBeNull();
   });

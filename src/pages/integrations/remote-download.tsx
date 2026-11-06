@@ -13,6 +13,8 @@ import { FolderPickerDialog } from '@/components/folder-picker-dialog';
 import { Folder, Loader2, X, CloudDownload } from 'lucide-react';
 import { timeAgo, humanSize } from '@/lib/helpers';
 import { toast } from '@/lib/toast';
+import { t, useT } from '@/lib/i18n';
+import type { MessageKey } from '@/i18n/keys';
 import { useRemoteDownloads } from '@/stores/remote-downloads';
 
 const meta = getIntegration('remote-download')!;
@@ -31,35 +33,37 @@ interface Job {
   created_at: number;
 }
 
-const ERROR_MESSAGES: Record<string, string> = {
-  ssrf_blocked: 'Address not allowed',
-  not_a_file: 'Not a direct file link',
-  unknown_size: 'Unknown file size',
-  too_large: 'File too large',
-  quota: 'Not enough storage',
-  source_changed: 'File changed on the source server',
-  network: 'Connection to the source failed',
-  backup_locked: 'Destination is a locked backup',
+const ERROR_MESSAGES: Record<string, MessageKey> = {
+  ssrf_blocked: 'integrations-remote-download.error.addressNotAllowed',
+  not_a_file: 'integrations-remote-download.label.notADirectFileLink',
+  unknown_size: 'integrations-remote-download.label.unknownFileSize',
+  too_large: 'common.error.fileTooLarge',
+  quota: 'integrations-remote-download.label.notEnoughStorage',
+  source_changed: 'integrations-remote-download.label.fileChangedOnTheSourceServer',
+  network: 'integrations-remote-download.error.connectionToTheSourceFailed',
+  backup_locked: 'integrations-remote-download.label.destinationIsALockedBackup',
 };
 
 function errorLabel(code: string | null): string {
-  if (!code) return 'Failed';
-  if (code.startsWith('http_')) return `Source returned HTTP ${code.slice(5)}`;
-  return ERROR_MESSAGES[code] ?? 'Failed';
+  if (!code) return t('common.label.failed');
+  if (code.startsWith('http_')) return t('integrations-remote-download.label.sourceReturnedHttpCodeslice', { codeSlice: code.slice(5) });
+  return t(ERROR_MESSAGES[code] ?? 'common.label.failed');
 }
 
 function StatusBadge({ job }: { job: Job }) {
-  if (job.status === 'done') return <Badge className="bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-400 text-[10px]">Done</Badge>;
-  if (job.status === 'error') return <Badge variant="destructive" className="text-[10px]" title={errorLabel(job.error_code)}>Failed</Badge>;
-  if (job.status === 'cancelled') return <Badge variant="secondary" className="text-[10px]">Cancelled</Badge>;
+  const t = useT();
+  if (job.status === 'done') return <Badge className="bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-400 text-[10px]">{t('integrations-remote-download.status.done')}</Badge>;
+  if (job.status === 'error') return <Badge variant="destructive" className="text-[10px]" title={errorLabel(job.error_code)}>{t('common.status.failed')}</Badge>;
+  if (job.status === 'cancelled') return <Badge variant="secondary" className="text-[10px]">{t('integrations-remote-download.status.cancelled')}</Badge>;
   return <Badge variant="secondary" className="text-[10px] capitalize">{job.status}</Badge>;
 }
 
 export default function RemoteDownloadPage() {
+  const t = useT();
   const workspaceId = useWorkspace((s) => s.activeId);
   const [jobs, setJobs] = useState<Job[] | null>(null);
   const [url, setUrl] = useState('');
-  const [folder, setFolder] = useState<{ id: string | null; name: string }>({ id: null, name: 'Home' });
+  const [folder, setFolder] = useState<{ id: string | null; name: string }>({ id: null, name: '' });
   const [pickerOpen, setPickerOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
@@ -93,9 +97,9 @@ export default function RemoteDownloadPage() {
       setJobs((prev) => [data.job, ...(prev ?? [])]);
       setUrl('');
       useRemoteDownloads.getState().refresh();
-      toast.success('Download started', 'dosya is fetching the file for you - you can close this page.');
+      toast.success(t('common.feedback.downloadStarted'), t('integrations-remote-download.feedback.dosyaIsFetchingTheFileForYouYouCanClose'));
     } catch (err) {
-      toast.error('Could not start download', apiErrorMessage(err));
+      toast.error(t('integrations-remote-download.error.couldNotStartDownload'), apiErrorMessage(err));
     } finally {
       setSubmitting(false);
     }
@@ -108,7 +112,7 @@ export default function RemoteDownloadPage() {
       await load();
       useRemoteDownloads.getState().refresh();
     } catch (err) {
-      toast.error('Could not remove download', apiErrorMessage(err));
+      toast.error(t('integrations-remote-download.error.couldNotRemoveDownload'), apiErrorMessage(err));
     }
   }
 
@@ -116,9 +120,8 @@ export default function RemoteDownloadPage() {
     <IntegrationLayout icon={meta.icon} title={meta.title} description={meta.description}>
       <Card className="p-4 space-y-3">
         <p className="text-sm text-muted-foreground">
-          Paste a direct https link to a file. dosya downloads it on our servers straight into your
-          workspace - nothing goes through your connection. Direct file links only (a Google&nbsp;Drive
-          or Dropbox share page won't work).
+          {/* TODO(catalog): the source has a plain space in "Google Drive"; the shipped copy had a non-breaking one. */}
+          {t('integrations-remote-download.description.pasteADirectHttpsLinkToAFileDosyaDownloadsIt').replace('Google Drive', 'Google\u00a0Drive')}
         </p>
         <div className="flex flex-col gap-2 sm:flex-row">
           <Input
@@ -128,11 +131,11 @@ export default function RemoteDownloadPage() {
             onKeyDown={(e) => { if (e.key === 'Enter') submit(); }}
           />
           <Button variant="outline" onClick={() => setPickerOpen(true)}>
-            <Folder className="size-4" /> {folder.name}
+            <Folder className="size-4" /> {folder.id ? folder.name : t('common.label.home')}
           </Button>
           <Button onClick={submit} disabled={!url.trim() || submitting}>
             {submitting ? <Loader2 className="size-4 animate-spin" /> : <CloudDownload className="size-4" />}
-            Fetch file
+            {t('integrations-remote-download.action.fetchFile')}
           </Button>
         </div>
       </Card>
@@ -144,20 +147,19 @@ export default function RemoteDownloadPage() {
           <div className="mx-auto flex size-11 items-center justify-center rounded-full bg-muted">
             <CloudDownload className="size-5 text-muted-foreground" />
           </div>
-          <p className="mt-3 text-sm font-medium">No remote downloads yet</p>
+          <p className="mt-3 text-sm font-medium">{t('integrations-remote-download.label.noRemoteDownloadsYet')}</p>
           <p className="mx-auto mt-1 max-w-sm text-sm text-muted-foreground">
-            Paste a direct file link above and dosya will download it into your
-            workspace for you - no matter how slow your own connection is.
+            {t('integrations-remote-download.description.pasteADirectFileLinkAboveAndDosyaWillDownloadIt')}
           </p>
         </Card>
       ) : (
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>File</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Progress</TableHead>
-              <TableHead>Started</TableHead>
+              <TableHead>{t('common.label.fileTitleCase')}</TableHead>
+              <TableHead>{t('common.column.status')}</TableHead>
+              <TableHead>{t('integrations-remote-download.label.progress')}</TableHead>
+              <TableHead>{t('integrations-remote-download.label.started')}</TableHead>
               <TableHead />
             </TableRow>
           </TableHeader>
@@ -187,7 +189,7 @@ export default function RemoteDownloadPage() {
                   <TableCell className="text-xs text-muted-foreground">{timeAgo(job.created_at)}</TableCell>
                   <TableCell>
                     <Button variant="ghost" size="icon-xs" onClick={() => removeJob(job)}
-                      title={ACTIVE.has(job.status) ? 'Cancel download' : 'Remove from list'}>
+                      title={ACTIVE.has(job.status) ? t('integrations-remote-download.action.cancelDownload') : t('common.action.removeFromList')}>
                       <X className="size-3.5" />
                     </Button>
                   </TableCell>
@@ -204,9 +206,9 @@ export default function RemoteDownloadPage() {
           onClose={() => setPickerOpen(false)}
           workspaceId={workspaceId}
           selectedId={folder.id}
-          onSelect={(id, name) => { setFolder({ id, name: id ? name : 'Home' }); setPickerOpen(false); }}
-          title="Download into folder"
-          confirmLabel="Select"
+          onSelect={(id, name) => { setFolder({ id, name: id ? name : '' }); setPickerOpen(false); }}
+          title={t('integrations-remote-download.tooltip.downloadIntoFolder')}
+          confirmLabel={t('profile.label.select')}
         />
       )}
     </IntegrationLayout>

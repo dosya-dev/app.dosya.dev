@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react';
 import { RefreshCw, Wrench } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useT } from '@/lib/i18n';
+import type { MessageKey } from '@/i18n/keys';
 
-const LABELS: Record<string, string> = {
-  web: 'The web app',
-  desktop: 'The desktop app',
-  mobile: 'The mobile app',
-  api: 'The dosya API',
+const LABELS: Record<string, MessageKey> = {
+  web: 'common.label.theWebApp',
+  desktop: 'common.label.theDesktopApp',
+  mobile: 'common.label.theMobileApp',
+  api: 'common.label.theDosyaApi',
 };
 const INTERVAL_S = 60;
 
@@ -17,6 +19,7 @@ export function MaintenanceScreen({ surface, message, onRetry, email, onSignOut 
   email?: string | null;
   onSignOut?: () => void;
 }) {
+  const t = useT();
   const [left, setLeft] = useState(INTERVAL_S);
   const [checking, setChecking] = useState(false);
 
@@ -54,17 +57,17 @@ export function MaintenanceScreen({ surface, message, onRetry, email, onSignOut 
         <Wrench className="h-7 w-7" />
       </div>
       <h1 className="text-2xl font-bold tracking-tight mb-2">
-        {LABELS[surface] ?? 'This service'} is paused for maintenance
+        {t('common.heading.labelssurfacethisIsPausedForMaintenance', { LABELSSurfaceThis: LABELS[surface] ? t(LABELS[surface]) : t('common.label.thisService') })}
       </h1>
       <p className="text-muted-foreground max-w-md mb-5">
-        Nothing you uploaded is affected. We&apos;ll bring the dashboard back on its own the moment it&apos;s available.
+        {t('common.description.nothingYouUploadedIsAffectedWeLlBringTheDashboardBackOn')}
       </p>
       {message && (
-        <div className="w-full max-w-md text-left rounded-xl border border-amber-300 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/40 p-4 mb-6">
+        <div className="w-full max-w-md text-start rounded-xl border border-amber-300 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/40 p-4 mb-6">
           <div className="text-[11px] font-mono uppercase tracking-wider text-amber-700 dark:text-amber-300 mb-1">
-            From the team
+            {t('common.label.fromTheTeam')}
           </div>
-          <div className="whitespace-pre-wrap">{message}</div>
+          <div dir="auto" className="whitespace-pre-wrap">{message}</div>
         </div>
       )}
       <div className="w-full max-w-xs h-1 rounded-full bg-muted overflow-hidden mb-3">
@@ -74,30 +77,30 @@ export function MaintenanceScreen({ surface, message, onRetry, email, onSignOut 
         />
       </div>
       <div className="font-mono text-sm text-muted-foreground tabular-nums mb-4">
-        {checking ? 'Checking…' : `Checking again in ${mm}:${ss}`}
+        {checking ? t('common.status.checking') : t('common.label.checkingAgainInMmSs', { mm, ss })}
       </div>
       <div className="flex flex-wrap gap-3 justify-center">
         <Button onClick={check} disabled={checking}>
-          <RefreshCw className="h-4 w-4 mr-2" />
-          Check now
+          <RefreshCw className="h-4 w-4 me-2" />
+          {t('common.action.checkNow')}
         </Button>
         <Button
           variant="outline"
           nativeButton={false}
           render={<a href="https://status.dosya.dev" target="_blank" rel="noopener noreferrer" />}
         >
-          Status page
+          {t('common.action.statusPage')}
         </Button>
       </div>
       {email && (
         <div className="mt-10 pt-4 border-t w-full max-w-md text-sm text-muted-foreground">
-          Signed in as {email}
+          {t('common.label.signedInAs')} {email}
           {onSignOut && (
             <>
               {' '}
               ·{' '}
               <button className="underline underline-offset-2" onClick={onSignOut}>
-                Sign out
+                {t('common.action.signOut')}
               </button>
             </>
           )}

@@ -3,7 +3,7 @@ import { useSearchParams, useNavigate } from 'react-router-dom';
 import { api } from '@/api/client';
 import { useWorkspace } from '@/stores/workspace';
 import { usePermissions } from '@/hooks/use-permissions';
-import { useUploads } from '@/stores/uploads';
+import { useUploads, uploadSummary } from '@/stores/uploads';
 import { useShallow } from 'zustand/react/shallow';
 import type { UploadItem } from '@/lib/upload-types';
 import { setWorkspaceCap, retry, retryAllFailed, canRetry } from '@/lib/upload-runner';
@@ -17,11 +17,20 @@ import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Upload, Info, Check, AlertCircle, Loader2, Home, FolderOpen, Layers, RotateCw, Lock, ChevronRight, FilePlus, FolderUp } from 'lucide-react';
 import { humanSize, folderIconSrc } from '@/lib/helpers';
+import { etaSeconds, humanDuration } from '@/lib/import-rate';
 import { toast } from '@/lib/toast';
+import { useT } from '@/lib/i18n';
+import { richText } from '@/lib/rich-text';
 import { FolderPickerDialog } from '@/components/folder-picker-dialog';
 import { buildUploadTree, visibleRows, type UploadFolderNode, type UploadLeaf } from '@/lib/upload-tree';
 
+const FORMAT_BADGES = [
+  'common.label.videoTitleCase', 'common.label.images', 'common.label.documents.documents',
+  'upload.label.archives', 'upload.label.anyFormat',
+] as const;
+
 export default function UploadsPage() {
+  const t = useT();
   const wsId = useWorkspace((s: { activeId: string }) => s.activeId);
   // The route is gated on access_upload; upload_files is the separate right to
   // actually put bytes in. A role with the page but not the right used to get
@@ -31,7 +40,7 @@ export default function UploadsPage() {
   const cannotUpload = isResolved && !can('upload_files');
   const [searchParams] = useSearchParams();
   const [folderId, setFolderId] = useState<string | null>(searchParams.get('folder'));
-  const [folderName, setFolderName] = useState(searchParams.get('folder_name') || 'Root (top level)');
+  const [folderName, setFolderName] = useState(searchParams.get('folder_name') || t('common.label.rootTopLevel'));
   // Set when the Files page sent us here from a group view. Groups are flat
   // collections rather than folders, so the file still lands in a folder; the
   // upload runner enrols it into the group once it completes.
@@ -110,13 +119,17 @@ export default function UploadsPage() {
   return (
     <div className="p-6 overflow-y-auto">
       <div className="mb-6">
-        <h1 className="text-xl font-bold tracking-tight">Upload files</h1>
+        <h1 className="text-xl font-bold tracking-tight">{t('common.heading.uploadFiles')}</h1>
         <p className="text-sm text-muted-foreground mt-1">
           {folderId
-            ? <>Uploading to <span className="font-semibold text-foreground">{folderName}</span> · encrypted in transit</>
+            ? richText(t('upload.description.uploadingToSelectedFolderNameEncryptedInTransit'), {
+                selectedFolderName: <span className="font-semibold text-foreground">{folderName}</span>,
+              })
             : groupId
-              ? <>Uploading to <span className="font-semibold text-foreground">{groupName || 'this group'}</span> · files land at the top level and are added to the group</>
-              : "Files are end-to-end encrypted in transit and stored in this workspace's location."}
+              ? richText(t('upload.description.uploadingToGroupnamethisgroupFilesLandAtTheTopLevelAnd'), {
+                groupNameThisGroup: <span className="font-semibold text-foreground">{groupName || t('upload.label.thisGroup')}</span>,
+              })
+              : t('upload.description.filesAreEndToEndEncryptedInTransitAndStoredInThisWorkspaceS')}
         </p>
       </div>
 
@@ -125,8 +138,8 @@ export default function UploadsPage() {
           {cannotUpload ? (
             <Card className="gap-3 py-12 text-center text-sm text-muted-foreground">
               <Lock className="size-5 mx-auto opacity-60" />
-              <p>Your role can't upload files</p>
-              <p className="text-xs">Ask a workspace owner or admin if you need to add files here.</p>
+              <p>{t('upload.error.yourRoleCanTUploadFiles')}</p>
+              <p className="text-xs">{t('upload.description.askAWorkspaceOwnerOrAdminIfYouNeedToAdd')}</p>
             </Card>
           ) : (
           <>
@@ -146,20 +159,20 @@ export default function UploadsPage() {
             onDrop={onDrop}
           >
             <Upload className="size-10 text-muted-foreground mx-auto mb-4" />
-            <p className="font-semibold text-sm mb-1">Drop files or folders here to upload</p>
+            <p className="font-semibold text-sm mb-1">{t('common.label.dropFilesOrFoldersHereToUpload')}</p>
             <p className="text-xs text-muted-foreground mb-4">
-              Folders keep their subfolders. No file size limit on Pro.
+              {t('upload.description.foldersKeepTheirSubfoldersNoFileSizeLimitOnPro')}
             </p>
             <div className="flex gap-2 justify-center mb-4">
               <Button type="button" variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}>
-                <FilePlus className="size-3.5" /> Select files
+                <FilePlus className="size-3.5" /> {t('upload.action.selectFiles')}
               </Button>
               <Button type="button" variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={(e) => { e.stopPropagation(); folderInputRef.current?.click(); }}>
-                <FolderUp className="size-3.5" /> Select folder
+                <FolderUp className="size-3.5" /> {t('upload.action.selectFolder')}
               </Button>
             </div>
             <div className="flex gap-2 justify-center flex-wrap">
-              {['Video', 'Images', 'Documents', 'Archives', 'Any format'].map((t) => <Badge key={t} variant="secondary" className="text-[10px]">{t}</Badge>)}
+              {FORMAT_BADGES.map((key) => <Badge key={key} variant="secondary" className="text-[10px]">{t(key)}</Badge>)}
             </div>
           </div>
           </>
@@ -169,19 +182,23 @@ export default function UploadsPage() {
             <Card>
               <CardHeader className="flex flex-row items-center justify-between pb-2">
                 <div>
-                  <CardTitle className="text-sm font-semibold">Upload queue</CardTitle>
-                  <p className="text-xs text-muted-foreground mt-0.5">{queue.length} file{queue.length !== 1 ? 's' : ''} · {humanSize(totalBytes)} total · {doneCount} complete</p>
+                  <CardTitle className="text-sm font-semibold">{t('upload.heading.uploadQueue')}</CardTitle>
+                  <p className="text-xs text-muted-foreground mt-0.5">{t('upload.description.queuecountFileQueuelengthSelectTrueSOtherTotalbytesTotal', {
+                    queueCount: queue.length, queueLength: queue.length !== 1 ? 'true' : 'false',
+                    totalBytes: humanSize(totalBytes), doneCount,
+                  })}</p>
                 </div>
                 <div className="flex items-center gap-1.5">
                   {failedCount > 0 && (
                     <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => retryAllFailed()}>
-                      <RotateCw className="size-3" /> Retry all failed
+                      <RotateCw className="size-3" /> {t('common.tooltip.retryAllFailed')}
                     </Button>
                   )}
-                  <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => useUploads.getState().clearFinished()}>Clear done</Button>
+                  <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => useUploads.getState().clearFinished()}>{t('upload.action.clearDone')}</Button>
                 </div>
               </CardHeader>
               <CardContent className="space-y-0">
+                <QueueStats queue={queue} />
                 <QueueTree queue={queue} />
               </CardContent>
             </Card>
@@ -189,11 +206,11 @@ export default function UploadsPage() {
         </div>
 
         <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold">Upload options</CardTitle></CardHeader>
+          <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold">{t('upload.heading.uploadOptions')}</CardTitle></CardHeader>
           <CardContent className="space-y-4">
             <div>
-              <p className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-1"><FolderOpen className="size-3" /> Folder</p>
-              <button className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border bg-muted/50 text-xs hover:bg-muted transition-colors text-left" onClick={() => setSelectFolderOpen(true)}>
+              <p className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-1"><FolderOpen className="size-3" /> {t('common.label.folder')}</p>
+              <button className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border bg-muted/50 text-xs hover:bg-muted transition-colors text-start" onClick={() => setSelectFolderOpen(true)}>
                 {folderId
                   ? <img src={folderIconSrc(0)} alt="" className="size-3.5 shrink-0" />
                   : <Home className="size-3.5 text-muted-foreground shrink-0" />}
@@ -202,7 +219,7 @@ export default function UploadsPage() {
             </div>
             <div className="border-t" />
             <div>
-              <p className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-1"><Layers className="size-3" /> Simultaneous uploads</p>
+              <p className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-1"><Layers className="size-3" /> {t('upload.label.simultaneousUploads')}</p>
               <div className="flex items-center gap-1.5">
                 {Array.from({ length: MAX_USER_CONCURRENCY }, (_, i) => i + 1)
                   .filter((n) => wsMaxUploads <= 0 || n <= wsMaxUploads)
@@ -216,14 +233,14 @@ export default function UploadsPage() {
               </div>
               <p className="text-[11px] text-muted-foreground mt-1.5">
                 {wsMaxUploads > 0
-                  ? `Your workspace allows up to ${wsMaxUploads} at a time.`
-                  : `Upload up to ${concurrency} file${concurrency === 1 ? '' : 's'} at once.`}
+                  ? t('upload.description.yourWorkspaceAllowsUpToWsmaxuploadsAtATime', { wsMaxUploads })
+                  : t('upload.description.uploadUpToConcurrencyPluralOneFileOtherFiles', { concurrency })}
               </p>
             </div>
             <div className="border-t" />
             <div className="space-y-1.5">
-              <p className="text-[11px] text-muted-foreground flex items-center gap-1.5"><Info className="size-3" /> No egress fees · ever</p>
-              <p className="text-[11px] text-muted-foreground flex items-center gap-1.5"><Info className="size-3" /> Encrypted in transit with <span className="font-semibold">TLS 1.3</span></p>
+              <p className="text-[11px] text-muted-foreground flex items-center gap-1.5"><Info className="size-3" /> {t('upload.label.noEgressFeesEver.noEgressFeesEver')}</p>
+              <p className="text-[11px] text-muted-foreground flex items-center gap-1.5"><Info className="size-3" /> {t('common.description.encryptedInTransitWithTLS13')}</p>
             </div>
           </CardContent>
         </Card>
@@ -236,7 +253,7 @@ export default function UploadsPage() {
           workspaceId={wsId}
           selectedId={folderId}
           selectedName={folderName}
-          onSelect={(id, name) => { setFolderId(id); setFolderName(name); setSelectFolderOpen(false); toast.success('Uploading here', `New files will go to "${name}".`); }}
+          onSelect={(id, name) => { setFolderId(id); setFolderName(name); setSelectFolderOpen(false); toast.success(t('upload.feedback.uploadingHere'), t('upload.feedback.newFilesWillGoToName', { name })); }}
         />
       )}
     </div>
@@ -262,8 +279,42 @@ const toLeaf = (item: UploadItem): UploadLeaf => ({
   state: LEAF_STATE[item.status],
 });
 
+/**
+ * Combined progress across this workspace's active uploads: bytes sent, the
+ * summed live speed and the time left at that speed. Cloud import already
+ * showed this; the Upload page only had per-file percentages.
+ */
+export function QueueStats({ queue }: { queue: UploadItem[] }) {
+  const t = useT();
+  const summary = uploadSummary(queue);
+  if (!summary.anyActive) return null;
+  const speed = summary.activeSpeedBps;
+  const hasRate = speed > 0;
+  const eta = etaSeconds(hasRate ? speed : null, summary.activeTotalBytes, summary.activeUploadedBytes);
+  // Same string as the cloud import card. Template-only tidy: some languages
+  // leave a doubled or trailing space around an empty branch.
+  const line = t('common.description.jobcompletedBytesOfJobtotalBytesHasrateHaseta', {
+    jobCompleted_bytes: humanSize(summary.activeUploadedBytes),
+    jobTotal_bytes: humanSize(summary.activeTotalBytes),
+    hasRate: hasRate ? 'true' : 'false',
+    rateBytesPerSec: hasRate ? humanSize(speed) : '',
+    hasEta: eta !== null ? 'true' : 'false',
+    rateEtaDuration: eta !== null ? humanDuration(eta) : '',
+  }).replace(/ {2,}/g, ' ').trim();
+  return (
+    <div className="pb-3 mb-1 border-b">
+      <Progress
+        value={summary.overallPct}
+        className="**:data-[slot=progress-indicator]:bg-green-500 **:data-[slot=progress-indicator]:duration-300"
+      />
+      <p className="mt-1.5 text-[11px] text-muted-foreground tabular-nums" data-testid="upload-queue-stats">{line}</p>
+    </div>
+  );
+}
+
 /** The queue grouped under the folders it was uploaded from. */
 function QueueTree({ queue }: { queue: UploadItem[] }) {
+  const t = useT();
   const tree = useMemo(() => buildUploadTree(queue, toLeaf), [queue]);
   // Only what the user toggled is stored; everything else follows the default,
   // so folders arriving later in a long upload pick up the right state.
@@ -275,13 +326,13 @@ function QueueTree({ queue }: { queue: UploadItem[] }) {
     setToggled((prev) => new Map(prev).set(f.path, !isOpen(f)));
 
   return (
-    <div role="tree" aria-label="Upload queue">
+    <div role="tree" aria-label={t('upload.accessibility.uploadQueue')}>
       {visibleRows(tree, isOpen).map(({ node, depth }) =>
         node.kind === 'folder' ? (
           <QueueFolderRow key={`d:${node.path}`} folder={node} depth={depth} open={isOpen(node)} onToggle={() => toggle(node)} />
         ) : (
           // A file sits under its folder's name, past where the chevron would be.
-          <div key={node.item.id} role="treeitem" style={{ paddingLeft: depth > 0 ? depth * INDENT + 22 : 0 }}>
+          <div key={node.item.id} role="treeitem" style={{ paddingInlineStart: depth > 0 ? depth * INDENT + 22 : 0 }}>
             <QueueRow item={node.item} />
           </div>
         ),
@@ -296,26 +347,36 @@ function QueueFolderRow({ folder, depth, open, onToggle }: {
   open: boolean;
   onToggle: () => void;
 }) {
+  const t = useT();
   const pct = folder.totalBytes > 0 ? Math.round((folder.doneBytes / folder.totalBytes) * 100) : 0;
   const finished = folder.doneCount === folder.fileCount;
   const retryable = folder.items.filter((i) => i.status === 'error' && canRetry(i.id));
+  const folderSummary = (
+    <>
+      {t('upload.action.folderdonecountFolderfilecountFilesFoldertotalbytes', {
+        doneCount: folder.doneCount, fileCount: folder.fileCount, totalBytes: humanSize(folder.totalBytes),
+      })}
+      {folder.errorCount > 0 && (
+        <span className="text-destructive">{' \u00b7 '}{t('common.error.failedcountFailed', { count: folder.errorCount })}</span>
+      )}
+    </>
+  );
   return (
     <div
       role="treeitem"
       aria-expanded={open}
       aria-label={folder.name}
       className="flex items-center gap-2 py-2.5 border-b last:border-b-0"
-      style={{ paddingLeft: depth * INDENT }}
+      style={{ paddingInlineStart: depth * INDENT }}
     >
-      <button type="button" onClick={onToggle} className="flex items-center gap-2 flex-1 min-w-0 text-left">
-        <ChevronRight className={`size-3.5 shrink-0 text-muted-foreground transition-transform duration-150 ${open ? 'rotate-90' : ''}`} />
+      <button type="button" onClick={onToggle} className="flex items-center gap-2 flex-1 min-w-0 text-start">
+        <ChevronRight className={`size-3.5 shrink-0 text-muted-foreground transition-transform duration-150 ${open ? 'rotate-90' : 'rtl:rotate-180'}`} />
         <img src={folderIconSrc(folder.fileCount)} alt="" className="size-5 shrink-0" />
         <span className="flex-1 min-w-0">
           <span className="flex items-center justify-between gap-2">
             <span className="text-xs font-semibold truncate">{folder.name}</span>
             <span className="text-[11px] text-muted-foreground shrink-0">
-              {folder.doneCount}/{folder.fileCount} files · {humanSize(folder.totalBytes)}
-              {folder.errorCount > 0 && <span className="text-destructive"> · {folder.errorCount} failed</span>}
+              {folderSummary}
             </span>
           </span>
           {!finished && (
@@ -329,7 +390,7 @@ function QueueFolderRow({ folder, depth, open, onToggle }: {
       </button>
       {retryable.length > 0 && (
         <Button variant="outline" size="sm" className="h-7 text-xs gap-1 shrink-0" onClick={() => retryable.forEach((i) => retry(i.id))}>
-          <RotateCw className="size-3" /> Retry failed
+          <RotateCw className="size-3" /> {t('upload.action.retryFailed')}
         </Button>
       )}
       {finished && (
@@ -340,7 +401,8 @@ function QueueFolderRow({ folder, depth, open, onToggle }: {
 }
 
 export const QueueRow = memo(function QueueRow({ item }: { item: UploadItem }) {
-  const ext = item.fileName.includes('.') ? item.fileName.split('.').pop()!.toUpperCase() : 'FILE';
+  const t = useT();
+  const ext = item.fileName.includes('.') ? item.fileName.split('.').pop()!.toUpperCase() : t('common.label.fileBadge');
   const navigate = useNavigate();
 
   // A finished upload used to say "Done" and stop there - the file was in the
@@ -370,21 +432,21 @@ export const QueueRow = memo(function QueueRow({ item }: { item: UploadItem }) {
                 type="button"
                 onClick={() => retry(item.id)}
                 disabled={!retryable}
-                title={retryable ? 'Try this upload again' : 'Add the file again to upload it - this tab no longer has its contents.'}
+                title={retryable ? t('upload.action.tryThisUploadAgain') : t('common.action.addTheFileAgainToUploadItThisTabNo')}
                 className="shrink-0 inline-flex items-center gap-1 text-[11px] font-medium text-foreground hover:underline disabled:opacity-50 disabled:no-underline disabled:cursor-not-allowed"
               >
-                <RotateCw className="size-3" /> Retry
+                <RotateCw className="size-3" /> {t('common.retry')}
               </button>
             );
           })()}
           {item.status === 'complete' && (
             <span className="flex items-center gap-2 shrink-0">
               <button onClick={openFile} className="text-[11px] font-medium text-green-600 hover:text-green-700 hover:underline">
-                View file
+                {t('common.action.viewFile')}
               </button>
               <span className="text-[11px] text-muted-foreground/40">·</span>
               <button onClick={openFolder} className="text-[11px] font-medium text-muted-foreground hover:text-foreground hover:underline">
-                Go to location
+                {t('upload.action.goToLocation')}
               </button>
             </span>
           )}
@@ -401,8 +463,11 @@ export const QueueRow = memo(function QueueRow({ item }: { item: UploadItem }) {
             className="flex-1 **:data-[slot=progress-indicator]:bg-(--bar-color) **:data-[slot=progress-indicator]:duration-300"
             style={{ '--bar-color': item.status === 'error' ? '#ef4444' : '#22c55e' } as React.CSSProperties}
           />
-          <span className={`text-[11px] font-medium min-w-7 text-right ${item.status === 'error' ? 'text-destructive' : item.status === 'complete' ? 'text-green-600' : 'text-muted-foreground'}`}>
-            {item.status === 'complete' ? 'Done' : item.status === 'error' ? 'Error' : item.status === 'uploading' ? `${item.progress}%` : '-'}
+          {item.status === 'uploading' && item.speedBps != null && item.speedBps > 0 && (
+            <span className="text-[11px] text-muted-foreground tabular-nums shrink-0">{t('common.label.bpsS', { bps: humanSize(item.speedBps) })}</span>
+          )}
+          <span className={`text-[11px] font-medium min-w-7 text-end tabular-nums ${item.status === 'error' ? 'text-destructive' : item.status === 'complete' ? 'text-green-600' : 'text-muted-foreground'}`}>
+            {item.status === 'complete' ? t('common.label.done') : item.status === 'error' ? t('common.status.error') : item.status === 'uploading' ? `${item.progress}%` : '-'}
           </span>
         </div>
       </div>

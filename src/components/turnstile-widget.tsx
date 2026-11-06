@@ -1,4 +1,5 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
+import { t as translate } from '@/lib/i18n';
 
 const SCRIPT_SRC = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
 // Public by design - a Turnstile sitekey is served in the HTML to every
@@ -82,7 +83,7 @@ function loadScript(): Promise<void> {
     tag.onerror = () => {
       // Let a later mount retry rather than caching the failure forever.
       scriptPromise = null;
-      reject(new Error('Turnstile script failed to load'));
+      reject(new Error(translate('common.error.turnstileScriptFailedToLoad')));
     };
     document.head.appendChild(tag);
   });

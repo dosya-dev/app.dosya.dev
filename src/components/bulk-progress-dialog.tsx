@@ -1,6 +1,7 @@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Progress } from '@/components/ui/progress';
 import { Button } from '@/components/ui/button';
+import { useT } from '@/lib/i18n';
 
 export interface BulkDeleteProgress {
   done: number;
@@ -21,16 +22,17 @@ export function BulkProgressDialog({ progress, onCancel, cancelRequested }: {
   onCancel?: () => void;
   cancelRequested?: boolean;
 }) {
+  const t = useT();
   return (
     <Dialog open={!!progress} onOpenChange={() => {}}>
       <DialogContent showCloseButton={false} className="sm:max-w-sm">
         <DialogHeader>
-          <DialogTitle>{progress?.permanent ? 'Deleting permanently…' : 'Deleting…'}</DialogTitle>
+          <DialogTitle>{progress?.permanent ? t('files.heading.deletingPermanently') : t('files.status.deleting')}</DialogTitle>
           <DialogDescription>
             {progress && (
               <>
-                <span className="tabular-nums">{progress.done} of {progress.total}</span>
-                {` item${progress.total === 1 ? '' : 's'} deleted.`}
+                <span className="tabular-nums">{t('common.label.sentOfTotal', { sent: progress.done, total: progress.total })}</span>
+                {` ${t('files.description.itemProgresstotalPluralOneOtherSDeleted', { progressTotal: progress.total })}`}
               </>
             )}
           </DialogDescription>
@@ -39,7 +41,7 @@ export function BulkProgressDialog({ progress, onCancel, cancelRequested }: {
         {progress?.permanent && onCancel && (
           <DialogFooter>
             <Button variant="outline" onClick={onCancel} disabled={cancelRequested}>
-              {cancelRequested ? 'Cancelling…' : 'Cancel'}
+              {cancelRequested ? t('common.status.cancelling') : t('common.cancel')}
             </Button>
           </DialogFooter>
         )}

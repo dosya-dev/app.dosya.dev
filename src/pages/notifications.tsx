@@ -2,8 +2,10 @@ import { useEffect, useState, useCallback } from "react";
 import { fetchList } from "../api/notifications";
 import { groupByDay, type NotificationItem } from "../lib/notifications";
 import { NotificationCard } from "../components/notifications/notification-card";
+import { useT } from "../lib/i18n";
 
 export default function NotificationsPage() {
+  const t = useT();
   const [items, setItems] = useState<NotificationItem[]>([]);
   const [before, setBefore] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
@@ -26,8 +28,8 @@ export default function NotificationsPage() {
 
   return (
     <div className="max-w-2xl mx-auto p-4">
-      <h1 className="text-xl font-semibold mb-4">Notifications</h1>
-      {items.length === 0 && !loading && <p className="text-muted-foreground text-center py-12">Nothing here yet.</p>}
+      <h1 className="text-xl font-semibold mb-4">{t('common.heading.notifications')}</h1>
+      {items.length === 0 && !loading && <p className="text-muted-foreground text-center py-12">{t('notifications.description.nothingHereYet')}</p>}
       <div className="border rounded-xl overflow-hidden divide-y">
         {groups.map((g) => (
           <div key={g.label}>
@@ -39,7 +41,7 @@ export default function NotificationsPage() {
       {!done && items.length > 0 && (
         <div className="text-center mt-4">
           <button className="text-sm px-3 py-1.5 rounded-md border hover:bg-muted" disabled={loading} onClick={() => before && load(before)}>
-            {loading ? "Loading…" : "Load more"}
+            {loading ? t('common.status.loading') : t('common.action.loadMore')}
           </button>
         </div>
       )}

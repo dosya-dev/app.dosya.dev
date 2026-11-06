@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
+import { formatNumberWith } from '@/lib/format-locale';
+import { Fragment, useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, API_BASE } from '@/api/client';
 import { Card, CardContent } from '@/components/ui/card';
@@ -10,6 +11,10 @@ import {
 } from '@/components/ui/dialog';
 import { ChevronRight, Download, FileText, Loader2, Mail, Package, ShieldCheck } from 'lucide-react';
 import { humanSize } from '@/lib/helpers';
+import { useT } from '@/lib/i18n';
+import { richText } from '@/lib/rich-text';
+import type { MessageKey } from '@/i18n/keys';
+import type { T } from '@/i18n/translator';
 import { CODE_LENGTH, isCompleteCode, normaliseCode } from '@/lib/account-deletion';
 import {
   answerState, cooldownLabel, deadlineLabel, describeAnswer, describeArchives, describeOtherRequest,
@@ -20,6 +25,21 @@ import {
 const nowSeconds = () => Math.floor(Date.now() / 1000);
 
 const PRIVACY_EMAIL = 'privacy@dosya.dev';
+
+/** Wraps each occurrence of `token` in the translated `message` in a monospace span. */
+function monoToken(message: string, token: string): React.ReactNode {
+  const parts = message.split(token);
+  return parts.map((part, i) => (
+    <Fragment key={i}>
+      {i > 0 && <span className="font-mono text-[11px]">{token}</span>}
+      {part}
+    </Fragment>
+  ));
+}
+
+const mailLink = (
+  <a href={`mailto:${PRIVACY_EMAIL}`} className="underline underline-offset-2">{PRIVACY_EMAIL}</a>
+);
 
 /**
  * The five rights the product records a request for - the same five values
@@ -33,46 +53,39 @@ const PRIVACY_EMAIL = 'privacy@dosya.dev';
  * can answer without a human reading anything - and because a right that is
  * hard to find is a right that is hindered (Article 12).
  */
-const RIGHTS: { id: string; label: string; body: React.ReactNode }[] = [
+// Labels and bodies are catalog keys, translated at render (the page may switch language).
+const RIGHTS: { id: string; labelKey: MessageKey; body: (t: T) => React.ReactNode }[] = [
   {
     id: 'access',
-    label: 'See what we hold (access)',
-    body: <>Get a copy of your data, at the top of this section, is how. The report explains what we hold about you, why
-      we hold it, who else receives it and how long we keep it. Ask as often as you like.</>,
+    labelKey: 'profile.label.seeWhatWeHoldAccess',
+    body: (t) => t('profile.description.getACopyOfYourDataAtTheTopOfThis'),
   },
   {
     id: 'portability',
-    label: 'Take it elsewhere (portability)',
-    body: <>The report carries <span className="font-mono text-[11px]">account.json</span> and CSV files - structured and
-      machine-readable, ready to hand to another service. The archives carry the files themselves.</>,
+    labelKey: 'profile.label.takeItElsewherePortability',
+    body: (t) => monoToken(t('profile.description.theReportCarriesAccountfileAndCsvFiles', { accountFile: 'account.json' }), 'account.json'),
   },
   {
     id: 'erasure',
-    label: 'Have it deleted (erasure)',
-    body: <>Deleting your account deletes your profile, your sessions and the files in the workspaces you own. It takes
-      effect 30 days later and you can cancel in the meantime. Some things deliberately survive it - the security audit
-      trail, billing records we are required to keep, and files you put in someone else's workspace, which are that
-      workspace's to delete. Your report's retention section says what and for how long.{' '}
-      <Link to="/profile/delete" className="underline underline-offset-2">Delete account</Link> is its own page, under
-      Your data.</>,
+    labelKey: 'profile.label.haveItDeletedErasure',
+    body: (t) => richText(t('profile.error.deletingYourAccountDeletesYourProfileYourSessionsAndTheFiles', { link1: '{link1}' }), {
+      link1: <Link to="/profile/delete" className="underline underline-offset-2">{t('profile.action.deleteAccount')}</Link>,
+    }),
   },
   {
     id: 'restriction',
-    label: 'Ask us to pause (restriction)',
-    body: <>If you think what we hold is wrong, or you have objected and we are still considering it, you can ask us to
-      keep your data but stop using it while that is sorted out. Write to{' '}
-      <a href={`mailto:${PRIVACY_EMAIL}`} className="underline underline-offset-2">{PRIVACY_EMAIL}</a>.</>,
+    labelKey: 'profile.label.askUsToPauseRestriction',
+    body: (t) => richText(t('profile.description.ifYouThinkWhatWeHoldIsWrongOrYouHave', { link1: '{link1}' }), { link1: mailLink }),
   },
   {
     id: 'objection',
-    label: 'Tell us to stop (objection)',
-    body: <>You can object to anything we do on the basis of our legitimate interests. For marketing email specifically,
-      the unsubscribe link and your notification settings work immediately and need no reason. For anything else, write
-      to <a href={`mailto:${PRIVACY_EMAIL}`} className="underline underline-offset-2">{PRIVACY_EMAIL}</a>.</>,
+    labelKey: 'profile.label.tellUsToStopObjection',
+    body: (t) => richText(t('profile.description.youCanObjectToAnythingWeDoOnTheBasisOf', { link1: '{link1}' }), { link1: mailLink }),
   },
 ];
 
 export function PrivacySection({ now = nowSeconds }: { now?: () => number }) {
+  const t = useT();
   const [state, setState] = useState<DataState | null>(null);
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
@@ -105,11 +118,11 @@ export function PrivacySection({ now = nowSeconds }: { now?: () => number }) {
       // A failed read says nothing about whether a request can be MADE, so the
       // section still offers one. It only means this page does not know where
       // an existing request has got to.
-      setError({ text: 'Could not load your data requests. Reload to try again.', retryAt: null });
+      setError({ text: t('profile.error.couldNotLoadYourDataRequestsReloadToTryAgain'), retryAt: null });
       setState({ ok: false, request: null });
       return null;
     }
-  }, []);
+  }, [t]);
   useEffect(() => { void load(); }, [load]);
 
   // The newest ACCESS request, and only that. Every control in this block -
@@ -175,27 +188,25 @@ export function PrivacySection({ now = nowSeconds }: { now?: () => number }) {
     } finally { setBusy(false); }
   };
 
-  const askLabel = step === 'failed' ? 'Try again'
-    : step === 'answered' || step === 'partial' ? 'Ask again'
+  const askLabel = step === 'failed' ? t('profile.label.tryAgain')
+    : step === 'answered' || step === 'partial' ? t('profile.label.askAgain')
       // Already recorded, no live code: the one thing left to do is get one
       // sent, and "Request it" would read as though nothing had been asked.
-      : step === 'asked' ? 'Send me a code'
-        : 'Request it';
+      : step === 'asked' ? t('profile.label.sendMeACode')
+        : t('profile.label.requestIt');
 
   return (
     <section id="section-privacy">
-      <h2 className="text-base font-semibold mb-3">Privacy and your data</h2>
+      <h2 className="text-base font-semibold mb-3">{t('profile.heading.privacyAndYourData')}</h2>
       <Card>
         <CardContent className="divide-y">
           <div className="py-4 space-y-3">
             <div className="flex items-start gap-2">
               <ShieldCheck className="size-4 mt-0.5 shrink-0 text-muted-foreground" />
               <div className="space-y-1">
-                <p className="text-sm font-medium">Get a copy of your data</p>
+                <p className="text-sm font-medium">{t('profile.label.getACopyOfYourData')}</p>
                 <p className="text-sm text-muted-foreground">
-                  A readable report of everything we hold about you - what it is, why we have it, who else receives it,
-                  where it is stored and how long we keep it - plus ZIP archives of the files you uploaded. We email you
-                  a {CODE_LENGTH}-digit code first, and build nothing until you enter it.
+                  {t('profile.description.aReadableReportOfEverythingWeHoldAboutYouWhat', { CODE_LENGTH })}
                 </p>
               </div>
             </div>
@@ -204,7 +215,7 @@ export function PrivacySection({ now = nowSeconds }: { now?: () => number }) {
                 error itself, because an alert behind a modal is an alert nobody
                 reads and a wrong code is exactly the moment it matters. */}
             {error && !codeOpen && (
-              <p data-testid="privacy-error" role="alert" className="text-xs text-destructive">{error.text}</p>
+              <p dir="auto" data-testid="privacy-error" role="alert" className="text-xs text-destructive">{error.text}</p>
             )}
 
             {state === null ? (
@@ -220,7 +231,7 @@ export function PrivacySection({ now = nowSeconds }: { now?: () => number }) {
                   data-testid="code-pending"
                   className="rounded-lg border border-warning/40 bg-warning/10 p-3 space-y-1.5"
                 >
-                  <p className="text-sm font-medium text-warning">We emailed you a code</p>
+                  <p className="text-sm font-medium text-warning">{t('profile.label.weEmailedYouACode')}</p>
                   {request.note && (
                     // The same note the dialog shows. Staff were promised the
                     // person sees what they wrote before we answer, and a note
@@ -229,14 +240,13 @@ export function PrivacySection({ now = nowSeconds }: { now?: () => number }) {
                     <p data-testid="code-pending-note" className="text-xs text-warning">{request.note}</p>
                   )}
                   <p className="text-xs text-warning">
-                    {`Enter the ${CODE_LENGTH}-digit code to confirm it is really you asking, and we will start `}
-                    {`building your copy. ${deadlineLabel(request.due_at)}.`}
+                    {t('profile.description.enterTheCodeLengthDigitCodeToConfirmItIsReallyYouAsking', { CODE_LENGTH, requestDue_at: deadlineLabel(request.due_at) })}
                   </p>
                   <Button
                     size="sm" className="text-xs" data-testid="open-code"
                     onClick={() => setCodeOpen(true)}
                   >
-                    Enter code
+                    {t('profile.action.enterCode')}
                   </Button>
                 </div>
                 <Dialog open={codeOpen} onOpenChange={setCodeOpen}>
@@ -257,24 +267,23 @@ export function PrivacySection({ now = nowSeconds }: { now?: () => number }) {
                   // page says so rather than pretending this is a blank slate -
                   // and the button below sends the code that moves it on.
                   <div data-testid="asked" className="space-y-1">
-                    <p className="text-sm font-medium">We have your request</p>
+                    <p className="text-sm font-medium">{t('profile.label.weHaveYourRequest')}</p>
                     {request.note && (
                       <p data-testid="asked-note" className="text-xs text-muted-foreground">{request.note}</p>
                     )}
                     <p className="text-xs text-muted-foreground">
-                      {`${deadlineLabel(request.due_at)}. To get your copy in the app, send yourself a `}
-                      {`${CODE_LENGTH}-digit code and enter it here.`}
+                      {t('profile.description.requestdueAtToGetYourCopyInTheAppSendYourselfA', { requestDue_at: deadlineLabel(request.due_at), CODE_LENGTH })}
                     </p>
                   </div>
                 )}
                 {step === 'building' && request && (
                   <p data-testid="building" className="text-sm text-muted-foreground">
-                    {`Your code was accepted and we are putting your copy together. ${deadlineLabel(request.due_at)}.`}
+                    {t('profile.description.yourCodeWasAcceptedAndWeArePuttingYourCopyTogether', { requestDue_at: deadlineLabel(request.due_at) })}
                   </p>
                 )}
                 {step === 'failed' && request && (
                   <div data-testid="build-failed" className="space-y-1">
-                    <p className="text-sm text-destructive">We could not finish building your copy.</p>
+                    <p className="text-sm text-destructive">{t('profile.error.weCouldNotFinishBuildingYourCopy')}</p>
                     {request.note && (
                       // What we recorded against the failure, in the words it
                       // was written in. A bare state with the explanation
@@ -282,7 +291,7 @@ export function PrivacySection({ now = nowSeconds }: { now?: () => number }) {
                       <p data-testid="failed-note" className="text-xs text-muted-foreground">{request.note}</p>
                     )}
                     <p className="text-xs text-muted-foreground">
-                      Your request is still open and we still owe you an answer. {deadlineLabel(request.due_at)}.
+                      {t('profile.description.yourRequestIsStillOpenAndWeStillOweYouAn', { requestDue_at: deadlineLabel(request.due_at) })}
                     </p>
                   </div>
                 )}
@@ -311,8 +320,7 @@ export function PrivacySection({ now = nowSeconds }: { now?: () => number }) {
                     // always allowed. Inside the hour the server simply hands
                     // back the copy it has rather than walking the account twice.
                     <p data-testid="ask-again-note" className="text-xs text-muted-foreground">
-                      Ask again as often as you like. Within an hour of the last one we hand you this same copy rather
-                      than building another.
+                      {t('profile.description.askAgainAsOftenAsYouLikeWithinAnHourOf')}
                     </p>
                   )}
                 </div>
@@ -327,7 +335,7 @@ export function PrivacySection({ now = nowSeconds }: { now?: () => number }) {
             // the person is entitled to see it. Asking for a copy while one of
             // these is open stays allowed above: they are different rights.
             <div className="py-4 space-y-2" data-testid="other-requests">
-              <p className="text-sm font-medium">Your other requests</p>
+              <p className="text-sm font-medium">{t('profile.label.yourOtherRequests')}</p>
               <ul className="space-y-2">
                 {others.map((other) => (
                   <li key={other.id} data-testid="other-request" data-kind={other.kind} className="space-y-0.5">
@@ -339,9 +347,7 @@ export function PrivacySection({ now = nowSeconds }: { now?: () => number }) {
                 ))}
               </ul>
               <p className="text-xs text-muted-foreground">
-                These are answered by a person rather than in the app. Write to{' '}
-                <a href={`mailto:${PRIVACY_EMAIL}`} className="underline underline-offset-2">{PRIVACY_EMAIL}</a>{' '}
-                if you need to add anything to one.
+                {richText(t('profile.description.theseAreAnsweredByAPersonRatherThanInTheApp', { link1: '{link1}' }), { link1: mailLink })}
               </p>
             </div>
           )}
@@ -354,15 +360,15 @@ export function PrivacySection({ now = nowSeconds }: { now?: () => number }) {
                 the dialog, where there is room to lay it out properly. */}
             <button
               type="button" data-testid="open-rights" onClick={() => setRightsOpen(true)}
-              className="w-full flex items-center justify-between gap-3 rounded-lg border p-3 text-left transition-colors hover:bg-muted/50"
+              className="w-full flex items-center justify-between gap-3 rounded-lg border p-3 text-start transition-colors hover:bg-muted/50"
             >
               <span className="min-w-0">
-                <span className="block text-sm font-medium">Your rights</span>
+                <span className="block text-sm font-medium">{t('profile.action.yourRights')}</span>
                 <span className="block text-xs text-muted-foreground">
-                  Access, portability, erasure, restriction, objection
+                  {t('profile.action.accessPortabilityErasureRestrictionObjection')}
                 </span>
               </span>
-              <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+              <ChevronRight className="size-4 shrink-0 text-muted-foreground rtl:-scale-x-100" />
             </button>
             <RightsDialog open={rightsOpen} onOpenChange={setRightsOpen} />
           </div>
@@ -391,6 +397,7 @@ function CodeStep({
   request: RequestState; code: string; busy: boolean; now: () => number; error: ErrorCopy | null;
   onCode: (v: string) => void; onConfirm: () => void; onResend: () => void;
 }) {
+  const t = useT();
   const wait = cooldownLabel(request.retry_at, now());
   return (
     <div data-testid="code-step" className="space-y-3 text-center">
@@ -398,9 +405,9 @@ function CodeStep({
         <Mail className="size-4 text-muted-foreground" />
       </div>
       <DialogHeader className="gap-1.5">
-        <DialogTitle>Enter your code</DialogTitle>
+        <DialogTitle>{t('profile.heading.enterYourCode')}</DialogTitle>
         <DialogDescription className="text-xs">
-          We emailed you a {CODE_LENGTH}-digit code to confirm it is really you asking.
+          {t('profile.description.weEmailedYouACodeLengthDigitCodeToConfirmItIsReally', { CODE_LENGTH })}
         </DialogDescription>
       </DialogHeader>
       {request.note && (
@@ -416,30 +423,31 @@ function CodeStep({
         placeholder="000000"
         inputMode="numeric"
         autoComplete="one-time-code"
-        aria-label={`${CODE_LENGTH}-digit confirmation code`}
+        aria-label={t('profile.accessibility.codeLengthDigitConfirmationCode', { CODE_LENGTH })}
         className="w-full font-mono tracking-[0.4em] text-center"
         data-testid="code-input"
       />
       {/* The error belongs in here while this is what is in front of them. */}
       {error && (
-        <p data-testid="privacy-error" role="alert" className="text-xs text-destructive">{error.text}</p>
+        <p dir="auto" data-testid="privacy-error" role="alert" className="text-xs text-destructive">{error.text}</p>
       )}
       <Button
         size="sm" className="w-full text-xs" onClick={onConfirm}
         disabled={!isCompleteCode(code) || busy} data-testid="confirm-code"
       >
         {busy ? <Loader2 className="size-3.5 animate-spin" /> : null}
-        Confirm
+        {t('profile.action.confirm')}
       </Button>
       <p className="text-xs text-muted-foreground">
-        Your request is already recorded:{' '}
-        <span data-testid="deadline">{deadlineLabel(request.due_at)}</span>.
+        {richText(t('profile.description.yourRequestIsAlreadyRecordedRequestdueAt', { requestDue_at: '{requestDue_at}' }), {
+          requestDue_at: <span data-testid="deadline">{deadlineLabel(request.due_at)}</span>,
+        })}
       </p>
       <Button
         size="sm" variant="ghost" className="w-full text-xs" onClick={onResend}
         disabled={wait !== null || busy} data-testid="resend-code"
       >
-        {wait ? `Resend ${wait}` : 'Resend code'}
+        {wait ? t('profile.action.resendWait', { wait }) : t('common.action.resendCode')}
       </Button>
     </div>
   );
@@ -455,29 +463,26 @@ function CodeStep({
  * six. One column below `sm`, where two would be two words wide.
  */
 function RightsDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
+  const t = useT();
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-2xl" data-testid="rights-dialog">
         <DialogHeader>
-          <DialogTitle>Your rights</DialogTitle>
+          <DialogTitle>{t('profile.heading.yourRights')}</DialogTitle>
           <DialogDescription className="text-xs">
-            What you can ask us for, and how to ask for it.
+            {t('profile.description.whatYouCanAskUsForAndHowToAskFor')}
           </DialogDescription>
         </DialogHeader>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           {RIGHTS.map((right) => (
             <div key={right.id} data-testid="right" data-right={right.id} className="rounded-lg bg-muted p-2.5">
-              <p className="text-xs font-semibold">{right.label}</p>
-              <p className="text-[11px] leading-relaxed text-muted-foreground mt-0.5">{right.body}</p>
+              <p className="text-xs font-semibold">{t(right.labelKey)}</p>
+              <p className="text-[11px] leading-relaxed text-muted-foreground mt-0.5">{right.body(t)}</p>
             </div>
           ))}
           <div className="rounded-lg border border-dashed p-2.5">
             <p className="text-[11px] leading-relaxed text-muted-foreground">
-              Your name, email address, language and appearance are yours to correct at the top of this page
-              (rectification); for anything you cannot change there - a billing detail, say - write to{' '}
-              <a href={`mailto:${PRIVACY_EMAIL}`} className="underline underline-offset-2">{PRIVACY_EMAIL}</a> and we
-              will correct it. And you do not have to come to us first: complaining to your own data protection
-              authority instead is your right and costs you nothing.
+              {richText(t('profile.error.yourNameEmailAddressLanguageAndAppearanceAreYoursToCorrect', { link1: '{link1}' }), { link1: mailLink })}
             </p>
           </div>
         </div>
@@ -499,6 +504,7 @@ function RightsDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v:
  * the copy to prove it themselves.
  */
 function Answer({ request, partial, now }: { request: RequestState; partial: boolean; now: () => number }) {
+  const t = useT();
   const summary = request.export;
   const at = now();
   const parts = summary ? partUrls(API_BASE, summary) : [];
@@ -510,10 +516,10 @@ function Answer({ request, partial, now }: { request: RequestState; partial: boo
           takes the whole page down with it (see the note in profile.tsx). */}
       <p data-testid="answer-strip" className="text-xs text-muted-foreground">
         {[
-          describeAnswer(request, at),
-          partial ? '' : `. Our deadline was ${dueDateLabel(request.due_at)}`,
-          summary ? `. These downloads expire ${expiresLabel(summary.expires_at, at)}.` : '.',
-        ].join('')}
+          `${describeAnswer(request, at)}.`,
+          partial ? '' : t('profile.description.ourDeadlineWasDate', { date: dueDateLabel(request.due_at) }),
+          summary ? t('profile.description.theseDownloadsExpireWhen', { when: expiresLabel(summary.expires_at, at) }) : '',
+        ].filter(Boolean).join(' ')}
       </p>
 
       {partial && (
@@ -525,17 +531,12 @@ function Answer({ request, partial, now }: { request: RequestState; partial: boo
           data-testid="partial-notice"
           className="rounded-lg border border-warning/40 bg-warning/10 p-3 space-y-1"
         >
-          <p className="text-sm font-medium text-warning">Part of your answer is still owed</p>
+          <p className="text-sm font-medium text-warning">{t('profile.description.partOfYourAnswerIsStillOwed')}</p>
           <p className="text-xs text-warning">{request.note}</p>
           <p className="text-xs text-warning">
             {summary
-              ? 'Your report below is complete, and the report is the legal answer. The rest of your files are being '
-                + 'put together by hand; we will come back to you, and your request stays open until we do. '
-                + `${deadlineLabel(request.due_at)}.`
-              : 'The report we delivered was complete, and the report is the legal answer - but it has since expired, '
-                + 'so there is nothing left here to download. Ask again for a fresh copy. The rest of your files are '
-                + 'still owed either way, and your request stays open until they reach you. '
-                + `${deadlineLabel(request.due_at)}.`}
+              ? t('profile.description.yourReportBelowIsCompleteAndTheReportIsTheLegal', { requestDue_at: deadlineLabel(request.due_at) })
+              : t('profile.description.theReportWeDeliveredWasCompleteAndTheReportIsThe', { requestDue_at: deadlineLabel(request.due_at) })}
           </p>
         </div>
       )}
@@ -556,16 +557,13 @@ function Answer({ request, partial, now }: { request: RequestState; partial: boo
           itself knows. */}
       {!summary && !partial && request.had_export && (
         <p data-testid="download-expired" className="text-sm text-muted-foreground">
-          {'The downloads from that answer have expired - we keep a copy for 7 days and then delete it, so it is not '
-            + 'sitting on our servers waiting to leak. Nothing above is undone by that: the answer was given on the '
-            + 'date shown. Ask again for a fresh copy whenever you want one.'}
+          {t('profile.description.theDownloadsFromThatAnswerHaveExpiredWeKeepA')}
         </p>
       )}
 
       {!summary && !partial && !request.had_export && (
         <p data-testid="answered-by-hand" className="text-sm text-muted-foreground">
-          {'This one was answered by a person rather than by a download, so there is no file here. The record above '
-            + 'is the answer. If you want a copy of your data as a file, ask again and we will build you one.'}
+          {t('profile.description.thisOneWasAnsweredByAPersonRatherThanByA')}
         </p>
       )}
 
@@ -576,24 +574,32 @@ function Answer({ request, partial, now }: { request: RequestState; partial: boo
             <div className="flex items-start gap-2 min-w-0">
               <FileText className="size-4 mt-0.5 shrink-0 text-muted-foreground" />
               <div className="min-w-0">
-                <p className="text-sm font-medium">Your report</p>
+                <p className="text-sm font-medium">{t('profile.label.yourReport')}</p>
                 <p className="text-xs text-muted-foreground">
-                  Open <span className="font-mono">start-here.html</span> inside it. Includes{' '}
-                  <a
-                    href={manifestUrl(API_BASE, summary.id)} data-testid="download-manifest"
-                    className="underline underline-offset-2"
-                  >
-                    the machine-readable manifest
-                  </a>{' '}
-                  ({humanSize(summary.manifest_bytes)}), which you can also take on its own.
+                  {richText(
+                    t('profile.description.openStartherefileInsideItIncludesLink1', {
+                      startHereFile: '{startHereFile}', link1: '{link1}', summaryManifest_bytes: humanSize(summary.manifest_bytes),
+                    }),
+                    {
+                      startHereFile: <span className="font-mono text-[11px]">start-here.html</span>,
+                      link1: (
+                        <a
+                          href={manifestUrl(API_BASE, summary.id)} data-testid="download-manifest"
+                          className="underline underline-offset-2"
+                        >
+                          {t('profile.action.theMachineReadableManifest')}
+                        </a>
+                      ),
+                    },
+                  )}
                 </p>
               </div>
             </div>
             <a
-              data-testid="download-report" href={reportUrl(API_BASE, summary.id)} aria-label="Download your report"
+              data-testid="download-report" href={reportUrl(API_BASE, summary.id)} aria-label={t('profile.action.downloadYourReport')}
               className="inline-flex items-center gap-1 text-xs underline underline-offset-2 shrink-0"
             >
-              <Download className="size-3.5" /> Download report
+              <Download className="size-3.5" /> {t('profile.action.downloadReport')}
             </a>
           </div>
 
@@ -601,7 +607,7 @@ function Answer({ request, partial, now }: { request: RequestState; partial: boo
             <div className="flex items-start gap-2">
               <Package className="size-4 mt-0.5 shrink-0 text-muted-foreground" />
               <div>
-                <p className="text-sm font-medium">Your files</p>
+                <p className="text-sm font-medium">{t('profile.label.yourFiles')}</p>
                 <p className="text-xs text-muted-foreground">{describeArchives(summary)}</p>
               </div>
             </div>
@@ -612,24 +618,21 @@ function Answer({ request, partial, now }: { request: RequestState; partial: boo
                     <span className="truncate">
                       {p.workspace_name}: <span className="font-mono text-xs">{p.filename}</span>
                       <span className="text-muted-foreground text-xs">
-                        {' '}({p.file_count.toLocaleString('en-US')} files, {humanSize(p.bytes)})
+                        {' '}{t('profile.label.fileCounttolocalestringFilesPbytes', { file_countToLocaleString: formatNumberWith(p.file_count, undefined, 'en-US'), pBytes: humanSize(p.bytes) })}
                       </span>
                     </span>
                     <a
-                      href={parts[i]} aria-label={`Download ${p.filename}`}
-                      className="inline-flex items-center gap-1 text-xs underline underline-offset-2 shrink-0 ml-3"
+                      href={parts[i]} aria-label={t('profile.action.downloadPfilename', { pFilename: p.filename })}
+                      className="inline-flex items-center gap-1 text-xs underline underline-offset-2 shrink-0 ms-3"
                     >
-                      <Download className="size-3.5" /> Download
+                      <Download className="size-3.5" /> {t('common.action.download')}
                     </a>
                   </li>
                 ))}
               </ul>
             )}
             <p data-testid="archives-excluded" className="text-xs text-muted-foreground">
-              The archives hold the files you uploaded, in every workspace you belong to. Files uploaded by other
-              people are not included, even in workspaces you own: those are their data, not yours, and handing them
-              over would take their privacy to answer yours. Also left out: end-to-end encrypted Spaces, which we
-              cannot read, files in the trash, and previous versions.
+              {t('profile.error.theArchivesHoldTheFilesYouUploadedInEveryWorkspaceYou')}
             </p>
           </div>
         </>

@@ -3,6 +3,9 @@ import { Link } from 'react-router-dom';
 import { api } from '@/api/client';
 import { useSession } from '@/stores/session';
 import { toast } from '@/lib/toast';
+import { useT } from '@/lib/i18n';
+import type { T } from '@/i18n/translator';
+import { richText } from '@/lib/rich-text';
 import {
   CODE_LENGTH, normaliseCode, isCompleteCode, cooldownRemaining,
   describeBlocker, formatScheduledDate, daysRemaining, classifyDeleteError,
@@ -17,15 +20,13 @@ import { sectionPath, type ProfileContext } from './shared';
 
 // ── Delete Account ─────────────────────────────────────────
 
-function plural(n: number, noun: string): string {
-  return `${n} ${noun}${n === 1 ? '' : 's'}`;
-}
-
-function describeDeletion(preview: DeletePreview | null): string {
+function describeDeletion(preview: DeletePreview | null, t: T): string {
   const days = preview?.window_days ?? 30;
-  const workspaces = plural(preview?.workspaces.length ?? 0, 'workspace');
-  const files = plural(preview?.file_count ?? 0, 'file');
-  return `Scheduled for ${days} days later, so you can cancel. Deletes ${workspaces} and ${files}.`;
+  return t('profile.description.scheduledForDaysPluralLaterSoYouCanCancelDeletes', {
+    days,
+    workspaces: preview?.workspaces.length ?? 0,
+    files: preview?.file_count ?? 0,
+  });
 }
 
 /**
@@ -35,6 +36,7 @@ function describeDeletion(preview: DeletePreview | null): string {
  * emailed code, which works for every account.
  */
 export function DeleteAccountSection({ user }: Partial<ProfileContext> = {}) {
+  const t = useT();
   const [preview, setPreview] = useState<DeletePreview | null>(null);
   const [nowOpen, setNowOpen] = useState(false);
   const [step, setStep] = useState<'idle' | 'code'>('idle');
@@ -93,7 +95,7 @@ export function DeleteAccountSection({ user }: Partial<ProfileContext> = {}) {
       // the person lands on the scheduled state with "Cancel deletion" and
       // "Delete immediately" right in front of them. Signing them out here
       // used to strand exactly the person who had just proved themselves.
-      toast.success('Deletion scheduled', 'Your other devices were signed out. You can cancel or delete immediately from here.');
+      toast.success(t('profile.feedback.deletionScheduled'), t('profile.feedback.yourOtherDevicesWereSignedOutYouCanCancelOrDelete'));
       // The layout's banner reads the session store, not this page's state.
       void useSession.getState().fetchMe().catch(() => { /* the banner shows on the next load */ });
     } catch (e) {
@@ -107,7 +109,7 @@ export function DeleteAccountSection({ user }: Partial<ProfileContext> = {}) {
     setNowOpen(false);
     // The server has already revoked every session and bearer; the next
     // request would 401. Say so, then leave.
-    toast.success('Account deleted', 'Your account is closed and your files are being erased.');
+    toast.success(t('profile.feedback.accountDeleted'), t('profile.feedback.yourAccountIsClosedAndYourFilesAreBeingErased'));
     setTimeout(() => { window.location.href = '/login'; }, 2500);
   };
 
@@ -116,7 +118,7 @@ export function DeleteAccountSection({ user }: Partial<ProfileContext> = {}) {
     try {
       await api('/api/me/delete-cancel', { method: 'POST' });
       setScheduledFor(null);
-      toast.success('Deletion cancelled', 'Your account will not be deleted.');
+      toast.success(t('profile.feedback.deletionCancelled'), t('profile.feedback.yourAccountWillNotBeDeleted'));
       // The layout's banner reads the session store, not this page's state.
       void useSession.getState().fetchMe().catch(() => { /* the banner clears on the next load */ });
       await load();
@@ -126,36 +128,37 @@ export function DeleteAccountSection({ user }: Partial<ProfileContext> = {}) {
 
   return (
     <section id="section-delete">
-      <h2 className="text-base font-semibold text-destructive mb-3">Delete account</h2>
+      <h2 className="text-base font-semibold text-destructive mb-3">{t('profile.heading.deleteAccount')}</h2>
       <Card className="border-destructive/30">
         <CardContent className="divide-y divide-destructive/20">
           <div className="flex items-center justify-between py-4">
             <div>
-              <p className="text-sm font-medium">Take a copy of your data first</p>
-              <p className="text-xs text-muted-foreground">Everything is destroyed at the end of the countdown. Take a copy before you start.</p>
+              <p className="text-sm font-medium">{t('profile.description.takeACopyOfYourDataFirst')}</p>
+              <p className="text-xs text-muted-foreground">{t('profile.description.everythingIsDestroyedAtTheEndOfTheCountdownTakeA')}</p>
             </div>
             {/* Privacy is its own page now, so this is a link rather than a scroll. */}
             <Link to={sectionPath('privacy')} className={buttonVariants({ variant: 'outline', size: 'sm', className: 'text-xs' })}>
-              Get a copy
+              {t('profile.action.getACopy')}
             </Link>
           </div>
 
           <div className="py-4 space-y-3">
             {error && (
-              <p className="text-xs text-destructive" data-testid="delete-error">{error}</p>
+              <p dir="auto" className="text-xs text-destructive" data-testid="delete-error">{error}</p>
             )}
 
             {scheduledFor != null ? (
               <div data-testid="delete-scheduled">
-                <p className="text-sm font-medium">Deletion scheduled</p>
+                <p className="text-sm font-medium">{t('profile.label.deletionScheduled')}</p>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  Your account and its files will be deleted on{' '}
-                  <span className="font-medium text-foreground">{formatScheduledDate(scheduledFor)}</span>
-                  {' '}- {daysRemaining(scheduledFor, nowSeconds)} days from now. Nothing has been deleted yet.
+                  {richText(
+                    t('profile.description.yourAccountAndItsFilesWillBeDeletedOn', { scheduledFor: '{scheduledFor}', days: daysRemaining(scheduledFor, nowSeconds) }),
+                    { scheduledFor: <span className="font-medium text-foreground">{formatScheduledDate(scheduledFor)}</span> },
+                  )}
                 </p>
                 <div className="flex flex-wrap items-center gap-2 mt-3">
                   <Button size="sm" className="text-xs" onClick={cancel} disabled={busy} data-testid="cancel-deletion">
-                    Cancel deletion
+                    {t('common.action.cancelDeletion')}
                   </Button>
                   {/* The countdown is a safety net, not a sentence. Someone who
                       has taken their copy can end it here - after proving it is
@@ -166,7 +169,7 @@ export function DeleteAccountSection({ user }: Partial<ProfileContext> = {}) {
                     onClick={() => setNowOpen(true)} disabled={busy}
                     data-testid="delete-now"
                   >
-                    <Zap className="size-3 mr-1.5" /> Delete immediately
+                    <Zap className="size-3 me-1.5" /> {t('profile.action.deleteImmediately')}
                   </Button>
                 </div>
                 <DeleteAccountNowDialog
@@ -180,9 +183,9 @@ export function DeleteAccountSection({ user }: Partial<ProfileContext> = {}) {
               </div>
             ) : step === 'code' ? (
               <div data-testid="delete-code-step">
-                <p className="text-sm font-medium">Enter your code</p>
+                <p className="text-sm font-medium">{t('profile.label.enterYourCode')}</p>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  We emailed you a {CODE_LENGTH}-digit code. Entering it schedules the deletion.
+                  {t('profile.description.weEmailedYouADeleteCodeLengthDigitCodeEnteringIt', { deleteCodeLength: CODE_LENGTH })}
                 </p>
                 <div className="flex items-center gap-2 mt-3">
                   <Input
@@ -199,15 +202,15 @@ export function DeleteAccountSection({ user }: Partial<ProfileContext> = {}) {
                     disabled={!isCompleteCode(code) || busy}
                     data-testid="confirm-delete"
                   >
-                    <Trash2 className="size-3 mr-1.5" /> Delete my account
+                    <Trash2 className="size-3 me-1.5" /> {t('profile.action.deleteMyAccount')}
                   </Button>
                   {remaining > 0 ? (
                     <span className="text-xs text-muted-foreground" data-testid="resend-countdown">
-                      {`Resend in ${remaining}s`}
+                      {t('profile.label.resendInRemainingS', { remaining })}
                     </span>
                   ) : (
                     <button className="text-xs underline text-muted-foreground hover:text-foreground" onClick={requestCode} data-testid="resend">
-                      Resend code
+                      {t('common.action.resendCode')}
                     </button>
                   )}
                 </div>
@@ -215,7 +218,7 @@ export function DeleteAccountSection({ user }: Partial<ProfileContext> = {}) {
             ) : (
               <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0">
-                  <p className="text-sm font-medium">Delete account</p>
+                  <p className="text-sm font-medium">{t('profile.heading.deleteAccount')}</p>
                   {/* One string, not a run of sibling text nodes. Chrome's page
                       translation detaches text nodes and drops <font> elements
                       in their place; when the preview arrived and the plural
@@ -224,7 +227,7 @@ export function DeleteAccountSection({ user }: Partial<ProfileContext> = {}) {
                       profile. A single text child is set as textContent
                       instead, which survives the rewrite. */}
                   <p className="text-xs text-muted-foreground mt-0.5" data-testid="delete-summary">
-                    {describeDeletion(preview)}
+                    {describeDeletion(preview, t)}
                   </p>
                   {blockers.length > 0 && (
                     <ul className="mt-2 space-y-1" data-testid="delete-blockers">
@@ -240,7 +243,7 @@ export function DeleteAccountSection({ user }: Partial<ProfileContext> = {}) {
                   disabled={blockers.length > 0 || busy}
                   data-testid="start-delete"
                 >
-                  <Trash2 className="size-3 mr-1.5" /> Delete my account
+                  <Trash2 className="size-3 me-1.5" /> {t('profile.action.deleteMyAccount')}
                 </Button>
               </div>
             )}

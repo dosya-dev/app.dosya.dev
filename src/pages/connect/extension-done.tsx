@@ -2,6 +2,7 @@
 import { useSearchParams } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
 import { PublicNav } from '@/components/public-nav';
+import { useT } from '@/lib/i18n';
 
 /**
  * /connect/extension/done - the fallback callback for browsers without the
@@ -10,6 +11,7 @@ import { PublicNav } from '@/components/public-nav';
  * sees "you can close this tab".
  */
 export default function ConnectExtensionDonePage() {
+  const t = useT();
   const [params] = useSearchParams();
   const code = params.get('code') ?? '';
   const state = params.get('state') ?? '';
@@ -19,8 +21,8 @@ export default function ConnectExtensionDonePage() {
       <main className="mx-auto max-w-md px-4 py-16">
         <Card>
           <CardContent className="space-y-2 p-6">
-            <h1 className="text-xl font-semibold">Save to dosya is connected</h1>
-            <p className="text-sm text-muted-foreground">You can close this tab.</p>
+            <h1 className="text-xl font-semibold">{t('connect-extension-done.heading.saveToDosyaIsConnected')}</h1>
+            <p className="text-sm text-muted-foreground">{t('connect-extension-done.description.youCanCloseThisTab')}</p>
             <div id="dosya-extension-callback" data-code={code} data-state={state} hidden />
           </CardContent>
         </Card>

@@ -5,8 +5,11 @@ import { Bell, CheckCheck, Settings } from "lucide-react";
 import { useNotifications } from "../../stores/notifications";
 import { groupByDay } from "../../lib/notifications";
 import { NotificationCard } from "./notification-card";
+import { useT } from "../../lib/i18n";
+import { localDigits } from "../../lib/format-locale";
 
 export function NotificationBell() {
+  const t = useT();
   const navigate = useNavigate();
   const { unread, items, open, loading, setOpen, markAll } = useNotifications();
   const now = Math.floor(Date.now() / 1000);
@@ -23,14 +26,14 @@ export function NotificationBell() {
     <PopoverPrimitive.Root open={open} onOpenChange={setOpen}>
       <PopoverPrimitive.Trigger
         className="size-9 p-0 relative inline-flex items-center justify-center rounded-md border hover:bg-muted"
-        aria-label="Notifications"
+        aria-label={t('notifications.accessibility.notifications')}
       >
         <Bell className="size-4" />
         {unread > 0 && (
           <span
-            className={`absolute -top-1 -right-1 min-w-4 h-4 px-1 flex items-center justify-center text-[10px] font-semibold rounded-full bg-green-600 text-white ${justArrived ? "animate-badge-in" : ""}`}
+            className={`absolute -top-1 -inset-e-1 min-w-4 h-4 px-1 flex items-center justify-center text-[10px] font-semibold rounded-full bg-green-600 text-white ${justArrived ? "animate-badge-in" : ""}`}
           >
-            {unread > 99 ? "99+" : unread}
+            {unread > 99 ? "99+" : localDigits(unread)}
           </span>
         )}
       </PopoverPrimitive.Trigger>
@@ -48,14 +51,14 @@ export function NotificationBell() {
             className="w-80 max-h-[70vh] flex flex-col bg-popover text-popover-foreground border rounded-xl shadow-xl overflow-hidden origin-(--transform-origin) duration-150 outline-none data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95 data-[side=bottom]:slide-in-from-top-2"
           >
             <div className="flex items-center justify-between px-3 py-2 border-b">
-              <span className="text-sm font-semibold">Notifications</span>
+              <span className="text-sm font-semibold">{t('common.heading.notifications')}</span>
               <button className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1" onClick={() => markAll()}>
-                <CheckCheck className="size-3.5" /> Mark all read
+                <CheckCheck className="size-3.5" /> {t('notifications.action.markAllRead')}
               </button>
             </div>
             <div className="flex-1 overflow-y-auto">
-              {loading && items.length === 0 && <p className="px-3 py-6 text-sm text-muted-foreground text-center">Loading…</p>}
-              {!loading && items.length === 0 && <p className="px-3 py-6 text-sm text-muted-foreground text-center">You're all caught up 🎉</p>}
+              {loading && items.length === 0 && <p className="px-3 py-6 text-sm text-muted-foreground text-center">{t('common.status.loading')}</p>}
+              {!loading && items.length === 0 && <p className="px-3 py-6 text-sm text-muted-foreground text-center">{t('notifications.label.youReAllCaughtUp')}</p>}
               {groups.map((g) => (
                 <div key={g.label}>
                   <div className="px-3 pt-2 pb-1 text-[11px] uppercase tracking-wide text-muted-foreground">{g.label}</div>
@@ -65,10 +68,10 @@ export function NotificationBell() {
             </div>
             <div className="flex items-center justify-between px-3 py-2 border-t text-xs">
               <button className="text-muted-foreground hover:text-foreground" onClick={() => { setOpen(false); navigate("/notifications"); }}>
-                See all
+                {t('common.action.seeAll')}
               </button>
               <button className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1" onClick={() => { setOpen(false); navigate("/profile/notifications"); }}>
-                <Settings className="size-3.5" /> Settings
+                <Settings className="size-3.5" /> {t('common.label.settings.settings')}
               </button>
             </div>
           </PopoverPrimitive.Popup>

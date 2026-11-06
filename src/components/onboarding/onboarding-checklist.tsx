@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useT } from '@/lib/i18n';
 import { stepsFor, type Purpose } from './steps';
 import type { StepFlags } from '@/stores/onboarding';
 
@@ -23,6 +24,7 @@ export function completedCount(purpose: Purpose | null, steps: StepFlags): { don
 }
 
 export function OnboardingChecklist({ purpose, steps, compact = false }: OnboardingChecklistProps) {
+  const t = useT();
   const active = stepsFor(purpose);
   const { done, total } = completedCount(purpose, steps);
 
@@ -38,8 +40,8 @@ export function OnboardingChecklist({ purpose, steps, compact = false }: Onboard
   return (
     <div>
       <div className="flex items-center justify-between mb-3">
-        <p className="text-sm font-medium">Get set up</p>
-        <span className="text-xs text-muted-foreground">{done} of {total}</span>
+        <p className="text-sm font-medium">{t('dashboard.label.getSetUp')}</p>
+        <span className="text-xs text-muted-foreground">{t('common.label.sentOfTotal', { sent: done, total })}</span>
       </div>
 
       <ul className="space-y-1.5">
@@ -65,21 +67,21 @@ export function OnboardingChecklist({ purpose, steps, compact = false }: Onboard
 
               <div className="flex-1 min-w-0">
                 <p className={`text-xs font-medium ${isDone ? 'text-muted-foreground line-through' : ''}`}>
-                  {step.title}
+                  {t(step.titleKey)}
                 </p>
                 {!compact && !isDone && (
-                  <p className="text-[11px] text-muted-foreground leading-tight mt-0.5">{step.why}</p>
+                  <p className="text-[11px] text-muted-foreground leading-tight mt-0.5">{t(step.whyKey)}</p>
                 )}
               </div>
 
               {!isDone && (
                 external ? (
                   <a href={step.href} target="_blank" rel="noreferrer">
-                    <Button variant="outline" size="sm" className="h-7 text-xs shrink-0">{step.cta}</Button>
+                    <Button variant="outline" size="sm" className="h-7 text-xs shrink-0">{t(step.ctaKey)}</Button>
                   </a>
                 ) : (
                   <Link to={step.href}>
-                    <Button variant="outline" size="sm" className="h-7 text-xs shrink-0">{step.cta}</Button>
+                    <Button variant="outline" size="sm" className="h-7 text-xs shrink-0">{t(step.ctaKey)}</Button>
                   </Link>
                 )
               )}

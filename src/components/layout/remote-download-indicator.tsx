@@ -3,6 +3,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { useWorkspace } from '@/stores/workspace';
 import { ACTIVE_REMOTE_STATUSES, useRemoteDownloads } from '@/stores/remote-downloads';
 import { hadActiveJobs } from '@/lib/job-activity';
+import { useT } from '@/lib/i18n';
 
 const RADIUS = 5;
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
@@ -16,6 +17,7 @@ const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
  * request. A download started from this client refreshes the store itself.
  */
 export function RemoteDownloadIndicator() {
+  const t = useT();
   const activeId = useWorkspace((s) => s.activeId);
   const jobs = useRemoteDownloads((s) => s.jobs);
   const refresh = useRemoteDownloads((s) => s.refresh);
@@ -35,7 +37,7 @@ export function RemoteDownloadIndicator() {
   return (
     <Tooltip>
       <TooltipTrigger>
-        <span className="ml-auto flex items-center" aria-label="Remote downloads in progress">
+        <span className="ms-auto flex items-center" aria-label={t('common.accessibility.remoteDownloadsInProgress')}>
           <svg
             width="14"
             height="14"
@@ -62,9 +64,9 @@ export function RemoteDownloadIndicator() {
           </svg>
         </span>
       </TooltipTrigger>
-      <TooltipContent side="right" className="p-2">
+      <TooltipContent side="inline-end" className="p-2">
         <p className="mb-1 text-[11px] font-medium">
-          {active.length === 1 ? 'Downloading 1 file' : `Downloading ${active.length} files`}
+          {active.length === 1 ? t('common.label.downloading1File') : t('common.label.downloadingActivecountFiles', { activeCount: active.length })}
           {pct !== null ? ` - ${pct}%` : ''}
         </p>
         <div className="space-y-0.5">
@@ -76,13 +78,13 @@ export function RemoteDownloadIndicator() {
               <div key={job.id} className="flex items-center justify-between gap-4 text-[11px]">
                 <span className="max-w-[11rem] truncate">{job.filename}</span>
                 <span className="tabular-nums text-muted-foreground">
-                  {job.status === 'queued' ? 'queued' : jobPct !== null ? `${jobPct}%` : '…'}
+                  {job.status === 'queued' ? t('common.label.queuedLowercase') : jobPct !== null ? `${jobPct}%` : '…'}
                 </span>
               </div>
             );
           })}
           {active.length > 4 && (
-            <p className="text-[11px] text-muted-foreground">+{active.length - 4} more</p>
+            <p className="text-[11px] text-muted-foreground">{t('common.label.activelengthMore', { activeLength: active.length - 4 })}</p>
           )}
         </div>
       </TooltipContent>

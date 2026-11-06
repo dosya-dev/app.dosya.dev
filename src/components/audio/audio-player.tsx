@@ -1,3 +1,6 @@
+import { fixedNumber, localDigits } from '@/lib/format-locale';
+import { useT } from '@/lib/i18n';
+import { richText } from '@/lib/rich-text';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Play, Pause, SkipBack, SkipForward, RotateCcw, RotateCw, Shuffle, Repeat,
@@ -26,6 +29,7 @@ interface Props {
 }
 
 export function AudioPlayer({ file, files, rawUrl, version, onNavigate }: Props) {
+  const t = useT();
   const audioRef = useRef<HTMLAudioElement>(null);
   const [playing, setPlaying] = useState(false);
   const [position, setPosition] = useState(0);
@@ -158,17 +162,17 @@ export function AudioPlayer({ file, files, rawUrl, version, onNavigate }: Props)
   // Only facts the file actually reported. A chip reading "0 kbps" would be
   // worse than no chip at all.
   const chips = [
-    (extOf(file.name) || 'file').toUpperCase(),
-    tags.bitrateKbps ? `${tags.bitrateKbps} kbps` : null,
-    tags.sampleRateHz ? `${(tags.sampleRateHz / 1000).toFixed(1)} kHz` : null,
+    (extOf(file.name) || t('common.label.fileBadge')).toUpperCase(),
+    tags.bitrateKbps ? t('common.label.bitratekbpsKbps', { bitrateKbps: tags.bitrateKbps }) : null,
+    tags.sampleRateHz ? `${fixedNumber(tags.sampleRateHz / 1000, 1)} kHz` : null,
     humanSize(file.size_bytes),
   ].filter(Boolean) as string[];
 
   // Every armed mode writes a chip here, so nothing is ever running invisibly.
   const armChips = [
     loopState.loop ? `A-B ${mmss(loopState.loop.a)}-${mmss(loopState.loop.b)}` : null,
-    loopState.stage === 1 ? `A ${mmss(loopState.a ?? 0)} - set B` : null,
-    sleepLabel ? `Sleep ${sleepLabel}` : null,
+    loopState.stage === 1 ? t('common.label.aStartSetB', { start: mmss(loopState.a ?? 0) }) : null,
+    sleepLabel ? t('common.label.sleepSleepLabel', { sleepLabel }) : null,
     speed !== 1 ? `${speed}x` : null,
   ].filter(Boolean) as string[];
 
@@ -183,7 +187,7 @@ export function AudioPlayer({ file, files, rawUrl, version, onNavigate }: Props)
               <>
                 <img
                   src={artworkUrl}
-                  alt={`Cover art for ${title}`}
+                  alt={t('common.alternative.coverArtForTitle', { title })}
                   className="relative z-10 size-full rounded-[inherit] object-cover shadow-[0_16px_34px_-14px_rgb(0_0_0/0.55)]"
                 />
                 {/* The only art-derived colour on the surface: light spilling
@@ -227,7 +231,7 @@ export function AudioPlayer({ file, files, rawUrl, version, onNavigate }: Props)
 
         {decodeFailed ? (
           <div className="mt-[22px] flex h-[78px] items-center justify-center rounded-lg border border-dashed px-4 text-center text-xs text-muted-foreground">
-            This browser can't decode this audio format. Download the file to play it in another app.
+            {t('common.error.thisBrowserCanTDecodeThisAudioFormatDownloadTheFileTo')}
           </div>
         ) : waveState === 'ready' && peaks ? (
           <Waveform peaks={peaks} position={position} duration={duration} loop={loopState.loop}
@@ -240,7 +244,7 @@ export function AudioPlayer({ file, files, rawUrl, version, onNavigate }: Props)
             }}
           />
         ) : (
-          <div className="mt-[22px] flex h-[78px] items-center">
+          <div dir="ltr" className="mt-[22px] flex h-[78px] items-center">
             {waveState === 'decoding' ? (
               // Flat bars that the waveform rises out of once the peaks land.
               <div className="flex h-full w-full items-center gap-[2px]" aria-hidden>
@@ -259,14 +263,14 @@ export function AudioPlayer({ file, files, rawUrl, version, onNavigate }: Props)
                 max={Math.max(1, Math.round(duration))}
                 value={Math.round(position)}
                 onChange={(e) => seek(Number(e.target.value))}
-                aria-label="Seek"
+                aria-label={t('common.accessibility.seek')}
                 className="w-full accent-primary"
               />
             )}
           </div>
         )}
 
-        <div className="mt-[9px] flex items-center justify-between gap-3 font-mono text-xs tabular-nums text-muted-foreground">
+        <div dir="ltr" className="mt-[9px] flex items-center justify-between gap-3 font-mono text-xs tabular-nums text-muted-foreground">
           <span className="font-bold text-foreground">{mmss(position)}</span>
           <span className="flex items-center gap-2.5">
             {armChips.map((c) => (
@@ -281,32 +285,32 @@ export function AudioPlayer({ file, files, rawUrl, version, onNavigate }: Props)
           <span>{mmss(duration)}</span>
         </div>
 
-        <div className="mt-5 flex items-center justify-center gap-2">
-          <button className="inline-flex size-9 items-center justify-center rounded-full text-muted-foreground hover:bg-foreground/10" title="Shuffle queue" aria-label="Shuffle queue">
+        <div dir="ltr" className="mt-5 flex items-center justify-center gap-2">
+          <button className="inline-flex size-9 items-center justify-center rounded-full text-muted-foreground hover:bg-foreground/10" title={t('common.accessibility.shuffleQueue')} aria-label={t('common.accessibility.shuffleQueue')}>
             <Shuffle className="size-[17px]" />
           </button>
           <button
             onClick={() => (position > 3 ? seek(0) : goTrack(-1))}
             disabled={activeIndex <= 0 && position <= 3}
             className="inline-flex size-10 items-center justify-center rounded-full hover:bg-foreground/10 disabled:pointer-events-none disabled:opacity-35"
-            title="Previous track (Shift + Left)"
-            aria-label="Previous track"
+            title={t('common.tooltip.previousTrackShiftLeft')}
+            aria-label={t('common.accessibility.previousTrack')}
           >
             <SkipBack className="size-5" />
           </button>
-          <button onClick={() => seek(position - 15)} className="relative inline-flex size-10 items-center justify-center rounded-full hover:bg-foreground/10" title="Back 15 seconds (J)" aria-label="Back 15 seconds">
+          <button onClick={() => seek(position - 15)} className="relative inline-flex size-10 items-center justify-center rounded-full hover:bg-foreground/10" title={t('common.tooltip.back15SecondsJ')} aria-label={t('common.accessibility.back15Seconds')}>
             <RotateCcw className="size-[21px]" />
             <span aria-hidden className="absolute inset-0 flex items-center justify-center pt-px font-mono text-[8px] font-bold">15</span>
           </button>
           <button
             onClick={toggle}
             className="mx-1.5 inline-flex size-[58px] items-center justify-center rounded-full bg-primary text-primary-foreground shadow-[0_6px_16px_-8px_rgb(0_0_0/0.5)] transition-transform hover:brightness-95 active:scale-95"
-            aria-label={playing ? 'Pause' : 'Play'}
-            title={playing ? 'Pause (Space)' : 'Play (Space)'}
+            aria-label={playing ? t('common.accessibility.pause') : t('common.accessibility.play')}
+            title={playing ? t('common.tooltip.pauseSpace') : t('common.tooltip.playSpace')}
           >
             {playing ? <Pause className="size-5 fill-current" /> : <Play className="size-[23px] fill-current" />}
           </button>
-          <button onClick={() => seek(position + 15)} className="relative inline-flex size-10 items-center justify-center rounded-full hover:bg-foreground/10" title="Forward 15 seconds (L)" aria-label="Forward 15 seconds">
+          <button onClick={() => seek(position + 15)} className="relative inline-flex size-10 items-center justify-center rounded-full hover:bg-foreground/10" title={t('common.tooltip.forward15SecondsL')} aria-label={t('common.accessibility.forward15Seconds')}>
             <RotateCw className="size-[21px]" />
             <span aria-hidden className="absolute inset-0 flex items-center justify-center pt-px font-mono text-[8px] font-bold">15</span>
           </button>
@@ -314,17 +318,17 @@ export function AudioPlayer({ file, files, rawUrl, version, onNavigate }: Props)
             onClick={() => goTrack(1)}
             disabled={activeIndex < 0 || activeIndex >= queue.length - 1}
             className="inline-flex size-10 items-center justify-center rounded-full hover:bg-foreground/10 disabled:pointer-events-none disabled:opacity-35"
-            title="Next track (Shift + Right)"
-            aria-label="Next track"
+            title={t('common.tooltip.nextTrackShiftRight')}
+            aria-label={t('common.accessibility.nextTrack')}
           >
             <SkipForward className="size-5" />
           </button>
-          <button className="inline-flex size-9 items-center justify-center rounded-full text-muted-foreground hover:bg-foreground/10" title="Repeat queue" aria-label="Repeat queue">
+          <button className="inline-flex size-9 items-center justify-center rounded-full text-muted-foreground hover:bg-foreground/10" title={t('common.accessibility.repeatQueue')} aria-label={t('common.accessibility.repeatQueue')}>
             <Repeat className="size-[17px]" />
           </button>
         </div>
 
-        <div className="mt-[18px] flex flex-wrap items-center gap-1.5 border-t pt-4">
+        <div dir="ltr" className="mt-[18px] flex flex-wrap items-center gap-1.5 border-t pt-4">
           <button
             onClick={() => setSpeed((s) => nextSpeed(s, 1) === s ? nextSpeed(s, -6) : nextSpeed(s, 1))}
             className={`inline-flex h-[30px] items-center gap-1.5 rounded-[calc(var(--radius)*0.5)] border px-2.5 text-xs hover:bg-foreground/10 ${
@@ -332,8 +336,8 @@ export function AudioPlayer({ file, files, rawUrl, version, onNavigate }: Props)
                 ? 'border-primary/45 bg-primary/10 text-primary'
                 : 'border-transparent text-muted-foreground'
             }`}
-            title="Playback speed"
-            aria-label={`Playback speed, currently ${speed} times`}
+            title={t('common.tooltip.playbackSpeed')}
+            aria-label={t('common.accessibility.playbackSpeedCurrentlySpeedTimes', { speed })}
           >
             <Gauge className="size-[15px]" />
             <span className="font-mono text-xs tabular-nums">{speed}x</span>
@@ -349,15 +353,15 @@ export function AudioPlayer({ file, files, rawUrl, version, onNavigate }: Props)
                   ? 'border-primary/45 bg-primary/10 text-primary'
                   : 'border-transparent text-muted-foreground'
               }`}
-              title="Stop playing after a while"
+              title={t('common.tooltip.stopPlayingAfterAWhile')}
             >
               <Timer className="size-[15px]" />
-              <span className="font-mono text-xs tabular-nums">{sleepLabel ?? 'Sleep'}</span>
+              <span className="font-mono text-xs tabular-nums">{sleepLabel ?? t('common.label.sleep')}</span>
             </button>
             {sleepOpen && (
-              <div className="absolute bottom-[calc(100%+8px)] left-0 z-20 min-w-[168px] rounded-[calc(var(--radius)*0.75)] border bg-popover p-1.5 text-popover-foreground shadow-lg">
+              <div className="absolute bottom-[calc(100%+8px)] inset-s-0 z-20 min-w-[168px] rounded-[calc(var(--radius)*0.75)] border bg-popover p-1.5 text-popover-foreground shadow-lg">
                 <h4 className="m-0 px-2 pb-1 pt-1.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                  Stop playing after
+                  {t('common.heading.stopPlayingAfter')}
                 </h4>
                 {SLEEP_OPTIONS.map((o) => (
                   <button
@@ -367,7 +371,7 @@ export function AudioPlayer({ file, files, rawUrl, version, onNavigate }: Props)
                       setSleepLabel(o.minutes === null ? null : mmss(o.minutes * 60));
                       setSleepOpen(false);
                     }}
-                    className="flex w-full items-center rounded-[calc(var(--radius)*0.4)] px-2 py-1.5 text-left text-[13px] hover:bg-foreground/10"
+                    className="flex w-full items-center rounded-[calc(var(--radius)*0.4)] px-2 py-1.5 text-start text-[13px] hover:bg-foreground/10"
                   >
                     {o.label}
                   </button>
@@ -384,20 +388,20 @@ export function AudioPlayer({ file, files, rawUrl, version, onNavigate }: Props)
                 : 'border-transparent text-muted-foreground'
             }`}
             title={
-              loopState.stage === 0 ? 'Loop a section - sets point A'
-                : loopState.stage === 1 ? 'Set point B to close the loop'
-                : 'Clear the loop'
+              loopState.stage === 0 ? t('common.action.loopASectionSetsPointA')
+                : loopState.stage === 1 ? t('common.tooltip.setPointBToCloseTheLoop')
+                : t('common.tooltip.clearTheLoop')
             }
-            aria-label="A to B loop"
+            aria-label={t('common.accessibility.aToBLoop')}
           >
             <Repeat className="size-[15px]" />
-            <span>A-B</span>
+            <span>{t('common.label.aB')}</span>
           </button>
 
           <button
             onClick={() => setMuted((m) => !m)}
             className="inline-flex h-[30px] items-center gap-1.5 rounded-[calc(var(--radius)*0.5)] px-2.5 text-xs text-muted-foreground hover:bg-foreground/10"
-            aria-label={muted ? 'Unmute' : 'Mute'}
+            aria-label={muted ? t('common.accessibility.unmute') : t('common.accessibility.mute')}
           >
             {muted ? <VolumeX className="size-[15px]" /> : <Volume2 className="size-[15px]" />}
           </button>
@@ -411,7 +415,7 @@ export function AudioPlayer({ file, files, rawUrl, version, onNavigate }: Props)
               setVolume(v / 100);
               setMuted(v === 0);
             }}
-            aria-label="Volume"
+            aria-label={t('common.accessibility.volume')}
             className="w-[78px] accent-primary"
           />
         </div>
@@ -419,7 +423,7 @@ export function AudioPlayer({ file, files, rawUrl, version, onNavigate }: Props)
 
       {(queue.length > 1 || lyrics) && (
         <div className="flex min-h-0 flex-1 flex-col border-t bg-background">
-          <div className="flex shrink-0 items-stretch gap-0.5 border-b pl-5 pr-3">
+          <div className="flex shrink-0 items-stretch gap-0.5 border-b ps-5 pe-3">
             {queue.length > 1 && (
               <button
                 role="tab"
@@ -431,8 +435,10 @@ export function AudioPlayer({ file, files, rawUrl, version, onNavigate }: Props)
                     : 'border-transparent text-muted-foreground hover:text-foreground'
                 }`}
               >
-                <ListMusic className="size-[15px]" /> Up next
-                <span className="font-mono text-[11px] font-normal text-muted-foreground">{queue.length}</span>
+                <ListMusic className="size-[15px]" />{' '}
+                {richText(t('common.action.upNextQueuecount'), {
+                  queueCount: <span className="font-mono text-[11px] font-normal text-muted-foreground">{localDigits(queue.length)}</span>,
+                })}
               </button>
             )}
             {/* Present only when this file actually carries lyrics. A disabled
@@ -448,7 +454,7 @@ export function AudioPlayer({ file, files, rawUrl, version, onNavigate }: Props)
                     : 'border-transparent text-muted-foreground hover:text-foreground'
                 }`}
               >
-                <MicVocal className="size-[15px]" /> Lyrics
+                <MicVocal className="size-[15px]" /> {t('common.action.lyrics')}
               </button>
             )}
           </div>

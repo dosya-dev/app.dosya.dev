@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Loader2, Trash2 } from 'lucide-react';
 import { api } from '@/api/client';
+import { useT } from '@/lib/i18n';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -10,10 +11,6 @@ import {
   CODE_LENGTH, normaliseCode, isCompleteCode, cooldownRemaining, classifyDeleteError, daysRemaining,
   type DeletePreview,
 } from '@/lib/account-deletion';
-
-function plural(n: number, noun: string): string {
-  return `${n} ${noun}${n === 1 ? '' : 's'}`;
-}
 
 export interface DeleteAccountNowDialogProps {
   open: boolean;
@@ -61,6 +58,7 @@ export function DeleteAccountNowDialog({
 function DeleteNowForm({
   preview, scheduledFor, hasPassword, onDeleted, onClose,
 }: Omit<DeleteAccountNowDialogProps, 'open' | 'onOpenChange'> & { onClose: () => void }) {
+  const t = useT();
   const [password, setPassword] = useState('');
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
@@ -76,9 +74,9 @@ function DeleteNowForm({
   // first await). With .then() every setState is provably deferred.
   const requestCode = useCallback(() => api('/api/me/delete-request', { method: 'POST' }).then(
     () => {
-      const t = Date.now();
-      setSentAt(t);
-      setNow(t);
+      const sent = Date.now();
+      setSentAt(sent);
+      setNow(sent);
       setError(null);
     },
     (e: unknown) => { setError(classifyDeleteError(e).message); },
@@ -118,38 +116,34 @@ function DeleteNowForm({
   };
 
   const days = daysRemaining(scheduledFor, Math.floor(now / 1000));
-  const files = plural(preview?.file_count ?? 0, 'file');
-  const workspaces = plural(preview?.workspaces.length ?? 0, 'workspace');
 
   return (
     <>
       <DialogHeader>
-        <DialogTitle>Delete your account now?</DialogTitle>
+        <DialogTitle>{t('profile.heading.deleteYourAccountNow')}</DialogTitle>
         <DialogDescription>
-          This skips the {plural(days, 'day')} left on your countdown. Your account closes
-          immediately and {files} in {workspaces} are permanently erased within the hour.
-          This cannot be undone.
+          {t('profile.error.thisSkipsTheDaysPluralLeftOnYourCountdown', { days, files: preview?.file_count ?? 0, workspaces: preview?.workspaces.length ?? 0 })}
         </DialogDescription>
       </DialogHeader>
 
       <div className="space-y-2">
         {hasPassword ? (
           <>
-            <p className="text-xs text-muted-foreground">Enter your password to confirm.</p>
+            <p className="text-xs text-muted-foreground">{t('profile.description.enterYourPasswordToConfirm')}</p>
             <Input
               type="password"
               autoComplete="current-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter' && ready && !busy) void confirm(); }}
-              placeholder="Your password"
+              placeholder={t('profile.placeholder.yourPassword')}
               data-testid="delete-now-password"
             />
           </>
         ) : (
           <>
             <p className="text-xs text-muted-foreground">
-              We emailed you a {CODE_LENGTH}-digit code. Enter it to confirm.
+              {t('profile.description.weEmailedYouACodeLengthDigitCodeEnterItToConfirm', { CODE_LENGTH })}
             </p>
             <div className="flex items-center gap-2">
               <Input
@@ -163,7 +157,7 @@ function DeleteNowForm({
               />
               {remaining > 0 ? (
                 <span className="text-xs text-muted-foreground" data-testid="delete-now-resend-countdown">
-                  {`Resend in ${remaining}s`}
+                  {t('profile.label.resendInRemainingS', { remaining })}
                 </span>
               ) : (
                 <button
@@ -172,20 +166,20 @@ function DeleteNowForm({
                   onClick={() => void requestCode()}
                   data-testid="delete-now-resend"
                 >
-                  Resend code
+                  {t('common.action.resendCode')}
                 </button>
               )}
             </div>
           </>
         )}
         {error && (
-          <p className="text-xs text-destructive" data-testid="delete-now-error">{error}</p>
+          <p dir="auto" className="text-xs text-destructive" data-testid="delete-now-error">{error}</p>
         )}
       </div>
 
       <DialogFooter>
         <Button variant="outline" onClick={onClose} disabled={busy}>
-          Keep the countdown
+          {t('profile.action.keepTheCountdown')}
         </Button>
         <Button
           variant="destructive"
@@ -193,8 +187,8 @@ function DeleteNowForm({
           disabled={!ready || busy}
           data-testid="delete-now-confirm"
         >
-          {busy ? <Loader2 className="size-4 animate-spin mr-1.5" /> : <Trash2 className="size-4 mr-1.5" />}
-          Delete now
+          {busy ? <Loader2 className="size-4 animate-spin me-1.5" /> : <Trash2 className="size-4 me-1.5" />}
+          {t('profile.action.deleteNow')}
         </Button>
       </DialogFooter>
     </>

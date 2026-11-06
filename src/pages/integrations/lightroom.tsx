@@ -15,8 +15,9 @@ import { Loader2 } from 'lucide-react';
 import { api, ApiError } from '@/api/client';
 import { humanizeApiError } from '@/api/error-copy';
 import { timeAgo } from '@/lib/helpers';
-import { getIntegration, LIGHTROOM_KEY_PREFIX, LIGHTROOM_PLUGIN_URL } from '@/lib/integrations';
+import { getIntegration, LIGHTROOM_EXCHANGE_URL, LIGHTROOM_KEY_PREFIX, LIGHTROOM_PLUGIN_URL } from '@/lib/integrations';
 import { toast } from '@/lib/toast';
+import { t, useT } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import { useWorkspace } from '@/stores/workspace';
 
@@ -64,7 +65,7 @@ function errorMessage(err: unknown, fallback: string): string {
       if (parsed.error) return humanizeApiError(parsed.error);
     } catch { /* non-JSON body */ }
     if (err.body && !err.body.trimStart().startsWith('<')) return err.body;
-    return `Request failed (${err.status}). Please try again.`;
+    return t('common.error.requestFailedErrstatusPleaseTryAgain', { errStatus: err.status });
   }
   return fallback;
 }
@@ -83,16 +84,15 @@ const DOT: Record<Tone, string> = { green: 'bg-green-500', amber: 'bg-amber-500'
 
 /** The link's state, worst first. */
 export function linkState(g: Gallery, now: number): { text: string; tone: Tone } {
-  if (!g.share) return { text: 'Link removed', tone: 'grey' };
-  if (g.share.is_revoked) return { text: 'Link revoked', tone: 'amber' };
-  if (g.share.expires_at !== null && g.share.expires_at <= now) return { text: 'Link expired', tone: 'amber' };
-  if (g.share.is_password_protected) return { text: 'Password protected', tone: 'green' };
-  return { text: 'Live', tone: 'green' };
+  if (!g.share) return { text: t('integrations-lightroom.label.linkRemoved'), tone: 'grey' };
+  if (g.share.is_revoked) return { text: t('common.label.linkRevoked'), tone: 'amber' };
+  if (g.share.expires_at !== null && g.share.expires_at <= now) return { text: t('integrations-lightroom.label.linkExpired'), tone: 'amber' };
+  if (g.share.is_password_protected) return { text: t('common.label.passwordProtected'), tone: 'green' };
+  return { text: t('integrations-lightroom.label.live'), tone: 'green' };
 }
 
-const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
-
 function ConnectionsCard() {
+  const t = useT();
   const [keys, setKeys] = useState<LightroomKey[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [target, setTarget] = useState<LightroomKey | null>(null);
@@ -105,9 +105,9 @@ function ConnectionsCard() {
       setKeys(res.keys.filter(isLightroomKey));
       setError(null);
     } catch (e) {
-      setError(errorMessage(e, 'Could not load your connections. Please try again.'));
+      setError(errorMessage(e, t('integrations-lightroom.error.couldNotLoadYourConnectionsPleaseTryAgain')));
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -119,41 +119,42 @@ function ConnectionsCard() {
     try {
       await api(`/api/me/api-keys/${encodeURIComponent(key.id)}`, { method: 'DELETE' });
       setKeys((cur) => (cur ? cur.filter((k) => k.id !== key.id) : cur));
-      toast.success('Connection revoked', 'That catalog is signed out of dosya.');
+      toast.success(t('integrations-lightroom.feedback.connectionRevoked'), t('integrations-lightroom.feedback.thatCatalogIsSignedOutOfDosya'));
       setTarget(null);
     } catch (e) {
-      toast.error('Revoke failed', errorMessage(e, 'Please try again.'));
+      toast.error(t('common.error.revokeFailed'), errorMessage(e, t('common.error.pleaseTryAgain')));
     } finally {
       inFlight.current = false;
       setRevoking(false);
     }
-  }, [target]);
+  }, [target, t]);
 
   const loading = keys === null && error === null;
   const empty = keys !== null && keys.length === 0;
+  const revokeTitle = t('integrations-lightroom.heading.revokeHastarget', { hasTarget: target ? 'true' : 'other', target: target ? deviceOf(target) : '' });
 
   return (
     <section className="mb-6 rounded-xl border bg-card">
       <div className="px-4 py-3">
-        <h2 className="text-sm font-semibold">Your Lightroom connections</h2>
+        <h2 className="text-sm font-semibold">{t('integrations-lightroom.heading.yourLightroomConnections')}</h2>
       </div>
-      {error && <p role="alert" className="border-t px-4 py-3 text-sm text-destructive">{error}</p>}
+      {error && <p dir="auto" role="alert" className="border-t px-4 py-3 text-sm text-destructive">{error}</p>}
       {loading && (
         <div className="border-t px-4 py-3" data-testid="lr-conn-skeleton"><Skeleton className="h-4 w-40" /></div>
       )}
       {empty && (
         <p className="border-t px-4 py-6 text-center text-sm text-muted-foreground">
-          No catalog is connected yet. Follow the steps below to connect one.
+          {t('integrations-lightroom.description.noCatalogIsConnectedYetFollowTheStepsBelowToConnect')}
         </p>
       )}
       {keys !== null && keys.length > 0 && (
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
+          <table className="w-full text-start text-sm">
             <thead className="text-xs text-muted-foreground">
               <tr className="border-t">
-                <th className="px-4 py-2 font-medium">Computer</th>
-                <th className="px-4 py-2 font-medium">Last used</th>
-                <th className="px-4 py-2 text-right font-medium"><span className="sr-only">Actions</span></th>
+                <th className="px-4 py-2 font-medium">{t('integrations-lightroom.label.computer')}</th>
+                <th className="px-4 py-2 font-medium">{t('common.label.lastUsed')}</th>
+                <th className="px-4 py-2 text-end font-medium"><span className="sr-only">{t('common.label.actions')}</span></th>
               </tr>
             </thead>
             <tbody>
@@ -161,23 +162,23 @@ function ConnectionsCard() {
                 <tr key={k.id} className="border-t align-top" data-testid="lr-key-row">
                   <td className="px-4 py-3">
                     <div className="font-medium">{deviceOf(k)}</div>
-                    <div className="text-xs text-muted-foreground">Connected {timeAgo(k.created_at)}</div>
+                    <div className="text-xs text-muted-foreground">{t('integrations-lightroom.label.connectedKcreatedAt', { date: timeAgo(k.created_at) })}</div>
                   </td>
                   <td className="px-4 py-3">
-                    {k.last_used_at ? timeAgo(k.last_used_at) : <span className="text-muted-foreground">Never</span>}
+                    {k.last_used_at ? timeAgo(k.last_used_at) : <span className="text-muted-foreground">{t('common.label.never')}</span>}
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center justify-end">
                       <DropdownMenu>
                         <DropdownMenuTrigger
-                          aria-label={`Actions for ${k.name}`}
+                          aria-label={t('common.accessibility.actionsForName', { name: k.name })}
                           className={cn(buttonVariants({ variant: 'ghost', size: 'icon-sm' }))}
                         >
                           <MoreVertical className="size-4" />
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem onClick={() => setTarget(k)}>
-                            <Trash2 className="size-4" /> Revoke
+                            <Trash2 className="size-4" /> {t('common.action.revoke')}
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
@@ -193,17 +194,16 @@ function ConnectionsCard() {
       <Dialog open={target !== null} onOpenChange={(o) => { if (!o && !revoking) setTarget(null); }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Revoke {target ? deviceOf(target) : ''}?</DialogTitle>
+            <DialogTitle>{revokeTitle}</DialogTitle>
             <DialogDescription>
-              Lightroom Classic on that computer is signed out and can no longer publish. Galleries already
-              published stay online.
+              {t('integrations-lightroom.description.lightroomClassicOnThatComputerIsSignedOutAndCanNo')}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setTarget(null)} disabled={revoking}>Cancel</Button>
+            <Button variant="outline" onClick={() => setTarget(null)} disabled={revoking}>{t('common.cancel')}</Button>
             <Button variant="destructive" onClick={confirmRevoke} disabled={revoking}>
               {revoking && <Loader2 className="size-4 animate-spin" />}
-              Revoke
+              {t('common.action.revoke')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -213,6 +213,7 @@ function ConnectionsCard() {
 }
 
 function GalleryRow({ g, now }: { g: Gallery; now: number }) {
+  const t = useT();
   const [copied, setCopied] = useState(false);
   const state = linkState(g, now);
   const url = g.share?.url ?? null;
@@ -223,23 +224,23 @@ function GalleryRow({ g, now }: { g: Gallery; now: number }) {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      toast.error('Could not copy the link', 'Open it instead and copy it from the address bar.');
+      toast.error(t('integrations-lightroom.error.couldNotCopyTheLink'), t('integrations-lightroom.error.openItInsteadAndCopyItFromTheAddressBar'));
     }
   };
   return (
     <tr className="border-t align-top" data-testid="lr-gallery-row">
       <td className="px-4 py-3">
         <div className="font-medium">{g.title}</div>
-        <div className="text-xs text-muted-foreground">{plural(g.item_count, 'photo', 'photos')}</div>
+        <div className="text-xs text-muted-foreground">{t('integrations-lightroom.label.photos', { count: g.item_count })}</div>
       </td>
       <td className="px-4 py-3 text-xs">
         {g.selections_enabled ? (
           <>
-            <div>{plural(g.client_count, 'client', 'clients')}</div>
-            <div className="text-muted-foreground">{plural(g.selection_count, 'selection', 'selections')}</div>
+            <div>{t('integrations-lightroom.label.clientsLowercase', { count: g.client_count })}</div>
+            <div className="text-muted-foreground">{t('integrations-lightroom.label.selections', { count: g.selection_count })}</div>
           </>
         ) : (
-          <span className="text-muted-foreground">Selections off</span>
+          <span className="text-muted-foreground">{t('integrations-lightroom.label.selectionsOff')}</span>
         )}
       </td>
       <td className="px-4 py-3">
@@ -253,14 +254,14 @@ function GalleryRow({ g, now }: { g: Gallery; now: number }) {
             from Lightroom Classic to give the gallery a new one. */}
         {url && (
           <div className="flex items-center justify-end gap-1">
-            <Button variant="outline" size="sm" onClick={copy} aria-label={`Copy link for ${g.title}`}>
-              <CopyCheck copied={copied} className="size-3.5" /> Copy
+            <Button variant="outline" size="sm" onClick={copy} aria-label={t('integrations-lightroom.action.copyLinkForGtitle', { gTitle: g.title })}>
+              <CopyCheck copied={copied} className="size-3.5" /> {t('common.copy')}
             </Button>
             <a
               href={url}
               target="_blank"
               rel="noreferrer"
-              aria-label={`Open ${g.title}`}
+              aria-label={t('common.action.openStore', { title: g.title })}
               className={cn(buttonVariants({ variant: 'ghost', size: 'icon-sm' }))}
             >
               <ExternalLink className="size-4" />
@@ -273,6 +274,7 @@ function GalleryRow({ g, now }: { g: Gallery; now: number }) {
 }
 
 function GalleriesCard() {
+  const t = useT();
   const activeId = useWorkspace((s) => s.activeId);
   const [galleries, setGalleries] = useState<Gallery[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -299,36 +301,36 @@ function GalleriesCard() {
     };
     loadAll()
       .then((list) => { if (alive) setGalleries(list); })
-      .catch((e) => { if (alive) setError(errorMessage(e, 'Could not load your galleries. Please try again.')); });
+      .catch((e) => { if (alive) setError(errorMessage(e, t('integrations-lightroom.error.couldNotLoadYourGalleriesPleaseTryAgain'))); });
     return () => { alive = false; };
-  }, [activeId]);
+  }, [activeId, t]);
 
   const loading = Boolean(activeId) && galleries === null && error === null;
 
   return (
     <section className="mb-6 rounded-xl border bg-card">
       <div className="px-4 py-3">
-        <h2 className="text-sm font-semibold">Galleries</h2>
-        <p className="text-xs text-muted-foreground">In the active workspace. Publish and edit them from Lightroom Classic.</p>
+        <h2 className="text-sm font-semibold">{t('integrations-lightroom.heading.galleries')}</h2>
+        <p className="text-xs text-muted-foreground">{t('integrations-lightroom.description.inTheActiveWorkspacePublishAndEditThemFromLightroomClassic')}</p>
       </div>
-      {error && <p role="alert" className="border-t px-4 py-3 text-sm text-destructive">{error}</p>}
+      {error && <p dir="auto" role="alert" className="border-t px-4 py-3 text-sm text-destructive">{error}</p>}
       {loading && (
         <div className="border-t px-4 py-3" data-testid="lr-gallery-skeleton"><Skeleton className="h-4 w-48" /></div>
       )}
       {galleries !== null && galleries.length === 0 && (
         <p className="border-t px-4 py-6 text-center text-sm text-muted-foreground">
-          No galleries yet. Publish a collection from Lightroom Classic and it shows up here.
+          {t('integrations-lightroom.description.noGalleriesYetPublishACollectionFromLightroomClassicAndIt')}
         </p>
       )}
       {galleries !== null && galleries.length > 0 && (
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
+          <table className="w-full text-start text-sm">
             <thead className="text-xs text-muted-foreground">
               <tr className="border-t">
-                <th className="px-4 py-2 font-medium">Gallery</th>
-                <th className="px-4 py-2 font-medium">Clients</th>
-                <th className="px-4 py-2 font-medium">Link</th>
-                <th className="px-4 py-2 text-right font-medium"><span className="sr-only">Actions</span></th>
+                <th className="px-4 py-2 font-medium">{t('integrations-lightroom.label.gallery')}</th>
+                <th className="px-4 py-2 font-medium">{t('integrations-lightroom.label.clients')}</th>
+                <th className="px-4 py-2 font-medium">{t('integrations-lightroom.label.link')}</th>
+                <th className="px-4 py-2 text-end font-medium"><span className="sr-only">{t('common.label.actions')}</span></th>
               </tr>
             </thead>
             <tbody>
@@ -354,26 +356,35 @@ function RailStep({ n, title, children }: { n: number; title: string; children: 
 }
 
 function SetupCard() {
+  const t = useT();
   return (
     <section className="mb-6 rounded-xl border bg-card p-4">
-      <h2 className="mb-4 text-sm font-semibold">Set up Lightroom Classic</h2>
+      <h2 className="mb-4 text-sm font-semibold">{t('integrations-lightroom.heading.setUpLightroomClassic')}</h2>
       <div className="grid gap-5 sm:grid-cols-3">
-        <RailStep n={1} title="Download">
-          <p className="mb-2">Get the plug-in and unzip it somewhere it can stay.</p>
-          <a
-            href={LIGHTROOM_PLUGIN_URL}
-            className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'gap-1.5')}
-          >
-            <Download className="size-3.5" /> Download plug-in
-          </a>
+        <RailStep n={1} title={t('common.action.download')}>
+          <p className="mb-2">{t('integrations-lightroom.description.getThePlugInAndUnzipItSomewhereItCanStay')}</p>
+          <div className="flex flex-wrap gap-2">
+            <a
+              href={LIGHTROOM_EXCHANGE_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={cn(buttonVariants({ size: 'sm' }), 'gap-1.5')}
+            >
+              {t('integrations-lightroom.action.adobeExchange')} <ExternalLink className="size-3.5" />
+            </a>
+            <a
+              href={LIGHTROOM_PLUGIN_URL}
+              className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'gap-1.5')}
+            >
+              <Download className="size-3.5" /> {t('integrations-lightroom.action.downloadPlugIn')}
+            </a>
+          </div>
         </RailStep>
-        <RailStep n={2} title="Add it">
-          In Lightroom Classic, open File › Plug-in Manager, choose Add and select the unzipped
-          dosya.lrplugin folder.
+        <RailStep n={2} title={t('integrations-lightroom.tooltip.addIt')}>
+          {t('integrations-lightroom.description.inLightroomClassicOpenFilePlugInManagerChooseAddAnd')}
         </RailStep>
-        <RailStep n={3} title="Connect">
-          In the plug-in, choose Connect. Your browser opens here, you compare the code and allow it.
-          Your dosya password is never typed into Lightroom.
+        <RailStep n={3} title={t('common.tooltip.connect')}>
+          {t('integrations-lightroom.description.inThePlugInChooseConnectYourBrowserOpensHereYouCompare')}
         </RailStep>
       </div>
     </section>
@@ -381,15 +392,16 @@ function SetupCard() {
 }
 
 export default function LightroomSetup() {
+  const t = useT();
   return (
     <IntegrationLayout icon={meta.icon} iconSrc={meta.iconSrc} title={meta.title} description={meta.description}>
       <ConnectionsCard />
       <GalleriesCard />
       <SetupCard />
       <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-        <span>Clients never need a dosya account to view a gallery.</span>
+        <span>{t('integrations-lightroom.description.clientsNeverNeedADosyaAccountToViewAGallery')}</span>
         <Link to="/billing" className="underline underline-offset-2 hover:text-foreground">
-          What each plan includes
+          {t('common.action.whatEachPlanIncludes')}
         </Link>
       </p>
     </IntegrationLayout>

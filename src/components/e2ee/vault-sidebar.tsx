@@ -1,11 +1,12 @@
 import { useState } from 'react';
-import type { KnownWorkspace } from '@/stores/e2ee';
+import { spaceLabel, type KnownWorkspace } from '@/stores/e2ee';
+import { useT } from '@/lib/i18n';
 import { ChevronLeft, ChevronRight, FolderLock, Plus, Users } from 'lucide-react';
 
 /**
  * The Vault's left Space menu - the vertical counterpart to the horizontal
  * Space chips EncryptedBrowser used to render inline. Deliberately mirrors
- * FilesSidebar's shell (w-48 / w-12 collapsed, border-r, localStorage-persisted
+ * FilesSidebar's shell (w-48 / w-12 collapsed, border-e, localStorage-persisted
  * collapse, md-and-up only) so /vault and /files read as the same product.
  *
  * Purely presentational: every Space list, the active id, and both actions are
@@ -30,6 +31,7 @@ export function VaultSidebar({
   onSelect: (id: string) => void;
   onNewSpace: () => void;
 }) {
+  const t = useT();
   const [collapsed, setCollapsed] = useState(
     () => localStorage.getItem('dosya_vault_sidebar_collapsed') === '1',
   );
@@ -44,18 +46,18 @@ export function VaultSidebar({
 
   return (
     <div
-      className={`${collapsed ? 'w-12' : 'w-48'} shrink-0 border-r md:flex flex-col overflow-hidden transition-all duration-200 hidden`}
+      className={`${collapsed ? 'w-12' : 'w-48'} shrink-0 border-e md:flex flex-col overflow-hidden transition-all duration-200 hidden`}
     >
       {/* Collapse toggle */}
       <div className="flex items-center justify-end px-2 py-2 shrink-0">
         <button
           onClick={toggleCollapse}
           className="size-6 rounded flex items-center justify-center hover:bg-muted"
-          title={collapsed ? 'Expand' : 'Collapse'}
+          title={collapsed ? t('common.action.expand') : t('common.action.collapse')}
         >
           {collapsed
-            ? <ChevronRight className="size-3.5 text-muted-foreground" />
-            : <ChevronLeft className="size-3.5 text-muted-foreground" />}
+            ? <ChevronRight className="size-3.5 text-muted-foreground rtl:-scale-x-100" />
+            : <ChevronLeft className="size-3.5 text-muted-foreground rtl:-scale-x-100" />}
         </button>
       </div>
 
@@ -66,7 +68,7 @@ export function VaultSidebar({
             <button
               onClick={onNewSpace}
               className="w-full flex items-center justify-center py-2 rounded-md text-muted-foreground hover:bg-muted/50 hover:text-foreground"
-              title="New Space"
+              title={t('vault.action.newSpace')}
             >
               <Plus className="size-4" />
             </button>
@@ -74,12 +76,12 @@ export function VaultSidebar({
             <div className="flex items-center gap-1.5 mb-1.5">
               <FolderLock className="size-3 text-muted-foreground" />
               <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider flex-1">
-                My Spaces
+                {t('vault.label.mySpaces')}
               </span>
               <button
                 onClick={onNewSpace}
                 className="size-4 rounded flex items-center justify-center hover:bg-muted text-muted-foreground hover:text-foreground"
-                title="New Space"
+                title={t('vault.action.newSpace')}
               >
                 <Plus className="size-3" />
               </button>
@@ -87,7 +89,7 @@ export function VaultSidebar({
           )}
 
           {mySpaces.length === 0 ? (
-            !collapsed && <p className="text-[11px] text-muted-foreground/60 pl-4.5">No Spaces yet</p>
+            !collapsed && <p className="text-[11px] text-muted-foreground/60 ps-4.5">{t('vault.empty.noSpacesYet')}</p>
           ) : (
             <div className="space-y-0.5">
               {mySpaces.map((ws) => (
@@ -113,7 +115,7 @@ export function VaultSidebar({
               <div className="flex items-center gap-1.5 mb-1.5">
                 <Users className="size-3 text-muted-foreground" />
                 <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider flex-1">
-                  Shared with me
+                  {t('vault.label.sharedWithMe')}
                 </span>
               </div>
             )}
@@ -139,16 +141,18 @@ export function VaultSidebar({
 function SpaceButton({
   workspace, active, collapsed, onClick,
 }: { workspace: KnownWorkspace; active: boolean; collapsed: boolean; onClick: () => void }) {
+  const t = useT();
+  const label = spaceLabel(workspace, t);
   if (collapsed) {
     return (
       <button
         onClick={onClick}
-        title={workspace.name}
+        title={label}
         className={`w-full flex items-center justify-center py-2 rounded-md text-xs font-semibold transition-colors ${
           active ? 'bg-muted text-foreground' : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
         }`}
       >
-        {workspace.name.charAt(0).toUpperCase() || '?'}
+        {label.charAt(0).toUpperCase() || '?'}
       </button>
     );
   }
@@ -156,7 +160,7 @@ function SpaceButton({
   return (
     <button
       onClick={onClick}
-      title={workspace.name}
+      title={label}
       className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-xs transition-colors ${
         active
           ? 'bg-muted font-semibold text-foreground'
@@ -164,7 +168,7 @@ function SpaceButton({
       }`}
     >
       <FolderLock className="size-3.5 shrink-0" />
-      <span className="truncate flex-1 text-left">{workspace.name}</span>
+      <span className="truncate flex-1 text-start">{label}</span>
     </button>
   );
 }

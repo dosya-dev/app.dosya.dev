@@ -1,3 +1,5 @@
+import { t } from '@/lib/i18n';
+
 export interface Loop { a: number; b: number }
 
 export interface LoopState {
@@ -41,11 +43,13 @@ export function nextSpeed(current: number, dir: number): number {
   return SPEEDS[Math.min(SPEEDS.length - 1, Math.max(0, idx + dir))];
 }
 
-export const SLEEP_OPTIONS: { label: string; minutes: number | null }[] = [
-  { label: '5 minutes', minutes: 5 },
-  { label: '10 minutes', minutes: 10 },
-  { label: '15 minutes', minutes: 15 },
-  { label: '30 minutes', minutes: 30 },
-  { label: '1 hour', minutes: 60 },
-  { label: 'Off', minutes: null },
+// `label` is a getter that translates on read, so the table holds no English and
+// follows the language the moment it changes.
+export const SLEEP_OPTIONS: { readonly label: string; minutes: number | null }[] = [
+  { get label() { return t('common.label.fiveMinutes'); }, minutes: 5 },
+  { get label() { return t('common.label.tenMinutes'); }, minutes: 10 },
+  { get label() { return t('common.label.fifteenMinutes'); }, minutes: 15 },
+  { get label() { return t('common.label.thirtyMinutes'); }, minutes: 30 },
+  { get label() { return t('common.label.oneHour'); }, minutes: 60 },
+  { get label() { return t('common.label.off'); }, minutes: null },
 ];

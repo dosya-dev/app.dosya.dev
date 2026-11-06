@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { CornerDownRight, Pencil, Trash2, MessageSquare } from 'lucide-react';
 import { api } from '@/api/client';
 import { toast } from '@/lib/toast';
+import { useT } from '@/lib/i18n';
 import { timeAgo } from '@/lib/helpers';
 import { useAnchorTarget, useAnchorMarkers } from './anchor-context';
 import { anchorLabel, isOlderVersion } from './format';
@@ -21,6 +22,7 @@ interface Props {
 }
 
 export function CommentsPanel({ fileId, workspaceId, currentVersion, viewingVersion, thread, activeCommentId }: Props) {
+  const t = useT();
   const target = useAnchorTarget();
   const { selectComment } = useAnchorMarkers();
   const [me, setMe] = useState<{ id: string } | null>(null);
@@ -78,7 +80,7 @@ export function CommentsPanel({ fileId, workspaceId, currentVersion, viewingVers
       setReplyTo(null);
       return true;
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not post comment');
+      toast.error(err instanceof Error ? err.message : t('common.error.couldNotPostComment'));
       return false;
     }
   };
@@ -91,22 +93,22 @@ export function CommentsPanel({ fileId, workspaceId, currentVersion, viewingVers
       <li
         key={c.id}
         ref={(el) => { if (el) rowRefs.current.set(c.id, el); else rowRefs.current.delete(c.id); }}
-        className={`rounded-lg px-2 py-2 ${isReply ? 'ml-5' : ''} ${activeCommentId === c.id ? 'ring-2 ring-primary/40' : ''}`}
+        className={`rounded-lg px-2 py-2 ${isReply ? 'ms-5' : ''} ${activeCommentId === c.id ? 'ring-2 ring-primary/40' : ''}`}
       >
         <div className="flex items-center gap-2 text-xs">
-          <span className="font-medium">{c.user_name}</span>
+          <span className="font-medium"><bdi>{c.user_name}</bdi></span>
           <span className="text-muted-foreground">{timeAgo(c.created_at)}</span>
           {label && (
             <button type="button" className="rounded-full bg-primary/10 px-1.5 font-mono text-[11px] text-primary hover:bg-primary/20" onClick={() => jump(c)}>
               {c.anchor_ms != null ? `▶ ${label}` : label}
             </button>
           )}
-          {old && <span className="rounded bg-muted px-1 font-mono text-[10px] text-muted-foreground">v{c.anchor_version}</span>}
+          {old && <span className="rounded bg-muted px-1 font-mono text-[10px] text-muted-foreground">{t('common.label.vVersion', { version: c.anchor_version ?? '' })}</span>}
         </div>
         {editing === c.id ? (
           <div className="mt-1">
             <MentionComposer
-              workspaceId={workspaceId} fileId={fileId} autoFocus submitLabel="Save"
+              workspaceId={workspaceId} fileId={fileId} autoFocus submitLabel={t('common.save')}
               initialBody={c.body} initialMentions={c.mentions}
               onCancel={() => setEditing(null)}
               onSubmit={async (body, ids) => {
@@ -116,28 +118,28 @@ export function CommentsPanel({ fileId, workspaceId, currentVersion, viewingVers
                   setEditing(null);
                   return true;
                 } catch (err) {
-                  toast.error(err instanceof Error ? err.message : 'Could not save');
+                  toast.error(err instanceof Error ? err.message : t('common.error.couldNotSave'));
                   return false;
                 }
               }}
             />
           </div>
         ) : (
-          <p className="mt-0.5 whitespace-pre-wrap break-words text-sm"><CommentBody body={c.body} mentions={c.mentions} /></p>
+          <p dir="auto" className="mt-0.5 whitespace-pre-wrap break-words text-sm"><CommentBody body={c.body} mentions={c.mentions} /></p>
         )}
         <div className="mt-1 flex gap-2 text-[11px] text-muted-foreground">
-          {!isReply && <button type="button" className="inline-flex items-center gap-1 hover:text-foreground" onClick={() => { setReplyTo(c); setAnchor(null); }}><CornerDownRight className="size-3" />Reply</button>}
-          {mine && <button type="button" className="inline-flex items-center gap-1 hover:text-foreground" onClick={() => setEditing(c.id)}><Pencil className="size-3" />Edit</button>}
+          {!isReply && <button type="button" className="inline-flex items-center gap-1 hover:text-foreground" onClick={() => { setReplyTo(c); setAnchor(null); }}><CornerDownRight className="size-3 rtl:-scale-x-100" />{t('common.tooltip.reply')}</button>}
+          {mine && <button type="button" className="inline-flex items-center gap-1 hover:text-foreground" onClick={() => setEditing(c.id)}><Pencil className="size-3" />{t('common.edit')}</button>}
           {mine && (
             <button
               type="button"
-              aria-label="Delete comment"
+              aria-label={t('common.action.deleteComment')}
               className="inline-flex items-center gap-1 hover:text-destructive"
               onClick={async () => {
-                try { await deleteComment(c.id); await thread.reload(); } catch { toast.error('Could not delete'); }
+                try { await deleteComment(c.id); await thread.reload(); } catch { toast.error(t('common.error.couldNotDelete')); }
               }}
             >
-              <Trash2 className="size-3" />Delete
+              <Trash2 className="size-3" />{t('common.delete')}
             </button>
           )}
         </div>
@@ -149,10 +151,10 @@ export function CommentsPanel({ fileId, workspaceId, currentVersion, viewingVers
     <div className="flex h-full min-h-0 flex-col">
       <div className="min-h-0 flex-1 overflow-y-auto">
         {thread.loading ? null : thread.error ? (
-          <p className="py-6 text-center text-xs text-muted-foreground">Couldn't load comments</p>
+          <p className="py-6 text-center text-xs text-muted-foreground">{t('common.error.couldnTLoadComments')}</p>
         ) : roots.length === 0 ? (
           <div className="py-8 text-center text-xs text-muted-foreground">
-            <MessageSquare className="mx-auto mb-2 size-5" />No comments yet
+            <MessageSquare className="mx-auto mb-2 size-5" />{t('common.empty.noCommentsYet')}
           </div>
         ) : (
           <ul className="space-y-1">
@@ -163,8 +165,8 @@ export function CommentsPanel({ fileId, workspaceId, currentVersion, viewingVers
       <div className="shrink-0 border-t pt-3">
         {replyTo && (
           <p className="mb-1 text-[11px] text-muted-foreground">
-            Replying to {replyTo.user_name}{' '}
-            <button type="button" className="underline" onClick={() => setReplyTo(null)}>cancel</button>
+            {t('common.label.replyingToName', { name: replyTo.user_name })}{' '}
+            <button type="button" className="underline" onClick={() => setReplyTo(null)}>{t('common.action.cancel')}</button>
           </p>
         )}
         <MentionComposer

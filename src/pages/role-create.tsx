@@ -18,15 +18,18 @@ import {
 } from '@/components/ui/dialog';
 import { ChevronLeft, Loader2, Check, X, Pencil, Trash2, Eye } from 'lucide-react';
 import { toast } from '@/lib/toast';
+import { richText } from '@/lib/rich-text';
 import { gbToBytes, mbToBytes, bytesToGb, bytesToMb } from '@/lib/usage-units';
+import { useT } from '@/lib/i18n';
+import type { MessageKey } from '@/i18n/keys';
 
 // Day-of-week checkboxes for active_hours.days (0 = Sunday, matching
 // apps/api/src/lib/access/active-hours.ts). Kept page-local, same as
 // profile.tsx's identical picker - the two forms don't share a component.
-const DAY_OPTIONS: { value: number; label: string }[] = [
-  { value: 0, label: 'Sun' }, { value: 1, label: 'Mon' }, { value: 2, label: 'Tue' },
-  { value: 3, label: 'Wed' }, { value: 4, label: 'Thu' }, { value: 5, label: 'Fri' },
-  { value: 6, label: 'Sat' },
+const DAY_OPTIONS: { value: number; labelKey: MessageKey }[] = [
+  { value: 0, labelKey: 'common.label.sun' }, { value: 1, labelKey: 'common.label.mon' }, { value: 2, labelKey: 'common.label.tue' },
+  { value: 3, labelKey: 'common.label.wed' }, { value: 4, labelKey: 'common.label.thu' }, { value: 5, labelKey: 'common.label.fri' },
+  { value: 6, labelKey: 'common.label.sat' },
 ];
 
 function timezoneOptions(): string[] {
@@ -40,45 +43,46 @@ function timezoneOptions(): string[] {
 
 // ── Permission definitions ────────────────────────────────
 
-interface PermInfo { key: string; label: string; hint: string; category: string }
+interface PermInfo { key: string; labelKey: MessageKey; hintKey: MessageKey; categoryKey: MessageKey }
 
 const PERM_INFO: PermInfo[] = [
-  { key: 'upload_files', label: 'Upload files', hint: 'Upload new files to the workspace.', category: 'Files' },
-  { key: 'download_files', label: 'Download files', hint: 'Download any file in the workspace.', category: 'Files' },
-  { key: 'delete_own_files', label: 'Delete own files', hint: 'Delete files they uploaded themselves.', category: 'Files' },
-  { key: 'delete_any_file', label: 'Delete any file', hint: 'Delete any file, including other members\' uploads.', category: 'Files' },
-  { key: 'rename_files', label: 'Rename files', hint: 'Change file names within the workspace.', category: 'Files' },
-  { key: 'create_folders', label: 'Create folders', hint: 'Create new folders to organize files.', category: 'Folders' },
-  { key: 'rename_folders', label: 'Rename folders', hint: 'Change folder names within the workspace.', category: 'Folders' },
-  { key: 'create_share_links', label: 'Create share links', hint: 'Generate public or private share URLs for files.', category: 'Sharing' },
-  { key: 'view_own_shares', label: 'View own shared links', hint: 'See share links they created and their stats.', category: 'Sharing' },
-  { key: 'view_all_shares', label: 'View all shared links', hint: 'See all share links created by any workspace member.', category: 'Sharing' },
-  { key: 'invite_members', label: 'Invite members', hint: 'Send workspace invitations to new people via email.', category: 'Team' },
-  { key: 'view_team_members', label: 'View team members', hint: 'See the list of workspace members and their roles.', category: 'Team' },
-  { key: 'manage_roles', label: 'Manage roles', hint: 'Create, edit, and delete custom roles and assign permissions.', category: 'Team' },
-  { key: 'change_workspace_name', label: 'Change workspace name', hint: 'Rename the workspace shown in the switcher.', category: 'Workspace identity' },
-  { key: 'change_workspace_icon', label: 'Change workspace icon', hint: 'Update the initials and color of the workspace icon.', category: 'Workspace identity' },
-  { key: 'manage_branding', label: 'Manage branding', hint: 'Set the logo, name and colour shown to people outside the workspace.', category: 'Workspace identity' },
-  { key: 'change_max_file_size', label: 'Change max upload file size', hint: 'Set the maximum size for a single file upload.', category: 'Workspace limits' },
-  { key: 'change_storage_per_member', label: 'Change storage per member', hint: 'Set the max storage any single member can consume.', category: 'Workspace limits' },
-  { key: 'change_total_storage_cap', label: 'Change total workspace storage cap', hint: 'Set the hard ceiling on total storage.', category: 'Workspace limits' },
-  { key: 'change_max_concurrent_uploads', label: 'Change max simultaneous uploads', hint: 'Limit concurrent uploads per member.', category: 'Workspace limits' },
-  { key: 'change_allowed_file_types', label: 'Change allowed file types', hint: 'Restrict which file extensions can be uploaded.', category: 'Workspace limits' },
-  { key: 'change_blocked_file_types', label: 'Change blocked file types', hint: 'Block specific file extensions from being uploaded.', category: 'Workspace limits' },
-  { key: 'change_duplicate_scan', label: 'Change duplicate scanning', hint: 'Turn the duplicate finder on or off. Scanning reads every file to fingerprint it, so it stays off until someone enables it.', category: 'Workspace limits' },
-  { key: 'manage_settings', label: 'Manage settings', hint: 'Edit workspace security settings and access controls.', category: 'Workspace general' },
-  { key: 'view_activity', label: 'View activity log', hint: 'See the full activity history of the workspace.', category: 'Workspace general' },
-  { key: 'lock_files', label: 'Lock files & folders', hint: 'Lock files or folders to prevent edits by other members.', category: 'File management' },
-  { key: 'hide_files', label: 'Hide files & folders', hint: 'Hide files or folders from other members.', category: 'File management' },
-  { key: 'access_dashboard', label: 'Access Dashboard', hint: 'View the workspace dashboard with stats and recent files.', category: 'Page access' },
-  { key: 'access_files', label: 'Access Files', hint: 'Browse and manage files and folders.', category: 'Page access' },
-  { key: 'access_upload', label: 'Access Upload', hint: 'Open the upload page.', category: 'Page access' },
-  { key: 'access_shared', label: 'Access Shared', hint: 'View the shared links page.', category: 'Page access' },
-  { key: 'access_team', label: 'Access Team', hint: 'View the team page.', category: 'Page access' },
-  { key: 'access_settings', label: 'Access Settings', hint: 'Open the workspace settings page.', category: 'Page access' },
-  { key: 'access_webdav', label: 'Use WebDAV', hint: 'Mount the workspace over WebDAV in Finder, Explorer or a WebDAV client.', category: 'Protocol access' },
-  { key: 'access_s3', label: 'Use the S3 gateway', hint: 'Access the workspace with S3 tools such as rclone or the AWS CLI.', category: 'Protocol access' },
-  { key: 'access_sftp', label: 'SFTP access', hint: 'Connect to the workspace over SFTP with an API key', category: 'Protocol access' },
+  { key: 'upload_files', labelKey: 'common.label.uploadFiles', hintKey: 'role-create.description.uploadNewFilesToTheWorkspace', categoryKey: 'common.label.files' },
+  { key: 'download_files', labelKey: 'common.label.downloadFiles', hintKey: 'role-create.description.downloadAnyFileInTheWorkspace', categoryKey: 'common.label.files' },
+  { key: 'delete_own_files', labelKey: 'common.label.deleteOwnFiles', hintKey: 'role-create.description.deleteFilesTheyUploadedThemselves', categoryKey: 'common.label.files' },
+  { key: 'delete_any_file', labelKey: 'common.label.deleteAnyFile', hintKey: 'role-create.description.deleteAnyFileIncludingOtherMembersUploads', categoryKey: 'common.label.files' },
+  { key: 'rename_files', labelKey: 'common.label.renameFiles', hintKey: 'role-create.description.changeFileNamesWithinTheWorkspace', categoryKey: 'common.label.files' },
+  { key: 'create_folders', labelKey: 'common.label.createFolders', hintKey: 'role-create.description.createNewFoldersToOrganizeFiles', categoryKey: 'common.label.folders' },
+  { key: 'rename_folders', labelKey: 'common.label.renameFolders', hintKey: 'role-create.description.changeFolderNamesWithinTheWorkspace', categoryKey: 'common.label.folders' },
+  { key: 'create_share_links', labelKey: 'common.label.createShareLinks', hintKey: 'role-create.description.generatePublicOrPrivateShareUrlsForFiles', categoryKey: 'common.label.sharing' },
+  { key: 'view_own_shares', labelKey: 'common.label.viewOwnSharedLinks', hintKey: 'role-create.description.seeShareLinksTheyCreatedAndTheirStats', categoryKey: 'common.label.sharing' },
+  { key: 'view_all_shares', labelKey: 'common.label.viewAllSharedLinks', hintKey: 'role-create.description.seeAllShareLinksCreatedByAnyWorkspaceMember', categoryKey: 'common.label.sharing' },
+  { key: 'invite_members', labelKey: 'common.label.inviteMembers', hintKey: 'role-create.description.sendWorkspaceInvitationsToNewPeopleViaEmail', categoryKey: 'common.label.team' },
+  { key: 'view_team_members', labelKey: 'common.label.viewTeamMembers', hintKey: 'role-create.description.seeTheListOfWorkspaceMembersAndTheirRoles', categoryKey: 'common.label.team' },
+  { key: 'manage_roles', labelKey: 'common.label.manageRoles', hintKey: 'role-create.description.createEditAndDeleteCustomRolesAndAssignPermissions', categoryKey: 'common.label.team' },
+  { key: 'change_workspace_name', labelKey: 'common.label.changeWorkspaceName', hintKey: 'role-create.description.renameTheWorkspaceShownInTheSwitcher', categoryKey: 'common.label.workspaceIdentity' },
+  { key: 'change_workspace_icon', labelKey: 'common.label.changeWorkspaceIcon', hintKey: 'role-create.description.updateTheInitialsAndColorOfTheWorkspaceIcon', categoryKey: 'common.label.workspaceIdentity' },
+  { key: 'manage_branding', labelKey: 'role-create.label.manageBranding', hintKey: 'role-create.description.setTheLogoNameAndColourShownToPeopleOutsideThe', categoryKey: 'common.label.workspaceIdentity' },
+  { key: 'change_max_file_size', labelKey: 'role-create.label.changeMaxUploadFileSize', hintKey: 'role-create.description.setTheMaximumSizeForASingleFileUpload', categoryKey: 'common.label.workspaceLimits' },
+  { key: 'change_storage_per_member', labelKey: 'common.label.changeStoragePerMember', hintKey: 'role-create.description.setTheMaxStorageAnySingleMemberCanConsume', categoryKey: 'common.label.workspaceLimits' },
+  { key: 'change_total_storage_cap', labelKey: 'role-create.label.changeTotalWorkspaceStorageCap', hintKey: 'role-create.description.setTheHardCeilingOnTotalStorage', categoryKey: 'common.label.workspaceLimits' },
+  { key: 'change_max_concurrent_uploads', labelKey: 'common.label.changeMaxSimultaneousUploads', hintKey: 'role-create.description.limitConcurrentUploadsPerMember', categoryKey: 'common.label.workspaceLimits' },
+  { key: 'change_allowed_file_types', labelKey: 'common.label.changeAllowedFileTypes', hintKey: 'role-create.description.restrictWhichFileExtensionsCanBeUploaded', categoryKey: 'common.label.workspaceLimits' },
+  { key: 'change_blocked_file_types', labelKey: 'common.label.changeBlockedFileTypes', hintKey: 'role-create.description.blockSpecificFileExtensionsFromBeingUploaded', categoryKey: 'common.label.workspaceLimits' },
+  { key: 'change_duplicate_scan', labelKey: 'common.label.changeDuplicateScanning', hintKey: 'role-create.description.turnTheDuplicateFinderOnOrOffScanningReadsEveryFile', categoryKey: 'common.label.workspaceLimits' },
+  { key: 'change_ai_search', labelKey: 'common.label.changeAiSearch', hintKey: 'role-create.description.turnAiSearchOnOrOffAndChooseWhichFoldersAreIndexed', categoryKey: 'common.label.workspaceLimits' },
+  { key: 'manage_settings', labelKey: 'common.label.manageSettings', hintKey: 'role-create.description.editWorkspaceSecuritySettingsAndAccessControls', categoryKey: 'common.label.workspaceGeneral' },
+  { key: 'view_activity', labelKey: 'common.label.viewActivityLog', hintKey: 'role-create.description.seeTheFullActivityHistoryOfTheWorkspace', categoryKey: 'common.label.workspaceGeneral' },
+  { key: 'lock_files', labelKey: 'common.label.lockFilesFolders', hintKey: 'role-create.description.lockFilesOrFoldersToPreventEditsByOtherMembers', categoryKey: 'common.label.fileManagement' },
+  { key: 'hide_files', labelKey: 'common.label.hideFilesFolders', hintKey: 'role-create.description.hideFilesOrFoldersFromOtherMembers', categoryKey: 'common.label.fileManagement' },
+  { key: 'access_dashboard', labelKey: 'common.label.accessDashboard', hintKey: 'role-create.description.viewTheWorkspaceDashboardWithStatsAndRecentFiles', categoryKey: 'common.label.pageAccess' },
+  { key: 'access_files', labelKey: 'common.label.accessFiles', hintKey: 'role-create.description.browseAndManageFilesAndFolders', categoryKey: 'common.label.pageAccess' },
+  { key: 'access_upload', labelKey: 'common.label.accessUpload', hintKey: 'role-create.description.openTheUploadPage', categoryKey: 'common.label.pageAccess' },
+  { key: 'access_shared', labelKey: 'common.label.accessShared', hintKey: 'role-create.description.viewTheSharedLinksPage', categoryKey: 'common.label.pageAccess' },
+  { key: 'access_team', labelKey: 'common.label.accessTeam', hintKey: 'role-create.description.viewTheTeamPage', categoryKey: 'common.label.pageAccess' },
+  { key: 'access_settings', labelKey: 'common.label.accessSettings', hintKey: 'role-create.description.openTheWorkspaceSettingsPage', categoryKey: 'common.label.pageAccess' },
+  { key: 'access_webdav', labelKey: 'common.label.useWebdav', hintKey: 'role-create.description.mountTheWorkspaceOverWebdavInFinderExplorerOrAWebdav', categoryKey: 'common.label.protocolAccess' },
+  { key: 'access_s3', labelKey: 'common.label.useTheS3Gateway', hintKey: 'role-create.description.accessTheWorkspaceWithS3ToolsSuchAsRcloneOrThe', categoryKey: 'common.label.protocolAccess' },
+  { key: 'access_sftp', labelKey: 'common.label.sftpAccess', hintKey: 'role-create.description.connectToTheWorkspaceOverSftpWithAnApiKey', categoryKey: 'common.label.protocolAccess' },
 ];
 
 const ROLE_COLORS: Record<string, string> = { owner: '#16A34A', admin: '#4338CA', member: '#706E69', viewer: '#92400E' };
@@ -103,6 +107,7 @@ interface ExistingRole {
 // ── Page ──────────────────────────────────────────────────
 
 export default function RoleCreatePage() {
+  const t = useT();
   const wsId = useWorkspace((s: { activeId: string }) => s.activeId);
   const [searchParams] = useSearchParams();
 
@@ -158,7 +163,7 @@ export default function RoleCreatePage() {
     });
   };
 
-  const title = isViewMode ? 'View role permissions' : editId ? 'Edit custom role' : 'Create custom role';
+  const title = isViewMode ? t('role-create.label.viewRolePermissions') : editId ? t('role-create.label.editCustomRole') : t('role-create.label.createCustomRole');
 
   // Load existing roles
   const loadRoles = useCallback(async () => {
@@ -232,7 +237,7 @@ export default function RoleCreatePage() {
   };
 
   const handleSave = async () => {
-    if (!roleName.trim()) { setError('Role name is required.'); return; }
+    if (!roleName.trim()) { setError(t('role-create.error.roleNameIsRequired')); return; }
     setError('');
     setOffending(new Set());
     setSaving(true);
@@ -269,29 +274,29 @@ export default function RoleCreatePage() {
         const res = await api<{ ok: boolean; error?: string }>(`/api/roles/${editId}`, {
           method: 'PUT', body: JSON.stringify({ name: roleName.trim(), permissions: permState, ...conditions }),
         });
-        if (res.ok) { toast.success('Role updated', 'The role and its permissions have been saved.'); window.location.href = '/settings#roles'; }
-        else failSave(res.error ?? 'Failed');
+        if (res.ok) { toast.success(t('common.feedback.roleUpdated'), t('role-create.feedback.theRoleAndItsPermissionsHaveBeenSaved')); window.location.href = '/settings#roles'; }
+        else failSave(res.error ?? t('common.label.failed'));
       } else {
         const res = await api<{ ok: boolean; error?: string }>('/api/roles', {
           method: 'POST', body: JSON.stringify({ workspace_id: wsId, name: roleName.trim(), permissions: permState, ...conditions }),
         });
-        if (res.ok) { toast.success('Role created', 'Your new role is ready to assign.'); window.location.href = '/settings#roles'; }
-        else failSave(res.error ?? 'Failed');
+        if (res.ok) { toast.success(t('role-create.feedback.roleCreated'), t('role-create.feedback.yourNewRoleIsReadyToAssign')); window.location.href = '/settings#roles'; }
+        else failSave(res.error ?? t('common.label.failed'));
       }
-    } catch (err) { failSave(apiErrorMessage(err, "Can't reach the server. Check your connection and try again.")); }
+    } catch (err) { failSave(apiErrorMessage(err, t('common.error.canTReachTheServerCheckYourConnectionAnd'))); }
     setSaving(false);
   };
 
   const handleDeleteRole = async (id: string) => {
     try {
       await api(`/api/roles/${id}`, { method: 'DELETE' });
-      toast.success('Role deleted', 'The role has been removed.'); loadRoles();
-    } catch (err) { toast.error('Delete failed', apiErrorMessage(err, 'The role could not be deleted.')); }
+      toast.success(t('role-create.feedback.roleDeleted'), t('role-create.feedback.theRoleHasBeenRemoved')); loadRoles();
+    } catch (err) { toast.error(t('common.error.deleteFailed'), apiErrorMessage(err, t('role-create.error.theRoleCouldNotBeDeleted'))); }
     setDeleteConfirm(null);
   };
 
   // Group permissions by category
-  const categories = [...new Set(PERM_INFO.map((p) => p.category))];
+  const categories = [...new Set(PERM_INFO.map((p) => p.categoryKey))];
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
@@ -299,23 +304,23 @@ export default function RoleCreatePage() {
         <div className="max-w-2xl mx-auto">
           {/* Header */}
           <Link to="/settings" className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground mb-4">
-            <ChevronLeft className="size-3.5" /> Back to settings
+            <ChevronLeft className="size-3.5 rtl:-scale-x-100" /> {t('common.action.backToSettings')}
           </Link>
           <h1 className="text-xl font-bold mb-1">{title}</h1>
-          <p className="text-sm text-muted-foreground mb-6">Configure exactly what this role can do in your workspace.</p>
+          <p className="text-sm text-muted-foreground mb-6">{t('role-create.description.configureExactlyWhatThisRoleCanDoInYourWorkspace')}</p>
 
           {/* Role name */}
           <Card className="gap-0 py-0 mb-5">
             <div className="px-5 py-3 border-b">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Role identity</p>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t('role-create.label.roleIdentity')}</p>
             </div>
             <div className="px-5 py-4">
-              <label className="text-sm font-medium block mb-1">Role name</label>
-              <p className="text-xs text-muted-foreground mb-2">Visible to workspace admins when assigning roles.</p>
+              <label className="text-sm font-medium block mb-1">{t('role-create.label.roleName')}</label>
+              <p className="text-xs text-muted-foreground mb-2">{t('role-create.description.visibleToWorkspaceAdminsWhenAssigningRoles')}</p>
               <Input
                 value={roleName}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setRoleName(e.target.value)}
-                placeholder="e.g. External reviewer"
+                placeholder={t('role-create.placeholder.eGExternalReviewer')}
                 className="h-9 text-sm max-w-xs"
                 maxLength={50}
                 disabled={isViewMode}
@@ -326,35 +331,35 @@ export default function RoleCreatePage() {
           {/* Permissions */}
           <Card className="gap-0 py-0 mb-5">
             <div className="px-5 py-3 border-b">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Permissions</p>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t('role-create.label.permissions')}</p>
             </div>
             <div className="divide-y">
               {categories.map((cat) => (
                 <div key={cat}>
                   <div className="px-5 py-2 bg-muted/30">
-                    <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">{cat}</span>
+                    <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">{t(cat)}</span>
                   </div>
-                  {PERM_INFO.filter((p) => p.category === cat).map((p) => {
+                  {PERM_INFO.filter((p) => p.categoryKey === cat).map((p) => {
                     const locked = !isViewMode && isLocked(p.key);
                     const flagged = offending.has(p.key);
                     return (
                     <div
                       key={p.key}
-                      className={`flex items-center justify-between px-5 py-3 border-b last:border-b-0 ${flagged ? 'border-l-2 border-l-destructive bg-destructive/5' : ''}`}
-                      title={locked ? "You don't hold this permission" : undefined}
+                      className={`flex items-center justify-between px-5 py-3 border-b last:border-b-0 ${flagged ? 'border-s-2 border-s-destructive bg-destructive/5' : ''}`}
+                      title={locked ? t('role-create.action.youDonTHoldThisPermission') : undefined}
                     >
                       <div className="min-w-0">
-                        <p className={`text-sm font-medium ${flagged ? 'text-destructive' : locked ? 'text-muted-foreground' : ''}`}>{p.label}</p>
-                        <p className="text-xs text-muted-foreground mt-0.5">{p.hint}</p>
-                        {locked && <p className="text-[11px] text-muted-foreground/80 mt-0.5">You don't hold this permission, so you can't grant it.</p>}
-                        {flagged && <p className="text-[11px] text-destructive mt-0.5">The server refused this grant.</p>}
+                        <p className={`text-sm font-medium ${flagged ? 'text-destructive' : locked ? 'text-muted-foreground' : ''}`}>{t(p.labelKey)}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">{t(p.hintKey)}</p>
+                        {locked && <p className="text-[11px] text-muted-foreground/80 mt-0.5">{t('role-create.error.youDonTHoldThisPermissionSoYouCanTGrantIt')}</p>}
+                        {flagged && <p className="text-[11px] text-destructive mt-0.5">{t('role-create.description.theServerRefusedThisGrant')}</p>}
                       </div>
                       {isViewMode ? (
                         <div className="flex items-center gap-1.5 shrink-0">
                           {permState[p.key] ? (
-                            <><Check className="size-4 text-green-500" /><span className="text-xs font-medium text-green-600">Enabled</span></>
+                            <><Check className="size-4 text-green-500" /><span className="text-xs font-medium text-green-600">{t('role-create.label.enabled')}</span></>
                           ) : (
-                            <><X className="size-4 text-muted-foreground/40" /><span className="text-xs text-muted-foreground">Disabled</span></>
+                            <><X className="size-4 text-muted-foreground/40" /><span className="text-xs text-muted-foreground">{t('role-create.label.disabled')}</span></>
                           )}
                         </div>
                       ) : (
@@ -363,9 +368,9 @@ export default function RoleCreatePage() {
                           onClick={() => togglePerm(p.key)}
                           disabled={locked}
                           aria-disabled={locked || undefined}
-                          title={locked ? "You don't hold this permission" : undefined}
+                          title={locked ? t('role-create.action.youDonTHoldThisPermission') : undefined}
                         >
-                          <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-all ${permState[p.key] ? 'left-4.5' : 'left-0.5'}`} />
+                          <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-all ${permState[p.key] ? 'inset-s-4.5' : 'inset-s-0.5'}`} />
                         </button>
                       )}
                     </div>
@@ -381,18 +386,16 @@ export default function RoleCreatePage() {
               (neither layer can widen the other - see conditions.ts). */}
           <Card className="gap-0 py-0 mb-5">
             <div className="px-5 py-3 border-b">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Access conditions</p>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t('role-create.label.accessConditions')}</p>
             </div>
             <div className="px-5 py-4 space-y-4">
               <div>
-                <label className="text-sm font-medium block mb-1">Allowed IP ranges</label>
+                <label className="text-sm font-medium block mb-1">{t('common.label.allowedIpRanges')}</label>
                 <p className="text-xs text-muted-foreground mb-2">
-                  Optional, comma-separated. Members using this role will be refused from any other
-                  address over WebDAV and the S3 gateway. Role conditions do not apply to the REST
-                  API or SFTP - restrict an individual API key for those.
+                  {t('role-create.description.optionalCommaSeparatedMembersUsingThisRoleWillBeRefusedFromAny')}
                 </p>
                 <Textarea
-                  placeholder="203.0.113.0/24, 2001:db8::/32"
+                  placeholder={t('common.placeholder.20301130242001Db832')}
                   value={roleAllowedIps}
                   onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setRoleAllowedIps(e.target.value)}
                   className="text-sm min-h-[3.5rem] max-w-md"
@@ -407,10 +410,10 @@ export default function RoleCreatePage() {
                     onCheckedChange={() => !isViewMode && setRoleHoursEnabled((v) => !v)}
                     disabled={isViewMode}
                   />
-                  Restrict to active hours
+                  {t('role-create.label.restrictToActiveHours')}
                 </label>
                 <p className="text-xs text-muted-foreground mb-2">
-                  Optional. Members using this role will be refused outside this weekly window.
+                  {t('role-create.description.optionalMembersUsingThisRoleWillBeRefusedOutsideThisWeekly')}
                 </p>
                 {roleHoursEnabled && (
                   <div className="space-y-2 rounded-lg border p-3 max-w-md">
@@ -428,13 +431,13 @@ export default function RoleCreatePage() {
                       {DAY_OPTIONS.map((d) => (
                         <label key={d.value} className="flex items-center gap-1 text-[11px] cursor-pointer">
                           <Checkbox className="size-3.5" checked={roleDays.has(d.value)} onCheckedChange={() => toggleRoleDay(d.value)} disabled={isViewMode} />
-                          {d.label}
+                          {t(d.labelKey)}
                         </label>
                       ))}
                     </div>
                     <div className="flex items-center gap-2">
                       <Input type="time" value={roleFrom} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setRoleFrom(e.target.value)} className="h-8 text-xs flex-1" disabled={isViewMode} />
-                      <span className="text-[11px] text-muted-foreground">to</span>
+                      <span className="text-[11px] text-muted-foreground">{t('common.label.to')}</span>
                       <Input type="time" value={roleTo} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setRoleTo(e.target.value)} className="h-8 text-xs flex-1" disabled={isViewMode} />
                     </div>
                   </div>
@@ -449,33 +452,33 @@ export default function RoleCreatePage() {
               see apps/api/src/lib/usage/enforce.ts). */}
           <Card className="gap-0 py-0 mb-5">
             <div className="px-5 py-3 border-b">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Usage limits</p>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t('role-create.label.usageLimits')}</p>
             </div>
             <div className="px-5 py-4">
               <p className="text-xs text-muted-foreground mb-3 max-w-md">
-                Optional. These limits apply to every member using this role, across every protocol.
+                {t('role-create.description.optionalTheseLimitsApplyToEveryMemberUsingThisRoleAcross')}
               </p>
               <div className="grid grid-cols-2 gap-3 max-w-md">
                 <div>
-                  <label className="text-xs font-medium block mb-1">Requests per minute</label>
+                  <label className="text-xs font-medium block mb-1">{t('role-create.label.requestsPerMinute')}</label>
                   <Input
-                    type="number" min="1" step="1" placeholder="requests per minute"
+                    type="number" min="1" step="1" placeholder={t('role-create.placeholder.requestsPerMinute')}
                     value={roleRequestsPerMinute}
                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => setRoleRequestsPerMinute(e.target.value)}
                     className="h-9 text-sm" disabled={isViewMode}
                   />
                 </div>
                 <div>
-                  <label className="text-xs font-medium block mb-1">Egress per day (GB)</label>
+                  <label className="text-xs font-medium block mb-1">{t('role-create.label.egressPerDayGb')}</label>
                   <Input
-                    type="number" min="1" step="any" placeholder="GB per day"
+                    type="number" min="1" step="any" placeholder={t('role-create.placeholder.gbPerDay')}
                     value={roleEgressGbPerDay}
                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => setRoleEgressGbPerDay(e.target.value)}
                     className="h-9 text-sm" disabled={isViewMode}
                   />
                 </div>
                 <div>
-                  <label className="text-xs font-medium block mb-1">Max file size (MB)</label>
+                  <label className="text-xs font-medium block mb-1">{t('common.label.maxFileSizeMb')}</label>
                   <Input
                     type="number" min="1" step="any" placeholder="MB"
                     value={roleMaxFileSizeMb}
@@ -484,9 +487,9 @@ export default function RoleCreatePage() {
                   />
                 </div>
                 <div>
-                  <label className="text-xs font-medium block mb-1">Max concurrent transfers</label>
+                  <label className="text-xs font-medium block mb-1">{t('sync.label.maxConcurrentTransfers')}</label>
                   <Input
-                    type="number" min="1" step="1" placeholder="count"
+                    type="number" min="1" step="1" placeholder={t('role-create.placeholder.count')}
                     value={roleMaxConcurrentTransfers}
                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => setRoleMaxConcurrentTransfers(e.target.value)}
                     className="h-9 text-sm" disabled={isViewMode}
@@ -499,21 +502,21 @@ export default function RoleCreatePage() {
           {/* Actions */}
           {!isViewMode && (
             <div className="flex items-center gap-3 mb-8">
-              <Link to="/settings"><Button variant="outline">Cancel</Button></Link>
+              <Link to="/settings"><Button variant="outline">{t('common.cancel')}</Button></Link>
               <Button onClick={handleSave} disabled={saving}>
-                {saving && <Loader2 className="size-4 animate-spin mr-1.5" />}
-                {editId ? 'Save changes' : 'Create role'}
+                {saving && <Loader2 className="size-4 animate-spin me-1.5" />}
+                {editId ? t('common.action.saveChanges') : t('role-create.action.createRole')}
               </Button>
             </div>
           )}
 
-          {error && <p ref={errorRef} className="text-sm text-destructive bg-destructive/10 border border-destructive/20 rounded-lg px-4 py-3 mb-6">{error}</p>}
+          {error && <p dir="auto" ref={errorRef} className="text-sm text-destructive bg-destructive/10 border border-destructive/20 rounded-lg px-4 py-3 mb-6">{error}</p>}
 
           {/* Existing roles */}
           <Card className="gap-0 py-0 mb-8">
             <div className="px-5 py-3 border-b">
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                Existing roles &middot; {existingRoles.length}
+                {t('role-create.label.existingRolesMiddotExistingrolescount', { existingRolesCount: existingRoles.length })}
               </p>
             </div>
             <div className="divide-y">
@@ -533,16 +536,16 @@ export default function RoleCreatePage() {
                       <div className="size-2.5 rounded-full shrink-0" style={{ background: dotColor }} />
                       <span className="text-sm font-medium">{r.name}</span>
                       <Badge variant={r.is_builtin ? 'secondary' : 'outline'} className="text-[9px]">
-                        {r.is_builtin ? 'built-in' : 'custom'}
+                        {r.is_builtin ? t('role-create.label.builtIn') : t('role-create.label.custom')}
                       </Badge>
-                      {isMine && <Badge variant="secondary" className="text-[9px]">your role</Badge>}
+                      {isMine && <Badge variant="secondary" className="text-[9px]">{t('role-create.status.yourRole')}</Badge>}
                     </div>
-                    <span className="text-xs text-muted-foreground shrink-0">{permCount}/{totalPerms} permissions</span>
+                    <span className="text-xs text-muted-foreground shrink-0">{t('role-create.label.permcountTotalpermsPermissions', { permCount, totalPerms })}</span>
                     <div className="flex gap-1 shrink-0">
                       {r.is_custom && !isMine ? (
                         <>
                           <Link to={`/role-create?edit=${r.id}`}>
-                            <Button variant="outline" size="sm" className="h-7 text-xs gap-1"><Pencil className="size-3" /> Edit</Button>
+                            <Button variant="outline" size="sm" className="h-7 text-xs gap-1"><Pencil className="size-3" /> {t('common.edit')}</Button>
                           </Link>
                           <Button variant="outline" size="sm" className="h-7 text-xs text-destructive border-destructive/30 hover:bg-destructive/10"
                             onClick={() => setDeleteConfirm({ id: r.id, name: r.name })}>
@@ -551,7 +554,7 @@ export default function RoleCreatePage() {
                         </>
                       ) : (
                         <Link to={`/role-create?view=${r.id}`}>
-                          <Button variant="outline" size="sm" className="h-7 text-xs gap-1"><Eye className="size-3" /> View</Button>
+                          <Button variant="outline" size="sm" className="h-7 text-xs gap-1"><Eye className="size-3" /> {t('common.view')}</Button>
                         </Link>
                       )}
                     </div>
@@ -566,13 +569,13 @@ export default function RoleCreatePage() {
       {/* Delete confirm */}
       <Dialog open={!!deleteConfirm} onOpenChange={() => setDeleteConfirm(null)}>
         <DialogContent className="max-w-sm">
-          <DialogHeader><DialogTitle>Delete role?</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{t('role-create.heading.deleteRole')}</DialogTitle></DialogHeader>
           <p className="text-sm text-muted-foreground">
-            Delete the "<span className="font-semibold text-foreground">{deleteConfirm?.name}</span>" role? Members must be moved to another role first.
+            {richText(t('role-create.error.deleteTheDeleteconfirmnameRoleMembersMustBeMovedToAnotherRole', { deleteConfirmName: '{deleteConfirmName}' }), { deleteConfirmName: <span className="font-semibold text-foreground">{deleteConfirm?.name}</span> })}
           </p>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteConfirm(null)}>Cancel</Button>
-            <Button variant="destructive" onClick={() => deleteConfirm && handleDeleteRole(deleteConfirm.id)}>Delete role</Button>
+            <Button variant="outline" onClick={() => setDeleteConfirm(null)}>{t('common.cancel')}</Button>
+            <Button variant="destructive" onClick={() => deleteConfirm && handleDeleteRole(deleteConfirm.id)}>{t('role-create.action.deleteRole')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

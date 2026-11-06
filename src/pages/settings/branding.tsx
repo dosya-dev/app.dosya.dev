@@ -15,6 +15,8 @@ import { toast } from '@/lib/toast';
 import { SWATCH_BY_NAME } from '@/lib/palette';
 import { formatExactDateTime } from '@/lib/date-format';
 import { SharePagePreview } from './branding-share-preview';
+import { t as translate, useT } from '@/lib/i18n';
+import { richText } from '@/lib/rich-text';
 
 // ── Advisory validation ────────────────────────────────────
 // These mirror the cheap rules in apps/api (branding.ts, lib/branding/handle.ts)
@@ -40,23 +42,23 @@ const EMAIL_PREVIEW_DEBOUNCE_MS = 400;
 const EMPTY_PICKER = SWATCH_BY_NAME.green.light;
 
 function nameProblem(name: string): string | null {
-  if (CONTROL_CHARS.test(name)) return 'A brand name cannot contain line breaks or control characters.';
-  if (name.trim().length > MAX_BRAND_NAME) return `A brand name can be at most ${MAX_BRAND_NAME} characters.`;
+  if (CONTROL_CHARS.test(name)) return translate('settings.error.aBrandNameCannotContainLineBreaksOrControlCharacters');
+  if (name.trim().length > MAX_BRAND_NAME) return translate('settings.description.aBrandNameCanBeAtMostMaxBrandNameCharacters', { MAX_BRAND_NAME });
   return null;
 }
 
 function colorProblem(color: string): string | null {
   if (color.trim() === '') return null;
-  return HEX.test(color.trim()) ? null : 'Use a six-digit hex colour that starts with #.';
+  return HEX.test(color.trim()) ? null : translate('settings.description.useASixDigitHexColourThatStartsWith');
 }
 
 function handleProblem(handle: string): string | null {
   if (handle === '') return null;
-  if (handle !== handle.toLowerCase()) return 'Use lowercase letters only, so the link reads the way you typed it.';
-  if (!HANDLE_SHAPE.test(handle)) return 'Use lowercase letters, numbers and hyphens, starting and ending with a letter or number.';
-  if (/--/.test(handle)) return 'Use single hyphens only.';
-  if (handle.length < MIN_HANDLE) return `A handle needs at least ${MIN_HANDLE} characters.`;
-  if (handle.length > MAX_HANDLE) return `A handle can be at most ${MAX_HANDLE} characters.`;
+  if (handle !== handle.toLowerCase()) return translate('settings.description.useLowercaseLettersOnlySoTheLinkReadsTheWayYou');
+  if (!HANDLE_SHAPE.test(handle)) return translate('settings.description.useLowercaseLettersNumbersAndHyphensStartingAndEndingWithA');
+  if (/--/.test(handle)) return translate('settings.description.useSingleHyphensOnly');
+  if (handle.length < MIN_HANDLE) return translate('settings.description.aHandleNeedsAtLeastMinHandleCharacters', { MIN_HANDLE });
+  if (handle.length > MAX_HANDLE) return translate('settings.description.aHandleCanBeAtMostMaxHandleCharacters', { MAX_HANDLE });
   return null;
 }
 
@@ -86,12 +88,13 @@ type Availability =
   | { state: 'idle' }
   | { state: 'checking' }
   | { state: 'available' }
-  | { state: 'unavailable'; reason: string }
+  | { state: 'unavailable'; reason: string | null }
   | { state: 'error'; message: string };
 
 // ── Page ───────────────────────────────────────────────────
 
 export default function BrandingPage() {
+  const t = useT();
   const wsId = useWorkspace((s: { activeId: string }) => s.activeId);
   const [data, setData] = useState<BrandingResponse | null>(null);
   // Which workspace `data` belongs to. Compared against wsId at render, so the
@@ -159,7 +162,7 @@ export default function BrandingPage() {
     let live = true;
     api<BrandingResponse>(`/api/workspaces/${wsId}/branding`)
       .then((res) => { if (live) apply(res, wsId); })
-      .catch((err) => { if (live) setLoadError(apiErrorMessage(err, 'Could not load branding. Please try again.')); });
+      .catch((err) => { if (live) setLoadError(apiErrorMessage(err, translate('settings.error.couldNotLoadBrandingPleaseTryAgain'))); });
     return () => { live = false; };
   }, [wsId, apply]);
 
@@ -178,9 +181,9 @@ export default function BrandingPage() {
       )
         .then((r) => {
           if (!live) return;
-          setAvailability(r.available ? { state: 'available' } : { state: 'unavailable', reason: r.reason ?? 'That handle is not available.' });
+          setAvailability(r.available ? { state: 'available' } : { state: 'unavailable', reason: r.reason ?? null });
         })
-        .catch((err) => { if (live) setAvailability({ state: 'error', message: apiErrorMessage(err, 'Could not check that handle.') }); });
+        .catch((err) => { if (live) setAvailability({ state: 'error', message: apiErrorMessage(err, translate('settings.error.couldNotCheckThatHandle')) }); });
     }, AVAILABILITY_DEBOUNCE_MS);
     return () => { live = false; clearTimeout(timer); };
   }, [typedHandle, localHandleProblem, wsId]);
@@ -190,7 +193,7 @@ export default function BrandingPage() {
       <div className="p-6">
         <div className="max-w-2xl mx-auto">
           <BackLink />
-          <p role="alert" className="text-sm text-destructive">{loadError}</p>
+          <p dir="auto" role="alert" className="text-sm text-destructive">{loadError}</p>
         </div>
       </div>
     );
@@ -230,20 +233,20 @@ export default function BrandingPage() {
           hide_save_cta: hideSaveCta,
         }),
       });
-      toast.success('Saved', 'Your branding has been updated.');
+      toast.success(t('common.feedback.saved'), t('settings.feedback.yourBrandingHasBeenUpdated'));
     } catch (err) {
-      const msg = apiErrorMessage(err, 'Could not reach the server. Please try again.');
+      const msg = apiErrorMessage(err, t('settings.error.couldNotReachTheServerPleaseTryAgain'));
       if (wsRef.current === forWs) setSaveError(msg);
-      toast.error('Couldn\'t save', msg);
+      toast.error(t('common.error.couldnTSave'), msg);
     }
     if (wsRef.current === forWs) setBusy(null);
   };
 
   const uploadLogo = async (file: File) => {
     setLogoError(null);
-    if (file.type === 'image/svg+xml' || /\.svg$/i.test(file.name)) { setLogoError('SVG logos are not accepted. Export your logo as a PNG, JPEG or WebP image.'); return; }
-    if (!LOGO_TYPES.includes(file.type)) { setLogoError('Use a PNG, JPEG or WebP image.'); return; }
-    if (file.size > MAX_LOGO_BYTES) { setLogoError('Logos must be 2 MB or smaller.'); return; }
+    if (file.type === 'image/svg+xml' || /\.svg$/i.test(file.name)) { setLogoError(t('settings.error.svgLogosAreNotAcceptedExportYourLogoAsAPng')); return; }
+    if (!LOGO_TYPES.includes(file.type)) { setLogoError(t('settings.error.useAPngJpegOrWebpImage')); return; }
+    if (file.size > MAX_LOGO_BYTES) { setLogoError(t('settings.error.logosMustBe2MbOrSmaller')); return; }
     const forWs = wsId;
     setBusy('logo');
     try {
@@ -252,9 +255,9 @@ export default function BrandingPage() {
       const res = await fetch(`${API_BASE}/api/workspaces/${wsId}/branding/logo`, { method: 'POST', body: form, credentials: 'include' });
       const body = await res.json().catch(() => ({})) as { ok?: boolean; logo_url?: string; error?: string };
       if (wsRef.current !== forWs) return;
-      if (res.ok && body.ok && body.logo_url) { setLogoUrl(body.logo_url); toast.success('Logo updated', 'Your logo has been uploaded.'); }
-      else setLogoError(body.error ?? 'The logo could not be uploaded.');
-    } catch { if (wsRef.current === forWs) setLogoError('The logo could not be uploaded.'); }
+      if (res.ok && body.ok && body.logo_url) { setLogoUrl(body.logo_url); toast.success(t('settings.feedback.logoUpdated'), t('settings.feedback.yourLogoHasBeenUploaded')); }
+      else setLogoError(body.error ?? t('settings.error.theLogoCouldNotBeUploaded'));
+    } catch { if (wsRef.current === forWs) setLogoError(t('settings.error.theLogoCouldNotBeUploaded')); }
     if (wsRef.current === forWs) setBusy(null);
   };
 
@@ -264,8 +267,8 @@ export default function BrandingPage() {
       const res = await fetch(`${API_BASE}/api/workspaces/${wsId}/branding/logo`, { method: 'DELETE', credentials: 'include' });
       if (res.ok) { if (wsRef.current === forWs) setLogoUrl(null); return true; }
       const body = await res.json().catch(() => ({})) as { error?: string };
-      if (wsRef.current === forWs) setLogoError(body.error ?? 'The logo could not be removed.');
-    } catch { if (wsRef.current === forWs) setLogoError('The logo could not be removed.'); }
+      if (wsRef.current === forWs) setLogoError(body.error ?? t('settings.error.theLogoCouldNotBeRemoved'));
+    } catch { if (wsRef.current === forWs) setLogoError(t('settings.error.theLogoCouldNotBeRemoved')); }
     return false;
   };
 
@@ -278,7 +281,7 @@ export default function BrandingPage() {
       const res = await api<{ ok: boolean; handle: string }>(`/api/workspaces/${wsId}/branding/handle`, {
         method: 'POST', body: JSON.stringify({ handle: typedHandle }),
       });
-      toast.success('Handle claimed', 'Your share handle is now set.');
+      toast.success(t('settings.feedback.handleClaimed'), t('settings.feedback.yourShareHandleIsNowSet'));
       if (wsRef.current !== forWs) return;
       setClaimedHandle(res.handle);
       // The claim endpoint does not echo the time; the server stamped it a
@@ -286,7 +289,7 @@ export default function BrandingPage() {
       setClaimedAt(Math.floor(Date.now() / 1000));
       setHandle('');
     } catch (err) {
-      if (wsRef.current === forWs) setHandleError(apiErrorMessage(err, 'Could not reach the server. Please try again.'));
+      if (wsRef.current === forWs) setHandleError(apiErrorMessage(err, t('settings.error.couldNotReachTheServerPleaseTryAgain')));
     }
     if (wsRef.current === forWs) setBusy(null);
   };
@@ -303,14 +306,14 @@ export default function BrandingPage() {
       await api(`/api/workspaces/${wsId}/branding`, { method: 'PUT', body: JSON.stringify({ brand_name: null, brand_color: null }) });
       if (wsRef.current === forWs) { setName(''); setColor(''); setColorError(null); }
       if (logoUrl && !(await removeLogo())) {
-        toast.error('Partly reset', 'Your name and colour were cleared, but the logo could not be removed.');
+        toast.error(t('settings.error.partlyReset'), t('settings.error.yourNameAndColourWereClearedButTheLogoCouldNot'));
       } else {
-        toast.success('Reset', 'Your name, colour and logo were cleared.');
+        toast.success(t('settings.feedback.reset'), t('settings.feedback.yourNameColourAndLogoWereCleared'));
       }
     } catch (err) {
-      const msg = apiErrorMessage(err, 'Could not reach the server. Please try again.');
+      const msg = apiErrorMessage(err, t('settings.error.couldNotReachTheServerPleaseTryAgain'));
       if (wsRef.current === forWs) setSaveError(msg);
-      toast.error('Couldn\'t reset', msg);
+      toast.error(t('settings.error.couldnTReset'), msg);
     }
     if (wsRef.current === forWs) setBusy(null);
   };
@@ -333,8 +336,8 @@ export default function BrandingPage() {
         {/* 1. Back link and title */}
         <div>
           <BackLink />
-          <h1 className="text-xl font-bold mb-1">Branding</h1>
-          <p className="text-sm text-muted-foreground">Put your name and colour on what people outside the workspace receive.</p>
+          <h1 className="text-xl font-bold mb-1">{t('settings.heading.branding')}</h1>
+          <p className="text-sm text-muted-foreground">{t('settings.description.putYourNameAndColourOnWhatPeopleOutsideTheWorkspace')}</p>
         </div>
 
         <Notice data={data} />
@@ -342,43 +345,43 @@ export default function BrandingPage() {
         {/* 2. Logo, name, colour */}
         <Card className="gap-0 py-0">
           <CardContent className="divide-y">
-            <Row label="Logo" desc="PNG, JPEG or WebP, up to 2 MB. SVG is not accepted, so export a PNG. Uploads apply straight away.">
+            <Row label={t('settings.label.logo')} desc={t('settings.description.pngJpegOrWebpUpTo2MbSvgIsNot')}>
               <div className="flex items-center gap-3">
                 <div className="size-12 rounded-lg border bg-muted flex items-center justify-center overflow-hidden shrink-0">
-                  {logoUrl ? <img src={logoUrl} alt="Your logo" className="w-full h-full object-contain" /> : <span className="text-xs text-muted-foreground">None</span>}
+                  {logoUrl ? <img src={logoUrl} alt={t('settings.alternative.yourLogo')} className="w-full h-full object-contain" /> : <span className="text-xs text-muted-foreground">{t('common.label.none')}</span>}
                 </div>
                 {editable && (
                   <div className="flex items-center gap-1.5">
                     <Button variant="outline" size="sm" className="h-7 text-xs gap-1" disabled={busy !== null} onClick={() => fileRef.current?.click()}>
-                      {busy === 'logo' ? <Loader2 className="size-3 animate-spin" /> : <Upload className="size-3" />} Upload
+                      {busy === 'logo' ? <Loader2 className="size-3 animate-spin" /> : <Upload className="size-3" />} {t('common.action.upload')}
                     </Button>
-                    {logoUrl && <Button variant="outline" size="sm" className="h-7 text-xs" disabled={busy !== null} onClick={() => { setLogoError(null); setBusy('logo'); void removeLogo().finally(() => setBusy(null)); }}>Remove</Button>}
+                    {logoUrl && <Button variant="outline" size="sm" className="h-7 text-xs" disabled={busy !== null} onClick={() => { setLogoError(null); setBusy('logo'); void removeLogo().finally(() => setBusy(null)); }}>{t('common.remove')}</Button>}
                     <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" data-testid="logo-input" onChange={(e) => { const f = e.target.files?.[0]; if (f) void uploadLogo(f); e.target.value = ''; }} />
                   </div>
                 )}
               </div>
             </Row>
-            {logoError && <p role="alert" className="text-xs text-destructive py-2">{logoError}</p>}
+            {logoError && <p dir="auto" role="alert" className="text-xs text-destructive py-2">{logoError}</p>}
 
-            <Row label="Brand name" desc={`Up to ${MAX_BRAND_NAME} characters. Shown as text only.`}>
+            <Row label={t('settings.label.brandName')} desc={t('settings.description.upToMaxBrandNameCharactersShownAsTextOnly', { MAX_BRAND_NAME })}>
               <div className="space-y-1">
-                <Input aria-label="Brand name" value={name} disabled={!editable} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setName(e.target.value)} className="h-8 text-xs w-56" placeholder="Kaya Studio" />
+                <Input aria-label={t('settings.accessibility.brandName')} value={name} disabled={!editable} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setName(e.target.value)} className="h-8 text-xs w-56" placeholder={t('settings.placeholder.kayaStudio')} />
                 {nameMsg && <p className="text-xs text-destructive">{nameMsg}</p>}
               </div>
             </Row>
 
-            <Row label="Brand colour" desc="A six-digit hex colour. Used on the share page only; email stays black and white.">
+            <Row label={t('settings.label.brandColour')} desc={t('settings.description.aSixDigitHexColourUsedOnTheSharePageOnlyEmail')}>
               <div className="space-y-1">
                 <div className="flex items-center gap-2">
                   <input
-                    type="color" aria-label="Pick a colour" disabled={!editable}
+                    type="color" aria-label={t('settings.accessibility.pickAColour')} disabled={!editable}
                     value={tenantColor ?? EMPTY_PICKER}
                     onChange={(e) => { setColor(e.target.value.toUpperCase()); setColorError(null); }}
                     className="size-8 rounded border bg-transparent p-0.5 cursor-pointer disabled:cursor-not-allowed"
                   />
-                  <Input aria-label="Brand colour" value={color} disabled={!editable} onChange={(e: React.ChangeEvent<HTMLInputElement>) => { setColor(e.target.value); setColorError(null); }} className="h-8 text-xs w-28 font-mono" placeholder="#RRGGBB" />
+                  <Input aria-label={t('settings.accessibility.brandColour')} value={color} disabled={!editable} onChange={(e: React.ChangeEvent<HTMLInputElement>) => { setColor(e.target.value); setColorError(null); }} className="h-8 text-xs w-28 font-mono" placeholder="#RRGGBB" />
                 </div>
-                {colorError && <p role="alert" className="text-xs text-destructive">{colorError}</p>}
+                {colorError && <p dir="auto" role="alert" className="text-xs text-destructive">{colorError}</p>}
               </div>
             </Row>
           </CardContent>
@@ -388,28 +391,28 @@ export default function BrandingPage() {
         {(claimedHandle || data.is_owner) && (
           <Card className="gap-0 py-0">
             <CardContent className="py-4 space-y-2">
-              <p className="text-sm font-medium">Share handle</p>
+              <p className="text-sm font-medium">{t('settings.label.shareHandle')}</p>
               {claimedHandle ? (
                 <>
-                  <p className="text-sm font-mono">dosya.dev/s/@{claimedHandle}/…</p>
-                  {claimedAt !== null && <p className="text-xs text-muted-foreground">Claimed {formatExactDateTime(claimedAt)}</p>}
-                  <p className="text-xs text-muted-foreground">Your handle is permanent and cannot be changed here. Contact support if you need it changed.</p>
+                  <p className="text-sm font-mono">{t('settings.label.dosyaDevSClaimedhandle', { claimedHandle })}</p>
+                  {claimedAt !== null && <p className="text-xs text-muted-foreground">{t('settings.label.claimedClaimedat', { claimedAt: formatExactDateTime(claimedAt) })}</p>}
+                  <p className="text-xs text-muted-foreground">{t('settings.error.yourHandleIsPermanentAndCannotBeChangedHereContactSupport')}</p>
                 </>
               ) : (
                 <>
-                  <p className="text-xs text-muted-foreground">Claim a name for your share links, like dosya.dev/s/@yourname/… . You can claim it once and it cannot be changed afterwards.</p>
+                  <p className="text-xs text-muted-foreground">{t('settings.error.claimANameForYourShareLinksLikeDosyaDevSYournameYou')}</p>
                   {editable && (
                     <div className="space-y-1">
                       <div className="flex items-center gap-2">
-                        <label htmlFor="share-handle" className="sr-only">Share handle</label>
+                        <label htmlFor="share-handle" className="sr-only">{t('settings.label.shareHandle')}</label>
                         <span className="text-sm text-muted-foreground">@</span>
-                        <Input id="share-handle" value={handle} onChange={(e: React.ChangeEvent<HTMLInputElement>) => { setHandle(e.target.value); setHandleError(null); }} className="h-8 text-xs w-56 font-mono" placeholder="yourname" autoComplete="off" spellCheck={false} />
+                        <Input id="share-handle" value={handle} onChange={(e: React.ChangeEvent<HTMLInputElement>) => { setHandle(e.target.value); setHandleError(null); }} dir="ltr" className="h-8 text-xs w-56 font-mono" placeholder={t('settings.placeholder.yourname')} autoComplete="off" spellCheck={false} />
                         <Button size="sm" className="h-8 text-xs" disabled={busy !== null || typedHandle === '' || !!localHandleProblem || availability.state === 'unavailable'} onClick={() => setConfirmClaim(true)}>
-                          {busy === 'claim' && <Loader2 className="size-3 animate-spin" />}Claim handle
+                          {busy === 'claim' && <Loader2 className="size-3 animate-spin" />}{t('settings.action.claimHandle')}
                         </Button>
                       </div>
                       <HandleStatus problem={localHandleProblem} availability={availability} />
-                      {handleError && <p role="alert" className="text-xs text-destructive">{handleError}</p>}
+                      {handleError && <p dir="auto" role="alert" className="text-xs text-destructive">{handleError}</p>}
                     </div>
                   )}
                 </>
@@ -421,14 +424,14 @@ export default function BrandingPage() {
         {/* 4. Switches */}
         <Card className="gap-0 py-0">
           <CardContent className="divide-y">
-            <Row label="Share page and share links" desc="Show your logo, name and colour on the public share page, and use your handle in the link.">
-              <Toggle label="Brand the share page" checked={applyShare} disabled={!editable} onChange={setApplyShare} />
+            <Row label={t('settings.label.sharePageAndShareLinks')} desc={t('settings.description.showYourLogoNameAndColourOnThePublicSharePage')}>
+              <Toggle label={t('settings.label.brandTheSharePage')} checked={applyShare} disabled={!editable} onChange={setApplyShare} />
             </Row>
-            <Row label="Email" desc="Show your name in the email masthead and as the sender name. The address stays noreply@dosya.dev and subjects still say dosya.dev.">
-              <Toggle label="Brand email" checked={applyEmail} disabled={!editable} onChange={setApplyEmail} />
+            <Row label={t('common.label.email')} desc={t('settings.description.showYourNameInTheEmailMastheadAndAsTheSender')}>
+              <Toggle label={t('settings.label.brandEmail')} checked={applyEmail} disabled={!editable} onChange={setApplyEmail} />
             </Row>
-            <Row label="Hide the Save to dosya button" desc="Remove the Save to dosya button from the share page. Applies only while branding the share page is on.">
-              <Toggle label="Hide the Save to dosya button" checked={hideSaveCta} disabled={!editable} onChange={setHideSaveCta} />
+            <Row label={t('settings.label.hideTheSaveToDosyaButton')} desc={t('settings.description.removeTheSaveToDosyaButtonFromTheSharePageApplies')}>
+              <Toggle label={t('settings.label.hideTheSaveToDosyaButton')} checked={hideSaveCta} disabled={!editable} onChange={setHideSaveCta} />
             </Row>
           </CardContent>
         </Card>
@@ -437,14 +440,14 @@ export default function BrandingPage() {
         <Card className="gap-0 py-0">
           <CardContent className="py-4 space-y-4">
             <div className="flex items-center justify-between gap-3">
-              <p className="text-sm font-medium">Preview</p>
+              <p className="text-sm font-medium">{t('settings.label.preview')}</p>
               <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => setViewOpen(true)}>
-                <Maximize2 className="size-3" />View
+                <Maximize2 className="size-3" />{t('common.view')}
               </Button>
             </div>
-            {!named && <p className="text-xs text-muted-foreground">A brand name is required for any branding to take effect. Until you set one, people see dosya's defaults.</p>}
+            {!named && <p className="text-xs text-muted-foreground">{t('settings.error.aBrandNameIsRequiredForAnyBrandingToTakeEffect')}</p>}
             <div>
-              <p className="text-xs text-muted-foreground mb-1.5">Share page</p>
+              <p className="text-xs text-muted-foreground mb-1.5">{t('settings.label.sharePage')}</p>
               {/* The tenant colour reaches the DOM only through this style prop. */}
               <div className="rounded-lg border bg-card overflow-hidden" style={shareAccent ? { borderTopColor: shareAccent, borderTopWidth: 3 } : { borderTopColor: 'var(--brand)', borderTopWidth: 3 }}>
                 <div className="flex items-center justify-between gap-3 px-3 py-2">
@@ -452,17 +455,17 @@ export default function BrandingPage() {
                     {shareLogo && <img src={shareLogo} alt="" className="size-6 object-contain shrink-0" />}
                     <span className="text-sm font-semibold truncate">{shareName}</span>
                   </div>
-                  {showSaveCta && <span className="text-xs rounded border px-2 py-0.5 text-muted-foreground shrink-0">Save to dosya</span>}
+                  {showSaveCta && <span className="text-xs rounded border px-2 py-0.5 text-muted-foreground shrink-0">{t('settings.label.saveToDosya')}</span>}
                 </div>
               </div>
             </div>
             <div>
-              <p className="text-xs text-muted-foreground mb-1.5">Email</p>
+              <p className="text-xs text-muted-foreground mb-1.5">{t('common.label.email')}</p>
               <div className="rounded-lg border bg-background text-foreground overflow-hidden">
                 <div className="px-3 py-2 border-b text-sm font-semibold truncate">{emailName}</div>
                 <div className="px-3 py-2 text-xs text-muted-foreground">
-                  <p>From: {emailName} &lt;noreply@dosya.dev&gt;</p>
-                  <p>Subject lines still say dosya.dev. Email is black and white.</p>
+                  <p>{t('settings.label.fromEmailnameNoreplyDosyaDev', { emailName })}</p>
+                  <p>{t('settings.description.subjectLinesStillSayDosyaDevEmailIsBlackAndWhite')}</p>
                 </div>
               </div>
             </div>
@@ -470,13 +473,13 @@ export default function BrandingPage() {
         </Card>
 
         {/* 6. Save and reset */}
-        {saveError && <p role="alert" className="text-xs text-destructive">{saveError}</p>}
+        {saveError && <p dir="auto" role="alert" className="text-xs text-destructive">{saveError}</p>}
         {editable && (
           <div className="flex items-center justify-between gap-3">
             <Button className="gap-1.5" disabled={busy !== null} onClick={() => void save()}>
-              {busy === 'save' ? <Loader2 className="size-3.5 animate-spin" /> : <Save className="size-3.5" />}Save branding
+              {busy === 'save' ? <Loader2 className="size-3.5 animate-spin" /> : <Save className="size-3.5" />}{t('settings.action.saveBranding')}
             </Button>
-            <Button variant="outline" disabled={busy !== null} onClick={() => setConfirmReset(true)}>Reset to dosya</Button>
+            <Button variant="outline" disabled={busy !== null} onClick={() => setConfirmReset(true)}>{t('settings.action.resetToDosya')}</Button>
           </div>
         )}
       </div>
@@ -496,22 +499,22 @@ export default function BrandingPage() {
 
       <Dialog open={confirmClaim} onOpenChange={setConfirmClaim}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Claim this handle?</DialogTitle></DialogHeader>
-          <p className="text-sm text-muted-foreground">You are claiming <span className="font-mono">@{typedHandle}</span>. It is permanent: you cannot change it afterwards.</p>
+          <DialogHeader><DialogTitle>{t('settings.heading.claimThisHandle')}</DialogTitle></DialogHeader>
+          <p className="text-sm text-muted-foreground">{richText(t('settings.error.youAreClaimingTypedhandleItIsPermanent', { typedHandle: '{typedHandle}' }), { typedHandle: <span className="font-mono">{typedHandle}</span> })}</p>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setConfirmClaim(false)}>Cancel</Button>
-            <Button onClick={() => void claim()}>Claim permanently</Button>
+            <Button variant="outline" onClick={() => setConfirmClaim(false)}>{t('common.cancel')}</Button>
+            <Button onClick={() => void claim()}>{t('settings.action.claimPermanently')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
       <Dialog open={confirmReset} onOpenChange={setConfirmReset}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Reset to dosya?</DialogTitle></DialogHeader>
-          <p className="text-sm text-muted-foreground">This removes your brand name, colour and logo straight away. Your switches and your share handle are left as they are.</p>
+          <DialogHeader><DialogTitle>{t('settings.heading.resetToDosya')}</DialogTitle></DialogHeader>
+          <p className="text-sm text-muted-foreground">{t('settings.description.thisRemovesYourBrandNameColourAndLogoStraightAwayYour')}</p>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setConfirmReset(false)}>Cancel</Button>
-            <Button variant="destructive" onClick={() => void reset()}>Reset</Button>
+            <Button variant="outline" onClick={() => setConfirmReset(false)}>{t('common.cancel')}</Button>
+            <Button variant="destructive" onClick={() => void reset()}>{t('settings.action.reset')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -539,6 +542,7 @@ function RecipientView({ wsId, shareBrand, emailBrandName, hasLogo }: {
   /** A stored logo the form has not removed. An unsaved logo does not exist server-side. */
   hasLogo: boolean;
 }) {
+  const t = useT();
   const [tab, setTab] = useState<'share' | 'email'>('share');
   const [width, setWidth] = useState<'desktop' | 'phone'>('desktop');
   const [locked, setLocked] = useState(false);
@@ -546,25 +550,25 @@ function RecipientView({ wsId, shareBrand, emailBrandName, hasLogo }: {
 
   return (
     <div className="space-y-4 min-w-0">
-      <DialogHeader><DialogTitle>What recipients see</DialogTitle></DialogHeader>
+      <DialogHeader><DialogTitle>{t('settings.heading.whatRecipientsSee')}</DialogTitle></DialogHeader>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Tabs value={tab} onValueChange={(v) => setTab(v as 'share' | 'email')}>
           <TabsList>
-            <TabsTrigger value="share" className="px-3 text-xs">Share page</TabsTrigger>
-            <TabsTrigger value="email" className="px-3 text-xs">Email</TabsTrigger>
+            <TabsTrigger value="share" className="px-3 text-xs">{t('settings.action.sharePage')}</TabsTrigger>
+            <TabsTrigger value="email" className="px-3 text-xs">{t('settings.action.email')}</TabsTrigger>
           </TabsList>
         </Tabs>
         <div className="flex items-center gap-4">
           {tab === 'share' && (
             <label className="flex items-center gap-2 text-xs text-muted-foreground">
-              <Toggle label="Password protected" checked={locked} onChange={setLocked} />
-              Password protected
+              <Toggle label={t('common.label.passwordProtected')} checked={locked} onChange={setLocked} />
+              {t('common.label.passwordProtected')}
             </label>
           )}
           <Tabs value={width} onValueChange={(v) => setWidth(v as 'desktop' | 'phone')}>
-            <TabsList aria-label="Preview width">
-              <TabsTrigger value="desktop" className="px-3 text-xs">Desktop</TabsTrigger>
-              <TabsTrigger value="phone" className="px-3 text-xs">Phone</TabsTrigger>
+            <TabsList aria-label={t('settings.accessibility.previewWidth')}>
+              <TabsTrigger value="desktop" className="px-3 text-xs">{t('common.action.desktop')}</TabsTrigger>
+              <TabsTrigger value="phone" className="px-3 text-xs">{t('settings.action.phone')}</TabsTrigger>
             </TabsList>
           </Tabs>
         </div>
@@ -574,13 +578,14 @@ function RecipientView({ wsId, shareBrand, emailBrandName, hasLogo }: {
           ? <SharePagePreview brand={shareBrand} locked={locked} phone={phone} />
           : <EmailView wsId={wsId} brandName={emailBrandName} hasLogo={hasLogo} />}
       </div>
-      <p className="text-xs text-muted-foreground">Sample file and sender. Unsaved changes are shown; recipients see them only after you save.</p>
+      <p className="text-xs text-muted-foreground">{t('settings.description.sampleFileAndSenderUnsavedChangesAreShownRecipientsSeeThem')}</p>
     </div>
   );
 }
 
 /** Mounted only while the Email tab is showing, so nothing is requested otherwise. */
 function EmailView({ wsId, brandName, hasLogo }: { wsId: string; brandName: string | null; hasLogo: boolean }) {
+  const t = useT();
   const [preview, setPreview] = useState<EmailPreview>({ state: 'loading' });
   const logo = hasLogo ? 'current' : 'none';
 
@@ -594,27 +599,27 @@ function EmailView({ wsId, brandName, hasLogo }: { wsId: string; brandName: stri
         body: JSON.stringify({ brand_name: brandName, logo }),
       })
         .then((r) => { if (live) setPreview({ state: 'ready', html: r.html, from: r.from, subject: r.subject }); })
-        .catch((err) => { if (live) setPreview({ state: 'error', message: apiErrorMessage(err, 'Could not render the email preview.') }); });
+        .catch((err) => { if (live) setPreview({ state: 'error', message: apiErrorMessage(err, translate('settings.error.couldNotRenderTheEmailPreview')) }); });
     }, EMAIL_PREVIEW_DEBOUNCE_MS);
     return () => { live = false; clearTimeout(timer); };
   }, [wsId, brandName, logo]);
 
-  if (preview.state === 'error') return <p role="alert" className="text-xs text-destructive">{preview.message}</p>;
+  if (preview.state === 'error') return <p role="alert" dir="auto" className="text-xs text-destructive">{preview.message}</p>;
   if (preview.state === 'loading') {
     return (
       <div className="flex h-[520px] items-center justify-center rounded-lg border text-xs text-muted-foreground gap-2">
-        <Loader2 className="size-3.5 animate-spin" />Rendering the email...
+        <Loader2 className="size-3.5 animate-spin" />{t('settings.description.renderingTheEmail')}
       </div>
     );
   }
   return (
     <div className="rounded-lg border overflow-hidden">
       <div className="border-b px-3 py-2 text-xs space-y-0.5">
-        <p className="truncate"><span className="text-muted-foreground">From: </span>{preview.from}</p>
-        <p className="truncate"><span className="text-muted-foreground">Subject: </span>{preview.subject}</p>
+        <p className="truncate"><span className="text-muted-foreground">{t('settings.label.from')} </span>{preview.from}</p>
+        <p className="truncate"><span className="text-muted-foreground">{t('settings.label.subject')} </span>{preview.subject}</p>
       </div>
       {/* An empty sandbox: no scripts, no same-origin, no navigation out. */}
-      <iframe title="Email preview" sandbox="" srcDoc={preview.html} className="block h-[560px] w-full bg-background" />
+      <iframe title={t('settings.tooltip.emailPreview')} sandbox="" srcDoc={preview.html} className="block h-[560px] w-full bg-background" />
     </div>
   );
 }
@@ -622,44 +627,47 @@ function EmailView({ wsId, brandName, hasLogo }: { wsId: string; brandName: stri
 // ── Pieces ─────────────────────────────────────────────────
 
 function BackLink() {
+  const t = useT();
   return (
     <Link to="/settings" className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground mb-4">
-      <ChevronLeft className="size-3.5" /> Back to settings
+      <ChevronLeft className="size-3.5 rtl:-scale-x-100" /> {t('common.action.backToSettings')}
     </Link>
   );
 }
 
 function Notice({ data }: { data: BrandingResponse }) {
+  const t = useT();
   if (data.revoked) {
     return (
       <div role="status" className="flex items-start gap-2 rounded-lg border p-3 text-sm">
         <Lock className="size-4 mt-0.5 shrink-0" />
-        <p>Branding is disabled for this workspace. Your values are shown below but cannot be changed. Contact support to find out why.</p>
+        <p>{t('settings.error.brandingIsDisabledForThisWorkspaceYourValuesAreShownBelow')}</p>
       </div>
     );
   }
   if (!data.enabled) {
     return (
       <div role="status" className="flex items-start justify-between gap-3 rounded-lg border p-3 text-sm">
-        <p>Branding is available on Starter and up. Your saved values are shown below, and they come back into use when you are on a paid plan.</p>
-        <Link to="/billing" className="underline shrink-0">See plans</Link>
+        <p>{t('settings.description.brandingIsAvailableOnStarterAndUpYourSavedValuesAre')}</p>
+        <Link to="/billing" className="underline shrink-0">{t('common.action.seePlans')}</Link>
       </div>
     );
   }
   if (!data.can_edit) {
-    return <div role="status" className="rounded-lg border p-3 text-sm">You can see these settings but your role cannot change them.</div>;
+    return <div role="status" className="rounded-lg border p-3 text-sm">{t('settings.error.youCanSeeTheseSettingsButYourRoleCannotChangeThem')}</div>;
   }
   return null;
 }
 
 function HandleStatus({ problem, availability }: { problem: string | null; availability: Availability }) {
+  const t = useT();
   if (problem) return <p className="text-xs text-destructive">{problem}</p>;
   switch (availability.state) {
-    case 'checking': return <p className="text-xs text-muted-foreground">Checking...</p>;
-    case 'available': return <p className="text-xs text-muted-foreground">That handle is available.</p>;
-    case 'unavailable': return <p className="text-xs text-destructive">{availability.reason}</p>;
-    case 'error': return <p className="text-xs text-destructive">{availability.message}</p>;
-    default: return <p className="text-xs text-muted-foreground">3 to 30 characters: lowercase letters, numbers and hyphens.</p>;
+    case 'checking': return <p className="text-xs text-muted-foreground">{t('profile.status.checking')}</p>;
+    case 'available': return <p className="text-xs text-muted-foreground">{t('settings.description.thatHandleIsAvailable')}</p>;
+    case 'unavailable': return <p className="text-xs text-destructive">{availability.reason ?? t('settings.error.thatHandleIsNotAvailable')}</p>;
+    case 'error': return <p dir="auto" className="text-xs text-destructive">{availability.message}</p>;
+    default: return <p className="text-xs text-muted-foreground">{t('settings.description.3To30CharactersLowercaseLettersNumbersAndHyphens')}</p>;
   }
 }
 
@@ -679,7 +687,7 @@ function Toggle({ label, checked, disabled, onChange }: { label: string; checked
       onClick={() => onChange(!checked)}
       className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${checked ? 'bg-primary' : 'bg-muted-foreground/30'} ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
     >
-      <span className={`absolute top-[2px] w-4 h-4 bg-background rounded-full shadow transition-all ${checked ? 'left-[18px]' : 'left-[2px]'}`} />
+      <span className={`absolute top-[2px] w-4 h-4 bg-background rounded-full shadow transition-all ${checked ? 'inset-s-[18px]' : 'inset-s-[2px]'}`} />
     </button>
   );
 }

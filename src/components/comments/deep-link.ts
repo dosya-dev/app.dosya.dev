@@ -16,12 +16,12 @@ const posInt = (v: string | null, min: number): number | null => {
 
 /** Junk values (negative, zero page, non-numeric) are ignored, never thrown on. */
 export function readViewerIntent(params: URLSearchParams): {
-  tab: 'comments' | null; anchor: { ms: number } | { page: number } | null; commentId: string | null;
+  tab: 'comments' | 'versions' | null; anchor: { ms: number } | { page: number } | null; commentId: string | null;
 } {
   const ms = posInt(params.get('t'), 0);
   const page = posInt(params.get('p'), 1);
   return {
-    tab: params.get('tab') === 'comments' ? 'comments' as const : null,
+    tab: params.get('tab') === 'comments' || params.get('tab') === 'versions' ? params.get('tab') as 'comments' | 'versions' : null,
     anchor: ms !== null ? { ms } : page !== null ? { page } : null,
     commentId: params.get('comment') || null,
   };

@@ -4,6 +4,7 @@
 // the whole file is unit-testable (see api-keys.test.ts).
 import { timeAgo } from '@/lib/helpers';
 import { gbToBytes, mbToBytes } from '@/lib/usage-units';
+import { t } from '@/lib/i18n';
 
 // Mirrors GET /api/me/api-keys (apps/api/src/pages/api/me/api-keys/index.ts).
 // Usage limits (requests_per_minute etc.) are stored but not returned by that
@@ -30,23 +31,29 @@ export interface ApiKey {
 
 export interface WorkspaceRef { id: string; name: string }
 
-export const SCOPE_LABELS: Record<string, string> = { full: 'Full access', read: 'Read only', upload: 'Upload only', wp_site: 'WordPress site' };
+// Getters over the module-level t: the label follows the chosen language at the moment it is read.
+export const SCOPE_LABELS: Record<string, string> = {
+  get full() { return t('profile.label.fullAccess'); },
+  get read() { return t('profile.label.readOnly'); },
+  get upload() { return t('profile.label.uploadOnly'); },
+  get wp_site() { return t('profile.label.wordpressSite'); },
+};
 
 // Order is the order of the radio cards in the create dialog.
 export const SCOPE_OPTIONS: { value: string; label: string; blurb: string; verb: string }[] = [
-  { value: 'read', label: 'Read only', blurb: 'List and download. Cannot upload, move or delete anything.', verb: 'list and download files' },
-  { value: 'upload', label: 'Upload only', blurb: 'Add new files. Cannot read or delete what is already there.', verb: 'upload new files, and nothing else' },
-  { value: 'full', label: 'Full access', blurb: 'Everything your account can do: read, upload, move, delete.', verb: 'read, upload, move and delete anything' },
+  { value: 'read', get label() { return t('profile.label.readOnly'); }, get blurb() { return t('profile.error.listAndDownloadCannotUploadMoveOrDeleteAnything'); }, get verb() { return t('profile.action.listAndDownloadFiles'); } },
+  { value: 'upload', get label() { return t('profile.label.uploadOnly'); }, get blurb() { return t('profile.error.addNewFilesCannotReadOrDeleteWhatIsAlreadyThere'); }, get verb() { return t('profile.action.uploadNewFilesAndNothingElse'); } },
+  { value: 'full', get label() { return t('profile.label.fullAccess'); }, get blurb() { return t('profile.description.everythingYourAccountCanDoReadUploadMoveDelete'); }, get verb() { return t('profile.action.readUploadMoveAndDeleteAnything'); } },
 ];
 
 // Order also drives the create-form checkbox list.
 export const SURFACE_OPTIONS: { value: string; label: string }[] = [
   { value: 'webdav', label: 'WebDAV' },
   { value: 'sftp', label: 'SFTP' },
-  { value: 's3', label: 'S3 gateway' },
-  { value: 'api', label: 'REST API' },
+  { value: 's3', get label() { return t('profile.label.s3Gateway'); } },
+  { value: 'api', get label() { return t('profile.label.restApi'); } },
 ];
-const SURFACE_LABELS: Record<string, string> = Object.fromEntries(SURFACE_OPTIONS.map((o) => [o.value, o.label]));
+const surfaceLabel = (value: string): string => SURFACE_OPTIONS.find((o) => o.value === value)?.label ?? value;
 
 // Sentinel for the "no workspace pin" option in the create-key workspace
 // Select - '' isn't usable there since an unselected/placeholder value reads
@@ -56,17 +63,17 @@ export const WHOLE_ACCOUNT = '__whole_account__';
 // Day-of-week for active_hours.days (0 = Sunday, matching
 // apps/api/src/lib/access/active-hours.ts). Order is display order.
 export const DAY_OPTIONS: { value: number; label: string }[] = [
-  { value: 0, label: 'Sun' }, { value: 1, label: 'Mon' }, { value: 2, label: 'Tue' },
-  { value: 3, label: 'Wed' }, { value: 4, label: 'Thu' }, { value: 5, label: 'Fri' },
-  { value: 6, label: 'Sat' },
+  { value: 0, get label() { return t('common.label.sun'); } }, { value: 1, get label() { return t('common.label.mon'); } }, { value: 2, get label() { return t('common.label.tue'); } },
+  { value: 3, get label() { return t('common.label.wed'); } }, { value: 4, get label() { return t('common.label.thu'); } }, { value: 5, get label() { return t('common.label.fri'); } },
+  { value: 6, get label() { return t('common.label.sat'); } },
 ];
-const DAY_LABELS: Record<number, string> = Object.fromEntries(DAY_OPTIONS.map((d) => [d.value, d.label]));
+const dayLabel = (day: number): string | undefined => DAY_OPTIONS.find((d) => d.value === day)?.label;
 
 export type Expiry = 'never' | '30' | '90';
 export const EXPIRY_OPTIONS: { value: Expiry; label: string; blurb?: string }[] = [
-  { value: 'never', label: 'Never expires' },
-  { value: '30', label: 'Expires in 30 days', blurb: 'Good for a key you are pasting into something once.' },
-  { value: '90', label: 'Expires in 90 days' },
+  { value: 'never', get label() { return t('profile.label.neverExpires'); } },
+  { value: '30', get label() { return t('profile.label.expiresIn30Days'); }, get blurb() { return t('profile.description.goodForAKeyYouArePastingIntoSomethingOnce'); } },
+  { value: '90', get label() { return t('profile.label.expiresIn90Days'); } },
 ];
 
 const STALE_AFTER_DAYS = 90;
@@ -91,8 +98,8 @@ export function timezoneOptions(): string[] {
 // created with no restriction - both are unrestricted, matching the API's
 // `parseSurfaces()` in apps/api/src/lib/access/credential.ts.
 export function formatSurfaces(surfaces: string | null): string {
-  if (!surfaces) return 'All protocols';
-  return surfaces.split(',').map((s) => SURFACE_LABELS[s] ?? s).join(', ');
+  if (!surfaces) return t('profile.label.allProtocols');
+  return surfaces.split(',').map((s) => surfaceLabel(s)).join(', ');
 }
 
 // Mirrors credentialAllowsSurface() in apps/api/src/lib/access/credential.ts,
@@ -118,15 +125,15 @@ export function formatAnchor(
   workspaces: WorkspaceRef[],
   folderNames: Record<string, string>,
 ): string {
-  if (!k.workspace_id) return 'Whole account';
-  const wsName = workspaces.find((w) => w.id === k.workspace_id)?.name ?? 'Unknown workspace';
+  if (!k.workspace_id) return t('profile.label.wholeAccount');
+  const wsName = workspaces.find((w) => w.id === k.workspace_id)?.name ?? t('profile.label.unknownWorkspace');
   if (!k.root_folder_id) return wsName;
   const folderName = folderNames[k.root_folder_id] ?? '…';
   return `${wsName} / ${folderName}`;
 }
 
 export function formatLastUsed(k: { last_used_at: number | null }, now = Math.floor(Date.now() / 1000)): string {
-  return k.last_used_at === null ? 'Never' : timeAgo(k.last_used_at, now);
+  return k.last_used_at === null ? t('common.label.never') : timeAgo(k.last_used_at, now);
 }
 
 // A key nobody has touched for 90 days is the one worth revoking. A key
@@ -144,9 +151,10 @@ function countIpRanges(allowedIps: string | null | undefined): number {
 
 function formatDays(days: number[]): string {
   const sorted = [...new Set(days)].sort((a, b) => a - b);
-  if (sorted.join(',') === '1,2,3,4,5') return 'Mon–Fri';
-  if (sorted.length === 7) return 'Every day';
-  return sorted.map((d) => DAY_LABELS[d] ?? String(d)).join(', ');
+  // TODO(catalog): no catalog entry for the Mon-Fri range, so it is built from the two day names.
+  if (sorted.join(',') === '1,2,3,4,5') return `${dayLabel(1)}–${dayLabel(5)}`;
+  if (sorted.length === 7) return t('profile.label.everyDay');
+  return sorted.map((d) => dayLabel(d) ?? String(d)).join(', ');
 }
 
 interface ActiveHours { tz: string; days: number[]; from: string; to: string }
@@ -165,7 +173,7 @@ function parseActiveHours(raw: string | null): ActiveHours | null {
 // back to naming the kind rather than throwing.
 export function formatActiveHours(raw: string | null): string {
   const h = parseActiveHours(raw);
-  if (!h) return 'Restricted hours';
+  if (!h) return t('profile.label.restrictedHours');
   return `${formatDays(h.days)} ${h.from}–${h.to} (${h.tz})`;
 }
 
@@ -184,10 +192,10 @@ interface KeyFacts {
 
 function guardsFrom(f: KeyFacts): Guard[] {
   return [
-    { id: 'scope', label: 'Narrowed permission', on: f.scope !== 'full' },
-    { id: 'reach', label: 'Narrowed reach', on: f.anchored || f.surfacesRestricted },
-    { id: 'origin', label: 'IP or hours', on: f.ipRestricted || f.hoursRestricted },
-    { id: 'expiry', label: 'Expiry', on: f.expires },
+    { id: 'scope', label: t('profile.label.narrowedPermission'), on: f.scope !== 'full' },
+    { id: 'reach', label: t('profile.label.narrowedReach'), on: f.anchored || f.surfacesRestricted },
+    { id: 'origin', label: t('profile.label.ipOrHours'), on: f.ipRestricted || f.hoursRestricted },
+    { id: 'expiry', label: t('common.column.expiry'), on: f.expires },
   ];
 }
 
@@ -266,6 +274,9 @@ export function emptyDraft(tz = Intl.DateTimeFormat().resolvedOptions().timeZone
   };
 }
 
+/** Direction marks and isolates: never part of a saved name. */
+const BIDI_CONTROLS = /[\u200E\u200F\u2066-\u2069]/g;
+
 // "Duplicate settings" on an existing key: keys can't be edited, so the way
 // to change one is to recreate it. Usage limits aren't returned by the list
 // route, so they start blank; expiry starts at never because the original's
@@ -275,7 +286,9 @@ export function draftFromKey(k: ApiKey, folderName = ''): KeyDraft {
   const base = emptyDraft(hours?.tz);
   return {
     ...base,
-    name: `${k.name} copy`.slice(0, 64),
+    // The name is saved, so it must not carry the direction isolates t() adds
+    // around values in right-to-left languages.
+    name: t('profile.label.knameCopy', { kName: k.name }).replace(BIDI_CONTROLS, '').slice(0, 64),
     scope: k.scope,
     protocolMode: k.surfaces === null ? 'all' : 'some',
     surfaces: new Set(k.surfaces ? k.surfaces.split(',').map((s) => s.trim()).filter(Boolean) : []),
@@ -320,7 +333,7 @@ export interface Segment { text: string; strong?: boolean }
 
 function joinNatural(items: string[]): string {
   if (items.length <= 1) return items.join('');
-  return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
+  return t('profile.label.itemsjoinAndItemsitemslength', { itemsJoin: items.slice(0, -1).join(', '), itemsItemsLength: items[items.length - 1] });
 }
 
 // The sentence under the create form that reads the key back before it
@@ -330,34 +343,36 @@ export function describeDraft(d: KeyDraft, workspaces: WorkspaceRef[]): Segment[
   const f = draftFacts(d);
   const verb = SCOPE_OPTIONS.find((o) => o.value === d.scope)?.verb ?? SCOPE_LABELS[d.scope] ?? d.scope;
 
-  let reach = 'your whole account';
+  let reach = t('profile.label.yourWholeAccount');
   if (f.anchored) {
-    const ws = workspaces.find((w) => w.id === d.workspaceId)?.name ?? 'one workspace';
-    reach = d.folderId ? `${ws} / ${d.folderName || 'one folder'}` : ws;
+    const ws = workspaces.find((w) => w.id === d.workspaceId)?.name ?? t('profile.label.oneWorkspace');
+    reach = d.folderId ? `${ws} / ${d.folderName || t('common.label.oneFolder')}` : ws;
   }
 
   const protocols = f.surfacesRestricted
-    ? joinNatural(SURFACE_OPTIONS.filter((o) => d.surfaces.has(o.value)).map((o) => o.value === 's3' ? 'the S3 gateway' : o.label))
-    : 'every protocol';
+    ? joinNatural(SURFACE_OPTIONS.filter((o) => d.surfaces.has(o.value)).map((o) => o.value === 's3' ? t('profile.label.theS3Gateway') : o.label))
+    : t('profile.label.everyProtocol');
 
   const ipCount = countIpRanges(d.allowedIps);
   const originParts: string[] = [];
-  if (ipCount > 0) originParts.push(`${ipCount} IP range${ipCount === 1 ? '' : 's'}`);
-  else originParts.push('any address');
+  if (ipCount > 0) originParts.push(t('profile.description.ipcountPluralOneIpRangeOtherIpRanges', { ipCount }));
+  else originParts.push(t('profile.label.anyAddress'));
   if (d.hoursEnabled) originParts.push(`${formatDays([...d.days])} ${d.from}–${d.to}`);
-  else originParts.push('at any time');
+  else originParts.push(t('profile.label.atAnyTime'));
   const origin = d.hoursEnabled || ipCount > 0 ? originParts.join(', ') : originParts.join(' ');
 
-  const expiry = d.expiry === 'never' ? 'never expires' : `expires in ${d.expiry} days`;
+  const expiry = d.expiry === 'never' ? t('profile.label.neverExpires.neverExpires') : t('profile.label.expiresInDexpiryDays', { dExpiry: d.expiry });
 
-  return [
-    { text: 'This key will be able to ' }, { text: verb, strong: true },
-    { text: ' in ' }, { text: reach, strong: true },
-    { text: ', over ' }, { text: protocols, strong: true },
-    { text: ', from ' }, { text: origin, strong: true },
-    { text: ', and it ' }, { text: expiry, strong: true },
-    { text: '.' },
-  ];
+  // One catalog sentence, so each language keeps its own word order: the five
+  // bold parts go in as markers and the sentence is cut back into segments.
+  const parts: Record<string, string> = { scopeAction: verb, reach, protocols, origin, expiry };
+  const marked = t('profile.description.thisKeyWillBeAbleToScopeactionInReachOverProtocols', Object.fromEntries(Object.keys(parts).map((n) => [n, `\uE000${n}\uE000`])));
+  const segments: Segment[] = [];
+  marked.split(/\uE000(\w+)\uE000/).forEach((piece, i) => {
+    if (i % 2 === 1) segments.push({ text: parts[piece] ?? piece, strong: true });
+    else if (piece) segments.push({ text: piece });
+  });
+  return segments;
 }
 
 // The POST /api/me/api-keys body. Every optional field is sent only when it

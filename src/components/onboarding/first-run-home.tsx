@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { Upload, Cloud, Link2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { uploadFromDrop, uploadFromPicker } from '@/lib/upload-drop';
+import { useT } from '@/lib/i18n';
 import { useWorkspace } from '@/stores/workspace';
 import { useOnboarding } from '@/stores/onboarding';
 import { PurposePicker } from './purpose-picker';
@@ -25,6 +26,7 @@ interface FirstRunHomeProps {
  * to drift out of sync.
  */
 export function FirstRunHome({ userName }: FirstRunHomeProps) {
+  const t = useT();
   const wsId = useWorkspace((s: { activeId: string }) => s.activeId);
   const purpose = useOnboarding((s) => s.purpose);
   const steps = useOnboarding((s) => s.steps);
@@ -44,9 +46,9 @@ export function FirstRunHome({ userName }: FirstRunHomeProps) {
   return (
     <div className="p-6 max-w-3xl mx-auto space-y-6 animate-in fade-in duration-300">
       <div>
-        <h1 className="text-xl font-bold tracking-tight">Welcome to dosya, {firstName}</h1>
+        <h1 className="text-xl font-bold tracking-tight">{t('dashboard.heading.welcomeToDosyaFirstname', { firstName })}</h1>
         <p className="text-sm text-muted-foreground mt-0.5">
-          Put your first file in and this page turns into your dashboard.
+          {t('dashboard.description.putYourFirstFileInAndThisPageTurnsIntoYour')}
         </p>
       </div>
 
@@ -65,8 +67,8 @@ export function FirstRunHome({ userName }: FirstRunHomeProps) {
         }`}
       >
         <Upload className="size-8 text-muted-foreground/40 mx-auto mb-3" />
-        <p className="text-sm font-medium">Drop files or folders here to upload</p>
-        <p className="text-xs text-muted-foreground mt-1">or click to browse your computer</p>
+        <p className="text-sm font-medium">{t('common.label.dropFilesOrFoldersHereToUpload')}</p>
+        <p className="text-xs text-muted-foreground mt-1">{t('dashboard.label.orClickToBrowseYourComputer')}</p>
         <input
           ref={inputRef}
           type="file"
@@ -80,16 +82,16 @@ export function FirstRunHome({ userName }: FirstRunHomeProps) {
           product. Making those users drag a file to prove the thing works is
           the wrong ask, so the alternatives sit right under the dropzone. */}
       <div>
-        <p className="text-xs font-medium text-muted-foreground mb-2">Already have your files somewhere?</p>
+        <p className="text-xs font-medium text-muted-foreground mb-2">{t('dashboard.description.alreadyHaveYourFilesSomewhere')}</p>
         <div className="flex flex-wrap gap-2">
           <Link to="/integrations/google">
-            <Button variant="outline" size="sm" className="h-8 text-xs"><Cloud className="size-3.5 mr-1.5" /> Import from Google Drive</Button>
+            <Button variant="outline" size="sm" className="h-8 text-xs"><Cloud className="size-3.5 me-1.5" /> {t('common.action.importFromGoogleDrive')}</Button>
           </Link>
           <Link to="/integrations/remote-download">
-            <Button variant="outline" size="sm" className="h-8 text-xs"><Link2 className="size-3.5 mr-1.5" /> Paste a URL</Button>
+            <Button variant="outline" size="sm" className="h-8 text-xs"><Link2 className="size-3.5 me-1.5" /> {t('dashboard.action.pasteAUrl')}</Button>
           </Link>
           <Link to="/integrations">
-            <Button variant="outline" size="sm" className="h-8 text-xs">Connect a client</Button>
+            <Button variant="outline" size="sm" className="h-8 text-xs">{t('dashboard.action.connectAClient')}</Button>
           </Link>
         </div>
       </div>

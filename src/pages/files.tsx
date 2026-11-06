@@ -1,3 +1,7 @@
+import { formatNumber, localDigits } from '@/lib/format-locale';
+import { useT, useLocale } from '@/lib/i18n';
+import { richText } from '@/lib/rich-text';
+import type { MessageKey } from '@/i18n/keys';
 import { readViewerIntent } from '@/components/comments/deep-link';
 import { useState, useEffect, useCallback, useMemo, useRef, memo, type MouseEvent as ReactMouseEvent } from 'react';
 import { useSearchParams, Link, useNavigate } from 'react-router-dom';
@@ -32,7 +36,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from '@/components/ui/dialog';
 import {
   Upload, FolderPlus, Search, ChevronRight, Home,
@@ -41,6 +45,7 @@ import {
   Lock, Pencil, Copy, Move, Eye, EyeOff, History,
   MessageSquare, Star, SlidersHorizontal, RotateCcw, RefreshCw, Info,
   ArrowUp, ArrowDown, AlertCircle, SquarePen, ZoomIn, ZoomOut,
+  FileCode, FileText, FileType,
 } from 'lucide-react';
 import {
   DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem,
@@ -71,8 +76,16 @@ import { ALL_COLUMNS, DEFAULT_VISIBLE, TABLE_COLUMNS_KEY, loadSavedColumns, libr
 import { useDateFormat } from '@/lib/date-format';
 import { toast } from '@/lib/toast';
 import { validateFolderPath, validateFileName, validateFolderName } from '@/lib/validation-policy.generated';
+import { translateExternal } from '@/lib/external-text';
 import { FolderPickerDialog } from '@/components/folder-picker-dialog';
+import { useMoveDrag, type MoveDropTarget } from '@/hooks/use-move-drag';
+import { canDragInView, isMoveDrag, mostCommon, type MoveItems } from '@/lib/drag-move';
 import { ImportProgressCard } from '@/components/cloud-import/import-progress-card';
+import { NewMenu } from '@/components/new-menu';
+import { NewFileDialog } from '@/components/new-file-dialog';
+import { nameTaken, type NewFileKind } from '@/lib/blank-files';
+import { createBlankFile } from '@/lib/new-file';
+import { canEditText, textEditorHref, type TextEditorState } from '@/lib/text-edit';
 
 // ── Types ──────────────────────────────────────────────────
 // Listing row shapes live in lib/file-types so this page and the file viewer
@@ -80,13 +93,14 @@ import { ImportProgressCard } from '@/components/cloud-import/import-progress-ca
 
 type ViewMode = 'grid' | 'list';
 
-const SORT_OPTIONS: { value: string; label: string }[] = [
-  { value: 'newest', label: 'Newest' },
-  { value: 'oldest', label: 'Oldest' },
-  { value: 'name_asc', label: 'Name A-Z' },
-  { value: 'name_desc', label: 'Name Z-A' },
-  { value: 'largest', label: 'Largest' },
-  { value: 'smallest', label: 'Smallest' },
+// Holds message KEYS; the sort menu translates them at render.
+const SORT_OPTIONS: { value: string; labelKey: MessageKey }[] = [
+  { value: 'newest', labelKey: 'common.option.newest' },
+  { value: 'oldest', labelKey: 'common.option.oldest' },
+  { value: 'name_asc', labelKey: 'common.option.nameAZ' },
+  { value: 'name_desc', labelKey: 'common.option.nameZA' },
+  { value: 'largest', labelKey: 'common.option.largest' },
+  { value: 'smallest', labelKey: 'common.option.smallest' },
 ];
 
 
@@ -99,8 +113,8 @@ const SORT_OPTIONS: { value: string; label: string }[] = [
 // `images`, `videos` and `documents` are deliberately absent: those filters are
 // the library view, which owns its own per-kind empty state (and never renders
 // this page's folder empty state).
-const FILTER_EMPTY_LABELS: Record<string, string> = {
-  hidden: 'No hidden files here',
+const FILTER_EMPTY_LABELS: Record<string, MessageKey> = {
+  hidden: 'files.label.noHiddenFilesHere',
 };
 
 // Stable identities so the memoised consumers below don't see a new array on
@@ -146,6 +160,21 @@ function canShareSelection(fileCount: number, folderCount: number): boolean {
 // ── Page ───────────────────────────────────────────────────
 
 export default function FilesPage() {
+  const t = useT();
+  const { locale } = useLocale();
+  // "file" / "folder" as a lowercase noun for sentences that slot it in
+  // ("Delete file?", "The folder has been renamed.").
+  const nounOf = (type: string | undefined) =>
+    (type === 'folder' ? t('common.label.folder') : t('common.label.fileTitleCase')).toLocaleLowerCase(locale);
+  // The bulk-delete question names what is selected ("3 files and 2 folders"):
+  // the two counts are joined with the language's own "and".
+  const bulkSelectionSentence = (key: 'files.description.permanentlyDeleteSelectedsummary' | 'files.description.deleteSelectedsummary') => {
+    const parts: string[] = [];
+    if (selected.size > 0) parts.push(t('file-requests.status.ruploadCountPluralOneFileOtherFiles', { rUpload_count: selected.size }));
+    if (selectedFolders.size > 0) parts.push(t('files.label.folders', { count: selectedFolders.size }));
+    const summary = new Intl.ListFormat(locale, { style: 'long', type: 'conjunction' }).format(parts);
+    return t(key, { selectedSummary: summary });
+  };
   const wsId = useWorkspace((s: { activeId: string }) => s.activeId);
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -291,13 +320,13 @@ export default function FilesPage() {
         if (action === 'detail') setSelectedFile(file);
         else setViewerFile(file);
       } else {
-        setUnlockError(res.error ?? 'Incorrect password');
+        setUnlockError(res.error ?? t('files.error.incorrectPassword'));
         setUnlockPassword('');
       }
     } catch (err) {
       // api() throws on non-2xx, so a rejected password lands here - surface
       // the server's message and reset the field like the else-branch does.
-      setUnlockError(apiErrorMessage(err, "Can't reach the server. Check your connection and try again."));
+      setUnlockError(apiErrorMessage(err, t('common.error.canTReachTheServerCheckYourConnectionAnd')));
       if (err instanceof ApiError) setUnlockPassword('');
     }
     setUnlocking(false);
@@ -322,6 +351,8 @@ export default function FilesPage() {
   const [createFolderOpen, setCreateFolderOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const [creatingFolder, setCreatingFolder] = useState(false);
+  /** The "New" menu's blank-file name dialog; null while closed. */
+  const [newFileKind, setNewFileKind] = useState<NewFileKind | null>(null);
   /** `permanent`/`fileCount` are only set for the Deleted view's row-level purge, which reuses this same dialog. */
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string; type: 'file' | 'folder'; permanent?: boolean; fileCount?: number; twin?: { id: string; name: string } | null; withTwin?: boolean } | null>(null);
   /** True while the single-item delete confirm's request is in flight. Keeps
@@ -415,6 +446,12 @@ export default function FilesPage() {
   // from breadcrumbs this view has none of.
   const uploadFolderId = isLibraryView ? null : currentFolderId;
 
+  // The "New" menu (toolbar and right-click). Not in the library view (no
+  // current folder to create in) nor the hidden view (a new item there would
+  // not be hidden, so it would vanish from the view it was made in). The
+  // trash never renders it.
+  const canCreateHere = !isLibraryView && currentFilter !== 'hidden';
+
   /**
    * Unlock tokens for full_lock folders, keyed by folder id.
    *
@@ -463,7 +500,7 @@ export default function FilesPage() {
   // whatever happens to be on screen.
   const fileDeleteTarget = (f: FileItem, permanent: boolean = isDeletedView) => ({
     id: f.id, name: f.name, type: 'file' as const, permanent,
-    twin: isLiveStill(f) ? { id: f.live_video_id!, name: liveTwinOf(files, f)?.name ?? 'its Live Photo video' } : null,
+    twin: isLiveStill(f) ? { id: f.live_video_id!, name: liveTwinOf(files, f)?.name ?? t('files.label.itsLivePhotoVideo') } : null,
     withTwin: true,
   });
   const breadcrumbs = isLibraryView ? EMPTY_BREADCRUMBS : listing.breadcrumbs;
@@ -494,6 +531,8 @@ export default function FilesPage() {
   }, [queryClient, wsId]);
 
   const { can, userId: currentUserId } = usePermissions();
+  const canNewFolder = canCreateHere && can('create_folders');
+  const canNewFile = canCreateHere && can('upload_files');
 
   /**
    * Whether Delete should be offered for one file.
@@ -589,11 +628,12 @@ export default function FilesPage() {
 
   // Reflect the current folder in the browser tab title. Moved below the hook
   // because `breadcrumbs` now comes from it instead of local state.
-  useDocumentTitle(breadcrumbs.length > 0 ? `${breadcrumbs[breadcrumbs.length - 1].name} · Files` : 'Files');
+  useDocumentTitle(breadcrumbs.length > 0 ? t('files.label.nameFiles', { name: breadcrumbs[breadcrumbs.length - 1].name }) : t('common.label.files'));
 
   // A filtered view stays applied while you browse into folders, so an empty
   // result usually means "nothing of this type here" rather than an empty folder.
-  const filterEmptyLabel = isDeletedView ? '' : FILTER_EMPTY_LABELS[currentFilter] ?? '';
+  const filterEmptyKey = isDeletedView ? undefined : FILTER_EMPTY_LABELS[currentFilter];
+  const filterEmptyLabel = filterEmptyKey ? t(filterEmptyKey) : '';
 
   // How many items the last load returned - sizes the skeleton so switching
   // filters doesn't flash 8 placeholder rows when the view only has 1 item.
@@ -724,7 +764,7 @@ export default function FilesPage() {
       }
       // Tell the FilesSidebar (separate state) to refresh its favourites list
       window.dispatchEvent(new Event('dosya:favourites-changed'));
-    } catch { toast.error('Something went wrong', 'Could not update favourites.'); }
+    } catch { toast.error(t('common.error.somethingWentWrong'), t('files.error.couldNotUpdateFavourites')); }
   };
 
   // Version uploads go through the shared upload runner rather than a bare
@@ -735,7 +775,7 @@ export default function FilesPage() {
   const handleVersionUpload = (fileId: string, file: File) => {
     if (!wsId) return;
     enqueue([file], { workspace_id: wsId, folder_id: null, file_id: fileId });
-    toast.info('Uploading version', `${file.name} is uploading - track it in the upload dock.`);
+    toast.info(t('files.feedback.uploadingVersion'), t('files.feedback.filenameIsUploadingTrackItInTheUploadDock', { fileName: file.name }));
   };
 
   // Trigger hidden file input when version upload target is set
@@ -775,7 +815,7 @@ export default function FilesPage() {
     // every part - the same three the route applies, in the same order, naming
     // the same offending segment.
     const folderError = validateFolderPath(newFolderName);
-    if (folderError) { toast.error('Folder could not be created', folderError); return; }
+    if (folderError) { toast.error(t('common.error.folderCouldNotBeCreated'), translateExternal(folderError, 'toast')); return; }
     setCreatingFolder(true);
     try {
       const res = await api<{ ok: boolean; error?: string; folder?: { id: string } }>('/api/folders', {
@@ -792,14 +832,66 @@ export default function FilesPage() {
             window.dispatchEvent(new Event('dosya:groups-changed'));
           } catch { /* the folder exists either way; the group view just won't list it */ }
         }
-        toast.success('Folder created', currentGroup
-          ? 'Your new folder is ready and was added to this group.'
-          : 'Your new folder is ready to use.');
+        toast.success(t('common.feedback.folderCreated'), currentGroup
+          ? t('files.feedback.yourNewFolderIsReadyAndWasAddedToThisGroup')
+          : t('files.feedback.yourNewFolderIsReadyToUse'));
         setCreateFolderOpen(false); setNewFolderName(''); loadFiles();
       }
-      else toast.error('Folder failed', res.error ?? 'The folder could not be created.');
-    } catch { toast.error('Folder failed', 'The folder could not be created.'); }
+      else toast.error(t('files.error.folderFailed'), res.error ?? t('common.error.theFolderCouldNotBeCreated'));
+    } catch { toast.error(t('files.error.folderFailed'), t('common.error.theFolderCouldNotBeCreated')); }
     setCreatingFolder(false);
+  };
+
+  /** The full-page Markdown/text editor, in this tab; its Close comes back with history Back. */
+  const openTextEditor = (fileId: string) => {
+    const state: TextEditorState = { back: true };
+    navigate(textEditorHref(fileId), { state });
+  };
+
+  /**
+   * Creates a blank file from the "New" menu in the current folder, then opens
+   * it: a Word document in the ONLYOFFICE editor, Markdown and text in the
+   * full-page text editor. Resolves to an inline error for the name dialog (a taken
+   * name), or null; a server failure is a toast and leaves the dialog open.
+   */
+  const handleCreateFile = async (name: string, kind: NewFileKind): Promise<string | null> => {
+    if (!wsId) return null;
+    const taken = t('files.error.aFileWithThisNameAlreadyExists');
+    // The loaded rows are this folder's only in plain browsing: a group spans
+    // folders, and a filter may too. The API check below covers every view.
+    if (!currentFilter && !currentGroup && nameTaken(name, [...files, ...folders])) return taken;
+    try {
+      const res = await createBlankFile({ workspaceId: wsId, folderId: currentFolderId, name, kind, unlockToken: currentFolderToken });
+      if (!res.ok) {
+        if (res.conflict) return taken;
+        toast.error(t('files.error.couldNotCreateTheFile'), res.error);
+        return null;
+      }
+      // Same reason as a new folder made from a group view: enrol it so it
+      // shows up where it was made. Best-effort, the file exists either way.
+      if (currentGroup) {
+        try {
+          await api(`/api/groups/${currentGroup}`, { method: 'POST', body: JSON.stringify({ file_id: res.fileId }) });
+          window.dispatchEvent(new Event('dosya:groups-changed'));
+        } catch { /* stored either way; the group view just won't list it */ }
+      }
+      setNewFileKind(null);
+      toast.success(t('files.feedback.createdName', { name: res.name }));
+      loadFiles();
+      if (kind === 'docx') {
+        // Same as "Open in editor". A browser that blocks the new tab (the
+        // click is a few requests old by now) gets the editor in this tab.
+        if (!window.open(`/editor/${res.fileId}`, '_blank')) navigate(`/editor/${res.fileId}`);
+      } else {
+        // Markdown and text open in the full-page text editor, in this tab;
+        // its Close comes back here.
+        openTextEditor(res.fileId);
+      }
+      return null;
+    } catch (err) {
+      toast.error(t('files.error.couldNotCreateTheFile'), apiErrorMessage(err));
+      return null;
+    }
   };
 
   const handleDelete = async () => {
@@ -833,8 +925,8 @@ export default function FilesPage() {
         if (twinEp) {
           try { await api(twinEp, { method: 'DELETE' }); } catch { twinFailed = true; }
         }
-        if (twinFailed) toast.info('Deleted', 'Photo deleted, but its video could not be deleted.');
-        else toast.success('Deleted', deleteTarget.permanent ? `${deleteTarget.name} was permanently deleted.` : `${deleteTarget.name} was deleted.`);
+        if (twinFailed) toast.info(t('common.feedback.deleted'), t('files.error.photoDeletedButItsVideoCouldNotBeDeleted'));
+                else toast.success(t('common.feedback.deleted'), deleteTarget.permanent ? t('files.feedback.deletetargetnameWasPermanentlyDeleted', { folderName: deleteTarget.name }) : t('common.feedback.deletetargetnameWasDeleted', { deleteTargetName: deleteTarget.name }));
       }
       // The deleted row can be part of the current bulk selection even though
       // this is the single-item delete path - clear explicitly so a stale id
@@ -848,16 +940,16 @@ export default function FilesPage() {
       // A row-level permanent delete on a folder that isn't a trash root
       // 404/400s with an explanatory message ("...restore or delete that
       // one instead") - surface it instead of a generic failure.
-      const reason = apiErrorMessage(err, 'The item could not be deleted.');
+      const reason = apiErrorMessage(err, t('files.error.theItemCouldNotBeDeleted'));
       // A purge that died partway still emptied whatever the earlier passes
       // emptied. Reporting only the failure told the user nothing had happened
       // over files that are gone for good. The dialog stays open with its
       // progress line intact for the same reason.
       const progress = purgeProgressOf(err);
       toast.error(
-        'Delete failed',
+        t('common.error.deleteFailed'),
         progress && progress.filesAffected > 0
-          ? `Removed ${progress.filesAffected.toLocaleString()} file${progress.filesAffected === 1 ? '' : 's'}, then the purge failed. ${reason}`
+          ? t('files.error.removedFilesaffectedtolocalestringFileProgressfilesaffectedPluralOneOtherSThenThePurge', { filesAffectedToLocaleString: formatNumber(progress.filesAffected), progressFilesAffected: progress.filesAffected, reason })
           : reason,
       );
     }
@@ -879,9 +971,9 @@ export default function FilesPage() {
       // prefer it over the row's cached name.
       const restoredName = res.name ?? f.name;
       if (res.restored_to_root) {
-        toast.info('Restored', `"${restoredName}" restored to the workspace root - its original folder is also in the trash.`);
+        toast.info(t('common.feedback.restored'), t('files.feedback.restorednameRestoredToTheWorkspaceRootItsOriginalFolderIs', { restoredName }));
       } else {
-        toast.success('Restored', `"${restoredName}" restored.`);
+        toast.success(t('common.feedback.restored'), t('files.feedback.restorednameRestored', { name: restoredName }));
       }
       // Restoring drops this row out of the Deleted view - clear explicitly so
       // a stale id for it can't linger in the bulk selection.
@@ -889,7 +981,7 @@ export default function FilesPage() {
     } catch (err) {
       // Surfaces the 409 storage-cap message and the 400 "not a trash root"
       // message from PUT /api/folders/:id rather than a generic failure.
-      toast.error('Restore failed', apiErrorMessage(err, 'The folder could not be restored.'));
+      toast.error(t('common.error.restoreFailed'), apiErrorMessage(err, t('files.error.theFolderCouldNotBeRestored')));
     }
     setRestoringIds((prev) => { const next = new Set(prev); next.delete(f.id); return next; });
   };
@@ -901,12 +993,12 @@ export default function FilesPage() {
     setRestoringIds((prev) => new Set(prev).add(f.id));
     try {
       await api(`/api/files/${f.id}`, { method: 'PUT' });
-      toast.success('Restored', `"${f.name}" restored.`);
+      toast.success(t('common.feedback.restored'), t('files.feedback.fnameRestored', { name: f.name }));
       // Restoring drops this row out of the Deleted view - clear explicitly so
       // a stale id for it can't linger in the bulk selection.
       clearSelection(); loadFiles();
     } catch (err) {
-      toast.error('Restore failed', apiErrorMessage(err, 'The file could not be restored.'));
+      toast.error(t('common.error.restoreFailed'), apiErrorMessage(err, t('files.error.theFileCouldNotBeRestored')));
     }
     setRestoringIds((prev) => { const next = new Set(prev); next.delete(f.id); return next; });
   };
@@ -921,13 +1013,13 @@ export default function FilesPage() {
     const nameError = renameTarget.type === 'file'
       ? validateFileName(renameName)
       : validateFolderName(renameName);
-    if (nameError) { toast.error('Rename failed', nameError); return; }
+    if (nameError) { toast.error(t('common.error.renameFailed'), translateExternal(nameError, 'toast')); return; }
     try {
       const ep = renameTarget.type === 'file' ? `/api/files/${renameTarget.id}/rename` : `/api/folders/${renameTarget.id}/rename`;
       await api(ep, { method: 'PUT', body: JSON.stringify({ name: renameName.trim() }) });
-      toast.success('Renamed', `The ${renameTarget.type} has been renamed.`); setRenameTarget(null); loadFiles();
+      toast.success(t('common.feedback.renamed'), t('files.feedback.theRenametargettypeHasBeenRenamed', { renameTargetType: renameTarget.type === 'file' ? t('common.label.fileTitleCase').toLocaleLowerCase(locale) : t('common.label.folder').toLocaleLowerCase(locale) })); setRenameTarget(null); loadFiles();
     } catch (err) {
-      toast.error('Rename failed', apiErrorMessage(err, `The ${renameTarget.type} could not be renamed.`));
+      toast.error(t('common.error.renameFailed'), apiErrorMessage(err, t('files.error.theRenametargettypeCouldNotBeRenamed', { renameTargetType: renameTarget.type === 'file' ? t('common.label.fileTitleCase').toLocaleLowerCase(locale) : t('common.label.folder').toLocaleLowerCase(locale) })));
     }
   };
 
@@ -938,7 +1030,7 @@ export default function FilesPage() {
   // Covers both answers this can carry: a selection refused before anything
   // started, and a multi-part download where some parts did not begin. Neither
   // is "Download failed", which claims more than either one says.
-  const archiveError = (message: string) => toast.error('Download problem', message);
+  const archiveError = (message: string) => toast.error(t('common.error.downloadProblem'), message);
 
   // Streamed straight to the browser's downloads (see lib/archive-download):
   // buffering the ZIP into a Blob first pinned the whole archive in memory.
@@ -959,13 +1051,13 @@ export default function FilesPage() {
         try {
           await api(`/api/files/${still.live_video_id}/copy`, { method: 'POST', body: JSON.stringify({ folder_id: currentFolderId }) });
         } catch {
-          toast.info('Copied', 'The photo was copied, but its video could not be.');
+          toast.info(t('common.feedback.copied'), t('files.error.thePhotoWasCopiedButItsVideoCouldNotBe'));
           loadFiles();
           return;
         }
       }
-      toast.success('Copied', 'A copy has been added to this folder.'); loadFiles();
-    } catch { toast.error('Copy failed', 'The file could not be copied.'); }
+      toast.success(t('common.feedback.copied'), t('files.feedback.aCopyHasBeenAddedToThisFolder')); loadFiles();
+    } catch { toast.error(t('common.error.copyFailed'), t('files.error.theFileCouldNotBeCopied')); }
   };
 
   const handleMove = async (folderId: string | null) => {
@@ -980,11 +1072,11 @@ export default function FilesPage() {
           await api(`/api/files/${moved.live_video_id}/move`, { method: 'PUT', body: JSON.stringify({ folder_id: folderId }) });
         }
       }
-      toast.success('Moved', 'The file has been moved.');
+      toast.success(t('files.feedback.moved'), t('files.feedback.theFileHasBeenMoved'));
       // The moved row leaves the current folder - clear explicitly so a stale
       // id for it can't linger in the bulk selection.
       setMoveOpen(null); clearSelection(); loadFiles();
-    } catch { toast.error('Move failed', 'The file could not be moved.'); }
+    } catch { toast.error(t('common.error.moveFailed'), t('files.error.theFileCouldNotBeMoved')); }
   };
 
   const openShare = (fileId: string, fileName: string) => {
@@ -1014,14 +1106,14 @@ export default function FilesPage() {
 
     if (fileIds.length === 0 && folderIds.length === 1) {
       const f = folders.find((x) => x.id === folderIds[0]);
-      openFolderShare(folderIds[0], f?.name ?? 'Folder');
+      openFolderShare(folderIds[0], f?.name ?? t('common.label.folder'));
       return;
     }
     if (fileIds.length === 0) return;
 
     const name = fileIds.length === 1
-      ? files.find((f) => f.id === fileIds[0])?.name ?? '1 file'
-      : `${fileIds.length} files`;
+      ? files.find((f) => f.id === fileIds[0])?.name ?? t('files.label.1File')
+      : t('common.label.filecountFiles', { fileCount: fileIds.length });
     setShareTarget({
       target: fileIds.length === 1
         ? { kind: 'file', fileIds: [fileIds[0]] }
@@ -1040,8 +1132,8 @@ export default function FilesPage() {
       if (data.ok && data.groups && data.groups.length > 0) {
         setAvailableGroups(data.groups);
         setAddToGroupTarget({ id, name, type });
-      } else toast.info('No groups', 'No groups yet. Create one in the sidebar.');
-    } catch { toast.error('Something went wrong', 'Could not load your groups.'); }
+      } else toast.info(t('files.feedback.noGroups'), t('files.feedback.noGroupsYetCreateOneInTheSidebar'));
+    } catch { toast.error(t('common.error.somethingWentWrong'), t('files.error.couldNotLoadYourGroups')); }
   };
 
   const toggleSelect = (id: string) => {
@@ -1065,6 +1157,57 @@ export default function FilesPage() {
   // bulk-delete dialog named it three times in a single line, walking the whole
   // page's rows on every render of an open dialog to answer the same question.
   const selectedTwinIds = useMemo(() => liveTwinIds(files, selected), [files, selected]);
+
+  // Drag a file or folder onto another folder to move it. Mouse only: "Move
+  // to..." stays the keyboard path. Nothing moves on drop - the drop opens a
+  // confirm, and Move there runs the same bulk move as the toolbar.
+  // `dropMove` outlives `dropMoveOpen` so the question stays put while the dialog fades out.
+  const [dropMove, setDropMove] = useState<{ items: MoveItems; target: MoveDropTarget } | null>(null);
+  const [dropMoveOpen, setDropMoveOpen] = useState(false);
+  const dropMoveConfirmRef = useRef<HTMLButtonElement>(null);
+  const moveDrag = useMoveDrag({
+    enabled: !!wsId && canDragInView({ isDeleted: isDeletedView, isHidden: currentFilter === 'hidden', isLibrary: isLibraryView }),
+    workspaceId: wsId,
+    // A group spans folders, so where its items live is unknown here.
+    sourceFolderId: currentGroup ? undefined : currentFolderId,
+    selectedFiles: selected,
+    selectedFolders,
+    countLabel: (count) => t('files.label.dragCountItems', { count }),
+    onDrop: (items, target) => { setDropMove({ items, target }); setDropMoveOpen(true); },
+  });
+  // Dragging needs the permission "Move to..." asks for that kind of item.
+  const fileDragProps = (f: FileItem) => (can('upload_files') ? moveDrag.dragSourceProps({ id: f.id, kind: 'file' }) : {});
+  const folderDragProps = (f: FolderItem) => (can('rename_folders') ? moveDrag.dragSourceProps({ id: f.id, kind: 'folder' }) : {});
+  // Design standard for confirmations: "Are you sure?" as the title, and a
+  // description that says exactly what is about to move where.
+  const dropMoveDescription = (m: { items: MoveItems; target: MoveDropTarget }) => {
+    const fileCount = m.items.fileIds.length;
+    const folderCount = m.items.folderIds.length;
+    const folder = <strong className="font-semibold text-foreground"><bdi>{m.target.name}</bdi></strong>;
+    if (fileCount + folderCount === 1) {
+      const name = fileCount === 1
+        ? files.find((f) => f.id === m.items.fileIds[0])?.name
+        : folders.find((f) => f.id === m.items.folderIds[0])?.name;
+      if (name) {
+        return richText(t('files.description.youAreMovingNameToFolder'), {
+          name: <strong className="font-semibold text-foreground"><bdi>{name}</bdi></strong>,
+          folder,
+        });
+      }
+    }
+    if (fileCount > 0 && folderCount > 0) {
+      return richText(t('files.description.youAreMovingFilesAndFoldersToFolder', { files: fileCount, folders: folderCount }), { folder });
+    }
+    return fileCount > 0
+      ? richText(t('files.description.youAreMovingFilesToFolder', { files: fileCount }), { folder })
+      : richText(t('files.description.youAreMovingFoldersToFolder', { folders: folderCount }), { folder });
+  };
+  const confirmDropMove = () => {
+    if (!dropMove || !dropMoveOpen) return;
+    const { items, target } = dropMove;
+    setDropMoveOpen(false);
+    void applyBulkMove(target.id, items);
+  };
   // The bulk bar collapses instead of unmounting (see its render below), so the
   // count has to survive the collapse - otherwise the label reads "0 selected"
   // for the 140ms it spends shrinking.
@@ -1124,8 +1267,8 @@ export default function FilesPage() {
     setBulkProgress(null);
     setBulkBusy(false);
     clearSelection(); loadFiles();
-    if (failed === 0) toast.success('Deleted', `${total} item${total === 1 ? '' : 's'} deleted.`);
-    else toast.error('Some items could not be deleted', `${total - failed} deleted, ${failed} failed.`);
+    if (failed === 0) toast.success(t('common.feedback.deleted'), t('files.feedback.totalPluralOneItemOtherItemsDeleted', { total }));
+    else toast.error(t('files.error.someItemsCouldNotBeDeleted'), t('files.error.totalfailedDeletedFailedFailed', { totalFailed: total - failed, failed }));
   };
 
   const bulkDownloadZip = async () => {
@@ -1137,8 +1280,8 @@ export default function FilesPage() {
       { fileIds: Array.from(selected), folderIds: Array.from(selectedFolders) },
       { onError: archiveError },
     );
-    if (parts === 1) toast.success('Download started', 'Your ZIP is being prepared by the browser.');
-    else if (parts > 1) toast.success('Download started', `Too many items for one file - arriving as ${parts} ZIPs.`);
+    if (parts === 1) toast.success(t('common.feedback.downloadStarted'), t('files.feedback.yourZipIsBeingPreparedByTheBrowser'));
+    else if (parts > 1) toast.success(t('common.feedback.downloadStarted'), t('files.feedback.tooManyItemsForOneFileArrivingAsPartsZips', { parts }));
   };
 
   const bulkMove = () => { if (totalSelected > 0) setBulkMoveOpen(true); };
@@ -1146,25 +1289,42 @@ export default function FilesPage() {
   // The bulk runners below use runBulk rather than an awaited for-loop: a
   // 50-item selection used to cost 50 sequential round trips, which is what
   // made these actions feel hung.
-  const applyBulkMove = async (destFolderId: string | null) => {
+  //
+  // `items` defaults to the selection (the toolbar's Move); a drag-and-drop
+  // move passes what was dragged, which may be one unselected row.
+  const applyBulkMove = async (
+    destFolderId: string | null,
+    items: MoveItems = { fileIds: Array.from(selected), folderIds: Array.from(selectedFolders) },
+  ) => {
     setBulkBusy(true);
+    // What the server said for each refused item ("Cannot move a folder into
+    // its own subfolder"), so the toast can say why instead of guessing.
+    const reasons: string[] = [];
+    const noteFailure = (err: unknown): never => {
+      reasons.push(apiErrorMessage(err, t('files.error.theFileCouldNotBeMoved')));
+      throw err;
+    };
     const moveFile = (id: string) =>
       api(`/api/files/${id}/move`, { method: 'PUT', body: JSON.stringify({ folder_id: destFolderId }) });
-    const fileRes = await runBulk(Array.from(selected), moveFile);
+    const fileRes = await runBulk(items.fileIds, (id) => moveFile(id).catch(noteFailure));
     // Move takes a Live Photo's twin along, exactly as the single-file move
     // and the bulk delete do. The twin's own row is often not selected (the
     // grid collapses it under the still), so it is added by the same rule -
     // and kept out of the counts, which report the selection the user made.
-    await runBulk(selectedTwinIds, moveFile);
+    await runBulk(liveTwinIds(files, new Set(items.fileIds)), moveFile);
     // circular-move / already-here errors land in `fail`
-    const folderRes = await runBulk(Array.from(selectedFolders), (id) =>
-      api(`/api/folders/${id}/move`, { method: 'PUT', body: JSON.stringify({ parent_id: destFolderId }) }));
+    const folderRes = await runBulk(items.folderIds, (id) =>
+      api(`/api/folders/${id}/move`, { method: 'PUT', body: JSON.stringify({ parent_id: destFolderId }) }).catch(noteFailure));
     const ok = fileRes.ok + folderRes.ok;
     const fail = fileRes.fail + folderRes.fail;
     setBulkBusy(false);
     setBulkMoveOpen(false); clearSelection(); loadFiles();
-    if (fail === 0) toast.success('Moved', `${ok} item${ok === 1 ? '' : 's'} moved.`);
-    else toast.info('Move finished', `${ok} moved, ${fail} skipped (e.g. can't move a folder into itself).`);
+    if (fail === 0) { toast.success(t('files.feedback.moved'), t('files.feedback.okPluralOneItemOtherItemsMoved', { ok })); return; }
+    const reason = mostCommon(reasons);
+    if (!reason) toast.info(t('files.feedback.moveFinished'), t('files.error.okMovedFailSkippedEGCanTMoveAFolderIntoItself', { ok, fail }));
+    else if (ok === 0 && fail === 1) toast.error(t('common.error.moveFailed'), reason);
+    else if (ok === 0) toast.error(t('common.error.moveFailed'), t('files.error.okMovedFailNotMovedReason', { ok, fail, reason }));
+    else toast.info(t('files.feedback.moveFinished'), t('files.error.okMovedFailNotMovedReason', { ok, fail, reason }));
   };
 
   const bulkRestore = async () => {
@@ -1178,9 +1338,9 @@ export default function FilesPage() {
     const toRoot = folderRes.results.filter((r) => r?.restored_to_root).length;
     setBulkBusy(false);
     clearSelection(); loadFiles();
-    if (fail > 0) toast.error('Some items could not be restored', `${ok} restored, ${fail} failed.`);
-    else if (toRoot > 0) toast.info('Restored', `${ok} item${ok === 1 ? '' : 's'} restored. ${toRoot} went to the workspace root because the original folder is also in the trash.`);
-    else toast.success('Restored', `${ok} item${ok === 1 ? '' : 's'} restored.`);
+    if (fail > 0) toast.error(t('files.error.someItemsCouldNotBeRestored'), t('files.error.okRestoredFailFailed', { ok, fail }));
+    else if (toRoot > 0) toast.info(t('common.feedback.restored'), t('files.feedback.okPluralOneItemOtherItemsRestoredTorootWent', { ok, toRoot }));
+    else toast.success(t('common.feedback.restored'), t('files.feedback.okPluralOneItemOtherItemsRestored', { ok }));
   };
 
   const runBulkPermanentDelete = async () => {
@@ -1228,7 +1388,7 @@ export default function FilesPage() {
 
     // The row is still in the listing (an unfinished purge deliberately leaves
     // it there), so its name is to hand.
-    const folderName = (id: string) => folders.find((f) => f.id === id)?.name ?? 'A folder';
+    const folderName = (id: string) => folders.find((f) => f.id === id)?.name ?? t('files.label.aFolder');
     const completedFolders = folderRes.results.filter((r) => r?.complete).length;
     const unfinished = folderRes.results
       .map((outcome, i) => ({ outcome, id: folderIds[i] }))
@@ -1265,10 +1425,10 @@ export default function FilesPage() {
       const message = bulkPurgeStillEmptying({ deleted, failed: fail, incomplete: unfinished });
       toast.info(message.title, message.body);
     } else if (fail === 0) {
-      toast.success('Deleted', `${deleted} item${deleted === 1 ? '' : 's'} permanently deleted.`);
+      toast.success(t('common.feedback.deleted'), t('files.feedback.deletedPluralOneItemOtherItemsPermanentlyDeleted', { deleted }));
     } else {
       const note = partialProgressNote(failedProgress);
-      toast.error('Some items could not be deleted', `${deleted} deleted, ${fail} failed.${note ? ` ${note}` : ''}`);
+      toast.error(t('files.error.someItemsCouldNotBeDeleted'), t('files.error.deletedDeletedFailFailedHasnote', { deleted, fail, hasNote: note ? 'true' : 'other', note }));
     }
   };
 
@@ -1281,8 +1441,16 @@ export default function FilesPage() {
   // /stopPropagation must still run unconditionally though - skipping them
   // (as this used to) leaves the browser's native drop behaviour unguarded,
   // so a stray file drop navigates the whole tab away from the app.
-  const handleDragOver = (e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); if (!isDeletedView) setDragging(true); };
-  const handleDragLeave = (e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); if (e.currentTarget === e.target) setDragging(false); };
+  //
+  // A drag-to-move (MOVE_DRAG_TYPE, see useMoveDrag) is never an upload: no
+  // overlay, and over anything that is not a valid folder target the drop is
+  // refused ("none") rather than handed to the upload runner.
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault(); e.stopPropagation();
+    if (isMoveDrag(e.dataTransfer)) { e.dataTransfer.dropEffect = 'none'; return; }
+    if (!isDeletedView) setDragging(true);
+  };
+  const handleDragLeave = (e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); if (isMoveDrag(e.dataTransfer)) return; if (e.currentTarget === e.target) setDragging(false); };
   // Dropped files are handed to the shared upload runner, same as the Uploads
   // page. It sends credentials, uses multipart above the size threshold, and
   // surfaces per-file progress/retry in the dock. The previous inline loop
@@ -1294,6 +1462,7 @@ export default function FilesPage() {
   // and that list is dead the moment this handler returns.
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault(); e.stopPropagation(); setDragging(false);
+    if (isMoveDrag(e.dataTransfer)) return;
     if (isDeletedView || !wsId) return;
     // In a group view there is no current folder, so the file lands at the
     // workspace root - passing the group makes the runner enrol it once the
@@ -1301,7 +1470,7 @@ export default function FilesPage() {
     void uploadFromDrop(
       e.dataTransfer,
       { workspace_id: wsId, folder_id: uploadFolderId, group_id: currentGroup || null },
-      currentGroup ? { note: 'Files will be added to this group.' } : {},
+      currentGroup ? { note: t('files.description.filesWillBeAddedToThisGroup') } : {},
     ).then((res) => {
       // Folders exist server-side before their files finish uploading, so the
       // listing has to be refetched or the tree the user just dropped is
@@ -1360,11 +1529,11 @@ export default function FilesPage() {
       // against the is_deleted=0 predicate those routes filter on anyway.
       // Both doors ask delete_own_files / delete_any_file on the server, so a
       // role without them (a Viewer) is shown neither rather than a 403 toast.
-      if (!canDeleteFile(f)) return [{ label: 'Get info', icon: <Info />, onClick: () => setInfoTarget({ type: 'file', item: f }) }];
+      if (!canDeleteFile(f)) return [{ label: t('files.action.getInfo'), icon: <Info />, onClick: () => setInfoTarget({ type: 'file', item: f }) }];
       return [
-        { label: 'Restore', icon: <RotateCcw />, onClick: () => handleRestoreFile(f), disabled: restoringIds.has(f.id) },
+        { label: t('common.action.restore'), icon: <RotateCcw />, onClick: () => handleRestoreFile(f), disabled: restoringIds.has(f.id) },
         { label: '', separator: true, onClick: () => {}, icon: null },
-        { label: 'Delete permanently', icon: <Trash2 />, onClick: () => setDeleteTarget(fileDeleteTarget(f, true)), danger: true },
+        { label: t('files.action.deletePermanently'), icon: <Trash2 />, onClick: () => setDeleteTarget(fileDeleteTarget(f, true)), danger: true },
       ];
     }
     // Every `hidden` below mirrors the permission the matching endpoint
@@ -1374,25 +1543,26 @@ export default function FilesPage() {
     // can_lock / can_hide, which /api/files has always returned and which no
     // client had ever read.
     return [
-      { label: 'View', icon: <Eye />, onClick: () => openFileWithLockCheck(f, 'view') },
-      { label: 'Open in editor', icon: <SquarePen />, hidden: !isOfficeFile(f.name), onClick: () => window.open(`/editor/${f.id}`, '_blank') },
-      { label: 'Download', icon: <Download />, hidden: !can('download_files'), onClick: () => handleDownload(f.id) },
-      { label: 'Share', icon: <Share2 />, hidden: !can('create_share_links'), onClick: () => openShare(f.id, f.name) },
-      { label: 'Comments', icon: <MessageSquare />, onClick: () => navigate(`/comments?file_id=${f.id}&workspace_id=${wsId}&name=${encodeURIComponent(f.name)}`) },
-      { label: favourites.has(f.id) ? 'Remove favourite' : 'Add to favourites', icon: <Star />, onClick: () => toggleFavourite(f.id) },
-      { label: 'Get info', icon: <Info />, onClick: () => setInfoTarget({ type: 'file', item: f }) },
+      { label: t('common.view'), icon: <Eye />, onClick: () => openFileWithLockCheck(f, 'view') },
+      { label: t('common.label.openInEditor'), icon: <SquarePen />, hidden: !isOfficeFile(f.name), onClick: () => window.open(`/editor/${f.id}`, '_blank') },
+      { label: t('common.label.openInEditor'), icon: <SquarePen />, hidden: !canEditText(f), onClick: () => openTextEditor(f.id) },
+      { label: t('common.action.download'), icon: <Download />, hidden: !can('download_files'), onClick: () => handleDownload(f.id) },
+      { label: t('common.action.share'), icon: <Share2 />, hidden: !can('create_share_links'), onClick: () => openShare(f.id, f.name) },
+      { label: t('files.label.comments'), icon: <MessageSquare />, onClick: () => navigate(`/comments?file_id=${f.id}&workspace_id=${wsId}&name=${encodeURIComponent(f.name)}`) },
+      { label: favourites.has(f.id) ? t('files.label.removeFavourite') : t('files.label.addToFavourites'), icon: <Star />, onClick: () => toggleFavourite(f.id) },
+      { label: t('files.action.getInfo'), icon: <Info />, onClick: () => setInfoTarget({ type: 'file', item: f }) },
       { label: '', separator: true, onClick: () => {}, icon: null },
-      { label: 'Rename', icon: <Pencil />, hidden: !can('rename_files'), onClick: () => { setRenameTarget({ id: f.id, name: f.name, type: 'file' }); setRenameName(f.name); } },
-      { label: 'Copy', icon: <Copy />, hidden: !can('upload_files'), onClick: () => handleCopy(f.id) },
-      { label: 'Move to...', icon: <Move />, hidden: !can('upload_files'), onClick: () => openMoveModal(f.id, 'file') },
+      { label: t('common.action.rename'), icon: <Pencil />, hidden: !can('rename_files'), onClick: () => { setRenameTarget({ id: f.id, name: f.name, type: 'file' }); setRenameName(f.name); } },
+      { label: t('files.action.copy.duplicatefiles'), icon: <Copy />, hidden: !can('upload_files'), onClick: () => handleCopy(f.id) },
+      { label: t('files.label.moveTo'), icon: <Move />, hidden: !can('upload_files'), onClick: () => openMoveModal(f.id, 'file') },
       { label: '', separator: true, onClick: () => {}, icon: null },
-      { label: 'Add to group', icon: <FolderPlus />, onClick: () => openAddToGroup(f.id, f.name, 'file') },
-      { label: 'Upload new version', icon: <Upload />, hidden: !can('upload_files'), onClick: () => setVersionUploadTarget(f.id) },
-      { label: 'Version history', icon: <History />, onClick: () => openFileWithLockCheck(f, 'view') },
-      { label: f.lock_mode !== 'none' ? 'Unlock' : 'Lock', icon: <Lock />, hidden: !canLock, onClick: () => setLockTarget({ id: f.id, name: f.name, type: 'file', size_bytes: f.size_bytes, extension: f.extension, lock_mode: f.lock_mode }) },
-      { label: f.is_hidden ? 'Unhide' : 'Hide', icon: f.is_hidden ? <Eye /> : <EyeOff />, hidden: !canHide, onClick: () => setHideTarget({ id: f.id, name: f.name, type: 'file' }) },
+      { label: t('files.action.addToGroup'), icon: <FolderPlus />, onClick: () => openAddToGroup(f.id, f.name, 'file') },
+      { label: t('files.label.uploadNewVersion'), icon: <Upload />, hidden: !can('upload_files'), onClick: () => setVersionUploadTarget(f.id) },
+      { label: t('files.label.versionHistory'), icon: <History />, onClick: () => openFileWithLockCheck(f, 'view') },
+      { label: f.lock_mode !== 'none' ? t('common.label.unlock') : t('files.label.lock'), icon: <Lock />, hidden: !canLock, onClick: () => setLockTarget({ id: f.id, name: f.name, type: 'file', size_bytes: f.size_bytes, extension: f.extension, lock_mode: f.lock_mode }) },
+      { label: f.is_hidden ? t('files.label.unhide') : t('files.label.hide'), icon: f.is_hidden ? <Eye /> : <EyeOff />, hidden: !canHide, onClick: () => setHideTarget({ id: f.id, name: f.name, type: 'file' }) },
       { label: '', separator: true, onClick: () => {}, icon: null },
-      { label: 'Delete', icon: <Trash2 />, hidden: !canDeleteFile(f), onClick: () => setDeleteTarget(fileDeleteTarget(f)), danger: true },
+      { label: t('common.delete'), icon: <Trash2 />, hidden: !canDeleteFile(f), onClick: () => setDeleteTarget(fileDeleteTarget(f)), danger: true },
     ];
   };
 
@@ -1403,14 +1573,14 @@ export default function FilesPage() {
       // Restore/Delete permanently only apply to a trash root - a
       // descendant surfaced by browsing into one 400s on both endpoints.
       const items: { label: string; icon: React.ReactNode; onClick: () => void; separator?: boolean; danger?: boolean; disabled?: boolean }[] = [
-        { label: 'Open', icon: <FolderOpen />, onClick: () => navigateToFolder(f.id) },
-        { label: 'Get info', icon: <Info />, onClick: () => setInfoTarget({ type: 'folder', item: f }) },
+        { label: t('files.open'), icon: <FolderOpen />, onClick: () => navigateToFolder(f.id) },
+        { label: t('files.action.getInfo'), icon: <Info />, onClick: () => setInfoTarget({ type: 'folder', item: f }) },
       ];
       if (f.is_trash_root && canDeleteFolder(f)) {
         items.push(
           { label: '', separator: true, onClick: () => {}, icon: null },
-          { label: 'Restore', icon: <RotateCcw />, onClick: () => handleRestoreFolder(f), disabled: restoringIds.has(f.id) },
-          { label: 'Delete permanently', icon: <Trash2 />, onClick: () => setDeleteTarget({ id: f.id, name: f.name, type: 'folder', permanent: true, fileCount: f.file_count }), danger: true },
+          { label: t('common.action.restore'), icon: <RotateCcw />, onClick: () => handleRestoreFolder(f), disabled: restoringIds.has(f.id) },
+          { label: t('files.action.deletePermanently'), icon: <Trash2 />, onClick: () => setDeleteTarget({ id: f.id, name: f.name, type: 'folder', permanent: true, fileCount: f.file_count }), danger: true },
         );
       }
       return items;
@@ -1420,31 +1590,35 @@ export default function FilesPage() {
     // that route had no permission check at all, so a viewer could rearrange
     // the whole tree while being refused a rename.
     return [
-      { label: 'Open', icon: <FolderOpen />, onClick: () => navigateToFolder(f.id) },
-      { label: 'Download', icon: <Download />, hidden: !can('download_files'), onClick: () => handleDownloadFolder(f.id) },
-      { label: 'Share', icon: <Share2 />, hidden: !can('create_share_links'), onClick: () => openFolderShare(f.id, f.name) },
-      { label: 'Get info', icon: <Info />, onClick: () => setInfoTarget({ type: 'folder', item: f }) },
+      { label: t('files.open'), icon: <FolderOpen />, onClick: () => navigateToFolder(f.id) },
+      { label: t('common.action.download'), icon: <Download />, hidden: !can('download_files'), onClick: () => handleDownloadFolder(f.id) },
+      { label: t('common.action.share'), icon: <Share2 />, hidden: !can('create_share_links'), onClick: () => openFolderShare(f.id, f.name) },
+      { label: t('files.action.getInfo'), icon: <Info />, onClick: () => setInfoTarget({ type: 'folder', item: f }) },
       { label: '', separator: true, onClick: () => {}, icon: null },
-      { label: 'Rename', icon: <Pencil />, hidden: !can('rename_folders'), onClick: () => { setRenameTarget({ id: f.id, name: f.name, type: 'folder' }); setRenameName(f.name); } },
-      { label: 'Move to...', icon: <Move />, hidden: !can('rename_folders'), onClick: () => openMoveModal(f.id, 'folder') },
-      { label: 'Add to group', icon: <FolderPlus />, onClick: () => openAddToGroup(f.id, f.name, 'folder') },
+      { label: t('common.action.rename'), icon: <Pencil />, hidden: !can('rename_folders'), onClick: () => { setRenameTarget({ id: f.id, name: f.name, type: 'folder' }); setRenameName(f.name); } },
+      { label: t('files.label.moveTo'), icon: <Move />, hidden: !can('rename_folders'), onClick: () => openMoveModal(f.id, 'folder') },
+      { label: t('files.action.addToGroup'), icon: <FolderPlus />, onClick: () => openAddToGroup(f.id, f.name, 'folder') },
       { label: '', separator: true, onClick: () => {}, icon: null },
-      { label: f.lock_mode !== 'none' ? 'Unlock' : 'Lock', icon: <Lock />, hidden: !canLock, onClick: () => setLockTarget({ id: f.id, name: f.name, type: 'folder', file_count: f.file_count, total_size_bytes: f.total_size_bytes, lock_mode: f.lock_mode }) },
-      { label: f.is_hidden ? 'Unhide' : 'Hide', icon: f.is_hidden ? <Eye /> : <EyeOff />, hidden: !canHide, onClick: () => setHideTarget({ id: f.id, name: f.name, type: 'folder' }) },
+      { label: f.lock_mode !== 'none' ? t('common.label.unlock') : t('files.label.lock'), icon: <Lock />, hidden: !canLock, onClick: () => setLockTarget({ id: f.id, name: f.name, type: 'folder', file_count: f.file_count, total_size_bytes: f.total_size_bytes, lock_mode: f.lock_mode }) },
+      { label: f.is_hidden ? t('files.label.unhide') : t('files.label.hide'), icon: f.is_hidden ? <Eye /> : <EyeOff />, hidden: !canHide, onClick: () => setHideTarget({ id: f.id, name: f.name, type: 'folder' }) },
       { label: '', separator: true, onClick: () => {}, icon: null },
-      { label: 'Delete', icon: <Trash2 />, hidden: !can('delete_any_file') && !can('delete_own_files'), onClick: () => setDeleteTarget({ id: f.id, name: f.name, type: 'folder' }), danger: true },
+      { label: t('common.delete'), icon: <Trash2 />, hidden: !can('delete_any_file') && !can('delete_own_files'), onClick: () => setDeleteTarget({ id: f.id, name: f.name, type: 'folder' }), danger: true },
     ];
   };
 
   const blankCtxItems = isDeletedView
-    ? [{ label: 'Refresh', icon: <RefreshCw />, onClick: () => loadFiles() }]
+    ? [{ label: t('common.action.refresh'), icon: <RefreshCw />, onClick: () => loadFiles() }]
     : [
-        { label: 'Refresh', icon: <RefreshCw />, onClick: () => loadFiles() },
+        { label: t('common.action.refresh'), icon: <RefreshCw />, onClick: () => loadFiles() },
         { label: '', separator: true, onClick: () => {}, icon: null },
-        // The library view is workspace-wide with no current folder to create
-        // in - the toolbar button is hidden there for the same reason.
-        { label: 'New folder', icon: <FolderPlus />, hidden: isLibraryView || !can('create_folders'), onClick: () => setCreateFolderOpen(true) },
-        { label: 'Upload files', icon: <Upload />, hidden: !can('access_upload') || !can('upload_files'), onClick: () => navigate(uploadHref) },
+        // "New": no submenus in the shared context menu, so a labelled group.
+        { label: t('files.action.new'), heading: true, hidden: !canNewFolder && !canNewFile, onClick: () => {} },
+        { label: t('common.label.folder'), icon: <FolderPlus />, hidden: !canNewFolder, onClick: () => setCreateFolderOpen(true) },
+        { label: t('files.action.markdownFile'), icon: <FileCode />, hidden: !canNewFile, onClick: () => setNewFileKind('md') },
+        { label: t('files.action.textFile'), icon: <FileText />, hidden: !canNewFile, onClick: () => setNewFileKind('txt') },
+        { label: t('files.action.wordDocument'), icon: <FileType />, hidden: !canNewFile, onClick: () => setNewFileKind('docx') },
+        { label: '', separator: true, hidden: !canNewFolder && !canNewFile, onClick: () => {}, icon: null },
+        { label: t('common.action.uploadFiles'), icon: <Upload />, hidden: !can('access_upload') || !can('upload_files'), onClick: () => navigate(uploadHref) },
       ];
 
   // Carries the current folder, or the current group, through to the Uploads
@@ -1458,12 +1632,12 @@ export default function FilesPage() {
 
   // Column-header sorts (e.g. Uploader ↑) aren't among the six dropdown
   // presets - append a synthetic entry so the trigger still shows a label.
-  const sortSelectItems = SORT_OPTIONS.some((o) => o.value === sortParam)
-    ? SORT_OPTIONS
-    : [...SORT_OPTIONS, {
+  const sortSelectItems = (SORT_OPTIONS.some((o) => o.value === sortParam)
+    ? SORT_OPTIONS.map((o) => ({ value: o.value, label: t(o.labelKey) }))
+    : [...SORT_OPTIONS.map((o) => ({ value: o.value, label: t(o.labelKey) })), {
         value: sortParam,
-        label: `${ALL_COLUMNS.find((c) => c.key === sort.key)?.label ?? sort.key} ${sort.dir === 'asc' ? '↑' : '↓'}`,
-      }];
+        label: t('files.label.allColumnsfindcSortdirascSelectTrueOther', { ALL_COLUMNSFindC: ALL_COLUMNS.find((c) => c.key === sort.key)?.label ?? sort.key, sortDirAsc: sort.dir === 'asc' ? 'true' : 'false' }),
+      }]);
 
   // In the trash, "Modified" doubles as "Deleted" (its only meaningful
   // reading there) and is forced visible - like the always-on Name column -
@@ -1480,7 +1654,7 @@ export default function FilesPage() {
       ? ALL_COLUMNS.map((c) => c.key === 'modified'
           ? {
               ...c,
-              label: 'Deleted',
+              get label() { return t('common.label.deleted'); },
               render: (f: FileItem) => f.deleted_at ? <DateCell ts={f.deleted_at} /> : '-',
               renderFolder: (f: FolderItem) => f.deleted_at ? <DateCell ts={f.deleted_at} /> : '-',
             }
@@ -1514,9 +1688,10 @@ export default function FilesPage() {
           try {
             const res = await api<{ ok: boolean; file?: FileItem }>(`/api/files/${fileId}`);
             if (res.ok && res.file) openFileWithLockCheck(res.file, 'view');
-          } catch { toast.error('Could not open file', 'The file could not be loaded.'); }
+          } catch { toast.error(t('files.error.couldNotOpenFile'), t('files.error.theFileCouldNotBeLoaded')); }
         }}
         onGroupClick={(groupId) => setSearchParams(groupNavParams(searchParams, groupId))}
+        folderDrop={{ targetProps: moveDrag.dropTargetProps, isOver: moveDrag.isOver }}
       />
 
       {/* Main content */}
@@ -1534,8 +1709,8 @@ export default function FilesPage() {
         >
           <div className="flex scale-[0.97] flex-col items-center gap-2 text-primary transition-transform duration-150 ease-(--ease-out-strong) group-data-dragging/drop:scale-100 motion-reduce:scale-100 motion-reduce:transition-none">
             <Upload className="size-10" />
-            <p className="text-sm font-semibold">Drop files or folders to upload</p>
-            <p className="text-xs opacity-70">{uploadFolderId ? `to ${breadcrumbs.at(-1)?.name ?? 'folder'}` : 'to root folder'}</p>
+            <p className="text-sm font-semibold">{t('files.label.dropFilesOrFoldersToUpload')}</p>
+            <p className="text-xs opacity-70">{uploadFolderId ? t('files.label.toBreadcrumbsatname', { valueName: breadcrumbs.at(-1)?.name ?? t('common.label.folder').toLocaleLowerCase(locale) }) : t('files.label.toRootFolder')}</p>
           </div>
         </div>
       {/* Toolbar */}
@@ -1547,23 +1722,25 @@ export default function FilesPage() {
             <LibraryIcon className="size-4 shrink-0" />
             <span className="font-semibold">{KIND_COPY[libraryKind].title}</span>
             <span className="text-xs text-muted-foreground tabular-nums whitespace-nowrap truncate">
-              {library.isLoading ? 'Loading...' : `${plural(libraryKind, library.total)} · all folders`}
+              {library.isLoading ? t('common.label.loading') : t('files.label.librarykindAllFolders', { libraryKind: plural(libraryKind, library.total) })}
             </span>
           </div>
         ) : (
           <div className="flex items-center gap-1 text-sm flex-1 min-w-0">
-            <button onClick={() => navigateToFolder(null)} className="text-muted-foreground hover:text-foreground"><Home className="size-4" /></button>
+            {/* Every crumb is also a drop target for drag-to-move; the root is
+                named "Home" in the confirm, as the location line names it. */}
+            <button onClick={() => navigateToFolder(null)} {...moveDrag.dropTargetProps({ id: null, name: t('common.label.home') })} className={`rounded-sm text-muted-foreground hover:text-foreground ${moveDrag.isOver(null) ? 'text-foreground outline-2 outline-offset-2 outline-primary bg-primary/10' : ''}`}><Home className="size-4" /></button>
             {breadcrumbs.map((b) => (
               <span key={b.id} className="flex items-center gap-1">
-                <ChevronRight className="size-3 text-muted-foreground" />
-                <button onClick={() => navigateToFolder(b.id)} className="text-xs font-medium hover:text-foreground text-muted-foreground truncate max-w-30">{b.name}</button>
+                <ChevronRight className="size-3 text-muted-foreground rtl:-scale-x-100" />
+                <button onClick={() => navigateToFolder(b.id)} {...moveDrag.dropTargetProps({ id: b.id, name: b.name })} className={`rounded-sm text-xs font-medium hover:text-foreground text-muted-foreground truncate max-w-30 ${moveDrag.isOver(b.id) ? 'text-foreground outline-2 outline-offset-2 outline-primary bg-primary/10' : ''}`} dir="auto">{b.name}</button>
               </span>
             ))}
           </div>
         )}
         <div className="relative w-48">
-          <Search className="size-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
-          <Input value={searchInput} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchInput(e.target.value)} placeholder={isLibraryView ? KIND_COPY[libraryKind].searchPlaceholder : 'Search files...'} className="h-8 text-xs pl-8" />
+          <Search className="size-3.5 absolute inset-s-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+          <Input value={searchInput} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchInput(e.target.value)} placeholder={isLibraryView ? KIND_COPY[libraryKind].searchPlaceholder : t('files.placeholder.searchFiles')} className="h-8 text-xs ps-8" />
         </div>
         {isLibraryView ? (
           <Select value={photoSort} onValueChange={(v) => changePhotoSort((v ?? 'taken_desc') as LibrarySort)} items={sortOptions}>
@@ -1588,13 +1765,13 @@ export default function FilesPage() {
              one size, and gets the column picker below instead. */
           <>
             <div className="flex border rounded-md overflow-hidden">
-              <button title="Grid" aria-pressed={libraryLayout === 'grid'} onClick={() => changeLibraryLayout('grid')} className={`p-1.5 ${libraryLayout === 'grid' ? 'bg-accent text-accent-foreground' : 'hover:bg-muted/50'}`}><Grid3X3 className="size-3.5" /></button>
-              <button title="List" aria-pressed={libraryLayout === 'list'} onClick={() => changeLibraryLayout('list')} className={`p-1.5 ${libraryLayout === 'list' ? 'bg-accent text-accent-foreground' : 'hover:bg-muted/50'}`}><List className="size-3.5" /></button>
+              <button title={t('files.action.grid')} aria-pressed={libraryLayout === 'grid'} onClick={() => changeLibraryLayout('grid')} className={`p-1.5 ${libraryLayout === 'grid' ? 'bg-accent text-accent-foreground' : 'hover:bg-muted/50'}`}><Grid3X3 className="size-3.5" /></button>
+              <button title={t('files.action.list')} aria-pressed={libraryLayout === 'list'} onClick={() => changeLibraryLayout('list')} className={`p-1.5 ${libraryLayout === 'list' ? 'bg-accent text-accent-foreground' : 'hover:bg-muted/50'}`}><List className="size-3.5" /></button>
             </div>
             {libraryLayout === 'grid' && (
               <div className="flex border rounded-md overflow-hidden">
-                <button title="Small tiles" aria-pressed={tileSize === 'small'} onClick={() => changeTileSize('small')} className={`p-1.5 ${tileSize === 'small' ? 'bg-accent text-accent-foreground' : 'hover:bg-muted/50'}`}><ZoomOut className="size-3.5" /></button>
-                <button title="Large tiles" aria-pressed={tileSize === 'large'} onClick={() => changeTileSize('large')} className={`p-1.5 ${tileSize === 'large' ? 'bg-accent text-accent-foreground' : 'hover:bg-muted/50'}`}><ZoomIn className="size-3.5" /></button>
+                <button title={t('files.action.smallTiles')} aria-pressed={tileSize === 'small'} onClick={() => changeTileSize('small')} className={`p-1.5 ${tileSize === 'small' ? 'bg-accent text-accent-foreground' : 'hover:bg-muted/50'}`}><ZoomOut className="size-3.5" /></button>
+                <button title={t('files.action.largeTiles')} aria-pressed={tileSize === 'large'} onClick={() => changeTileSize('large')} className={`p-1.5 ${tileSize === 'large' ? 'bg-accent text-accent-foreground' : 'hover:bg-muted/50'}`}><ZoomIn className="size-3.5" /></button>
               </div>
             )}
           </>
@@ -1610,9 +1787,9 @@ export default function FilesPage() {
           <DropdownMenu open={columnPickerOpen} onOpenChange={setColumnPickerOpen}>
             <DropdownMenuTrigger
               className={`h-8 px-2 text-xs border rounded-md flex items-center gap-1.5 hover:bg-muted/50 ${columnPickerOpen ? 'bg-muted' : ''}`}
-              title="Table columns"
+              title={t('files.tooltip.tableColumns')}
             >
-              <SlidersHorizontal className="size-3.5" /> Columns
+              <SlidersHorizontal className="size-3.5" /> {t('files.label.columns')}
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="min-w-44">
               {displayColumns.map((col) => (
@@ -1633,21 +1810,22 @@ export default function FilesPage() {
                 onCheckedChange={(v) => setExactDates(!!v)}
                 closeOnClick={false}
                 className="text-xs"
-                title="Show the full date and time in every date column"
+                title={t('files.tooltip.showTheFullDateAndTimeInEveryDateColumn')}
               >
-                Exact dates
+                {t('files.label.exactDates')}
               </DropdownMenuCheckboxItem>
             </DropdownMenuContent>
           </DropdownMenu>
         )}
         {!isDeletedView && (
           <>
-            {/* A folder made from the library view would land nowhere the view
-                can show, so only Upload survives there. */}
-            {/* Same gates as the right-click menu's New folder / Upload files
-                entries: these two were shown to every role. */}
-            {!isLibraryView && can('create_folders') && <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={() => setCreateFolderOpen(true)}><FolderPlus className="size-3.5" /> New folder</Button>}
-            {can('access_upload') && can('upload_files') && <Link to={uploadHref}><Button size="sm" className="h-8 text-xs gap-1.5"><Upload className="size-3.5" /> Upload</Button></Link>}
+            {/* Same gates as the right-click menu's "New" group and Upload
+                files entry: these were once shown to every role. */}
+            <NewMenu
+              onNewFolder={canNewFolder ? () => setCreateFolderOpen(true) : undefined}
+              onNewFile={canNewFile ? setNewFileKind : undefined}
+            />
+            {can('access_upload') && can('upload_files') && <Link to={uploadHref}><Button size="sm" className="h-8 text-xs gap-1.5"><Upload className="size-3.5" /> {t('common.action.upload')}</Button></Link>}
           </>
         )}
       </div>
@@ -1657,7 +1835,7 @@ export default function FilesPage() {
           banner. */}
       {isDeletedView && (
         <div className="px-5 py-2 border-b shrink-0 text-xs text-muted-foreground bg-muted/30">
-          Items in the trash still count against your storage. Delete them permanently to free up space.
+          {t('files.description.itemsInTheTrashStillCountAgainstYourStorage')}
         </div>
       )}
 
@@ -1673,16 +1851,16 @@ export default function FilesPage() {
       >
         <div className="min-h-0 overflow-hidden">
         <div className="flex items-center gap-2 px-5 py-2 bg-primary/10 border-b flex-wrap">
-          <Badge variant="secondary">{shownSelected} selected</Badge>
+          <Badge variant="secondary">{t('files.status.shownselectedSelected', { totalSelected: shownSelected })}</Badge>
           {bulkBusy && <Loader2 className="size-3.5 animate-spin text-muted-foreground" />}
           {isDeletedView ? (
             <>
-              <Button variant="outline" size="sm" className="h-7 text-xs" disabled={bulkBusy} onClick={bulkRestore}><RotateCcw className="size-3 mr-1" /> Restore</Button>
-              <Button variant="outline" size="sm" className="h-7 text-xs text-destructive border-destructive/30" disabled={bulkBusy} onClick={() => setBulkDeleteConfirm({ permanent: true })}><Trash2 className="size-3 mr-1" /> Delete permanently</Button>
+              <Button variant="outline" size="sm" className="h-7 text-xs" disabled={bulkBusy} onClick={bulkRestore}><RotateCcw className="size-3 me-1" /> {t('common.action.restore')}</Button>
+              <Button variant="outline" size="sm" className="h-7 text-xs text-destructive border-destructive/30" disabled={bulkBusy} onClick={() => setBulkDeleteConfirm({ permanent: true })}><Trash2 className="size-3 me-1" /> {t('files.action.deletePermanently')}</Button>
             </>
           ) : (
             <>
-              {can('download_files') && <Button variant="outline" size="sm" className="h-7 text-xs" disabled={bulkBusy} onClick={bulkDownloadZip}><Download className="size-3 mr-1" /> Download ZIP</Button>}
+              {can('download_files') && <Button variant="outline" size="sm" className="h-7 text-xs" disabled={bulkBusy} onClick={bulkDownloadZip}><Download className="size-3 me-1" /> {t('files.action.downloadZIP')}</Button>}
               {/* Rendered whenever the role may share at all, unlike its
                   siblings: a folder-only selection needs to be told WHY it
                   cannot share, not handed an empty gap where the button was.
@@ -1692,19 +1870,19 @@ export default function FilesPage() {
                 <Button
                   variant="outline" size="sm" className="h-7 text-xs"
                   disabled={bulkBusy || !shownCanShare}
-                  title={shownCanShare ? undefined : 'A link covers one folder, or a set of files - not both.'}
+                  title={shownCanShare ? undefined : t('files.action.aLinkCoversOneFolderOrASetOfFiles')}
                   onClick={openBulkShare}
                 >
-                  <Share2 className="size-3 mr-1" /> Share
+                  <Share2 className="size-3 me-1" /> {t('common.action.share')}
                 </Button>
               )}
-              {(can('upload_files') || can('rename_folders')) && <Button variant="outline" size="sm" className="h-7 text-xs" disabled={bulkBusy} onClick={bulkMove}><Move className="size-3 mr-1" /> Move</Button>}
-              {(can('delete_any_file') || can('delete_own_files')) && <Button variant="outline" size="sm" className="h-7 text-xs text-destructive border-destructive/30" disabled={bulkBusy} onClick={() => setBulkDeleteConfirm({ permanent: false })}><Trash2 className="size-3 mr-1" /> Delete</Button>}
+              {(can('upload_files') || can('rename_folders')) && <Button variant="outline" size="sm" className="h-7 text-xs" disabled={bulkBusy} onClick={bulkMove}><Move className="size-3 me-1" /> {t('files.action.move')}</Button>}
+              {(can('delete_any_file') || can('delete_own_files')) && <Button variant="outline" size="sm" className="h-7 text-xs text-destructive border-destructive/30" disabled={bulkBusy} onClick={() => setBulkDeleteConfirm({ permanent: false })}><Trash2 className="size-3 me-1" /> {t('common.delete')}</Button>}
             </>
           )}
-          <div className="ml-auto flex gap-1.5">
-            <Button variant="outline" size="sm" className="h-7 text-xs" onClick={selectAll}>Select all</Button>
-            <Button variant="outline" size="sm" className="h-7 text-xs" onClick={clearSelection}>Clear</Button>
+          <div className="ms-auto flex gap-1.5">
+            <Button variant="outline" size="sm" className="h-7 text-xs" onClick={selectAll}>{t('common.action.selectAll')}</Button>
+            <Button variant="outline" size="sm" className="h-7 text-xs" onClick={clearSelection}>{t('common.action.clear')}</Button>
           </div>
         </div>
         </div>
@@ -1759,43 +1937,43 @@ export default function FilesPage() {
                the only way out was a full page reload. */
             <div className="flex flex-col items-center justify-center py-20 text-center">
               <AlertCircle className="size-12 text-destructive/40 mb-4" />
-              <p className="text-sm font-medium text-foreground mb-1">Could not load this folder</p>
-              <p className="text-xs text-muted-foreground max-w-80 mb-3">{loadError}</p>
+              <p className="text-sm font-medium text-foreground mb-1">{t('files.error.couldNotLoadThisFolder')}</p>
+              <p dir="auto" className="text-xs text-muted-foreground max-w-80 mb-3">{loadError}</p>
               <Button variant="outline" size="sm" className="h-7 text-xs" onClick={loadFiles}>
-                <RefreshCw className="size-3 mr-1" /> Try again
+                <RefreshCw className="size-3 me-1" /> {t('common.action.tryAgain')}
               </Button>
             </div>
           ) : folders.length === 0 && files.length === 0 ? (
             <EmptyState
               icon={FolderOpen}
               title={
-                isDeletedView ? 'Trash is empty'
-                  : search ? 'No files match your search'
-                  : currentGroup ? 'This group is empty'
+                isDeletedView ? t('files.tooltip.trashIsEmpty')
+                  : search ? t('files.tooltip.noFilesMatchYourSearch')
+                  : currentGroup ? t('files.tooltip.thisGroupIsEmpty')
                   : filterEmptyLabel ? filterEmptyLabel
-                  : 'This folder is empty'
+                  : t('files.tooltip.thisFolderIsEmpty')
               }
               description={
                 currentGroup && !search
-                  ? 'Right-click any file or folder and choose "Add to group" to collect items here.'
+                  ? t('files.description.rightClickAnyFileOrFolderAndChooseAddToGroupTo')
                   : (!isDeletedView && !search && !currentGroup && !filterEmptyLabel)
-                    ? 'Drop files or whole folders anywhere on this page to upload them.'
+                    ? t('files.description.dropFilesOrWholeFoldersAnywhereOnThisPageToUpload')
                     : undefined
               }
               actions={
                 filterEmptyLabel && !search && !currentGroup ? (
                   <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setSearchParams(filterNavParams(searchParams, ''))}>
-                    Show all files
+                    {t('files.action.showAllFiles')}
                   </Button>
                 ) : (!isDeletedView && !search && !currentGroup && !filterEmptyLabel) ? (
                   <>
                     {can('access_upload') && can('upload_files') && (
                       <Link to={uploadHref}>
-                        <Button size="sm" className="h-7 text-xs"><Upload className="size-3 mr-1" /> Upload files</Button>
+                        <Button size="sm" className="h-7 text-xs"><Upload className="size-3 me-1" /> {t('common.action.uploadFiles')}</Button>
                       </Link>
                     )}
                     <Link to="/integrations/google">
-                      <Button variant="outline" size="sm" className="h-7 text-xs">Import from Drive</Button>
+                      <Button variant="outline" size="sm" className="h-7 text-xs">{t('files.action.importFromDrive')}</Button>
                     </Link>
                   </>
                 ) : undefined
@@ -1808,7 +1986,7 @@ export default function FilesPage() {
             <div className="animate-content-in">
               {folders.length > 0 && viewMode === 'grid' && (
                 <div className="mb-5">
-                  <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">Folders</p>
+                  <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">{t('common.label.folders')}</p>
                   <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
                     {folders.map((f) => (
                       <FolderCard key={f.id} folder={f}
@@ -1818,14 +1996,16 @@ export default function FilesPage() {
                         onSelect={() => toggleSelectFolder(f.id)}
                         onContextMenu={(e) => onContextMenu(e, 'folder', f)}
                         onPrefetch={() => scheduleFolderPrefetch(f.id)}
-                        onPrefetchCancel={cancelFolderPrefetch} />
+                        onPrefetchCancel={cancelFolderPrefetch}
+                        dragProps={{ ...folderDragProps(f), ...moveDrag.dropTargetProps({ id: f.id, name: f.name }) }}
+                        dropActive={moveDrag.isOver(f.id)} />
                     ))}
                   </div>
                 </div>
               )}
               {files.length > 0 && viewMode === 'grid' && (
                 <div>
-                  <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">Files</p>
+                  <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">{t('common.label.files')}</p>
                   <div className={`grid grid-cols-2 md:grid-cols-3 ${selectedFile ? 'lg:grid-cols-3' : 'lg:grid-cols-4'} gap-3`}>
                     {gridFiles.map((f) => (
                       <FileCard key={f.id} file={f} view="grid"
@@ -1849,7 +2029,8 @@ export default function FilesPage() {
                         onFavourite={() => toggleFavourite(f.id)}
                         onComments={() => navigate(`/comments?file_id=${f.id}&workspace_id=${wsId}&name=${encodeURIComponent(f.name)}`)}
                         onRestore={canDeleteFile(f) ? () => handleRestoreFile(f) : undefined}
-                        restoreDisabled={restoringIds.has(f.id)} />
+                        restoreDisabled={restoringIds.has(f.id)}
+                        dragProps={fileDragProps(f)} />
                     ))}
                   </div>
                 </div>
@@ -1863,8 +2044,8 @@ export default function FilesPage() {
                       <button
                         key={col.key}
                         onClick={() => { if (col.key === 'taken' && isLibraryView) return; changeSort(toggleSort(sort, col.key)); }}
-                        title={`Sort by ${col.label.toLowerCase()}`}
-                        className={`flex items-center gap-1 text-left uppercase tracking-wider hover:text-foreground transition-colors ${col.key === 'name' ? 'flex-1 min-w-40' : col.width} ${sort.key === col.key ? 'text-foreground' : ''}`}
+                        title={t('common.action.sortByLabeltolowercase', { labelToLowerCase: col.label.toLocaleLowerCase(locale) })}
+                        className={`flex items-center gap-1 text-start uppercase tracking-wider hover:text-foreground transition-colors ${col.key === 'name' ? 'flex-1 min-w-40' : col.width} ${sort.key === col.key ? 'text-foreground' : ''}`}
                       >
                         <span className="truncate">{col.label}</span>
                         {sort.key === col.key && (sort.dir === 'asc'
@@ -1878,11 +2059,13 @@ export default function FilesPage() {
                   {folders.map((f) => (
                       <div
                         key={f.id}
-                        className={`flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-muted/50 cursor-pointer group ${selectedFolders.has(f.id) ? 'bg-primary/10' : ''}`}
+                        className={`flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-muted/50 cursor-pointer group ${moveDrag.isOver(f.id) ? 'ring-2 ring-inset ring-primary bg-primary/10' : selectedFolders.has(f.id) ? 'bg-primary/10' : ''}`}
                         onClick={(e) => { if (e.ctrlKey || e.metaKey) { e.stopPropagation(); toggleSelectFolder(f.id); } else navigateToFolder(f.id); }}
                         onContextMenu={(e) => onContextMenu(e, 'folder', f)}
                         onMouseEnter={() => scheduleFolderPrefetch(f.id)}
                         onMouseLeave={cancelFolderPrefetch}
+                        {...folderDragProps(f)}
+                        {...moveDrag.dropTargetProps({ id: f.id, name: f.name })}
                       >
                         <SelectCheckbox
                           checked={selectedFolders.has(f.id)}
@@ -1897,8 +2080,8 @@ export default function FilesPage() {
                           if (col.key === 'name') {
                             return (
                               <div key="name" className="flex-1 min-w-40 flex items-center gap-2">
-                                <span className="text-sm font-medium truncate">{f.name}</span>
-                                <span className="text-xs text-muted-foreground shrink-0">{f.file_count} files</span>
+                                <span className="text-sm font-medium truncate" dir="auto">{f.name}</span>
+                                <span className="text-xs text-muted-foreground shrink-0">{t('common.label.filecountFiles', { fileCount: f.file_count })}</span>
                                 {f.lock_mode !== 'none' && <Lock className="size-3 text-muted-foreground shrink-0" />}
                                 {!!f.is_hidden && (
                                   <span title={hiddenTitle(f.hidden_mode)} className="shrink-0 inline-flex">
@@ -1917,7 +2100,7 @@ export default function FilesPage() {
                                 onRestore={() => handleRestoreFolder(f)}
                                 restoreDisabled={restoringIds.has(f.id)}
                                 onDelete={() => setDeleteTarget({ id: f.id, name: f.name, type: 'folder', permanent: true, fileCount: f.file_count })}
-                                deleteLabel="Delete permanently"
+                                deleteLabel={t('files.action.deletePermanently')}
                               />
                             )
                           ) : (
@@ -1940,9 +2123,10 @@ export default function FilesPage() {
                       <div
                         key={f.id}
                         id={`file-${f.id}`}
-                        className={`flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-muted/50 cursor-pointer group ${isLiveTwin(f) ? 'pl-9 ' : ''}${highlightId === f.id ? 'animate-upload-flash ' : ''}${isActive ? 'bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-900' : isSel ? 'bg-primary/10' : ''}`}
+                        className={`flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-muted/50 cursor-pointer group ${isLiveTwin(f) ? 'ps-9 ' : ''}${highlightId === f.id ? 'animate-upload-flash ' : ''}${isActive ? 'bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-900' : isSel ? 'bg-primary/10' : ''}`}
                         onClick={(e) => { e.stopPropagation(); if (e.ctrlKey || e.metaKey) toggleSelect(f.id); else openFileWithLockCheck(f, 'detail'); }}
                         onContextMenu={(e) => onContextMenu(e, 'file', f)}
+                        {...fileDragProps(f)}
                       >
                         <SelectCheckbox
                           checked={isSel}
@@ -1954,9 +2138,9 @@ export default function FilesPage() {
                           if (col.key === 'name') {
                             return (
                               <div key="name" className="flex-1 min-w-40 flex items-center gap-2">
-                                <button className="text-sm font-medium truncate hover:underline text-left" onClick={(e) => { e.stopPropagation(); openFileWithLockCheck(f, 'view'); }}>{f.name}</button>
+                                <button className="text-sm font-medium truncate hover:underline text-start" dir="auto" onClick={(e) => { e.stopPropagation(); openFileWithLockCheck(f, 'view'); }}>{f.name}</button>
                                 {isLiveStill(f) && <LiveBadge size="pill" />}
-                                {isLiveTwin(f) && <span className="text-[10px] text-muted-foreground">Live Photo video</span>}
+                                {isLiveTwin(f) && <span className="text-[10px] text-muted-foreground">{t('common.label.livePhotoVideo')}</span>}
                                 {favourites.has(f.id) && <Star className="size-3 text-orange-400 fill-orange-400 shrink-0" />}
                               </div>
                             );
@@ -1970,7 +2154,7 @@ export default function FilesPage() {
                                 onRestore={() => handleRestoreFile(f)}
                                 restoreDisabled={restoringIds.has(f.id)}
                                 onDelete={() => setDeleteTarget(fileDeleteTarget(f, true))}
-                                deleteLabel="Delete permanently"
+                                deleteLabel={t('files.action.deletePermanently')}
                               />
                             )
                           ) : (
@@ -1992,9 +2176,9 @@ export default function FilesPage() {
               )}
               {pagination && pagination.total_pages > 1 && (
                 <div className="flex items-center justify-center gap-2 mt-6">
-                  <Button variant="outline" size="sm" disabled={currentPage <= 1} onClick={() => { const p = new URLSearchParams(searchParams); p.set('page', String(currentPage - 1)); setSearchParams(p); }}>Previous</Button>
-                  <span className="text-xs text-muted-foreground">Page {currentPage} of {pagination.total_pages}</span>
-                  <Button variant="outline" size="sm" disabled={currentPage >= pagination.total_pages} onClick={() => { const p = new URLSearchParams(searchParams); p.set('page', String(currentPage + 1)); setSearchParams(p); }}>Next</Button>
+                  <Button variant="outline" size="sm" disabled={currentPage <= 1} onClick={() => { const p = new URLSearchParams(searchParams); p.set('page', String(currentPage - 1)); setSearchParams(p); }}>{t('common.action.previous')}</Button>
+                  <span className="text-xs text-muted-foreground">{t('files.label.pageCurrentpageOfPaginationtotalPages', { page: currentPage, pageCount: pagination.total_pages })}</span>
+                  <Button variant="outline" size="sm" disabled={currentPage >= pagination.total_pages} onClick={() => { const p = new URLSearchParams(searchParams); p.set('page', String(currentPage + 1)); setSearchParams(p); }}>{t('common.next')}</Button>
                 </div>
               )}
             </div>
@@ -2029,15 +2213,17 @@ export default function FilesPage() {
         }
       />
 
+      <NewFileDialog kind={newFileKind} onClose={() => setNewFileKind(null)} onCreate={handleCreateFile} />
+
       {/* Create folder dialog */}
       <Dialog open={createFolderOpen} onOpenChange={setCreateFolderOpen}>
         <DialogContent className="max-w-sm">
-          <DialogHeader><DialogTitle>Create new folder</DialogTitle></DialogHeader>
-          <Input placeholder="e.g. Brand Assets or Projects/Q2/Designs" value={newFolderName} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewFolderName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleCreateFolder()} />
-          <p className="text-xs text-muted-foreground">Use <strong>/</strong> to create nested folders. e.g. <code className="bg-muted px-1 rounded text-[11px]">Projects/Q2/Designs</code> creates 3 levels.</p>
+          <DialogHeader><DialogTitle>{t('files.heading.createNewFolder')}</DialogTitle></DialogHeader>
+          <Input placeholder={t('files.placeholder.eGBrandAssetsOrProjectsQ2Designs')} value={newFolderName} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewFolderName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleCreateFolder()} />
+          <p className="text-xs text-muted-foreground">{richText(t('files.description.useEmphasis1ToCreateNestedFoldersEGEmphasis2Creates3Levels'), { emphasis1: <strong>/</strong>, emphasis2: <code className="bg-muted px-1 rounded text-[11px]">Projects/Q2/Designs</code> })}</p>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setCreateFolderOpen(false)}>Cancel</Button>
-            <Button onClick={handleCreateFolder} disabled={creatingFolder}>{creatingFolder ? <Loader2 className="size-4 animate-spin mr-1.5" /> : null} Create</Button>
+            <Button variant="outline" onClick={() => setCreateFolderOpen(false)}>{t('common.cancel')}</Button>
+            <Button onClick={handleCreateFolder} disabled={creatingFolder}>{creatingFolder ? <Loader2 className="size-4 animate-spin me-1.5" /> : null} {t('common.action.create')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -2051,39 +2237,38 @@ export default function FilesPage() {
           lands on the now-trashed item and silently purges it. */}
       <Dialog open={!!deleteTarget} onOpenChange={(open) => { if (!open && !deleting) setDeleteTarget(null); }}>
         <DialogContent className="sm:max-w-sm" showCloseButton={!deleting}>
-          <DialogHeader><DialogTitle>{deleteTarget?.permanent ? 'Delete permanently?' : `Delete ${deleteTarget?.type}?`}</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{deleteTarget?.permanent ? t('files.heading.deletePermanently') : t('files.heading.deleteDeletetargettype', { deleteTargetType: nounOf(deleteTarget?.type) })}</DialogTitle></DialogHeader>
           <p className={`text-sm ${deleteTarget?.permanent ? 'text-destructive' : 'text-muted-foreground'}`}>
             {deleteTarget?.permanent ? (
-              <>
-                Permanently delete <span className="font-semibold text-foreground break-all">{deleteTarget?.name}</span>
-                {deleteTarget?.type === 'folder' && !!deleteTarget?.fileCount && ` and its ${deleteTarget.fileCount} file${deleteTarget.fileCount === 1 ? '' : 's'}`}
-                ? This cannot be undone.
-              </>
+              richText(t('files.error.permanentlyDeleteDeletetargetnameHasfilesThisCannotBeUndone', {
+                hasFiles: deleteTarget?.type === 'folder' && !!deleteTarget?.fileCount ? 'true' : 'other',
+                fileCount: deleteTarget?.fileCount ?? 0,
+              }), { deleteTargetName: <span className="font-semibold text-foreground break-all"><bdi>{deleteTarget?.name}</bdi></span> })
             ) : (
-              <>Are you sure you want to delete <span className="font-semibold text-foreground break-all">{deleteTarget?.name}</span>?</>
+              richText(t('files.description.areYouSureYouWantToDeleteName'), { name: <span className="font-semibold text-foreground break-all"><bdi>{deleteTarget?.name}</bdi></span> })
             )}
           </p>
           {!deleteTarget?.permanent && (
-            <p className="text-xs text-muted-foreground">It moves to the trash and keeps using storage until it's permanently deleted.</p>
+            <p className="text-xs text-muted-foreground">{t('files.description.itMovesToTheTrashAndKeepsUsingStorageUntilItS')}</p>
           )}
           {deleteTarget?.type === 'file' && deleteTarget.twin && (
             <label className="flex items-center gap-2 text-sm">
               <input type="checkbox" checked={deleteTarget.withTwin !== false} onChange={(e) => setDeleteTarget({ ...deleteTarget, withTwin: e.target.checked })} />
-              Also delete {deleteTarget.twin.name}
+              <span>{t('files.label.alsoDelete')} <bdi>{deleteTarget.twin.name}</bdi></span>
             </label>
           )}
           {/* A big folder is emptied over several passes; say what has gone so
               far rather than leaving a spinner with nothing behind it. */}
           {purgeProgress !== null && purgeProgress > 0 && (
             <p className="text-xs text-muted-foreground tabular-nums">
-              {purgeProgress.toLocaleString()} file{purgeProgress === 1 ? '' : 's'} removed so far…
+              {t('files.description.purgeprogresstolocalestringFilePurgeprogressPluralOneOtherSRemovedSoFar', { purgeProgressToLocaleString: formatNumber(purgeProgress), purgeProgress })}
             </p>
           )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteTarget(null)} disabled={deleting}>Cancel</Button>
+            <Button variant="outline" onClick={() => setDeleteTarget(null)} disabled={deleting}>{t('common.cancel')}</Button>
             <Button variant="destructive" onClick={handleDelete} disabled={deleting}>
-              {deleting && <Loader2 className="size-4 animate-spin mr-1.5" />}
-              {deleteTarget?.permanent ? 'Delete permanently' : 'Delete'}
+              {deleting && <Loader2 className="size-4 animate-spin me-1.5" />}
+              {deleteTarget?.permanent ? t('files.action.deletePermanently') : t('common.delete')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -2098,52 +2283,38 @@ export default function FilesPage() {
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle>
-              {bulkDeleteConfirm?.permanent ? 'Delete permanently?' : 'Delete selected items?'}
+              {bulkDeleteConfirm?.permanent ? t('files.heading.deletePermanently') : t('files.heading.deleteSelectedItems')}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-2 text-sm text-muted-foreground">
             <p>
               {bulkDeleteConfirm?.permanent ? (
-                <>
-                  Permanently delete{' '}
-                  <span className="font-semibold text-foreground">
-                    {selected.size > 0 && `${selected.size} file${selected.size === 1 ? '' : 's'}`}
-                    {selected.size > 0 && selectedFolders.size > 0 && ' and '}
-                    {selectedFolders.size > 0 && `${selectedFolders.size} folder${selectedFolders.size === 1 ? '' : 's'}`}
-                  </span>?
-                </>
+                bulkSelectionSentence('files.description.permanentlyDeleteSelectedsummary')
               ) : (
-                <>
-                  Delete{' '}
-                  <span className="font-semibold text-foreground">
-                    {selected.size > 0 && `${selected.size} file${selected.size === 1 ? '' : 's'}`}
-                    {selected.size > 0 && selectedFolders.size > 0 && ' and '}
-                    {selectedFolders.size > 0 && `${selectedFolders.size} folder${selectedFolders.size === 1 ? '' : 's'}`}
-                  </span>?
-                </>
+                bulkSelectionSentence('files.description.deleteSelectedsummary')
               )}
             </p>
-            {selectedTwinIds.length > 0 && <p className="text-xs text-muted-foreground">Includes {selectedTwinIds.length} Live Photo video{selectedTwinIds.length === 1 ? '' : 's'}.</p>}
+            {selectedTwinIds.length > 0 && <p className="text-xs text-muted-foreground">{t('files.description.includesSelectedtwinidscountPluralOneLivePhotoVideoOtherLive', { selectedTwinIdsCount: selectedTwinIds.length })}</p>}
             {selectedFolders.size > 0 && (
               <p>
                 {bulkDeleteConfirm?.permanent
-                  ? `Everything inside the selected folder${selectedFolders.size === 1 ? '' : 's'} is permanently deleted too.`
-                  : `Everything inside the selected folder${selectedFolders.size === 1 ? '' : 's'} is deleted too.`}
+                  ? t('files.description.everythingInsideTheSelectedFolderSelectedfolderssizePluralOneOtherSIs', { selectedFoldersSize: selectedFolders.size })
+                  : t('files.description.everythingInsideTheSelectedFolderSelectedfolderssizePluralOneOtherSIs.otherSIsDeletedToo', { selectedFoldersSize: selectedFolders.size })}
               </p>
             )}
             <p className={bulkDeleteConfirm?.permanent ? 'text-destructive' : undefined}>
               {bulkDeleteConfirm?.permanent
-                ? 'This cannot be undone.'
-                : 'You can restore these from the Deleted view. They keep using storage until permanently deleted.'}
+                ? t('files.error.thisCannotBeUndone')
+                : t('files.description.youCanRestoreTheseFromTheDeletedViewTheyKeepUsing')}
             </p>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setBulkDeleteConfirm(null)}>Cancel</Button>
+            <Button variant="outline" onClick={() => setBulkDeleteConfirm(null)}>{t('common.cancel')}</Button>
             <Button
               variant="destructive"
               onClick={bulkDeleteConfirm?.permanent ? runBulkPermanentDelete : runBulkDelete}
             >
-              {bulkDeleteConfirm?.permanent ? 'Delete permanently' : 'Delete'}
+              {bulkDeleteConfirm?.permanent ? t('files.action.deletePermanently') : t('common.delete')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -2161,7 +2332,7 @@ export default function FilesPage() {
       {/* Rename dialog */}
       <Dialog open={!!renameTarget} onOpenChange={() => setRenameTarget(null)}>
         <DialogContent className="max-w-sm">
-          <DialogHeader><DialogTitle>Rename</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{t('files.heading.rename')}</DialogTitle></DialogHeader>
           {/* autoFocus alone put the caret at the end of the existing name, so
               renaming meant selecting or deleting the old one by hand first.
               Selecting the basename (not the extension) means typing replaces
@@ -2179,8 +2350,8 @@ export default function FilesPage() {
             onKeyDown={(e) => e.key === 'Enter' && handleRename()}
           />
           <DialogFooter>
-            <Button variant="outline" onClick={() => setRenameTarget(null)}>Cancel</Button>
-            <Button onClick={handleRename}>Rename</Button>
+            <Button variant="outline" onClick={() => setRenameTarget(null)}>{t('common.cancel')}</Button>
+            <Button onClick={handleRename}>{t('common.action.rename')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -2193,8 +2364,8 @@ export default function FilesPage() {
           workspaceId={wsId}
           selectedId={null}
           onSelect={(id) => handleMove(id)}
-          title="Move to folder"
-          confirmLabel="Move"
+          title={t('files.tooltip.moveToFolder')}
+          confirmLabel={t('files.action.move')}
           excludeId={moveOpen.type === 'folder' ? moveOpen.id : null}
         />
       )}
@@ -2207,11 +2378,27 @@ export default function FilesPage() {
           workspaceId={wsId}
           selectedId={null}
           onSelect={(id) => applyBulkMove(id)}
-          title="Move to folder"
-          confirmLabel="Move"
+          title={t('files.tooltip.moveToFolder')}
+          confirmLabel={t('files.action.move')}
           excludeId={null}
         />
       )}
+
+      {/* Drag-to-move confirm. Nothing has moved yet; Move runs the same
+          bulk move as the toolbar. Focus starts on Move so Enter confirms;
+          Escape and Cancel close without moving. */}
+      <Dialog open={dropMoveOpen} onOpenChange={setDropMoveOpen}>
+        <DialogContent className="max-w-sm" initialFocus={dropMoveConfirmRef}>
+          <DialogHeader>
+            <DialogTitle>{t('common.heading.areYouSure')}</DialogTitle>
+            <DialogDescription className="break-words">{dropMove ? dropMoveDescription(dropMove) : null}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDropMoveOpen(false)}>{t('common.cancel')}</Button>
+            <Button ref={dropMoveConfirmRef} onClick={confirmDropMove}>{t('files.action.move')}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Share modal */}
       <ShareModal
@@ -2244,7 +2431,7 @@ export default function FilesPage() {
       {/* Get-info dialog */}
       <FileInfoDialog
         target={infoTarget}
-        location={breadcrumbs.length ? breadcrumbs.map((b) => b.name).join(' / ') : 'Home'}
+        location={breadcrumbs.length ? breadcrumbs.map((b) => b.name).join(' / ') : t('common.label.home')}
         onClose={() => setInfoTarget(null)}
       />
 
@@ -2252,17 +2439,17 @@ export default function FilesPage() {
       <Dialog open={!!addToGroupTarget} onOpenChange={() => setAddToGroupTarget(null)}>
         <DialogContent className="max-w-xs">
           <DialogHeader>
-            <DialogTitle>Add to group</DialogTitle>
+            <DialogTitle>{t('files.heading.addToGroup')}</DialogTitle>
           </DialogHeader>
           <p className="text-xs text-muted-foreground mb-2">
-            Select a group for <span className="font-semibold text-foreground break-all">{addToGroupTarget?.name}</span>
+            {richText(t('files.label.selectAGroupForAddtogrouptargetname'), { addToGroupTargetName: <span className="font-semibold text-foreground break-all"><bdi>{addToGroupTarget?.name}</bdi></span> })}
           </p>
           <div className="max-h-48 overflow-y-auto border rounded-lg">
             {availableGroups.map((g) => (
               <button
                 key={g.id}
                 disabled={addingToGroup === g.id}
-                className="w-full flex items-center gap-2.5 px-3 py-2.5 text-xs border-b last:border-b-0 hover:bg-muted/50 text-left disabled:opacity-50"
+                className="w-full flex items-center gap-2.5 px-3 py-2.5 text-xs border-b last:border-b-0 hover:bg-muted/50 text-start disabled:opacity-50"
                 onClick={async () => {
                   if (!addToGroupTarget) return;
                   setAddingToGroup(g.id);
@@ -2273,22 +2460,22 @@ export default function FilesPage() {
                       ? { file_id: addToGroupTarget.id }
                       : { folder_id: addToGroupTarget.id };
                     await api(`/api/groups/${g.id}`, { method: 'POST', body: JSON.stringify(body) });
-                    toast.success('Added to group', `The ${addToGroupTarget.type} was added to ${g.name}.`);
+                    toast.success(t('files.action.addedToGroup'), t('files.action.theAddtogrouptargettypeWasAddedToGname', { addToGroupTargetType: nounOf(addToGroupTarget.type), gName: g.name }));
                     setAddToGroupTarget(null);
                     // Refresh the FilesSidebar's group list (item counts)
                     window.dispatchEvent(new Event('dosya:groups-changed'));
-                  } catch { toast.error('Something went wrong', `The ${addToGroupTarget.type} could not be added to the group.`); }
+                  } catch { toast.error(t('common.error.somethingWentWrong'), t('files.error.theAddtogrouptargettypeCouldNotBeAddedToTheGroup', { addToGroupTargetType: nounOf(addToGroupTarget.type) })); }
                   setAddingToGroup(null);
                 }}
               >
                 <div className="size-3 rounded-full shrink-0" style={{ background: g.color || '#a0a0a0' }} />
-                <span className="flex-1 truncate">{g.name}</span>
+                <span className="flex-1 truncate" dir="auto">{g.name}</span>
                 {addingToGroup === g.id && <Loader2 className="size-3 animate-spin shrink-0" />}
               </button>
             ))}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setAddToGroupTarget(null)}>Cancel</Button>
+            <Button variant="outline" onClick={() => setAddToGroupTarget(null)}>{t('common.cancel')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -2296,22 +2483,22 @@ export default function FilesPage() {
       {/* Unlock password dialog */}
       <Dialog open={!!unlockPrompt} onOpenChange={() => closeUnlockPrompt()}>
         <DialogContent className="max-w-xs">
-          <DialogHeader><DialogTitle className="flex items-center gap-2"><Lock className="size-4" /> File is locked</DialogTitle></DialogHeader>
-          <p className="text-xs text-muted-foreground">Enter the password to access <span className="font-semibold text-foreground break-all">{unlockPrompt?.file.name}</span></p>
-          {unlockError && <p className="text-xs text-destructive bg-destructive/10 border border-destructive/20 rounded-md px-3 py-2">{unlockError}</p>}
+          <DialogHeader><DialogTitle className="flex items-center gap-2"><Lock className="size-4" /> {t('files.heading.fileIsLocked')}</DialogTitle></DialogHeader>
+          <p className="text-xs text-muted-foreground">{richText(t('files.description.enterThePasswordToAccessFileName'), { fileName: <span className="font-semibold text-foreground break-all"><bdi>{unlockPrompt?.file.name}</bdi></span> })}</p>
+          {unlockError && <p dir="auto" className="text-xs text-destructive bg-destructive/10 border border-destructive/20 rounded-md px-3 py-2">{unlockError}</p>}
           <Input
             type="password"
             value={unlockPassword}
             onChange={(e: React.ChangeEvent<HTMLInputElement>) => setUnlockPassword(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleUnlockSubmit()}
-            placeholder="Enter password"
+            placeholder={t('files.placeholder.enterPassword')}
             className="h-9"
             autoFocus
           />
           <DialogFooter>
-            <Button variant="outline" onClick={closeUnlockPrompt}>Cancel</Button>
+            <Button variant="outline" onClick={closeUnlockPrompt}>{t('common.cancel')}</Button>
             <Button onClick={handleUnlockSubmit} disabled={unlocking}>
-              {unlocking && <Loader2 className="size-4 animate-spin mr-1.5" />} Unlock
+              {unlocking && <Loader2 className="size-4 animate-spin me-1.5" />} {t('common.action.unlock')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -2341,6 +2528,7 @@ export default function FilesPage() {
           initialTab={viewerFile.id === viewerIntent.current.fileId ? viewerIntent.current.tab ?? undefined : undefined}
           initialAnchor={viewerFile.id === viewerIntent.current.fileId ? viewerIntent.current.anchor : null}
           initialCommentId={viewerFile.id === viewerIntent.current.fileId ? viewerIntent.current.commentId : null}
+          onEditText={(f) => openTextEditor(f.id)}
           onClose={() => setViewerFile(null)}
           onNavigate={(f) => {
             // Arrow-key / prev-next navigation has to clear the same lock gate
@@ -2379,19 +2567,25 @@ export default function FilesPage() {
 
 // ── Folder Card ────────────────────────────────────────────
 
-function FolderCard({ folder, selected, anySelected, onClick, onSelect, onContextMenu, onPrefetch, onPrefetchCancel }: {
+/** The drag/drop props useMoveDrag hands out, as a card accepts them. */
+type DragHandlers = Pick<React.HTMLAttributes<HTMLElement>, 'draggable' | 'onDragStart' | 'onDragEnd' | 'onDragEnter' | 'onDragOver' | 'onDragLeave' | 'onDrop'>;
+
+function FolderCard({ folder, selected, anySelected, onClick, onSelect, onContextMenu, onPrefetch, onPrefetchCancel, dragProps, dropActive }: {
   folder: FolderItem; selected?: boolean; anySelected?: boolean;
   onClick: (e: ReactMouseEvent) => void; onSelect: () => void; onContextMenu: (e: ReactMouseEvent) => void;
   onPrefetch: () => void; onPrefetchCancel: () => void;
+  /** Drag-to-move: the card as a drag source and as a drop target (see useMoveDrag). */
+  dragProps?: DragHandlers; dropActive?: boolean;
 }) {
+  const t = useT();
   const iconSrc = folderIconSrc(folder.file_count, !!folder.is_synced);
 
   return (
-    <Card className={`gap-0 py-0 p-3 hover:shadow-md hover:-translate-y-px transition-all cursor-pointer group relative ${selected ? 'ring-2 ring-primary' : ''}`} onClick={onClick} onContextMenu={onContextMenu} onMouseEnter={onPrefetch} onMouseLeave={onPrefetchCancel}>
+    <Card {...dragProps} className={`gap-0 py-0 p-3 hover:shadow-md hover:-translate-y-px transition-all cursor-pointer group relative ${dropActive ? 'ring-2 ring-primary bg-primary/10' : selected ? 'ring-2 ring-primary' : ''}`} onClick={onClick} onContextMenu={onContextMenu} onMouseEnter={onPrefetch} onMouseLeave={onPrefetchCancel}>
       <SelectCheckbox
         checked={!!selected}
         onCheckedChange={() => onSelect()}
-        className={`absolute top-2 right-2 z-20 size-4 transition-all ${selected ? '' : 'opacity-0 group-hover:opacity-100'} ${anySelected ? 'opacity-100!' : ''}`}
+        className={`absolute top-2 inset-e-2 z-20 size-4 transition-all ${selected ? '' : 'opacity-0 group-hover:opacity-100'} ${anySelected ? 'opacity-100!' : ''}`}
       />
       <div className="flex items-center gap-2 mb-2">
         <span className="relative">
@@ -2399,7 +2593,7 @@ function FolderCard({ folder, selected, anySelected, onClick, onSelect, onContex
           <OriginBadge origin={folder.origin} />
         </span>
         {(folder.lock_mode !== 'none' || !!folder.is_hidden) && (
-          <span className="ml-auto flex items-center gap-1">
+          <span className="ms-auto flex items-center gap-1">
             {folder.lock_mode !== 'none' && <Lock className="size-3 text-muted-foreground" />}
             {!!folder.is_hidden && (
               <span title={hiddenTitle(folder.hidden_mode)} className="inline-flex">
@@ -2409,15 +2603,15 @@ function FolderCard({ folder, selected, anySelected, onClick, onSelect, onContex
           </span>
         )}
       </div>
-      <p className="text-xs font-medium truncate">{folder.name}</p>
-      <p className="text-[10px] text-muted-foreground">{folder.file_count} files</p>
+      <p className="text-xs font-medium truncate" dir="auto">{folder.name}</p>
+      <p className="text-[10px] text-muted-foreground">{t('common.label.filecountFiles', { fileCount: folder.file_count })}</p>
     </Card>
   );
 }
 
 // ── File Card ──────────────────────────────────────────────
 
-function FileCard({ file, view, selected, anySelected, active, highlight, domId, isFavourite, trashed, onClick, onSelect, onNameClick, onContextMenu, onDownload, onShare, onRename, onDelete, onCopy, onMove, onFavourite, onComments, onRestore, restoreDisabled }: {
+function FileCard({ file, view, selected, anySelected, active, highlight, domId, isFavourite, trashed, onClick, onSelect, onNameClick, onContextMenu, onDownload, onShare, onRename, onDelete, onCopy, onMove, onFavourite, onComments, onRestore, restoreDisabled, dragProps }: {
   file: FileItem; view: ViewMode; selected: boolean; anySelected?: boolean; active?: boolean; highlight?: boolean; domId?: string; isFavourite?: boolean;
   /** Trash view - the card offers only Restore/Delete permanently (see the
    * dropdown below); Download/Share/Rename/Copy/Move/favourite are hidden. */
@@ -2425,31 +2619,34 @@ function FileCard({ file, view, selected, anySelected, active, highlight, domId,
   onClick: (e: ReactMouseEvent) => void; onSelect: () => void; onNameClick: () => void; onContextMenu: (e: ReactMouseEvent) => void;
   onDownload?: () => void; onShare?: () => void; onRename?: () => void; onDelete: () => void; onCopy?: () => void; onMove?: () => void; onFavourite?: () => void; onComments?: () => void;
   onRestore?: () => void; restoreDisabled?: boolean;
+  /** Drag-to-move source handlers (see useMoveDrag); absent where dragging does nothing. */
+  dragProps?: DragHandlers;
 }) {
-  const ext = extOf(file.name).toUpperCase() || 'FILE';
+  const t = useT();
+  const ext = extOf(file.name).toUpperCase() || t('common.label.fileBadge');
 
   if (view === 'list') {
     return (
-      <div id={domId} className={`flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-muted/50 cursor-pointer group ${isLiveTwin(file) ? 'pl-9 ' : ''}${highlight ? 'animate-upload-flash ' : ''}${active ? 'bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-900' : selected ? 'bg-primary/10' : ''}`} onClick={onClick} onContextMenu={onContextMenu}>
+      <div id={domId} className={`flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-muted/50 cursor-pointer group ${isLiveTwin(file) ? 'ps-9 ' : ''}${highlight ? 'animate-upload-flash ' : ''}${active ? 'bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-900' : selected ? 'bg-primary/10' : ''}`} onClick={onClick} onContextMenu={onContextMenu} {...dragProps}>
         <SelectCheckbox
           checked={selected}
           onCheckedChange={() => onSelect()}
           className={`size-4 shrink-0 transition-all ${selected ? '' : 'opacity-0 group-hover:opacity-100'} ${anySelected ? 'opacity-100!' : ''}`}
         />
         <img src={fileIconSrc(file.name)} alt={ext} className="w-7 h-7 shrink-0" />
-        <button className="text-sm font-medium flex-1 truncate text-left hover:underline" onClick={(e) => { e.stopPropagation(); onNameClick(); }}>{file.name}</button>
+        <button className="text-sm font-medium flex-1 truncate text-start hover:underline" dir="auto" onClick={(e) => { e.stopPropagation(); onNameClick(); }}>{file.name}</button>
         {isLiveStill(file) && <LiveBadge size="pill" />}
-        {isLiveTwin(file) && <span className="text-[10px] text-muted-foreground">Live Photo video</span>}
-        {file.current_version > 1 && <Badge variant="secondary" className="text-[9px]">v{file.current_version}</Badge>}
-        {file.comment_count > 0 && <Badge variant="secondary" className="text-[9px]"><MessageSquare className="size-2.5 mr-1" />{file.comment_count}</Badge>}
+        {isLiveTwin(file) && <span className="text-[10px] text-muted-foreground">{t('common.label.livePhotoVideo')}</span>}
+        {file.current_version > 1 && <Badge variant="secondary" className="text-[9px]">{t('files.status.vFilecurrentVersion', { version: file.current_version })}</Badge>}
+        {file.comment_count > 0 && <Badge variant="secondary" className="text-[9px]"><MessageSquare className="size-2.5 me-1" />{localDigits(file.comment_count)}</Badge>}
         <span className="text-xs text-muted-foreground">{humanSize(file.size_bytes)}</span>
         <span className="text-xs text-muted-foreground"><DateCell ts={file.updated_at} /></span>
-        {file.share_count > 0 && <Badge variant="secondary" className="text-[9px]"><Share2 className="size-2.5 mr-1" />{file.share_count}</Badge>}
+        {file.share_count > 0 && <Badge variant="secondary" className="text-[9px]"><Share2 className="size-2.5 me-1" />{localDigits(file.share_count)}</Badge>}
         {isFavourite && <Star className="size-3 text-orange-400 fill-orange-400 shrink-0" />}
         {trashed ? (
           // No onRestore = the row may not be acted on (see canDeleteFile); the
           // permanent delete shares that gate, so the whole menu goes.
-          onRestore && <FileDropdown onRestore={onRestore} restoreDisabled={restoreDisabled} onDelete={onDelete} deleteLabel="Delete permanently" />
+          onRestore && <FileDropdown onRestore={onRestore} restoreDisabled={restoreDisabled} onDelete={onDelete} deleteLabel={t('files.action.deletePermanently')} />
         ) : (
           <FileDropdown onDownload={onDownload} onShare={onShare} onRename={onRename} onDelete={onDelete} onCopy={onCopy} onMove={onMove} />
         )}
@@ -2458,26 +2655,26 @@ function FileCard({ file, view, selected, anySelected, active, highlight, domId,
   }
 
   return (
-    <Card id={domId} className={`gap-0 py-0 p-0 overflow-hidden rounded-xl aspect-3/2 transition-all cursor-pointer group relative hover:-translate-y-px hover:shadow-lg ${highlight ? 'animate-upload-flash ' : ''}${active ? 'ring-2 ring-green-500' : selected ? 'ring-2 ring-primary' : 'ring-1 ring-black/5 dark:ring-white/10'}`} onClick={onClick} onContextMenu={onContextMenu}>
+    <Card id={domId} {...dragProps} className={`gap-0 py-0 p-0 overflow-hidden rounded-xl aspect-3/2 transition-all cursor-pointer group relative hover:-translate-y-px hover:shadow-lg ${highlight ? 'animate-upload-flash ' : ''}${active ? 'ring-2 ring-green-500' : selected ? 'ring-2 ring-primary' : 'ring-1 ring-black/5 dark:ring-white/10'}`} onClick={onClick} onContextMenu={onContextMenu}>
       {/* Full-bleed image */}
       <FileThumbnail fileId={file.id} fileName={file.name} ext={ext} />
 
       {/* Legibility scrims: top for the pills, bottom for filename + actions */}
       <div className="absolute inset-x-0 top-0 h-14 bg-linear-to-b from-black/55 to-transparent pointer-events-none" />
       <div className="absolute inset-x-0 bottom-0 h-3/5 bg-linear-to-t from-black/85 via-black/40 to-transparent pointer-events-none" />
-      {isLiveStill(file) && <LiveBadge size="tile" className="absolute top-2 left-9 z-10" />}
+      {isLiveStill(file) && <LiveBadge size="tile" className="absolute top-2 inset-s-9 z-10" />}
 
       {/* Top-left: multi-select checkbox (hidden for fully-locked files) */}
       {file.lock_mode !== 'full_lock' && (
         <SelectCheckbox
           checked={selected}
           onCheckedChange={() => onSelect()}
-          className={`absolute top-2 left-2 z-20 size-5 rounded-full border-white/70 bg-black/30 backdrop-blur-sm transition-all data-[state=checked]:bg-primary data-[state=checked]:border-primary ${selected ? '' : 'opacity-0 group-hover:opacity-100'} ${anySelected ? 'opacity-100!' : ''}`}
+          className={`absolute top-2 inset-s-2 z-20 size-5 rounded-full border-white/70 bg-black/30 backdrop-blur-sm transition-all data-[state=checked]:bg-primary data-[state=checked]:border-primary ${selected ? '' : 'opacity-0 group-hover:opacity-100'} ${anySelected ? 'opacity-100!' : ''}`}
         />
       )}
 
       {/* Top-right: lock (if any) + hidden (if any) + file-format pill */}
-      <div className="absolute top-2 right-2 z-10 flex items-center gap-1">
+      <div className="absolute top-2 inset-e-2 z-10 flex items-center gap-1">
         {file.lock_mode !== 'none' && (
           <span className="flex items-center justify-center size-6 rounded-full bg-black/45 backdrop-blur-sm">
             <Lock className="size-3 text-white" />
@@ -2493,13 +2690,13 @@ function FileCard({ file, view, selected, anySelected, active, highlight, domId,
 
       {/* Right vertical action rail: trashed → just the Restore/Delete
           permanently dropdown; live → favourite · (comments) · share · settings */}
-      <div className="absolute right-2 bottom-2 z-20 flex flex-col gap-2 opacity-90 group-hover:opacity-100 transition-opacity">
+      <div className="absolute inset-e-2 bottom-2 z-20 flex flex-col gap-2 opacity-90 group-hover:opacity-100 transition-opacity">
         {!trashed && (
           <>
             {/* Favourite (single star - the app's favourite flag) */}
             <button
               className="flex items-center justify-center size-8 rounded-full bg-black/35 hover:bg-black/55 backdrop-blur-sm transition-colors"
-              title={isFavourite ? 'Remove from favourites' : 'Add to favourites'}
+              title={isFavourite ? t('common.action.removeFromFavourites') : t('common.label.addToFavourites')}
               onClick={(e) => { e.stopPropagation(); onFavourite?.(); }}
             >
               <Star className={`size-4 ${isFavourite ? 'text-orange-400 fill-orange-400' : 'text-white'}`} />
@@ -2507,17 +2704,17 @@ function FileCard({ file, view, selected, anySelected, active, highlight, domId,
             {file.comment_count > 0 && (
               <button
                 className="relative flex items-center justify-center size-8 rounded-full bg-black/35 hover:bg-black/55 backdrop-blur-sm transition-colors"
-                title={`${file.comment_count} comment${file.comment_count === 1 ? '' : 's'} - open`}
+                title={t('files.action.filecommentCountPluralOneCommentOtherCommentsOpen', { fileComment_count: file.comment_count })}
                 onClick={(e) => { e.stopPropagation(); onComments?.(); }}
               >
                 <MessageSquare className="size-4 text-white" />
-                <span className="absolute -top-1 -right-1 min-w-4 h-4 px-1 rounded-full bg-blue-500 text-[9px] font-mono text-white flex items-center justify-center">{file.comment_count}</span>
+                <span className="absolute -top-1 -inset-e-1 min-w-4 h-4 px-1 rounded-full bg-blue-500 text-[9px] font-mono text-white flex items-center justify-center">{localDigits(file.comment_count)}</span>
               </button>
             )}
             {/* Share */}
             <button
               className="flex items-center justify-center size-8 rounded-full bg-black/35 hover:bg-black/55 backdrop-blur-sm transition-colors"
-              title={file.share_count > 0 ? `Shared (${file.share_count}) - manage` : 'Share'}
+              title={file.share_count > 0 ? t('files.action.sharedFileshareCountManage', { shareCount: file.share_count }) : t('common.action.share')}
               onClick={(e) => { e.stopPropagation(); onShare?.(); }}
             >
               <Share2 className={`size-4 ${file.share_count > 0 ? 'text-green-400' : 'text-white'}`} />
@@ -2527,7 +2724,7 @@ function FileCard({ file, view, selected, anySelected, active, highlight, domId,
         {/* Settings / more */}
         <div onClick={(e) => e.stopPropagation()}>
           {trashed ? (
-            <FileDropdown overlay onRestore={onRestore} restoreDisabled={restoreDisabled} onDelete={onDelete} deleteLabel="Delete permanently" />
+            <FileDropdown overlay onRestore={onRestore} restoreDisabled={restoreDisabled} onDelete={onDelete} deleteLabel={t('files.action.deletePermanently')} />
           ) : (
             <FileDropdown overlay onDownload={onDownload} onShare={onShare} onRename={onRename} onDelete={onDelete} onCopy={onCopy} onMove={onMove} />
           )}
@@ -2535,19 +2732,19 @@ function FileCard({ file, view, selected, anySelected, active, highlight, domId,
       </div>
 
       {/* Bottom-left: filename + meta line (padded so it clears the rail) */}
-      <div className="absolute inset-x-0 bottom-0 z-10 p-2.5 pr-12">
+      <div className="absolute inset-x-0 bottom-0 z-10 p-2.5 pe-12">
         <div className="flex items-center gap-1.5 min-w-0">
           <Tooltip>
             <TooltipTrigger
               render={
-                <button className="font-mono text-sm font-semibold text-white truncate text-left hover:underline drop-shadow min-w-0" onClick={(e) => { e.stopPropagation(); onNameClick(); }}>{file.name}</button>
+                <button className="font-mono text-sm font-semibold text-white truncate text-start hover:underline drop-shadow min-w-0" dir="auto" onClick={(e) => { e.stopPropagation(); onNameClick(); }}>{file.name}</button>
               }
             />
-            <TooltipContent side="top" align="start" className="font-mono break-all max-w-xs">{file.name}</TooltipContent>
+            <TooltipContent side="top" align="start" className="font-mono break-all max-w-xs"><bdi>{file.name}</bdi></TooltipContent>
           </Tooltip>
-          {file.current_version > 1 && <span className="shrink-0 rounded border border-white/30 px-1 text-[9px] font-mono text-white/80">v{file.current_version}</span>}
+          {file.current_version > 1 && <span className="shrink-0 rounded border border-white/30 px-1 text-[9px] font-mono text-white/80">{t('common.label.vVersion', { version: file.current_version })}</span>}
         </div>
-        <p className="font-mono text-[11px] text-white/70 truncate drop-shadow">{humanSize(file.size_bytes)} · <DateCell ts={file.updated_at} /></p>
+        <p className="font-mono text-[11px] text-white/70 truncate drop-shadow"><bdi>{humanSize(file.size_bytes)}</bdi> · <bdi><DateCell ts={file.updated_at} /></bdi></p>
       </div>
     </Card>
   );
@@ -2573,6 +2770,7 @@ const RowThumbnail = memo(function RowThumbnail({ fileId, fileName }: { fileId: 
 // ── File thumbnail with error fallback ─────────────────────
 
 const FileThumbnail = memo(function FileThumbnail({ fileId, fileName, ext }: { fileId: string; fileName: string; ext: string }) {
+  const t = useT();
   const badge = (
     <div
       className="w-full h-full flex items-center justify-center"
@@ -2582,7 +2780,7 @@ const FileThumbnail = memo(function FileThumbnail({ fileId, fileName, ext }: { f
         className="font-mono text-xl font-bold tracking-widest uppercase"
         style={{ color: colorFor(fileName) }}
       >
-        {ext || 'FILE'}
+        {ext || t('common.label.fileBadge')}
       </span>
     </div>
   );
@@ -2602,28 +2800,29 @@ const FileThumbnail = memo(function FileThumbnail({ fileId, fileName, ext }: { f
 
 // ── Dropdown menu (three dots) ─────────────────────────────
 
-function FileDropdown({ onDownload, onShare, onRename, onDelete, onCopy, onMove, onAddToGroup, onRestore, restoreDisabled, deleteLabel = 'Delete', overlay }: {
+function FileDropdown({ onDownload, onShare, onRename, onDelete, onCopy, onMove, onAddToGroup, onRestore, restoreDisabled, deleteLabel, overlay }: {
   onDownload?: () => void; onShare?: () => void; onRename?: () => void; onDelete: () => void; onCopy?: () => void; onMove?: () => void; onAddToGroup?: () => void;
   /** Trashed rows (file or folder) pass this instead of onRename/onMove/etc - see deleteLabel for the matching "Delete permanently" copy. */
   onRestore?: () => void; restoreDisabled?: boolean; deleteLabel?: string; overlay?: boolean;
 }) {
+  const t = useT();
   return (
     <DropdownMenu>
       <DropdownMenuTrigger>
         {overlay
-          ? <button className="flex items-center justify-center size-7 rounded-full bg-white/10 hover:bg-white/25 backdrop-blur-sm transition-colors" title="More" onClick={(e) => e.stopPropagation()}><MoreHorizontal className="size-4 text-white" /></button>
+          ? <button className="flex items-center justify-center size-7 rounded-full bg-white/10 hover:bg-white/25 backdrop-blur-sm transition-colors" title={t('files.action.more')} onClick={(e) => e.stopPropagation()}><MoreHorizontal className="size-4 text-white" /></button>
           : <button className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-muted" onClick={(e) => e.stopPropagation()}><MoreHorizontal className="size-3.5" /></button>}
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        {onRestore && <DropdownMenuItem disabled={restoreDisabled} onClick={onRestore}><RotateCcw className="size-3 mr-2" /> Restore</DropdownMenuItem>}
-        {onDownload && <DropdownMenuItem onClick={onDownload}><Download className="size-3 mr-2" /> Download</DropdownMenuItem>}
-        {onShare && <DropdownMenuItem onClick={onShare}><Share2 className="size-3 mr-2" /> Share</DropdownMenuItem>}
-        {onCopy && <DropdownMenuItem onClick={onCopy}><Copy className="size-3 mr-2" /> Copy</DropdownMenuItem>}
-        {onMove && <DropdownMenuItem onClick={onMove}><Move className="size-3 mr-2" /> Move to...</DropdownMenuItem>}
-        {onAddToGroup && <DropdownMenuItem onClick={onAddToGroup}><FolderPlus className="size-3 mr-2" /> Add to group</DropdownMenuItem>}
-        {onRename && <DropdownMenuItem onClick={onRename}><Pencil className="size-3 mr-2" /> Rename</DropdownMenuItem>}
+        {onRestore && <DropdownMenuItem disabled={restoreDisabled} onClick={onRestore}><RotateCcw className="size-3 me-2" /> {t('common.action.restore')}</DropdownMenuItem>}
+        {onDownload && <DropdownMenuItem onClick={onDownload}><Download className="size-3 me-2" /> {t('common.action.download')}</DropdownMenuItem>}
+        {onShare && <DropdownMenuItem onClick={onShare}><Share2 className="size-3 me-2" /> {t('common.action.share')}</DropdownMenuItem>}
+        {onCopy && <DropdownMenuItem onClick={onCopy}><Copy className="size-3 me-2" /> {t('common.copy')}</DropdownMenuItem>}
+        {onMove && <DropdownMenuItem onClick={onMove}><Move className="size-3 me-2" /> {t('files.label.moveTo')}</DropdownMenuItem>}
+        {onAddToGroup && <DropdownMenuItem onClick={onAddToGroup}><FolderPlus className="size-3 me-2" /> {t('files.action.addToGroup')}</DropdownMenuItem>}
+        {onRename && <DropdownMenuItem onClick={onRename}><Pencil className="size-3 me-2" /> {t('common.action.rename')}</DropdownMenuItem>}
         <DropdownMenuSeparator />
-        <DropdownMenuItem className="text-destructive" onClick={onDelete}><Trash2 className="size-3 mr-2" /> {deleteLabel}</DropdownMenuItem>
+        <DropdownMenuItem className="text-destructive" onClick={onDelete}><Trash2 className="size-3 me-2" /> {deleteLabel ?? t('common.delete')}</DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -2637,7 +2836,7 @@ function FileSkeleton({ view, count }: { view: ViewMode; count?: number }) {
   const n = (max: number) => Math.min(Math.max(count ?? max, 1), max);
   const rows = (max: number) => Array.from({ length: n(max) }, (_, i) => i);
   if (view === 'list') {
-    return <div className="space-y-1">{rows(6).map((i) => <div key={i} className="flex items-center gap-3 px-3 py-2.5"><Skeleton className="w-8 h-8 rounded-md" /><Skeleton className="h-3.5 w-40" /><Skeleton className="h-3 w-16 ml-auto" /></div>)}</div>;
+    return <div className="space-y-1">{rows(6).map((i) => <div key={i} className="flex items-center gap-3 px-3 py-2.5"><Skeleton className="w-8 h-8 rounded-md" /><Skeleton className="h-3.5 w-40" /><Skeleton className="h-3 w-16 ms-auto" /></div>)}</div>;
   }
   return <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">{rows(8).map((i) => <Skeleton key={i} className="w-full aspect-3/2 rounded-xl" />)}</div>;
 }

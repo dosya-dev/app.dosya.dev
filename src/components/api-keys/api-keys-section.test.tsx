@@ -151,7 +151,7 @@ describe('ApiKeysSection', () => {
     expect(container!.querySelector('[data-testid="key-details"]')).toBeNull();
     await expand('k');
     const text = expanded('k').textContent!;
-    expect(text).toContain('Read only');
+    expect(text).toContain('Read-only');
     expect(text).toContain('WebDAV, S3 gateway');
     expect(text).toContain('Design Studio / Archive');
     expect(text).toContain('2 ranges');

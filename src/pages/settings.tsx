@@ -27,6 +27,9 @@ import { usePermissions } from '@/hooks/use-permissions';
 import { clearShareDefaultsCache } from '@/lib/share-defaults';
 import { SwatchPicker } from '@/components/brand/swatch-picker';
 import { SETTINGS_SECTIONS as NAV, sectionFromHash } from '@/lib/settings-sections';
+import { AiSearchSection } from '@/pages/settings/ai-search';
+import { t as translate, useT, useLocale } from '@/lib/i18n';
+import type { MessageKey } from '@/i18n/keys';
 
 
 // ── Types ──────────────────────────────────────────────────
@@ -76,7 +79,7 @@ interface WsData {
 // can answer directly. GET /api/me/permissions exists now, so this page uses
 // the same usePermissions hook as everything else - see the hook for why it
 // deliberately fails OPEN while loading.
-const NO_PERM = (what: string) => `You don't have permission to change ${what}.`;
+const NO_PERM = (what: string) => translate('settings.description.youDonTHavePermissionToChangeWhat', { what });
 
 
 /**
@@ -93,51 +96,54 @@ const NO_PERM = (what: string) => `You don't have permission to change ${what}.`
  * apps/api/src/lib/permissions.ts and the role editor. Rows are grouped so 34
  * of them stay readable.
  */
-const PERM_GROUPS: { group: string; perms: [string, string][] }[] = [
-  { group: 'Files', perms: [
-    ['upload_files', 'Upload files'], ['download_files', 'Download files'],
-    ['delete_own_files', 'Delete own files'], ['delete_any_file', 'Delete any file'],
-    ['rename_files', 'Rename files'],
+const PERM_GROUPS: { groupKey: MessageKey; perms: [string, MessageKey][] }[] = [
+  { groupKey: 'common.label.files', perms: [
+    ['upload_files', 'common.label.uploadFiles'], ['download_files', 'common.label.downloadFiles'],
+    ['delete_own_files', 'common.label.deleteOwnFiles'], ['delete_any_file', 'common.label.deleteAnyFile'],
+    ['rename_files', 'common.label.renameFiles'],
   ] },
-  { group: 'Folders', perms: [
-    ['create_folders', 'Create folders'], ['rename_folders', 'Rename folders'],
+  { groupKey: 'common.label.folders', perms: [
+    ['create_folders', 'common.label.createFolders'], ['rename_folders', 'common.label.renameFolders'],
   ] },
-  { group: 'Sharing', perms: [
-    ['create_share_links', 'Create share links'], ['view_own_shares', 'View own shared links'],
-    ['view_all_shares', 'View all shared links'],
+  { groupKey: 'common.label.sharing', perms: [
+    ['create_share_links', 'common.label.createShareLinks'], ['view_own_shares', 'common.label.viewOwnSharedLinks'],
+    ['view_all_shares', 'common.label.viewAllSharedLinks'],
   ] },
-  { group: 'Team', perms: [
-    ['invite_members', 'Invite members'], ['view_team_members', 'View team members'],
-    ['manage_roles', 'Manage roles'],
+  { groupKey: 'common.label.team', perms: [
+    ['invite_members', 'common.label.inviteMembers'], ['view_team_members', 'common.label.viewTeamMembers'],
+    ['manage_roles', 'common.label.manageRoles'],
   ] },
-  { group: 'File management', perms: [
-    ['lock_files', 'Lock files & folders'], ['hide_files', 'Hide files & folders'],
+  { groupKey: 'common.label.fileManagement', perms: [
+    ['lock_files', 'common.label.lockFilesFolders'], ['hide_files', 'common.label.hideFilesFolders'],
   ] },
-  { group: 'Workspace identity', perms: [
-    ['change_workspace_name', 'Change workspace name'], ['change_workspace_icon', 'Change workspace icon'],
+  { groupKey: 'common.label.workspaceIdentity', perms: [
+    ['change_workspace_name', 'common.label.changeWorkspaceName'], ['change_workspace_icon', 'common.label.changeWorkspaceIcon'],
   ] },
-  { group: 'Workspace limits', perms: [
-    ['change_max_file_size', 'Change max file size'], ['change_storage_per_member', 'Change storage per member'],
-    ['change_total_storage_cap', 'Change total storage cap'], ['change_max_concurrent_uploads', 'Change max simultaneous uploads'],
-    ['change_allowed_file_types', 'Change allowed file types'], ['change_blocked_file_types', 'Change blocked file types'],
-    ['change_duplicate_scan', 'Change duplicate scanning'],
+  { groupKey: 'common.label.workspaceLimits', perms: [
+    ['change_max_file_size', 'settings.label.changeMaxFileSize'], ['change_storage_per_member', 'common.label.changeStoragePerMember'],
+    ['change_total_storage_cap', 'settings.label.changeTotalStorageCap'], ['change_max_concurrent_uploads', 'common.label.changeMaxSimultaneousUploads'],
+    ['change_allowed_file_types', 'common.label.changeAllowedFileTypes'], ['change_blocked_file_types', 'common.label.changeBlockedFileTypes'],
+    ['change_duplicate_scan', 'common.label.changeDuplicateScanning'],
+    ['change_ai_search', 'common.label.changeAiSearch'],
   ] },
-  { group: 'Workspace general', perms: [
-    ['manage_settings', 'Manage settings'], ['view_activity', 'View activity log'],
+  { groupKey: 'common.label.workspaceGeneral', perms: [
+    ['manage_settings', 'common.label.manageSettings'], ['view_activity', 'common.label.viewActivityLog'],
   ] },
-  { group: 'Page access', perms: [
-    ['access_dashboard', 'Access Dashboard'], ['access_files', 'Access Files'],
-    ['access_upload', 'Access Upload'], ['access_shared', 'Access Shared'],
-    ['access_team', 'Access Team'], ['access_settings', 'Access Settings'],
+  { groupKey: 'common.label.pageAccess', perms: [
+    ['access_dashboard', 'common.label.accessDashboard'], ['access_files', 'common.label.accessFiles'],
+    ['access_upload', 'common.label.accessUpload'], ['access_shared', 'common.label.accessShared'],
+    ['access_team', 'common.label.accessTeam'], ['access_settings', 'common.label.accessSettings'],
   ] },
-  { group: 'Protocol access', perms: [
-    ['access_webdav', 'Use WebDAV'], ['access_s3', 'Use the S3 gateway'], ['access_sftp', 'SFTP access'],
+  { groupKey: 'common.label.protocolAccess', perms: [
+    ['access_webdav', 'common.label.useWebdav'], ['access_s3', 'common.label.useTheS3Gateway'],
+    ['access_sftp', 'common.label.sftpAccess'],
   ] },
 ];
 
 // ── Page ───────────────────────────────────────────────────
 
 export default function SettingsPage() {
+  const t = useT();
   const navigate = useNavigate();
   const wsId = useWorkspace((s: { activeId: string }) => s.activeId);
   const [data, setData] = useState<WsData | null>(null);
@@ -184,14 +190,14 @@ export default function SettingsPage() {
   }, [loading, location.hash, location.key]);
 
   if (loading) return <SettingsSkeleton />;
-  if (!data) return <div className="p-6 text-center text-muted-foreground">Failed to load settings</div>;
+  if (!data) return <div className="p-6 text-center text-muted-foreground">{t('settings.error.failedToLoadSettings')}</div>;
 
   return (
     <div className="flex h-full overflow-hidden">
-      <nav className="w-52 shrink-0 border-r p-4 overflow-y-auto hidden md:block">
-        {['General', 'Members', 'Danger'].map((group) => (
+      <nav className="w-52 shrink-0 border-e p-4 overflow-y-auto hidden md:block">
+        {(['General', 'Members', 'Danger'] as const).map((group) => (
           <div key={group} className="mb-4">
-            <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">{group}</p>
+            <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">{t(NAV.find((n) => n.group === group)!.groupKey)}</p>
             {NAV.filter((n) => n.group === group).map((n) => (
               <button key={n.id}
                 onClick={() => { setActiveSection(n.id); document.getElementById(`section-${n.id}`)?.scrollIntoView({ behavior: 'smooth' }); }}
@@ -210,12 +216,13 @@ export default function SettingsPage() {
 
       <div className="flex-1 overflow-y-auto p-6 space-y-8">
         <div>
-          <h1 className="text-xl font-bold tracking-tight">Workspace settings</h1>
-          <p className="text-sm text-muted-foreground mt-1">{data.workspace.name} · you are {data.is_owner ? 'the owner' : 'a member'}</p>
+          <h1 className="text-xl font-bold tracking-tight">{t('settings.heading.workspaceSettings')}</h1>
+          <p className="text-sm text-muted-foreground mt-1">{t('settings.description.workspacenameYouAreDataisOwnerSelectTrueTheOwnerOtherA', { workspaceName: data.workspace.name, dataIs_owner: String(!!data.is_owner) })}</p>
         </div>
         <WorkspaceInfoSection data={data} wsId={wsId} onSaved={load} />
         <HardLimitsSection data={data} wsId={wsId} onSaved={load} />
         <SecuritySection data={data} wsId={wsId} onSaved={load} />
+        <section id="section-ai"><AiSearchSection wsId={wsId} /></section>
         <RolesSection data={data} wsId={wsId} onSaved={load} />
         <DangerSection data={data} wsId={wsId} isOwner={data.is_owner} navigate={navigate} onSaved={load} />
       </div>
@@ -226,6 +233,7 @@ export default function SettingsPage() {
 // ── Workspace Info ─────────────────────────────────────────
 
 export function WorkspaceInfoSection({ data, wsId, onSaved }: { data: WsData; wsId: string; onSaved: () => void }) {
+  const t = useT();
   const [name, setName] = useState(data.workspace.name);
   const [initials, setInitials] = useState(data.workspace.icon_initials);
   const [iconColor, setIconColor] = useState(data.workspace.icon_color);
@@ -254,13 +262,13 @@ export function WorkspaceInfoSection({ data, wsId, onSaved }: { data: WsData; ws
     setSaving(field);
     try {
       const res = await api<{ ok: boolean; error?: string }>(`/api/workspaces/${wsId}`, { method: 'PUT', body: JSON.stringify(body) });
-      if (res.ok) { toast.success('Saved', 'Your workspace settings have been updated.'); saved(); } else toast.error('Couldn\'t save', res.error ?? 'Your workspace settings were not updated.');
-    } catch (err) { toast.error('Couldn\'t save', apiErrorMessage(err, 'Could not reach the server. Please try again.')); }
+      if (res.ok) { toast.success(t('common.feedback.saved'), t('settings.feedback.yourWorkspaceSettingsHaveBeenUpdated')); saved(); } else toast.error(t('common.error.couldnTSave'), res.error ?? t('settings.error.yourWorkspaceSettingsWereNotUpdated'));
+    } catch (err) { toast.error(t('common.error.couldnTSave'), apiErrorMessage(err, t('settings.error.couldNotReachTheServerPleaseTryAgain'))); }
     setSaving(null);
   };
 
   const uploadIcon = async (file: File) => {
-    if (file.size > 2 * 1024 * 1024) { toast.error('File too large', 'The workspace icon must be 2MB or smaller.'); return; }
+    if (file.size > 2 * 1024 * 1024) { toast.error(t('common.error.fileTooLarge'), t('settings.error.theWorkspaceIconMustBe2mbOrSmaller')); return; }
     setSaving('icon');
     try {
       const formData = new FormData();
@@ -270,9 +278,9 @@ export function WorkspaceInfoSection({ data, wsId, onSaved }: { data: WsData; ws
       if (d.ok && d.icon_image_url) {
         setIconUrl(d.icon_image_url);
         setIconVersion(Date.now()); // cache-bust the served image
-        toast.success('Icon updated', 'Your new workspace icon has been uploaded.'); saved();
-      } else toast.error('Upload failed', d.error ?? 'The workspace icon could not be uploaded.');
-    } catch { toast.error('Upload failed', 'The workspace icon could not be uploaded.'); }
+        toast.success(t('settings.feedback.iconUpdated'), t('settings.feedback.yourNewWorkspaceIconHasBeenUploaded')); saved();
+      } else toast.error(t('common.error.uploadFailed'), d.error ?? t('settings.error.theWorkspaceIconCouldNotBeUploaded'));
+    } catch { toast.error(t('common.error.uploadFailed'), t('settings.error.theWorkspaceIconCouldNotBeUploaded')); }
     setSaving(null);
   };
 
@@ -280,41 +288,41 @@ export function WorkspaceInfoSection({ data, wsId, onSaved }: { data: WsData; ws
     setSaving('icon');
     try {
       await fetch(`${API_BASE}/api/workspaces/${wsId}/icon`, { method: 'DELETE', credentials: 'include' });
-      setIconUrl(null); toast.success('Icon removed', 'Your workspace icon has been removed.'); saved();
-    } catch { toast.error('Couldn\'t remove icon', 'The workspace icon could not be removed.'); }
+      setIconUrl(null); toast.success(t('settings.feedback.iconRemoved'), t('settings.feedback.yourWorkspaceIconHasBeenRemoved')); saved();
+    } catch { toast.error(t('settings.error.couldnTRemoveIcon'), t('settings.error.theWorkspaceIconCouldNotBeRemoved')); }
     setSaving(null);
   };
 
   return (
     <section id="section-info">
-      <SectionHeader title="Workspace info" desc="Name, identity and basic configuration." />
+      <SectionHeader title={t('settings.tooltip.workspaceInfo')} desc={t('settings.description.nameIdentityAndBasicConfiguration')} />
       <Card>
         <CardContent className="divide-y">
-          <SettingRow label="Workspace name" desc="Shown in the switcher and notifications.">
+          <SettingRow label={t('common.label.workspaceName.workspaceName')} desc={t('settings.description.shownInTheSwitcherAndNotifications')}>
             <div className="flex items-center gap-2">
               <Input value={name} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setName(e.target.value)} className="h-8 text-xs w-48" />
-              <SaveBtn loading={saving === 'name'} onClick={() => save({ name }, 'name')} disabled={!canName} disabledReason={NO_PERM('the workspace name')} />
+              <SaveBtn loading={saving === 'name'} onClick={() => save({ name }, 'name')} disabled={!canName} disabledReason={NO_PERM(t('settings.label.theWorkspaceName'))} />
             </div>
           </SettingRow>
 
-          <SettingRow label="Workspace icon" desc="Upload an image or use initials with a color.">
+          <SettingRow label={t('settings.label.workspaceIcon')} desc={t('settings.description.uploadAnImageOrUseInitialsWithAColor')}>
             <div className="flex items-center gap-3">
               {/* Preview */}
               <div className={`size-10 rounded-lg flex items-center justify-center text-sm font-bold text-white shrink-0 overflow-hidden ${iconUrl ? 'bg-muted' : ''}`} style={iconUrl ? undefined : { background: iconColor }}>
                 {iconUrl ? <img src={`${API_BASE}/api/workspaces/${wsId}/icon${iconVersion ? `?v=${iconVersion}` : ''}`} alt="" className="w-full h-full object-cover" /> : initials}
               </div>
               <div className="space-y-1.5">
-                <div className="flex items-center gap-1.5" title={!canIcon ? NO_PERM('the workspace icon') : undefined}>
+                <div className="flex items-center gap-1.5" title={!canIcon ? NO_PERM(t('settings.tooltip.theWorkspaceIcon')) : undefined}>
                   <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => fileRef.current?.click()} disabled={saving === 'icon' || !canIcon}>
-                    <Upload className="size-3" /> Upload
+                    <Upload className="size-3" /> {t('common.action.upload')}
                   </Button>
-                  {iconUrl && <Button variant="outline" size="sm" className="h-7 text-xs" onClick={removeIcon} disabled={saving === 'icon' || !canIcon}>Remove</Button>}
+                  {iconUrl && <Button variant="outline" size="sm" className="h-7 text-xs" onClick={removeIcon} disabled={saving === 'icon' || !canIcon}>{t('common.remove')}</Button>}
                   <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif" className="hidden" onChange={(e) => { if (e.target.files?.[0]) uploadIcon(e.target.files[0]); e.target.value = ''; }} />
                 </div>
                 <div className="flex items-center gap-1.5">
-                  <Input value={initials} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setInitials(e.target.value.slice(0, 3).toUpperCase())} className="h-7 text-xs w-14" maxLength={3} placeholder="AB" />
-                  <SwatchPicker value={iconColor} onChange={setIconColor} size="sm" disabled={!canIcon} label="Workspace colour" />
-                  <SaveBtn loading={saving === 'initials'} onClick={() => save({ icon_initials: initials, icon_color: iconColor }, 'initials')} disabled={!canIcon} disabledReason={NO_PERM('the workspace icon')} />
+                  <Input value={initials} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setInitials(e.target.value.slice(0, 3).toUpperCase())} className="h-7 text-xs w-14" maxLength={3} placeholder={t('settings.placeholder.ab')} />
+                  <SwatchPicker value={iconColor} onChange={setIconColor} size="sm" disabled={!canIcon} label={t('common.label.workspaceColour')} />
+                  <SaveBtn loading={saving === 'initials'} onClick={() => save({ icon_initials: initials, icon_color: iconColor }, 'initials')} disabled={!canIcon} disabledReason={NO_PERM(t('settings.tooltip.theWorkspaceIcon'))} />
                 </div>
               </div>
             </div>
@@ -323,7 +331,7 @@ export function WorkspaceInfoSection({ data, wsId, onSaved }: { data: WsData; ws
           {/* Read-only on purpose: the location was chosen when the workspace
               was created and the API answers 409 to any attempt to change it -
               a control here could only ever fail. */}
-          <SettingRow label="Location" desc="Chosen when the workspace was created. Every file in this workspace is stored here.">
+          <SettingRow label={t('common.label.location')} desc={t('settings.description.chosenWhenTheWorkspaceWasCreatedEveryFileInThisWorkspace')}>
             {/* regionLabel falls back to the code, so a legacy value would
                 otherwise render as "weur (weur)". */}
             <span className="text-xs">{locationLabel}{locationLabel !== locationCode && <span className="text-muted-foreground"> ({locationCode})</span>}</span>
@@ -345,6 +353,7 @@ export function WorkspaceInfoSection({ data, wsId, onSaved }: { data: WsData; ws
 const BRANDING_LINK = 'inline-flex h-7 items-center rounded-lg border border-border bg-background px-2.5 text-xs font-medium hover:bg-muted';
 
 export function BrandingCard({ wsId }: { wsId: string }) {
+  const t = useT();
   const [state, setState] = useState<{ enabled: boolean; revoked: boolean; canEdit: boolean } | null>(null);
 
   useEffect(() => {
@@ -358,26 +367,28 @@ export function BrandingCard({ wsId }: { wsId: string }) {
   }, [wsId]);
 
   let action: React.ReactNode;
-  let desc = 'Your logo, name and colour on share pages and email.';
+  let desc = t('settings.description.yourLogoNameAndColourOnSharePagesAndEmail');
   if (state?.revoked) {
-    desc = 'Branding is disabled for this workspace. Contact support.';
-    action = <Button variant="outline" size="sm" className="h-7 text-xs" disabled>Configure</Button>;
+    desc = t('settings.description.brandingIsDisabledForThisWorkspaceContactSupport');
+    action = <Button variant="outline" size="sm" className="h-7 text-xs" disabled>{t('settings.action.configure')}</Button>;
   } else if (state && !state.enabled) {
-    desc = 'Branding is available on Starter and up.';
-    action = <Link to="/billing" className={BRANDING_LINK}>See plans</Link>;
+    desc = t('settings.description.brandingIsAvailableOnStarterAndUp');
+    action = <Link to="/billing" className={BRANDING_LINK}>{t('common.action.seePlans')}</Link>;
   } else if (state && !state.canEdit) {
-    desc = 'Your role cannot change branding.';
-    action = <Button variant="outline" size="sm" className="h-7 text-xs" disabled>Configure</Button>;
+    desc = t('settings.error.yourRoleCannotChangeBranding');
+    action = <Button variant="outline" size="sm" className="h-7 text-xs" disabled>{t('settings.action.configure')}</Button>;
   } else {
-    action = <Link to="/settings/branding" className={BRANDING_LINK}>Configure</Link>;
+    action = <Link to="/settings/branding" className={BRANDING_LINK}>{t('settings.action.configure')}</Link>;
   }
 
-  return <SettingRow label="Branding" desc={desc}>{action}</SettingRow>;
+  return <SettingRow label={t('common.label.branding')} desc={desc}>{action}</SettingRow>;
 }
 
 // ── Hard Limits ────────────────────────────────────────────
 
 function HardLimitsSection({ data, wsId, onSaved }: { data: WsData; wsId: string; onSaved: () => void }) {
+  const t = useT();
+  const { locale } = useLocale();
   const s = data.settings;
   const { can } = usePermissions();
   const planCap = data.plan_limits?.storage_gb;
@@ -400,19 +411,19 @@ function HardLimitsSection({ data, wsId, onSaved }: { data: WsData; wsId: string
     try {
       const val = (limits as Record<string, unknown>)[field];
       await api(`/api/workspaces/${wsId}/settings`, { method: 'PUT', body: JSON.stringify({ [field]: val === '' ? null : val }) });
-      toast.success('Limit updated', 'Your hard limit has been saved.');
+      toast.success(t('settings.feedback.limitUpdated'), t('settings.feedback.yourHardLimitHasBeenSaved'));
       onSaved();
-    } catch (err) { toast.error('Couldn\'t save', apiErrorMessage(err, 'Your hard limit was not updated.')); }
+    } catch (err) { toast.error(t('common.error.couldnTSave'), apiErrorMessage(err, t('settings.error.yourHardLimitWasNotUpdated'))); }
     setSaving(null);
   };
 
   const rows = [
-    { field: 'max_file_size_gb', label: 'Max upload file size', desc: 'Single file size cap.', unit: 'GB', showCap: false },
-    { field: 'max_storage_per_member_gb', label: 'Storage per member', desc: 'Max storage any single member can consume.', unit: 'GB', showCap: true },
-    { field: 'max_total_storage_gb', label: 'Total workspace storage cap', desc: 'Hard ceiling across all members.', unit: 'GB', showCap: true },
-    { field: 'max_concurrent_uploads', label: 'Max simultaneous uploads', desc: 'Recommended: 5.', unit: 'files', showCap: false },
-    { field: 'allowed_extensions', label: 'Allowed file types', desc: 'Comma-separated. Blank = allow all.', unit: '', showCap: false },
-    { field: 'blocked_extensions', label: 'Blocked file types', desc: 'Always rejected.', unit: '', showCap: false },
+    { field: 'max_file_size_gb', label: t('settings.label.maxUploadFileSize'), desc: t('settings.description.singleFileSizeCap'), unit: 'GB', showCap: false },
+    { field: 'max_storage_per_member_gb', label: t('settings.label.storagePerMember'), desc: t('settings.description.maxStorageAnySingleMemberCanConsume'), unit: 'GB', showCap: true },
+    { field: 'max_total_storage_gb', label: t('settings.label.totalWorkspaceStorageCap'), desc: t('settings.description.hardCeilingAcrossAllMembers'), unit: 'GB', showCap: true },
+    { field: 'max_concurrent_uploads', label: t('settings.label.maxSimultaneousUploads'), desc: t('settings.description.recommended5'), unit: 'files', showCap: false },
+    { field: 'allowed_extensions', label: t('settings.label.allowedFileTypes'), desc: t('settings.description.commaSeparatedBlankAllowAll'), unit: '', showCap: false },
+    { field: 'blocked_extensions', label: t('settings.label.blockedFileTypes'), desc: t('settings.description.alwaysRejected'), unit: '', showCap: false },
   ];
 
   // Mirrors the API's field → permission mapping
@@ -427,16 +438,15 @@ function HardLimitsSection({ data, wsId, onSaved }: { data: WsData; wsId: string
 
   return (
     <section id="section-limits">
-      <SectionHeader title="Hard limits" desc="Enforced caps on uploads and storage." />
+      <SectionHeader title={t('settings.tooltip.hardLimits')} desc={t('settings.description.enforcedCapsOnUploadsAndStorage')} />
       {overAllocated && alloc && (
         <div className="mb-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-2.5 text-xs text-amber-700 dark:text-amber-400">
-          Your workspace storage limits add up to {alloc.allocated_gb} GB, but your plan includes {alloc.plan_gb} GB.
-          Lower this workspace's limit (or another's) to fit your plan - until then, the next limit change must satisfy the plan total.
+          {t('settings.description.yourWorkspaceStorageLimitsAddUpToAllocallocatedGbGbButYour', { allocAllocated_gb: alloc.allocated_gb, allocPlan_gb: alloc.plan_gb })}
         </div>
       )}
       {overCap && (
         <div className="mb-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-2.5 text-xs text-amber-700 dark:text-amber-400">
-          This workspace uses {humanSize(usedBytes)}, above its {savedCap} GB limit. New uploads are blocked until usage drops below the limit - emptying the trash frees space toward that.
+          {t('settings.description.thisWorkspaceUsesUsedbytesAboveItsSavedcapGbLimitNewUploads', { usedBytes: humanSize(usedBytes), savedCap })}
         </div>
       )}
       <Card>
@@ -446,13 +456,13 @@ function HardLimitsSection({ data, wsId, onSaved }: { data: WsData; wsId: string
               <div className="flex items-center gap-2">
                 <Input value={String((limits as Record<string, unknown>)[row.field] ?? '')}
                   onChange={(e: React.ChangeEvent<HTMLInputElement>) => setLimits((prev) => ({ ...prev, [row.field]: e.target.value }))}
-                  className="h-8 text-xs w-24" type={row.unit ? 'number' : 'text'} placeholder={row.unit ? '0' : 'e.g. .exe,.bat'} />
+                  className="h-8 text-xs w-24" type={row.unit ? 'number' : 'text'} placeholder={row.unit ? '0' : t('settings.placeholder.eGExeBat')} />
                 {row.unit && <span className="text-[11px] text-muted-foreground">{row.unit}</span>}
-                {row.showCap && row.field !== 'max_total_storage_gb' && planCap && <Badge variant="outline" className="text-[9px] text-muted-foreground">plan max: {planCap} GB</Badge>}
-                {row.field === 'max_total_storage_gb' && capRemaining !== null && <Badge variant="outline" className="text-[9px] text-muted-foreground">{capRemaining} GB left to allocate</Badge>}
+                {row.showCap && row.field !== 'max_total_storage_gb' && planCap && <Badge variant="outline" className="text-[9px] text-muted-foreground">{t('settings.status.planMaxPlancapGb', { planCap })}</Badge>}
+                {row.field === 'max_total_storage_gb' && capRemaining !== null && <Badge variant="outline" className="text-[9px] text-muted-foreground">{t('settings.status.capremainingGbLeftToAllocate', { capRemaining })}</Badge>}
                 <SaveBtn loading={saving === row.field} onClick={() => saveLimit(row.field)}
                   disabled={!can(LIMIT_PERMS[row.field])}
-                  disabledReason={NO_PERM(row.label.toLowerCase())} />
+                  disabledReason={NO_PERM(row.label.toLocaleLowerCase(locale))} />
               </div>
             </SettingRow>
           ))}
@@ -464,23 +474,28 @@ function HardLimitsSection({ data, wsId, onSaved }: { data: WsData; wsId: string
 
 // ── Security ───────────────────────────────────────────────
 
-const SESSION_TIMEOUT_OPTIONS = [
-  { value: '', label: 'No timeout' }, { value: '15', label: '15 min' }, { value: '30', label: '30 min' },
-  { value: '60', label: '1 hour' }, { value: '240', label: '4 hours' }, { value: '480', label: '8 hours' }, { value: '1440', label: '24 hours' },
+// Option tables hold catalog keys; the label translates at render.
+type Opt = { value: string; labelKey: MessageKey };
+const SESSION_TIMEOUT_OPTIONS: Opt[] = [
+  { value: '', labelKey: 'settings.label.noTimeout' }, { value: '15', labelKey: 'settings.label.15Min' }, { value: '30', labelKey: 'sync.label.thirtyMin' },
+  { value: '60', labelKey: 'common.label.oneHour' }, { value: '240', labelKey: 'sync.label.fourHours' }, { value: '480', labelKey: 'sync.label.eightHours' }, { value: '1440', labelKey: 'common.label.24Hours' },
 ];
-const SHARE_EXPIRY_OPTIONS = [
-  { value: '', label: 'No limit' }, { value: '1', label: '1 day' }, { value: '7', label: '7 days' },
-  { value: '30', label: '30 days' }, { value: '90', label: '90 days' }, { value: '365', label: '1 year' },
+const SHARE_EXPIRY_OPTIONS: Opt[] = [
+  { value: '', labelKey: 'settings.label.noLimit' }, { value: '1', labelKey: 'common.label.oneDay' }, { value: '7', labelKey: 'common.label.sevenDays' },
+  { value: '30', labelKey: 'common.label.thirtyDays' }, { value: '90', labelKey: 'common.label.ninetyDays' }, { value: '365', labelKey: 'settings.label.1Year' },
 ];
 // What the share modal starts on. Distinct from the cap above: a default is
 // a suggestion the sharer can change, a cap clamps every link.
-const SHARE_DEFAULT_EXPIRY_OPTIONS = [
-  { value: '', label: '7 days (standard)' }, { value: '1', label: '1 day' }, { value: '7', label: '7 days' },
-  { value: '30', label: '30 days' }, { value: '90', label: '90 days' }, { value: '365', label: '1 year' },
+const SHARE_DEFAULT_EXPIRY_OPTIONS: Opt[] = [
+  { value: '', labelKey: 'settings.label.7DaysStandard' }, { value: '1', labelKey: 'common.label.oneDay' }, { value: '7', labelKey: 'common.label.sevenDays' },
+  { value: '30', labelKey: 'common.label.thirtyDays' }, { value: '90', labelKey: 'common.label.ninetyDays' }, { value: '365', labelKey: 'settings.label.1Year' },
 ];
 
 // Exported for its tests.
 export function SecuritySection({ data, wsId, onSaved }: { data: WsData; wsId: string; onSaved: () => void }) {
+  const t = useT();
+  const { locale } = useLocale();
+  const optionItems = (opts: Opt[]) => opts.map((o) => ({ value: o.value, label: t(o.labelKey) }));
   const s = data.settings;
   const { can } = usePermissions();
   const canManageSec = can('manage_settings');
@@ -498,7 +513,7 @@ export function SecuritySection({ data, wsId, onSaved }: { data: WsData; wsId: s
   const [saving, setSaving] = useState<string | null>(null);
 
   // List modals
-  const [listModal, setListModal] = useState<{ field: string; title: string; placeholder: string } | null>(null);
+  const [listModal, setListModal] = useState<{ field: string; titleKey: MessageKey; placeholder: string } | null>(null);
   const [listItems, setListItems] = useState<string[]>([]);
   const [listInput, setListInput] = useState('');
 
@@ -510,18 +525,18 @@ export function SecuritySection({ data, wsId, onSaved }: { data: WsData; wsId: s
       // session; without this the admin who just changed it keeps sharing
       // with the old pre-fill until they reload.
       clearShareDefaultsCache();
-      toast.success('Settings updated', 'Your security setting has been saved.');
-    } catch (err) { toast.error('Couldn\'t save', apiErrorMessage(err, 'Your security setting was not updated.')); }
+      toast.success(t('settings.feedback.settingsUpdated'), t('settings.feedback.yourSecuritySettingHasBeenSaved'));
+    } catch (err) { toast.error(t('common.error.couldnTSave'), apiErrorMessage(err, t('settings.error.yourSecuritySettingWasNotUpdated'))); }
     setSaving(null);
   };
 
-  const openListModal = (field: string, title: string, placeholder: string) => {
+  const openListModal = (field: string, titleKey: MessageKey, placeholder: string) => {
     const raw = (s as unknown as Record<string, unknown>)?.[field] as string | null;
     let items: string[] = [];
     try { items = JSON.parse(raw || '[]'); } catch {}
     setListItems(items);
     setListInput('');
-    setListModal({ field, title, placeholder });
+    setListModal({ field, titleKey, placeholder });
   };
 
   const addListItem = () => {
@@ -536,8 +551,8 @@ export function SecuritySection({ data, wsId, onSaved }: { data: WsData; wsId: s
     setSaving(listModal.field);
     try {
       await api(`/api/workspaces/${wsId}/settings`, { method: 'PUT', body: JSON.stringify({ [listModal.field]: JSON.stringify(listItems) }) });
-      toast.success('List updated', 'Your access list has been saved.'); onSaved(); setListModal(null);
-    } catch (err) { toast.error('Couldn\'t save', apiErrorMessage(err, 'Your access list was not updated.')); }
+      toast.success(t('settings.feedback.listUpdated'), t('settings.feedback.yourAccessListHasBeenSaved')); onSaved(); setListModal(null);
+    } catch (err) { toast.error(t('common.error.couldnTSave'), apiErrorMessage(err, t('settings.error.yourAccessListWasNotUpdated'))); }
     setSaving(null);
   };
 
@@ -546,22 +561,22 @@ export function SecuritySection({ data, wsId, onSaved }: { data: WsData; wsId: s
   };
 
   const toggleItems = [
-    { field: 'disable_share_links', label: 'Disable public share links', desc: 'Block all share link creation.' },
-    { field: 'force_share_password', label: 'Force password on share links', desc: 'Every share link must have a password.' },
-    { field: 'record_upload_origin', label: 'Record upload-origin location', desc: 'Fall back to the uploader\'s approximate (IP-based) location on the map when a file or folder has no GPS data.' },
+    { field: 'disable_share_links', label: t('settings.label.disablePublicShareLinks'), desc: t('settings.description.blockAllShareLinkCreation') },
+    { field: 'force_share_password', label: t('settings.label.forcePasswordOnShareLinks'), desc: t('settings.description.everyShareLinkMustHaveAPassword') },
+    { field: 'record_upload_origin', label: t('settings.label.recordUploadOriginLocation'), desc: t('settings.description.fallBackToTheUploaderSApproximateIpBasedLocationOnTheMap') },
   ];
 
-  const listItems2 = [
-    { field: 'ip_allowlist', label: 'IP allowlist', desc: 'Only these IPs can access.', placeholder: '192.168.1.0/24' },
-    { field: 'ip_blocklist', label: 'IP blocklist', desc: 'Block specific IPs.', placeholder: '10.0.0.1' },
-    { field: 'country_allowlist', label: 'Country allowlist', desc: 'Only these countries allowed.', placeholder: 'US' },
-    { field: 'country_blocklist', label: 'Country blocklist', desc: 'Block these countries.', placeholder: 'CN' },
-    { field: 'allowed_email_domains', label: 'Allowed email domains', desc: 'Only these email domains can join.', placeholder: 'company.com' },
+  const listItems2: { field: string; labelKey: MessageKey; desc: string; placeholder: string }[] = [
+    { field: 'ip_allowlist', labelKey: 'settings.label.ipAllowlist', desc: t('settings.description.onlyTheseIpsCanAccess'), placeholder: '192.168.1.0/24' },
+    { field: 'ip_blocklist', labelKey: 'settings.label.ipBlocklist', desc: t('settings.description.blockSpecificIps'), placeholder: '10.0.0.1' },
+    { field: 'country_allowlist', labelKey: 'settings.label.countryAllowlist', desc: t('settings.description.onlyTheseCountriesAllowed'), placeholder: t('settings.label.us') },
+    { field: 'country_blocklist', labelKey: 'settings.label.countryBlocklist', desc: t('settings.description.blockTheseCountries'), placeholder: t('settings.label.cn') },
+    { field: 'allowed_email_domains', labelKey: 'settings.label.allowedEmailDomains', desc: t('settings.description.onlyTheseEmailDomainsCanJoin'), placeholder: 'company.com' },
   ];
 
   return (
     <section id="section-security">
-      <SectionHeader title="Security" desc="Access controls, authentication rules, and file protection." />
+      <SectionHeader title={t('settings.tooltip.security')} desc={t('settings.description.accessControlsAuthenticationRulesAndFileProtection')} />
 
       {/* Toggles */}
       <Card className="mb-4">
@@ -571,9 +586,9 @@ export function SecuritySection({ data, wsId, onSaved }: { data: WsData; wsId: s
               <button
                 className={`relative w-9 h-5 rounded-full transition-colors ${(toggles as Record<string, boolean>)[item.field] ? 'bg-green-600' : 'bg-muted'} ${!canManageSec ? 'opacity-50 cursor-not-allowed' : ''}`}
                 disabled={!canManageSec}
-                title={!canManageSec ? NO_PERM('security settings') : undefined}
+                title={!canManageSec ? NO_PERM(t('settings.action.securitySettings')) : undefined}
                 onClick={() => { const nv = !(toggles as Record<string, boolean>)[item.field]; setToggles((p) => ({ ...p, [item.field]: nv })); saveSetting(item.field, nv ? 1 : 0); }}>
-                <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-all ${(toggles as Record<string, boolean>)[item.field] ? 'left-4.5' : 'left-0.5'}`} />
+                <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-all ${(toggles as Record<string, boolean>)[item.field] ? 'inset-s-4.5' : 'inset-s-0.5'}`} />
               </button>
             </SettingRow>
           ))}
@@ -583,43 +598,43 @@ export function SecuritySection({ data, wsId, onSaved }: { data: WsData; wsId: s
       {/* Selects */}
       <Card className="mb-4">
         <CardContent className="divide-y">
-          <SettingRow label="Session timeout" desc="Auto-logout after inactivity.">
+          <SettingRow label={t('settings.label.sessionTimeout')} desc={t('settings.description.autoLogoutAfterInactivity')}>
             <div className="flex items-center gap-2">
-              <Select value={sessionTimeout} onValueChange={(v) => setSessionTimeout(v as string)} items={SESSION_TIMEOUT_OPTIONS}>
+              <Select value={sessionTimeout} onValueChange={(v) => setSessionTimeout(v as string)} items={optionItems(SESSION_TIMEOUT_OPTIONS)}>
                 <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {SESSION_TIMEOUT_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+                  {SESSION_TIMEOUT_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{t(o.labelKey)}</SelectItem>)}
                 </SelectContent>
               </Select>
-              <SaveBtn loading={saving === 'session_timeout'} onClick={() => saveSetting('session_timeout_minutes', sessionTimeout || null)} disabled={!canManageSec} disabledReason={NO_PERM('the session timeout')} />
+              <SaveBtn loading={saving === 'session_timeout'} onClick={() => saveSetting('session_timeout_minutes', sessionTimeout || null)} disabled={!canManageSec} disabledReason={NO_PERM(t('settings.label.theSessionTimeout'))} />
             </div>
           </SettingRow>
-          <SettingRow label="Share link max expiry" desc="Cap how long share links can live.">
+          <SettingRow label={t('settings.label.shareLinkMaxExpiry')} desc={t('settings.description.capHowLongShareLinksCanLive')}>
             <div className="flex items-center gap-2">
-              <Select value={shareExpiry} onValueChange={(v) => setShareExpiry(v as string)} items={SHARE_EXPIRY_OPTIONS}>
+              <Select value={shareExpiry} onValueChange={(v) => setShareExpiry(v as string)} items={optionItems(SHARE_EXPIRY_OPTIONS)}>
                 <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {SHARE_EXPIRY_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+                  {SHARE_EXPIRY_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{t(o.labelKey)}</SelectItem>)}
                 </SelectContent>
               </Select>
-              <SaveBtn loading={saving === 'share_max_expiry_days'} onClick={() => saveSetting('share_max_expiry_days', shareExpiry || null)} disabled={!canManageSec} disabledReason={NO_PERM('the share link expiry cap')} />
+              <SaveBtn loading={saving === 'share_max_expiry_days'} onClick={() => saveSetting('share_max_expiry_days', shareExpiry || null)} disabled={!canManageSec} disabledReason={NO_PERM(t('settings.label.theShareLinkExpiryCap'))} />
             </div>
           </SettingRow>
-          <SettingRow label="Default share link expiry" desc="What new share links start with. Anyone sharing can still change it.">
+          <SettingRow label={t('settings.label.defaultShareLinkExpiry')} desc={t('settings.description.whatNewShareLinksStartWithAnyoneSharingCanStillChange')}>
             <div className="flex items-center gap-2">
-              <Select value={shareDefaultExpiry} onValueChange={(v) => setShareDefaultExpiry(v as string)} items={SHARE_DEFAULT_EXPIRY_OPTIONS}>
+              <Select value={shareDefaultExpiry} onValueChange={(v) => setShareDefaultExpiry(v as string)} items={optionItems(SHARE_DEFAULT_EXPIRY_OPTIONS)}>
                 <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {SHARE_DEFAULT_EXPIRY_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+                  {SHARE_DEFAULT_EXPIRY_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{t(o.labelKey)}</SelectItem>)}
                 </SelectContent>
               </Select>
-              <SaveBtn loading={saving === 'default_share_expiry_days'} onClick={() => saveSetting('default_share_expiry_days', shareDefaultExpiry || null)} disabled={!canManageSec} disabledReason={NO_PERM('the default share link expiry')} />
+              <SaveBtn loading={saving === 'default_share_expiry_days'} onClick={() => saveSetting('default_share_expiry_days', shareDefaultExpiry || null)} disabled={!canManageSec} disabledReason={NO_PERM(t('settings.label.theDefaultShareLinkExpiry'))} />
             </div>
           </SettingRow>
-          <SettingRow label="Download rate limit" desc="Max downloads per user per hour.">
+          <SettingRow label={t('settings.label.downloadRateLimit')} desc={t('settings.description.maxDownloadsPerUserPerHour')}>
             <div className="flex items-center gap-2">
               <Input value={downloadRate} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDownloadRate(e.target.value)} type="number" className="h-8 text-xs w-24" placeholder="100" />
-              <span className="text-[11px] text-muted-foreground">/ hour</span>
+              <span className="text-[11px] text-muted-foreground">{t('settings.label.hour')}</span>
               <SaveBtn loading={saving === 'download_rate'} onClick={() => saveSetting('download_rate_limit', downloadRate || null)} />
             </div>
           </SettingRow>
@@ -631,12 +646,13 @@ export function SecuritySection({ data, wsId, onSaved }: { data: WsData; wsId: s
         <CardContent className="divide-y">
           {listItems2.map((item) => {
             const count = getListCount(item.field);
+            const itemLabel = t(item.labelKey);
             return (
-              <SettingRow key={item.field} label={item.label} desc={item.desc}>
+              <SettingRow key={item.field} label={itemLabel} desc={item.desc}>
                 <div className="flex items-center gap-2">
-                  <Badge variant="secondary" className="text-[10px]">{count === 0 ? 'None' : `${count} entries`}</Badge>
-                  <span title={!canManageSec ? NO_PERM(item.label.toLowerCase()) : undefined} className={!canManageSec ? 'cursor-not-allowed' : ''}>
-                    <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => openListModal(item.field, item.label, item.placeholder)} disabled={!canManageSec}>Manage</Button>
+                  <Badge variant="secondary" className="text-[10px]">{count === 0 ? t('settings.status.none') : t('settings.status.countEntries', { count })}</Badge>
+                  <span title={!canManageSec ? NO_PERM(itemLabel.toLocaleLowerCase(locale)) : undefined} className={!canManageSec ? 'cursor-not-allowed' : ''}>
+                    <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => openListModal(item.field, item.labelKey, item.placeholder)} disabled={!canManageSec}>{t('common.action.manage')}</Button>
                   </span>
                 </div>
               </SettingRow>
@@ -648,7 +664,7 @@ export function SecuritySection({ data, wsId, onSaved }: { data: WsData; wsId: s
       {/* List management modal */}
       <Dialog open={!!listModal} onOpenChange={() => setListModal(null)}>
         <DialogContent className="max-w-sm">
-          <DialogHeader><DialogTitle>{listModal?.title}</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{listModal ? t(listModal.titleKey) : null}</DialogTitle></DialogHeader>
           <div className="flex gap-2">
             <Input value={listInput} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setListInput(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && addListItem()}
@@ -657,7 +673,7 @@ export function SecuritySection({ data, wsId, onSaved }: { data: WsData; wsId: s
           </div>
           <div className="max-h-48 overflow-y-auto border rounded-lg">
             {listItems.length === 0 ? (
-              <p className="py-4 text-center text-xs text-muted-foreground">No entries</p>
+              <p className="py-4 text-center text-xs text-muted-foreground">{t('settings.label.noEntries')}</p>
             ) : listItems.map((item, i) => (
               <div key={i} className="flex items-center justify-between px-3 py-2 text-xs border-b last:border-b-0">
                 <span className="font-mono">{item}</span>
@@ -666,8 +682,8 @@ export function SecuritySection({ data, wsId, onSaved }: { data: WsData; wsId: s
             ))}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setListModal(null)}>Cancel</Button>
-            <Button onClick={saveList} disabled={saving === listModal?.field}>{saving === listModal?.field && <Loader2 className="size-4 animate-spin mr-1.5" />}Save</Button>
+            <Button variant="outline" onClick={() => setListModal(null)}>{t('common.cancel')}</Button>
+            <Button onClick={saveList} disabled={saving === listModal?.field}>{saving === listModal?.field && <Loader2 className="size-4 animate-spin me-1.5" />}{t('common.save')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -678,6 +694,7 @@ export function SecuritySection({ data, wsId, onSaved }: { data: WsData; wsId: s
 // ── Roles ──────────────────────────────────────────────────
 
 export function RolesSection({ data }: { data: WsData; wsId: string; onSaved: () => void }) {
+  const t = useT();
   const roles = data.roles ?? [];
   const perms = data.permissions ?? {};
   // PUT /api/roles/:id refuses the role the caller holds ("You cannot edit
@@ -689,21 +706,21 @@ export function RolesSection({ data }: { data: WsData; wsId: string; onSaved: ()
 
   return (
     <section id="section-roles">
-      <SectionHeader title="Roles & permissions" desc="Manage access levels for your workspace members." />
+      <SectionHeader title={t('settings.tooltip.rolesPermissions')} desc={t('settings.description.manageAccessLevelsForYourWorkspaceMembers')} />
       <Card>
         <CardContent>
           <Table className="text-xs">
             <TableHeader>
               <TableRow>
-                <TableHead className="h-auto py-2 px-3 text-muted-foreground">Permission</TableHead>
+                <TableHead className="h-auto py-2 px-3 text-muted-foreground">{t('common.label.permission')}</TableHead>
                 {roles.map((r) => (
                   <TableHead key={r.id} className="h-auto text-center py-2 px-2">
                     <div className="flex flex-col items-center gap-1">
                       <span>{r.name}</span>
                       {canEdit(r) ? (
-                        <Link to={`/role-create?edit=${r.id}`} className="text-[9px] text-muted-foreground hover:text-foreground underline">Edit</Link>
+                        <Link to={`/role-create?edit=${r.id}`} className="text-[9px] text-muted-foreground hover:text-foreground underline">{t('common.edit')}</Link>
                       ) : (
-                        <Link to={`/role-create?view=${r.id}`} className="text-[9px] text-muted-foreground hover:text-foreground underline">View</Link>
+                        <Link to={`/role-create?view=${r.id}`} className="text-[9px] text-muted-foreground hover:text-foreground underline">{t('common.view')}</Link>
                       )}
                     </div>
                   </TableHead>
@@ -712,15 +729,15 @@ export function RolesSection({ data }: { data: WsData; wsId: string; onSaved: ()
             </TableHeader>
             <TableBody>
               {PERM_GROUPS.map((g) => (
-                <Fragment key={g.group}>
+                <Fragment key={g.groupKey}>
                   <TableRow>
                     <TableCell colSpan={roles.length + 1} className="py-1.5 px-3 bg-muted/40 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                      {g.group}
+                      {t(g.groupKey)}
                     </TableCell>
                   </TableRow>
-                  {g.perms.map(([perm, label]) => (
+                  {g.perms.map(([perm, labelKey]) => (
                     <TableRow key={perm}>
-                      <TableCell className="py-2 px-3 text-muted-foreground">{label}</TableCell>
+                      <TableCell className="py-2 px-3 text-muted-foreground">{t(labelKey)}</TableCell>
                       {roles.map((r) => (
                         <TableCell key={r.id} className="text-center py-2 px-2">
                           {perms[r.id]?.[perm] ? (
@@ -737,7 +754,7 @@ export function RolesSection({ data }: { data: WsData; wsId: string; onSaved: ()
             </TableBody>
           </Table>
           <div className="mt-3 pt-3 border-t">
-            <Link to="/role-create"><Button variant="outline" size="sm" className="text-xs gap-1.5"><Plus className="size-3" /> Add role</Button></Link>
+            <Link to="/role-create"><Button variant="outline" size="sm" className="text-xs gap-1.5"><Plus className="size-3" /> {t('settings.action.addRole')}</Button></Link>
           </div>
         </CardContent>
       </Card>
@@ -748,6 +765,7 @@ export function RolesSection({ data }: { data: WsData; wsId: string; onSaved: ()
 // ── Danger Zone ────────────────────────────────────────────
 
 function DangerSection({ data, wsId, isOwner, navigate, onSaved }: { data: WsData; wsId: string; isOwner: boolean; navigate: (path: string) => void; onSaved: () => void }) {
+  const t = useT();
   const [confirmLeave, setConfirmLeave] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [transferOpen, setTransferOpen] = useState(false);
@@ -758,7 +776,7 @@ function DangerSection({ data, wsId, isOwner, navigate, onSaved }: { data: WsDat
 
   const handleLeave = async () => {
     setActing(true);
-    try { const res = await api<{ ok: boolean }>(`/api/workspaces/${wsId}/leave`, { method: 'POST' }); if (res.ok) { toast.success('Left workspace', 'You no longer have access to this workspace.'); navigate('/'); } } catch { toast.error('Couldn\'t leave', 'You were not able to leave this workspace.'); }
+    try { const res = await api<{ ok: boolean }>(`/api/workspaces/${wsId}/leave`, { method: 'POST' }); if (res.ok) { toast.success(t('settings.feedback.leftWorkspace'), t('settings.feedback.youNoLongerHaveAccessToThisWorkspace')); navigate('/'); } } catch { toast.error(t('settings.error.couldnTLeave'), t('settings.error.youWereNotAbleToLeaveThisWorkspace')); }
     setActing(false);
   };
 
@@ -768,9 +786,9 @@ function DangerSection({ data, wsId, isOwner, navigate, onSaved }: { data: WsDat
    * this button can complete on its own.
    */
   const handleDeleted = (pending: boolean) => {
-    toast.success(pending ? 'Workspace deletion started' : 'Workspace deleted', pending
-      ? 'The workspace is unavailable. Its files are being removed in the background.'
-      : 'The workspace and all its files have been removed.');
+    toast.success(pending ? t('settings.feedback.workspaceDeletionStarted') : t('settings.feedback.workspaceDeleted'), pending
+      ? t('settings.feedback.theWorkspaceIsUnavailableItsFilesAreBeingRemovedInThe')
+      : t('settings.feedback.theWorkspaceAndAllItsFilesHaveBeenRemoved'));
     navigate('/');
   };
 
@@ -779,36 +797,36 @@ function DangerSection({ data, wsId, isOwner, navigate, onSaved }: { data: WsDat
     setActing(true);
     try {
       const res = await api<{ ok: boolean; error?: string }>(`/api/workspaces/${wsId}/transfer`, { method: 'POST', body: JSON.stringify({ user_id: transferTarget }) });
-      if (res.ok) { toast.success('Ownership transferred', 'The selected member is now the workspace owner.'); setTransferOpen(false); onSaved(); }
-      else toast.error('Transfer failed', res.error ?? 'Ownership could not be transferred.');
-    } catch { toast.error('Transfer failed', 'Ownership could not be transferred.'); }
+      if (res.ok) { toast.success(t('settings.feedback.ownershipTransferred'), t('settings.feedback.theSelectedMemberIsNowTheWorkspaceOwner')); setTransferOpen(false); onSaved(); }
+      else toast.error(t('lan-transfer.error.transferFailed'), res.error ?? t('settings.error.ownershipCouldNotBeTransferred'));
+    } catch { toast.error(t('lan-transfer.error.transferFailed'), t('settings.error.ownershipCouldNotBeTransferred')); }
     setActing(false);
   };
 
   return (
     <section id="section-danger">
-      <SectionHeader title="Danger zone" desc="Irreversible actions. Tread carefully." danger />
+      <SectionHeader title={t('settings.tooltip.dangerZone')} desc={t('settings.description.irreversibleActionsTreadCarefully')} danger />
       <Card className="border-destructive/30">
         <CardContent className="divide-y divide-destructive/20">
           {isOwner && (
             <div className="flex items-center justify-between py-4">
               <div>
-                <p className="text-sm font-medium">Transfer ownership</p>
-                <p className="text-xs text-muted-foreground">Hand this workspace to another member.</p>
+                <p className="text-sm font-medium">{t('settings.label.transferOwnership')}</p>
+                <p className="text-xs text-muted-foreground">{t('settings.description.handThisWorkspaceToAnotherMember')}</p>
               </div>
               <Button variant="outline" size="sm" className="text-destructive border-destructive/30 hover:bg-destructive/10" onClick={() => setTransferOpen(true)}>
-                <ArrowRightLeft className="size-3.5 mr-1.5" /> Transfer
+                <ArrowRightLeft className="size-3.5 me-1.5" /> {t('settings.action.transfer')}
               </Button>
             </div>
           )}
           <div className="flex items-center justify-between py-4">
-            <div><p className="text-sm font-medium">Leave workspace</p><p className="text-xs text-muted-foreground">You will lose access immediately.</p></div>
-            <Button variant="outline" size="sm" className="text-destructive border-destructive/30 hover:bg-destructive/10" onClick={() => setConfirmLeave(true)}><LogOut className="size-3.5 mr-1.5" /> Leave</Button>
+            <div><p className="text-sm font-medium">{t('settings.heading.leaveWorkspace')}</p><p className="text-xs text-muted-foreground">{t('settings.description.youWillLoseAccessImmediately')}</p></div>
+            <Button variant="outline" size="sm" className="text-destructive border-destructive/30 hover:bg-destructive/10" onClick={() => setConfirmLeave(true)}><LogOut className="size-3.5 me-1.5 rtl:-scale-x-100" /> {t('common.action.leave')}</Button>
           </div>
           {isOwner && (
             <div className="flex items-center justify-between py-4">
-              <div><p className="text-sm font-medium">Delete workspace</p><p className="text-xs text-muted-foreground">Permanently deletes all files, members and links.</p></div>
-              <Button variant="outline" size="sm" className="text-destructive border-destructive/30 hover:bg-destructive/10" onClick={() => setConfirmDelete(true)}><Trash2 className="size-3.5 mr-1.5" /> Delete</Button>
+              <div><p className="text-sm font-medium">{t('settings.heading.deleteWorkspace')}</p><p className="text-xs text-muted-foreground">{t('settings.description.permanentlyDeletesAllFilesMembersAndLinks')}</p></div>
+              <Button variant="outline" size="sm" className="text-destructive border-destructive/30 hover:bg-destructive/10" onClick={() => setConfirmDelete(true)}><Trash2 className="size-3.5 me-1.5" /> {t('common.delete')}</Button>
             </div>
           )}
         </CardContent>
@@ -817,12 +835,12 @@ function DangerSection({ data, wsId, isOwner, navigate, onSaved }: { data: WsDat
       {/* Transfer modal */}
       <Dialog open={transferOpen} onOpenChange={setTransferOpen}>
         <DialogContent className="max-w-sm">
-          <DialogHeader><DialogTitle>Transfer ownership</DialogTitle></DialogHeader>
-          <p className="text-xs text-muted-foreground mb-2">Select a member to become the new owner. You will become a regular member.</p>
+          <DialogHeader><DialogTitle>{t('settings.heading.transferOwnership')}</DialogTitle></DialogHeader>
+          <p className="text-xs text-muted-foreground mb-2">{t('settings.description.selectAMemberToBecomeTheNewOwnerYouWillBecome')}</p>
           <div className="max-h-48 overflow-y-auto border rounded-lg">
             {members.filter((m) => m.role_id !== 'role_owner').map((m) => (
               <button key={m.membership_id}
-                className={`w-full flex items-center gap-2.5 px-3 py-2.5 text-xs border-b last:border-b-0 hover:bg-muted/50 text-left ${transferTarget === m.user_id ? 'bg-green-50 dark:bg-green-950/30' : ''}`}
+                className={`w-full flex items-center gap-2.5 px-3 py-2.5 text-xs border-b last:border-b-0 hover:bg-muted/50 text-start ${transferTarget === m.user_id ? 'bg-green-50 dark:bg-green-950/30' : ''}`}
                 onClick={() => setTransferTarget(m.user_id)}>
                 <span className="flex-1 truncate font-medium">{m.name}</span>
                 <span className="text-muted-foreground truncate">{m.email}</span>
@@ -830,21 +848,21 @@ function DangerSection({ data, wsId, isOwner, navigate, onSaved }: { data: WsDat
               </button>
             ))}
             {members.filter((m) => m.role_id !== 'role_owner').length === 0 && (
-              <p className="py-4 text-center text-xs text-muted-foreground">No other members to transfer to.</p>
+              <p className="py-4 text-center text-xs text-muted-foreground">{t('settings.description.noOtherMembersToTransferTo')}</p>
             )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setTransferOpen(false)}>Cancel</Button>
-            <Button variant="destructive" onClick={handleTransfer} disabled={acting || !transferTarget}>{acting && <Loader2 className="size-4 animate-spin mr-1.5" />}Transfer ownership</Button>
+            <Button variant="outline" onClick={() => setTransferOpen(false)}>{t('common.cancel')}</Button>
+            <Button variant="destructive" onClick={handleTransfer} disabled={acting || !transferTarget}>{acting && <Loader2 className="size-4 animate-spin me-1.5" />}{t('settings.action.transferOwnership')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
       <Dialog open={confirmLeave} onOpenChange={setConfirmLeave}>
         <DialogContent className="max-w-sm">
-          <DialogHeader><DialogTitle>Leave workspace?</DialogTitle></DialogHeader>
-          <p className="text-sm text-muted-foreground">You will lose access to all files immediately.</p>
-          <DialogFooter><Button variant="outline" onClick={() => setConfirmLeave(false)}>Cancel</Button><Button variant="destructive" onClick={handleLeave} disabled={acting}>{acting && <Loader2 className="size-4 animate-spin mr-1.5" />}Leave</Button></DialogFooter>
+          <DialogHeader><DialogTitle>{t('settings.heading.leaveWorkspace.leaveWorkspace')}</DialogTitle></DialogHeader>
+          <p className="text-sm text-muted-foreground">{t('settings.description.youWillLoseAccessToAllFilesImmediately')}</p>
+          <DialogFooter><Button variant="outline" onClick={() => setConfirmLeave(false)}>{t('common.cancel')}</Button><Button variant="destructive" onClick={handleLeave} disabled={acting}>{acting && <Loader2 className="size-4 animate-spin me-1.5" />}{t('common.action.leave')}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 
@@ -869,9 +887,10 @@ function SettingRow({ label, desc, children }: { label: string; desc: string; ch
 }
 
 function SaveBtn({ loading, onClick, disabled, disabledReason }: { loading: boolean; onClick: () => void; disabled?: boolean; disabledReason?: string }) {
+  const t = useT();
   const btn = (
     <Button size="sm" className="h-7 text-xs gap-1" onClick={onClick} disabled={loading || disabled}>
-      {loading ? <Loader2 className="size-3 animate-spin" /> : <Save className="size-3" />}Save
+      {loading ? <Loader2 className="size-3 animate-spin" /> : <Save className="size-3" />}{t('common.save')}
     </Button>
   );
   // Disabled buttons swallow pointer events, so the tooltip lives on a wrapper

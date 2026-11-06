@@ -1,3 +1,5 @@
+import { t } from "@/lib/i18n";
+
 export interface NotificationItem {
   id: string;
   kind: "personal" | "broadcast";
@@ -59,7 +61,7 @@ export function openDestination(
 
 export function relativeTime(createdAt: number, now: number): string {
   const s = Math.max(0, now - createdAt);
-  if (s < 60) return "just now";
+  if (s < 60) return t("common.label.justNow");
   if (s < 3600) return `${Math.floor(s / 60)}m`;
   if (s < 86400) return `${Math.floor(s / 3600)}h`;
   return `${Math.floor(s / 86400)}d`;
@@ -81,7 +83,7 @@ export function groupByDay(items: NotificationItem[], now: number): { label: str
   const earlier: NotificationItem[] = [];
   for (const it of items) (it.created_at >= startOfToday ? today : earlier).push(it);
   const groups: { label: string; items: NotificationItem[] }[] = [];
-  if (today.length) groups.push({ label: "Today", items: today });
-  if (earlier.length) groups.push({ label: "Earlier", items: earlier });
+  if (today.length) groups.push({ label: t("common.label.today"), items: today });
+  if (earlier.length) groups.push({ label: t("common.label.earlier"), items: earlier });
   return groups;
 }

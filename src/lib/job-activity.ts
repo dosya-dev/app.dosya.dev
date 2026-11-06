@@ -19,7 +19,7 @@
  */
 const KEY = 'dosya_active_jobs';
 
-export type JobKind = 'remote' | 'cloud';
+export type JobKind = 'remote' | 'cloud' | 'rclone';
 
 type Flags = Partial<Record<JobKind, boolean>>;
 

@@ -3,12 +3,16 @@ import { req } from '@/api/req';
 import { Card, CardContent } from '@/components/ui/card';
 import { Check } from 'lucide-react';
 import { toast } from '@/lib/toast';
+import { useT } from '@/lib/i18n';
+import type { MessageKey } from '@/i18n/keys';
+import { LanguageField } from '@/components/language-field';
 import { THEMES, type Mode } from '@/lib/themes';
 import { readCache, writeCache, applyTheme, applyThemeAnimated, subscribeThemeChange, type ThemePref } from '@/lib/theme';
 
 // ── Appearance ─────────────────────────────────────────────
 
 export default function AppearanceSection() {
+  const t = useT();
   const [pref, setPref] = useState<ThemePref>(() => readCache());
 
   useEffect(() => subscribeThemeChange((next) => setPref(next)), []);
@@ -25,24 +29,24 @@ export default function AppearanceSection() {
       setPref(prev);
       applyTheme(prev); // instant: a second wipe on a failed save reads as a bug
       writeCache(prev);
-      toast.error('Couldn\'t save', res.error ?? 'Your theme could not be saved.');
+      toast.error(t('common.error.couldnTSave'), res.error ?? t('profile.error.yourThemeCouldNotBeSaved'));
     }
   };
 
-  const MODES: { value: Mode; label: string }[] = [
-    { value: 'light', label: 'Light' },
-    { value: 'dark', label: 'Dark' },
-    { value: 'system', label: 'System' },
+  const MODES: { value: Mode; labelKey: MessageKey }[] = [
+    { value: 'light', labelKey: 'common.option.light' },
+    { value: 'dark', labelKey: 'common.option.dark' },
+    { value: 'system', labelKey: 'common.label.system' },
   ];
 
   return (
     <section id="section-appearance">
-      <h2 className="text-base font-semibold mb-3">Appearance</h2>
+      <h2 className="text-base font-semibold mb-3">{t('profile.heading.appearance')}</h2>
       <Card>
         <CardContent className="divide-y">
           <div className="py-4">
-            <p className="text-xs font-medium mb-0.5">Mode</p>
-            <p className="text-[11px] text-muted-foreground mb-3">Light, dark, or follow your device.</p>
+            <p className="text-xs font-medium mb-0.5">{t('profile.label.mode')}</p>
+            <p className="text-[11px] text-muted-foreground mb-3">{t('profile.description.lightDarkOrFollowYourDevice')}</p>
             <div className="inline-flex gap-1 bg-muted rounded-lg p-1">
               {MODES.map((m) => (
                 <button
@@ -52,20 +56,20 @@ export default function AppearanceSection() {
                     pref.mode === m.value ? 'bg-background shadow-sm' : 'text-muted-foreground hover:text-foreground'
                   }`}
                 >
-                  {m.label}
+                  {t(m.labelKey)}
                 </button>
               ))}
             </div>
           </div>
           <div className="py-4">
-            <p className="text-xs font-medium mb-0.5">Theme</p>
-            <p className="text-[11px] text-muted-foreground mb-3">Applies instantly and saves to your account, so it follows you across devices.</p>
+            <p className="text-xs font-medium mb-0.5">{t('profile.label.theme')}</p>
+            <p className="text-[11px] text-muted-foreground mb-3">{t('profile.description.appliesInstantlyAndSavesToYourAccountSoIt')}</p>
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
               {THEMES.map((t) => (
                 <button
                   key={t.id}
                   onClick={() => save({ ...pref, theme: t.id })}
-                  className={`text-left rounded-lg border overflow-hidden transition-all ${
+                  className={`text-start rounded-lg border overflow-hidden transition-all ${
                     pref.theme === t.id ? 'ring-2 ring-primary border-transparent' : 'hover:border-foreground/30'
                   }`}
                 >
@@ -80,6 +84,11 @@ export default function AppearanceSection() {
                 </button>
               ))}
             </div>
+          </div>
+          <div className="py-4">
+            <p className="text-xs font-medium mb-0.5">{t('appearance.label.language')}</p>
+            <p className="text-[11px] text-muted-foreground mb-3">{t('profile.description.savedOnThisBrowserOnly')}</p>
+            <LanguageField />
           </div>
         </CardContent>
       </Card>

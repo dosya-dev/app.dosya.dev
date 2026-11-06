@@ -1,5 +1,6 @@
 import { Monitor, Smartphone, Terminal, Plug, type LucideIcon } from 'lucide-react';
 import { originLabel } from '@/lib/helpers';
+import { useT } from '@/lib/i18n';
 
 // webdav/s3/ftp/import share one generic "integration" badge - the Origin
 // list column shows the precise name. web and legacy (null) rows get none.
@@ -15,12 +16,13 @@ const BADGE_STYLE: Record<string, { icon: LucideIcon; bg: string }> = {
 
 /** Top-left origin dot for a folder icon. Parent element must be `relative`. */
 export function OriginBadge({ origin }: { origin?: string | null }) {
+  const t = useT();
   if (!origin || !(origin in BADGE_STYLE)) return null;
   const { icon: Icon, bg } = BADGE_STYLE[origin];
   return (
     <span
-      title={`Added via ${originLabel(origin)}`}
-      className={`absolute -top-1 -left-1 z-10 flex items-center justify-center size-3.5 rounded-full ring-2 ring-background ${bg}`}
+      title={t('files.tooltip.addedViaOrigin', { origin: originLabel(origin) })}
+      className={`absolute -top-1 -inset-s-1 z-10 flex items-center justify-center size-3.5 rounded-full ring-2 ring-background ${bg}`}
     >
       <Icon className="size-2 text-white" />
     </span>

@@ -13,6 +13,7 @@
  * consistency. This client is cookie-based, so that round-trips automatically -
  * do not add bookmark handling here.
  */
+import { t } from '@/lib/i18n';
 import { useCallback } from 'react';
 import { useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { api, apiErrorCode, apiErrorMessage } from '@/api/client';
@@ -48,7 +49,7 @@ export async function fetchFilesListing(path: string): Promise<FilesResponse> {
   const data = await api<FilesResponse>(path);
   // A 200 with ok:false is a real failure; surfacing it as data would render
   // the ordinary "no files here" empty state and read as "my files are gone".
-  if (!data.ok) throw new Error('This folder could not be loaded.');
+  if (!data.ok) throw new Error(t('files.error.thisFolderCouldNotBeLoaded'));
   return data;
 }
 
@@ -102,7 +103,7 @@ export function useFilesListing(view: FilesView | null): FilesListing {
     canHide: query.data?.can_hide ?? false,
     isLoading: query.isLoading,
     isPlaceholder: query.isPlaceholderData,
-    error: query.isError ? apiErrorMessage(query.error, 'This folder could not be loaded.') : null,
+    error: query.isError ? apiErrorMessage(query.error, t('files.error.thisFolderCouldNotBeLoaded')) : null,
     errorCode: query.isError ? apiErrorCode(query.error) : null,
     refresh,
   };

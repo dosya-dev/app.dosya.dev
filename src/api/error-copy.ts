@@ -1,3 +1,5 @@
+import { t } from '@/lib/i18n';
+
 /**
  * Sentences for the API's machine-readable error codes.
  *
@@ -15,13 +17,14 @@
  * Adding a sentence for a code the API never returns is worse than useless: it
  * reads as coverage that does not exist.
  */
+// Getters over the module-level t: the sentence follows the chosen language at the moment it is read.
 export const API_ERROR_COPY: Record<string, string> = {
-    folder_locked: 'This folder is locked. Enter its password to open it.',
+    get folder_locked() { return t('common.description.thisFolderIsLockedEnterItsPasswordToOpenIt'); },
     // DELETE /api/e2ee/user-keys (Contract 6) answers this when the account
     // has two-factor authentication and the request carried no code. The
     // caller uses it to grow a code field, so it must stay branchable - and
     // the user must never be shown the bare code.
-    '2fa_required': 'Enter your two-factor code to continue.',
+    get '2fa_required'() { return t('common.label.enterYourTwoFactorCodeToContinue'); },
 };
 
 /** The sentence for a code, or the code itself when there is no entry for it. */

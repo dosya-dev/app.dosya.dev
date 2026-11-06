@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { useT } from '@/lib/i18n';
+import type { MessageKey } from '@/i18n/keys';
 
 /**
  * Inline result notice for the OAuth connect round trip. The API callback
@@ -11,15 +13,16 @@ import { useSearchParams } from 'react-router-dom';
  * itself is captured into state first, so the banner survives its own
  * cleanup.
  */
-const ERROR_COPY: Record<string, string> = {
-  denied: 'Connection cancelled - the connection was declined on the provider\'s consent screen.',
-  invalid_state: 'Connection failed - the sign-in attempt expired. Please try connecting again.',
-  token_failed: 'Connection failed - the provider did not accept the sign-in. Please try again.',
-  save_failed: 'Connection failed while saving the account. Please try again.',
-  unknown_provider: 'Connection failed - unknown provider.',
+const ERROR_COPY: Record<string, MessageKey> = {
+  denied: 'common.description.connectionCancelledTheConnectionWasDeclinedOnTheProviderSConsent',
+  invalid_state: 'common.error.connectionFailedTheSignInAttemptExpiredPleaseTryConnectingAgain',
+  token_failed: 'common.error.connectionFailedTheProviderDidNotAcceptTheSignInPlease',
+  save_failed: 'common.error.connectionFailedWhileSavingTheAccountPleaseTryAgain',
+  unknown_provider: 'common.error.connectionFailedUnknownProvider',
 };
 
 export function CloudConnectNotice() {
+  const t = useT();
   const [searchParams, setSearchParams] = useSearchParams();
   // Captured once at mount: the OAuth callback always lands as a fresh
   // navigation, so mount-time params are exactly the round trip's result.
@@ -47,7 +50,7 @@ export function CloudConnectNotice() {
       className="mb-4 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
       data-testid="cloud-connect-notice"
     >
-      {ERROR_COPY[error] ?? 'Connection failed. Please try again.'}
+      {t(ERROR_COPY[error] ?? 'common.error.connectionFailedPleaseTryAgain')}
     </div>
   );
 }

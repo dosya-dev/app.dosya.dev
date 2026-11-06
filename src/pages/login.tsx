@@ -14,41 +14,50 @@ import { LegalNotice } from '@/components/legal-notice';
 import { pendingPostAuthPath } from '@/lib/redemption-claim';
 import { consumePostAuthPath } from '@/lib/post-auth-path';
 import { Logo } from "@/components/brand/logo";
+import { useT } from '@/lib/i18n';
+import { richText } from '@/lib/rich-text';
+import type { T } from '@/i18n/translator';
 
 // OAuth callbacks redirect here as /login?error=<provider>_<reason> on failure.
-const PROVIDER_LABELS: Record<string, string> = { github: 'GitHub', google: 'Google', apple: 'Apple' };
+const PROVIDER_LABELS = {
+  github: 'sign-in.label.github',
+  google: 'sign-in.label.google',
+  apple: 'sign-in.label.apple',
+} as const;
 
-function oauthErrorMessage(code: string | null): string {
+function oauthErrorMessage(code: string | null, t: T): string {
   if (!code) return '';
   const sep = code.indexOf('_');
   if (sep === -1) return '';
-  const provider = PROVIDER_LABELS[code.slice(0, sep)];
-  if (!provider) return '';
+  const providerKey = (PROVIDER_LABELS as Record<string, (typeof PROVIDER_LABELS)[keyof typeof PROVIDER_LABELS]>)[code.slice(0, sep)];
+  if (!providerKey) return '';
+  const provider = t(providerKey);
   const reason = code.slice(sep + 1);
   switch (reason) {
     case 'no_email':
-      return `We couldn't get an email address from your ${provider} account. Make sure it has a verified, public email address and that you granted email access, then try again.`;
+      return t('sign-in.error.weCouldnTGetAnEmailAddressFromYourProviderAccountMake', { provider });
     case 'denied':
-      return `${provider} sign-in was cancelled. Please try again.`;
+      return t('sign-in.description.providerSignInWasCancelledPleaseTryAgain', { provider });
     case 'failed':
-      return `${provider} sign-in failed. Please try again or use another sign-in method.`;
+      return t('sign-in.error.providerSignInFailedPleaseTryAgainOrUseAnotherSignInMethod', { provider });
     default:
-      return `${provider} sign-in didn't work. Please try again.`;
+      return t('sign-in.description.providerSignInDidnTWorkPleaseTryAgain', { provider });
   }
 }
 
 export default function LoginPage() {
+  const t = useT();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState<string>(() => oauthErrorMessage(searchParams.get('error')));
+  const [error, setError] = useState<string>(() => oauthErrorMessage(searchParams.get('error'), t));
   // reset-password sends people here with ?reset=1 after a successful change.
   // Nothing read it, so the confirmation the flow promised never appeared and
   // users could not tell whether the reset had actually gone through.
   const [notice] = useState<string>(() =>
     searchParams.get('reset') === '1'
-      ? 'Your password has been changed. Sign in with your new password.'
+      ? t('sign-in.description.yourPasswordHasBeenChangedSignInWithYourNewPassword')
       : '',
   );
 
@@ -100,11 +109,11 @@ export default function LoginPage() {
       } else if (isTurnstileRejection(data)) {
         setError(turnstileFailureMessage(turnstileRef.current));
       } else {
-        setError(data.error ?? 'Sign-in failed');
+        setError(data.error ?? t('sign-in.error.signInFailed'));
       }
     } catch {
       turnstileRef.current?.reset();
-      setError("Can't reach the server. Check your connection and try again.");
+      setError(t('common.error.canTReachTheServerCheckYourConnectionAnd'));
     }
     setLoading(false);
   };
@@ -115,7 +124,7 @@ export default function LoginPage() {
 
   const lastUsedBadge = (
     <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 rounded-full bg-primary text-primary-foreground text-[10px] font-semibold px-2 py-0.5 leading-none whitespace-nowrap z-10">
-      Last used
+      {t('common.label.lastUsed')}
     </span>
   );
 
@@ -137,8 +146,8 @@ export default function LoginPage() {
                 <Logo className="h-7 w-7" />
                 dosya.dev
               </a>
-              <h1 className="text-2xl font-bold mt-2">Welcome back</h1>
-              <p className="text-sm text-muted-foreground mt-1">Enter your credentials to access your account</p>
+              <h1 className="text-2xl font-bold mt-2">{t('common.heading.welcomeBack')}</h1>
+              <p className="text-sm text-muted-foreground mt-1">{t('sign-in.description.enterYourCredentialsToAccessYourAccount')}</p>
             </div>
 
             {notice && !error && (
@@ -148,7 +157,7 @@ export default function LoginPage() {
             )}
 
             {error && (
-              <div className="bg-destructive/10 border border-destructive/30 text-destructive text-sm rounded-lg px-4 py-2.5 mb-4">
+              <div dir="auto" className="bg-destructive/10 border border-destructive/30 text-destructive text-sm rounded-lg px-4 py-2.5 mb-4">
                 {error}
               </div>
             )}
@@ -157,21 +166,21 @@ export default function LoginPage() {
               <div className="relative">
               <Button variant="outline" className="w-full h-11 text-sm font-medium gap-2" onClick={handleGoogle}>
                 <svg className="size-5" viewBox="0 0 16 16" fill="none"><path d="M8 6.54541V9.6436H12.3054C12.1164 10.64 11.549 11.4836 10.6981 12.0509L13.2945 14.0655C14.8072 12.6691 15.68 10.6182 15.68 8.18185C15.68 7.61459 15.6291 7.06908 15.5345 6.5455L8 6.54541Z" fill="#4285F4"/><path d="M3.51576 9.52246L2.93018 9.97071L0.857422 11.5852C2.17378 14.1961 4.87176 15.9998 7.99901 15.9998C10.159 15.9998 11.9698 15.287 13.2935 14.0653L10.6972 12.0507C9.98443 12.5307 9.07533 12.8216 7.99901 12.8216C5.91902 12.8216 4.1518 11.418 3.51903 9.52708L3.51576 9.52246Z" fill="#34A853"/><path d="M0.858119 4.41455C0.312695 5.49087 0 6.70543 0 7.99996C0 9.29448 0.312695 10.509 0.858119 11.5854C0.858119 11.5926 3.51998 9.51991 3.51998 9.51991C3.35998 9.03991 3.26541 8.53085 3.26541 7.99987C3.26541 7.46889 3.35998 6.95984 3.51998 6.47984L0.858119 4.41455Z" fill="#FBBC05"/><path d="M7.99918 3.18545C9.17737 3.18545 10.2246 3.59271 11.061 4.37818L13.3519 2.0873C11.9628 0.792777 10.1592 0 7.99918 0C4.87193 0 2.17378 1.79636 0.857422 4.41455L3.5192 6.48001C4.15189 4.58908 5.91919 3.18545 7.99918 3.18545Z" fill="#EA4335"/></svg>
-                Continue with Google
+                {t('common.action.continueWithGoogle')}
               </Button>
               {lastUsed === 'google' && lastUsedBadge}
               </div>
               <div className="relative">
               <Button variant="outline" className="w-full h-11 text-sm font-medium gap-2 bg-black text-white hover:bg-black/85 hover:text-white dark:bg-white dark:text-black dark:hover:bg-white/90 dark:hover:text-black" onClick={handleGithub}>
                 <svg className="size-5" viewBox="0 0 16 16" fill="currentColor"><path fillRule="evenodd" clipRule="evenodd" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
-                Continue with GitHub
+                {t('common.action.continueWithGitHub')}
               </Button>
               {lastUsed === 'github' && lastUsedBadge}
               </div>
               <div className="relative">
               <Button variant="outline" className="w-full h-11 text-sm font-medium gap-2 bg-black text-white hover:bg-black/85 dark:bg-white dark:text-black dark:hover:bg-white/90" onClick={handleApple}>
                 <svg className="size-5" viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
-                Continue with Apple
+                {t('common.action.continueWithApple')}
               </Button>
               {lastUsed === 'apple' && lastUsedBadge}
               </div>
@@ -179,37 +188,39 @@ export default function LoginPage() {
 
             <div className="relative mb-6">
               <div className="absolute inset-0 flex items-center"><span className="w-full border-t" /></div>
-              <div className="relative flex justify-center text-xs uppercase"><span className="bg-card px-2 text-muted-foreground">Or</span></div>
+              <div className="relative flex justify-center text-xs uppercase"><span className="bg-card px-2 text-muted-foreground">{t('common.label.or')}</span></div>
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-2">
-                <label htmlFor="email" className="text-sm font-medium">Email</label>
-                <Input id="email" type="email" placeholder="name@example.com" value={email} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEmail(e.target.value)} required className="h-10" />
+                <label htmlFor="email" className="text-sm font-medium">{t('common.label.email')}</label>
+                <Input id="email" type="email" placeholder={t('common.placeholder.nameExampleCom')} value={email} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEmail(e.target.value)} required className="h-10" />
               </div>
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <label htmlFor="password" className="text-sm font-medium">Password</label>
-                  <a href="/forgot-password" className="text-sm text-muted-foreground hover:text-foreground underline-offset-4 hover:underline">Forgot password?</a>
+                  <label htmlFor="password" className="text-sm font-medium">{t('common.label.password')}</label>
+                  <a href="/forgot-password" className="text-sm text-muted-foreground hover:text-foreground underline-offset-4 hover:underline">{t('sign-in.action.forgotPassword')}</a>
                 </div>
                 <div className="relative">
-                  <Input id="password" type={showPassword ? 'text' : 'password'} placeholder="••••••••" value={password} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPassword(e.target.value)} required className="h-10 pr-10" />
-                  <button type="button" tabIndex={-1} onClick={() => setShowPassword((v) => !v)} aria-label={showPassword ? 'Hide password' : 'Show password'} className="absolute inset-y-0 right-0 flex items-center justify-center w-10 text-muted-foreground hover:text-foreground transition-colors">
+                  <Input id="password" type={showPassword ? 'text' : 'password'} placeholder="••••••••" value={password} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPassword(e.target.value)} required className="h-10 pe-10" />
+                  <button type="button" tabIndex={-1} onClick={() => setShowPassword((v) => !v)} aria-label={showPassword ? t('common.accessibility.hidePassword') : t('common.accessibility.showPassword')} className="absolute inset-y-0 inset-e-0 flex items-center justify-center w-10 text-muted-foreground hover:text-foreground transition-colors">
                     {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
                   </button>
                 </div>
               </div>
               <TurnstileWidget action="login" ref={turnstileRef} />
               <Button type="submit" className="w-full h-10" disabled={loading}>
-                {loading ? <Loader2 className="size-4 animate-spin mr-2" /> : null}
-                Log In
+                {loading ? <Loader2 className="size-4 animate-spin me-2" /> : null}
+                {t('sign-in.action.logIn')}
               </Button>
             </form>
 
             <LegalNotice className="mt-6" />
 
             <p className="mt-4 text-center text-sm text-muted-foreground">
-              Don't have an account? <a href="/sign-up" className="font-medium underline underline-offset-4 hover:text-foreground">Sign up</a>
+              {richText(t('sign-in.label.donTHaveAnAccountLink1', { link1: '{link1}' }), {
+                link1: <a href="/sign-up" className="font-medium underline underline-offset-4 hover:text-foreground">{t('sign-in.action.signUp')}</a>,
+              })}
             </p>
           </CardContent>
         </Card>

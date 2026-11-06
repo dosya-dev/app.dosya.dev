@@ -12,6 +12,7 @@ import { roleLabel } from '@/lib/workspace-dashboard';
 import { LocationPicker, type RegionInfo } from '@/components/location-picker';
 import { Logo } from "@/components/brand/logo";
 import { SwatchPicker } from '@/components/brand/swatch-picker';
+import { useT } from '@/lib/i18n';
 
 interface Workspace {
   id: string; name: string; icon_initials: string; icon_color: string;
@@ -20,7 +21,15 @@ interface Workspace {
 
 interface Allocation { plan_gb: number; allocated_gb: number; remaining_gb: number }
 
+/** "Storage limit (optional)": the trailing parenthetical keeps its lighter weight in every language. */
+function optionalSuffix(label: string) {
+  const m = /^(.*?)(\s*[(\uFF08].*[)\uFF09])$/.exec(label);
+  if (!m) return label;
+  return <>{m[1]} <span className="font-normal">{m[2].trim()}</span></>;
+}
+
 export default function CreateWorkspacePage() {
+  const t = useT();
   const navigate = useNavigate();
   const setActiveId = useWorkspace((s: { setActiveId: (id: string) => void }) => s.setActiveId);
 
@@ -100,14 +109,14 @@ export default function CreateWorkspacePage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) { setError('Workspace name is required'); return; }
-    if (!region && !noLocationChoice) { setError('Pick a location for this workspace.'); return; }
+    if (!name.trim()) { setError(t('create-workspace.error.workspaceNameIsRequired')); return; }
+    if (!region && !noLocationChoice) { setError(t('create-workspace.error.pickALocationForThisWorkspace')); return; }
     const limitGb = storageLimit.trim() === '' ? null : Number(storageLimit);
     if (limitGb !== null && (!Number.isFinite(limitGb) || limitGb <= 0)) {
-      setError('Storage limit must be a positive number of GB.'); return;
+      setError(t('create-workspace.error.storageLimitMustBeAPositiveNumberOfGb')); return;
     }
     if (limitGb !== null && allocation && limitGb > allocation.remaining_gb) {
-      setError(`Only ${allocation.remaining_gb} GB of your plan is unallocated. Enter ${allocation.remaining_gb} GB or less.`); return;
+      setError(t('create-workspace.error.onlyAllocationremainingGbGbOfYourPlanIsUnallocatedEnterAllocationremainingGbGb', { allocationRemaining_gb: allocation.remaining_gb })); return;
     }
     setError('');
     setCreating(true);
@@ -128,7 +137,7 @@ export default function CreateWorkspacePage() {
         setActiveId(res.workspace.id);
         navigate('/');
       } else {
-        setError(res.error ?? 'Failed to create workspace');
+        setError(res.error ?? t('common.error.failedToCreateWorkspace'));
       }
     } catch (err) {
       // api() throws ApiError on any non-2xx, so the server's own message
@@ -136,8 +145,8 @@ export default function CreateWorkspacePage() {
       // copy is reserved for real connectivity failures.
       setError(
         err instanceof ApiError && err.status === 401
-          ? 'Your session has expired. Please sign in again.'
-          : apiErrorMessage(err, "Can't reach the server. Check your connection and try again."),
+          ? t('create-workspace.error.yourSessionHasExpiredPleaseSignInAgain')
+          : apiErrorMessage(err, t('common.error.canTReachTheServerCheckYourConnectionAnd')),
       );
     }
     setCreating(false);
@@ -164,9 +173,9 @@ export default function CreateWorkspacePage() {
               </div>
             ) : showPicker ? (
               <>
-                <h1 className="text-xl font-bold text-center mb-2">Choose a workspace</h1>
+                <h1 className="text-xl font-bold text-center mb-2">{t('create-workspace.heading.chooseAWorkspace')}</h1>
                 <p className="text-sm text-muted-foreground text-center mb-6">
-                  Pick a workspace to continue, or create a new one.
+                  {t('create-workspace.description.pickAWorkspaceToContinueOrCreateANewOne')}
                 </p>
 
                 <div className="space-y-2 mb-4">
@@ -174,7 +183,7 @@ export default function CreateWorkspacePage() {
                     <button
                       key={w.id}
                       onClick={() => selectWorkspace(w.id)}
-                      className="w-full flex items-center gap-3 p-2.5 rounded-lg border hover:bg-muted/50 transition-colors text-left group"
+                      className="w-full flex items-center gap-3 p-2.5 rounded-lg border hover:bg-muted/50 transition-colors text-start group"
                     >
                       <div className="w-9 h-9 rounded-lg flex items-center justify-center text-xs font-bold text-white shrink-0 overflow-hidden" style={{ background: w.icon_image_url ? undefined : w.icon_color }}>
                         {w.icon_image_url ? <img src={w.icon_image_url} alt="" className="w-full h-full object-cover" /> : w.icon_initials}
@@ -188,7 +197,7 @@ export default function CreateWorkspacePage() {
                             custom roles, which the ternary could never do. */}
                         <p className="text-[11px] text-muted-foreground capitalize">{roleLabel(w.role_id ?? '')}</p>
                       </div>
-                      <ChevronRight className="size-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                      <ChevronRight className="size-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity rtl:-scale-x-100" />
                     </button>
                   ))}
                 </div>
@@ -197,28 +206,29 @@ export default function CreateWorkspacePage() {
                   onClick={() => { setMode('create'); setError(''); }}
                   className="w-full flex items-center justify-center gap-1.5 py-2.5 border border-dashed rounded-lg text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
                 >
-                  <Plus className="size-4" /> Create new workspace
+                  <Plus className="size-4" /> {t('common.action.createNewWorkspace')}
                 </button>
               </>
             ) : (
               <>
                 <h1 className="text-xl font-bold text-center mb-2">
-                  {workspaces.length > 0 ? 'Create a new workspace' : 'Create your workspace'}
+                  {workspaces.length > 0 ? t('create-workspace.heading.createANewWorkspace') : t('create-workspace.heading.createYourWorkspace')}
                 </h1>
                 <p className="text-sm text-muted-foreground text-center mb-6">
-                  A workspace is where your files, folders, and team live.
-                  {workspaces.length === 0 && ' You need at least one to get started.'}
+                  {t('create-workspace.description.aWorkspaceIsWhereYourFilesFoldersAndTeamLiveWorkspaceslengthyou', {
+                    workspacesLengthYou: workspaces.length === 0 ? t('create-workspace.description.youNeedAtLeastOneToGetStarted') : '',
+                  }).trimEnd()}
                 </p>
 
                 {error && (
-                  <div className="bg-destructive/10 border border-destructive/30 text-destructive text-sm rounded-lg px-4 py-2.5 mb-4">
+                  <div dir="auto" className="bg-destructive/10 border border-destructive/30 text-destructive text-sm rounded-lg px-4 py-2.5 mb-4">
                     {error}
                   </div>
                 )}
 
                 <form onSubmit={handleSubmit} className="space-y-5">
                   <div>
-                    <Label className="text-xs font-medium text-muted-foreground mb-2 block">Workspace name</Label>
+                    <Label className="text-xs font-medium text-muted-foreground mb-2 block">{t('common.label.workspaceName.workspaceName')}</Label>
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-lg flex items-center justify-center text-xs font-bold text-white shrink-0 transition-colors" style={{ background: color }}>
                         {preview}
@@ -226,7 +236,7 @@ export default function CreateWorkspacePage() {
                       <Input
                         value={name}
                         onChange={(e: React.ChangeEvent<HTMLInputElement>) => setName(e.target.value)}
-                        placeholder="e.g. My Files, Work, School..."
+                        placeholder={t('create-workspace.placeholder.eGMyFilesWorkSchool')}
                         maxLength={80}
                         autoFocus
                         className="h-10"
@@ -235,17 +245,17 @@ export default function CreateWorkspacePage() {
                   </div>
 
                   <div>
-                    <Label className="text-xs font-medium text-muted-foreground mb-2 block">Color</Label>
-                    <SwatchPicker value={color} onChange={setColor} shape="square" label="Workspace colour" />
+                    <Label className="text-xs font-medium text-muted-foreground mb-2 block">{t('common.label.color')}</Label>
+                    <SwatchPicker value={color} onChange={setColor} shape="square" label={t('common.label.workspaceColour')} />
                   </div>
 
                   <div>
-                    <Label className="text-xs font-medium text-muted-foreground mb-2 block">Location</Label>
-                    <p className="text-[11px] text-muted-foreground mb-2">Where this workspace's files are stored. Chosen once; every file in the workspace lives here.</p>
+                    <Label className="text-xs font-medium text-muted-foreground mb-2 block">{t('common.label.location')}</Label>
+                    <p className="text-[11px] text-muted-foreground mb-2">{t('create-workspace.description.whereThisWorkspaceSFilesAreStoredChosenOnceEveryFileIn')}</p>
                     {regionsError && (
                       <div className="flex items-center gap-2 mb-2 text-[11px] text-destructive">
-                        <span>Couldn't load the list of locations.</span>
-                        <button type="button" onClick={() => void loadRegions()} className="underline">Try again</button>
+                        <span>{t('create-workspace.error.couldnTLoadTheListOfLocations')}</span>
+                        <button type="button" onClick={() => void loadRegions()} className="underline">{t('common.action.tryAgain')}</button>
                       </div>
                     )}
                     <LocationPicker regions={regions} value={region} onChange={setRegion} />
@@ -253,7 +263,7 @@ export default function CreateWorkspacePage() {
 
                   <div>
                     <Label className="text-xs font-medium text-muted-foreground mb-2 block">
-                      Storage limit <span className="font-normal">(optional)</span>
+                      {optionalSuffix(t('create-workspace.label.storageLimitOptional'))}
                     </Label>
                     <div className="flex items-center gap-2">
                       <Input
@@ -261,14 +271,14 @@ export default function CreateWorkspacePage() {
                         onChange={(e: React.ChangeEvent<HTMLInputElement>) => setStorageLimit(e.target.value)}
                         type="number"
                         min={1}
-                        placeholder="No limit"
+                        placeholder={t('common.placeholder.noLimit')}
                         className="h-10 w-32"
                       />
                       <span className="text-xs text-muted-foreground">GB</span>
                     </div>
                     {allocation && (
                       <p className="text-[11px] text-muted-foreground mt-1.5">
-                        {allocation.remaining_gb} GB of {allocation.plan_gb} GB unallocated
+                        {t('create-workspace.label.allocationremainingGbGbOfAllocationplanGbGbUnallocated', { allocationRemaining_gb: allocation.remaining_gb, allocationPlan_gb: allocation.plan_gb })}
                       </p>
                     )}
                   </div>
@@ -277,8 +287,8 @@ export default function CreateWorkspacePage() {
                       only while there is a choice to make. With no list, the
                       server decides rather than the button staying dead. */}
                   <Button type="submit" className="w-full h-10" disabled={creating || (!region && !noLocationChoice)}>
-                    {creating ? <Loader2 className="size-4 animate-spin mr-2" /> : null}
-                    Create workspace
+                    {creating ? <Loader2 className="size-4 animate-spin me-2" /> : null}
+                    {t('common.action.createWorkspace')}
                   </Button>
                 </form>
 
@@ -287,7 +297,7 @@ export default function CreateWorkspacePage() {
                     onClick={() => { setMode('select'); setError(''); }}
                     className="w-full flex items-center justify-center gap-1.5 mt-4 text-xs text-muted-foreground hover:text-foreground transition-colors"
                   >
-                    <ChevronLeft className="size-3.5" /> Back to your workspaces
+                    <ChevronLeft className="size-3.5 rtl:-scale-x-100" /> {t('create-workspace.action.backToYourWorkspaces')}
                   </button>
                 )}
               </>
@@ -298,7 +308,7 @@ export default function CreateWorkspacePage() {
         {/* Bottom actions */}
         <div className="flex items-center justify-center gap-4 mt-6">
           <button onClick={logout} className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors">
-            <LogOut className="size-3.5" /> Log out
+            <LogOut className="size-3.5 rtl:-scale-x-100" /> {t('common.action.logOut')}
           </button>
         </div>
       </div>

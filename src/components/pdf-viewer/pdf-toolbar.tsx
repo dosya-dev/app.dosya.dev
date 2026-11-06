@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { PanelLeft, Minus, Plus, ChevronDown, Search, Printer, Download } from 'lucide-react';
+import { useT } from '@/lib/i18n';
 
 export type PdfZoom = number | 'fit-width' | 'fit-page';
 
@@ -12,7 +13,7 @@ export interface PdfToolbarSlots {
 }
 
 const iconBtn = 'size-8 rounded-md flex items-center justify-center hover:bg-muted disabled:opacity-40 disabled:pointer-events-none';
-const menuItem = 'block w-full px-3 py-1.5 text-left text-sm hover:bg-muted whitespace-nowrap';
+const menuItem = 'block w-full px-3 py-1.5 text-start text-sm hover:bg-muted whitespace-nowrap';
 
 interface PdfControlProps {
   page: number;
@@ -37,11 +38,12 @@ interface PdfToolbarProps extends PdfControlProps {
 
 export function PdfToolbar(props: PdfToolbarProps) {
   const { fileName, downloadUrl, sidebarOpen, onToggleSidebar, slots, ...controls } = props;
+  const t = useT();
   const disabled = controls.numPages === 0;
 
   const toggle = (
-    <button className={iconBtn} title="Toggle sidebar" aria-pressed={sidebarOpen} disabled={disabled} onClick={onToggleSidebar}>
-      <PanelLeft className="size-4 text-muted-foreground" />
+    <button className={iconBtn} title={t('common.action.toggleSidebar')} aria-pressed={sidebarOpen} disabled={disabled} onClick={onToggleSidebar}>
+      <PanelLeft className="size-4 text-muted-foreground rtl:-scale-x-100" />
     </button>
   );
 
@@ -74,7 +76,7 @@ export function PdfToolbar(props: PdfToolbarProps) {
       <div className="flex-1" />
       <CenterControls {...controls} />
       <div className="flex-1" />
-      <a className={iconBtn} title="Download" href={downloadUrl} download>
+      <a className={iconBtn} title={t('common.action.download')} href={downloadUrl} download>
         <Download className="size-4 text-muted-foreground" />
       </a>
     </div>
@@ -85,6 +87,7 @@ function CenterControls({
   page, numPages, zoomLabel, printing,
   onZoomIn, onZoomOut, onZoom, onJump, onToggleFind, onPrint,
 }: PdfControlProps) {
+  const t = useT();
   const [menuOpen, setMenuOpen] = useState(false);
   const disabled = numPages === 0;
 
@@ -101,25 +104,25 @@ function CenterControls({
 
   return (
     <>
-      <button className={iconBtn} title="Zoom out" disabled={disabled} onClick={onZoomOut}>
+      <button className={iconBtn} title={t('common.action.zoomOut')} disabled={disabled} onClick={onZoomOut}>
         <Minus className="size-4 text-muted-foreground" />
       </button>
       <div className="relative">
         <button
-          aria-label="Zoom options"
+          aria-label={t('common.action.zoomOptions')}
           disabled={disabled}
           onClick={() => setMenuOpen((o) => !o)}
           className="h-8 px-1.5 rounded-md flex items-center gap-0.5 text-sm tabular-nums hover:bg-muted disabled:opacity-40 disabled:pointer-events-none"
         >
-          <span aria-label="Zoom level">{zoomLabel}</span>
+          <span aria-label={t('common.action.zoomLevel')}>{zoomLabel}</span>
           <ChevronDown className="size-3 text-muted-foreground" />
         </button>
         {menuOpen && (
           <>
             <div className="fixed inset-0 z-20" onClick={() => setMenuOpen(false)} />
             <div className="absolute left-1/2 -translate-x-1/2 top-full mt-1 z-30 min-w-28 rounded-md border bg-background shadow-md py-1">
-              {([['Fit width', 'fit-width'], ['Fit page', 'fit-page']] as const).map(([label, zoom]) => (
-                <button key={zoom} className={menuItem} onClick={() => { onZoom(zoom); setMenuOpen(false); }}>{label}</button>
+              {([['common.label.fitWidth', 'fit-width'], ['common.label.fitPage', 'fit-page']] as const).map(([label, zoom]) => (
+                <button key={zoom} className={menuItem} onClick={() => { onZoom(zoom); setMenuOpen(false); }}>{t(label)}</button>
               ))}
               <div className="h-px bg-border my-1" />
               {[0.5, 0.75, 1, 1.25, 1.5, 2].map((zoom) => (
@@ -129,7 +132,7 @@ function CenterControls({
           </>
         )}
       </div>
-      <button className={iconBtn} title="Zoom in" disabled={disabled} onClick={onZoomIn}>
+      <button className={iconBtn} title={t('common.action.zoomIn')} disabled={disabled} onClick={onZoomIn}>
         <Plus className="size-4 text-muted-foreground" />
       </button>
 
@@ -137,7 +140,7 @@ function CenterControls({
 
       <input
         key={page}
-        aria-label="Page number"
+        aria-label={t('common.accessibility.pageNumber')}
         inputMode="numeric"
         disabled={disabled}
         defaultValue={String(page)}
@@ -149,10 +152,10 @@ function CenterControls({
 
       <div className="w-px h-5 bg-border mx-2" />
 
-      <button className={iconBtn} title="Search" disabled={disabled} onClick={onToggleFind}>
+      <button className={iconBtn} title={t('common.tooltip.search')} disabled={disabled} onClick={onToggleFind}>
         <Search className="size-4 text-muted-foreground" />
       </button>
-      <button className={iconBtn} title="Print" disabled={disabled || printing} onClick={onPrint}>
+      <button className={iconBtn} title={t('common.action.print')} disabled={disabled || printing} onClick={onPrint}>
         <Printer className="size-4 text-muted-foreground" />
       </button>
     </>

@@ -9,6 +9,8 @@
  * month may continue from one page into the next; `mergeLibraryPages` joins
  * those into one group so the header is never repeated.
  */
+import { formatDateWith, formatNumber } from '@/lib/format-locale';
+import { t } from '@/lib/i18n';
 import type { FileItem } from '@/lib/file-types';
 
 export const LIBRARY_PAGE_SIZE = 60;
@@ -25,27 +27,51 @@ export function kindForFilter(filter: string): LibraryKind | null {
   return null;
 }
 
-export const KIND_COPY: Record<LibraryKind, {
-  title: string; noun: string; nounPlural: string; searchPlaceholder: string; emptyTitle: string; emptyDescription: string; primaryDateLabel: string;
-}> = {
-  photos: { title: 'Photos', noun: 'photo', nounPlural: 'photos', searchPlaceholder: 'Search photos...', emptyTitle: 'No photos yet', emptyDescription: 'Photos you upload or sync to any folder will show up here, by month.', primaryDateLabel: 'Date taken' },
-  videos: { title: 'Videos', noun: 'video', nounPlural: 'videos', searchPlaceholder: 'Search videos...', emptyTitle: 'No videos yet', emptyDescription: 'Videos you upload or sync to any folder will show up here, by month.', primaryDateLabel: 'Date created' },
-  documents: { title: 'Documents', noun: 'document', nounPlural: 'documents', searchPlaceholder: 'Search documents...', emptyTitle: 'No documents yet', emptyDescription: 'Documents you upload or sync to any folder will show up here, by month.', primaryDateLabel: 'Date created' },
+type KindCopy = {
+  readonly title: string; readonly noun: string; readonly nounPlural: string; readonly searchPlaceholder: string;
+  readonly emptyTitle: string; readonly emptyDescription: string; readonly primaryDateLabel: string;
+};
+
+// Each entry reads its text through getters, so it is translated when used
+// (at render), never frozen at import time.
+function kindCopy(
+  titleKey: 'common.heading.photos' | 'files.heading.videos' | 'files.heading.documents',
+  nounKey: 'files.label.photos' | 'files.label.videos' | 'files.label.documents',
+  keys: { search: 'files.status.searchPhotos' | 'files.status.searchVideos' | 'files.status.searchDocuments';
+    emptyTitle: 'files.empty.noPhotosYet' | 'files.empty.noVideosYet' | 'files.empty.noDocumentsYet';
+    emptyDescription: 'files.label.photosYouUploadOrSyncToAnyFolderWill' | 'files.label.videosYouUploadOrSyncToAnyFolderWill' | 'files.label.documentsYouUploadOrSyncToAnyFolderWill';
+    date: 'files.label.dateTaken' | 'files.label.dateCreated' },
+): KindCopy {
+  return {
+    get title() { return t(titleKey); },
+    get noun() { return t(nounKey, { count: 1 }); },
+    get nounPlural() { return t(nounKey, { count: 2 }); },
+    get searchPlaceholder() { return t(keys.search); },
+    get emptyTitle() { return t(keys.emptyTitle); },
+    get emptyDescription() { return t(keys.emptyDescription); },
+    get primaryDateLabel() { return t(keys.date); },
+  };
+}
+
+export const KIND_COPY: Record<LibraryKind, KindCopy> = {
+  photos: kindCopy('common.heading.photos', 'files.label.photos', { search: 'files.status.searchPhotos', emptyTitle: 'files.empty.noPhotosYet', emptyDescription: 'files.label.photosYouUploadOrSyncToAnyFolderWill', date: 'files.label.dateTaken' }),
+  videos: kindCopy('files.heading.videos', 'files.label.videos', { search: 'files.status.searchVideos', emptyTitle: 'files.empty.noVideosYet', emptyDescription: 'files.label.videosYouUploadOrSyncToAnyFolderWill', date: 'files.label.dateCreated' }),
+  documents: kindCopy('files.heading.documents', 'files.label.documents', { search: 'files.status.searchDocuments', emptyTitle: 'files.empty.noDocumentsYet', emptyDescription: 'files.label.documentsYouUploadOrSyncToAnyFolderWill', date: 'files.label.dateCreated' }),
 };
 
 /** The wire sort values are the same for every kind; only the label of the primary date differs. */
 export function sortOptionsFor(kind: LibraryKind): { value: LibrarySort; label: string }[] {
   const d = KIND_COPY[kind].primaryDateLabel;
   return [
-    { value: 'taken_desc', label: `${d} · newest` },
-    { value: 'taken_asc', label: `${d} · oldest` },
-    { value: 'uploaded_desc', label: 'Date uploaded · newest' },
+    { value: 'taken_desc', label: t('files.label.dNewest', { d }) },
+    { value: 'taken_asc', label: t('files.label.dOldest', { d }) },
+    { value: 'uploaded_desc', label: t('files.label.dateUploadedNewest') },
   ];
 }
 
 export function plural(kind: LibraryKind, n: number): string {
   const c = KIND_COPY[kind];
-  return `${n.toLocaleString()} ${n === 1 ? c.noun : c.nounPlural}`;
+  return `${formatNumber(n)} ${n === 1 ? c.noun : c.nounPlural}`;
 }
 
 /** A listing row plus what the library feed adds. Assignable to FileItem, so the viewer and every action accept it. */
@@ -197,10 +223,7 @@ export function mergeLibraryPages(pages: LibraryPage[]): Library {
  */
 export function formatItemDate(unixSeconds: number, opts: { wallClock?: boolean } = {}): string {
   const base: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric', year: 'numeric' };
-  return new Date(unixSeconds * 1000).toLocaleDateString(
-    undefined,
-    opts.wallClock ? { ...base, timeZone: 'UTC' } : base,
-  );
+  return formatDateWith(unixSeconds, opts.wallClock ? { ...base, timeZone: 'UTC' } : base);
 }
 
 // ── Per-kind layout preference (grid vs. table) ─────────────

@@ -334,6 +334,8 @@ describe('FilesPage in photos mode (?filter=images)', () => {
     const labels = [...document.body.querySelectorAll('button')].map((b) => b.textContent?.trim());
     expect(labels).toContain('Refresh');
     expect(labels).not.toContain('New folder');
+    // The "New" group replaced New folder; none of it belongs here either.
+    for (const label of ['Folder', 'Markdown file', 'Text file', 'Word document']) expect(labels).not.toContain(label);
   });
 });
 

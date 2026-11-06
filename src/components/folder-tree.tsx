@@ -2,6 +2,7 @@ import { type MouseEvent as ReactMouseEvent } from 'react';
 import { ChevronRight, Loader2 } from 'lucide-react';
 import { folderIconSrc } from '@/lib/helpers';
 import { type PickerFolder } from '@/lib/folders';
+import { useT } from '@/lib/i18n';
 
 /**
  * Presentational lazy folder tree. Renders whatever levels have been loaded into
@@ -21,24 +22,25 @@ export function FolderTree({
   onToggle: (id: string) => void;
   excludeId?: string | null;
 }) {
+  const t = useT();
   const rowCls = (id: string) =>
-    `w-full flex items-center gap-1.5 py-1.5 pr-3 text-xs rounded-md hover:bg-muted/50 text-left ${selectedId === id ? 'bg-primary/10' : ''}`;
+    `w-full flex items-center gap-1.5 py-1.5 pe-3 text-xs rounded-md hover:bg-muted/50 text-start ${selectedId === id ? 'bg-primary/10' : ''}`;
 
   const renderLevel = (parentId: string | null, depth: number): React.ReactNode => {
     const kids = (childrenByParent.get(parentId) ?? []).filter((f) => f.id !== excludeId);
     return kids.map((f) => (
       <div key={f.id}>
-        <button className={rowCls(f.id)} style={{ paddingLeft: 8 + depth * 16 }} onClick={() => onSelect(f)}>
+        <button className={rowCls(f.id)} style={{ paddingInlineStart: 8 + depth * 16 }} onClick={() => onSelect(f)}>
           {f.has_children ? (
             <ChevronRight
-              className={`size-3 text-muted-foreground shrink-0 transition-transform ${expanded.has(f.id) ? 'rotate-90' : ''}`}
+              className={`size-3 text-muted-foreground shrink-0 transition-transform ${expanded.has(f.id) ? 'rotate-90' : 'rtl:rotate-180'}`}
               onClick={(e: ReactMouseEvent) => { e.stopPropagation(); onToggle(f.id); }}
             />
           ) : (
             <span className="size-3 shrink-0" />
           )}
           <img src={folderIconSrc(f.file_count)} alt="" className="size-4 shrink-0" />
-          <span className="flex-1 truncate">{f.name}</span>
+          <span className="flex-1 truncate" dir="auto">{f.name}</span>
           {loading.has(f.id) && <Loader2 className="size-3 animate-spin text-muted-foreground shrink-0" />}
         </button>
         {expanded.has(f.id) && renderLevel(f.id, depth + 1)}
@@ -52,7 +54,7 @@ export function FolderTree({
     return <div className="flex items-center justify-center py-4"><Loader2 className="size-4 animate-spin text-muted-foreground" /></div>;
   }
   if (roots.length === 0) {
-    return <div className="px-2 py-3 text-center text-xs text-muted-foreground">No folders yet</div>;
+    return <div className="px-2 py-3 text-center text-xs text-muted-foreground">{t('common.empty.noFoldersYet')}</div>;
   }
   return <>{renderLevel(null, 0)}</>;
 }

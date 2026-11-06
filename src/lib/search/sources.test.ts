@@ -25,7 +25,8 @@ describe('search sources', () => {
     const hrefs = new Set(goToItems().map((i) => i.href));
     for (const n of PROFILE_NAV) expect(hrefs.has(`/profile/${n.id}`), n.id).toBe(true);
     for (const s of SETTINGS_SECTIONS) expect(hrefs.has(`/settings#section-${s.id}`), s.id).toBe(true);
-    expect(integrationItems().map((i) => i.id)).toEqual(INTEGRATIONS.map((i) => `integration:${i.slug}`));
+    // Rollout-gated pages (remote-rclone) join search at GA.
+    expect(integrationItems().map((i) => i.id)).toEqual(INTEGRATIONS.filter((i) => !i.rollout).map((i) => `integration:${i.slug}`));
   });
   it('ids are unique', () => {
     const ids = [...goToItems(), ...integrationItems()].map((i) => i.id);

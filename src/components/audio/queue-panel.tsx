@@ -24,7 +24,7 @@ export function QueuePanel({ queue, activeIndex, playing, folder, onPick }: Prop
               data-track
               onClick={() => onPick(i)}
               aria-current={active ? 'true' : undefined}
-              className={`group grid w-full grid-cols-[26px_1fr_auto] items-center gap-3.5 border-b border-border/55 px-5 py-2 text-left transition-colors ${
+              className={`group grid w-full grid-cols-[26px_1fr_auto] items-center gap-3.5 border-b border-border/55 px-5 py-2 text-start transition-colors ${
                 active ? 'bg-primary/10' : 'hover:bg-foreground/5'
               }`}
             >

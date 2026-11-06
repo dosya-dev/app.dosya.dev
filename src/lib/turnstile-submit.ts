@@ -1,4 +1,5 @@
 import type { TurnstileHandle } from '@/components/turnstile-widget';
+import { t } from '@/lib/i18n';
 
 /**
  * Shared pieces of "submit a form that sits behind a Turnstile challenge".
@@ -34,8 +35,8 @@ export function resolveTurnstileToken(handle: TurnstileHandle | null): Promise<s
  */
 export function turnstileFailureMessage(handle: TurnstileHandle | null): string {
     return handle?.status() === 'unavailable'
-        ? "We couldn't load the verification challenge. If you use an ad blocker or a privacy extension, allow challenges.cloudflare.com and reload this page."
-        : 'Please complete the verification challenge above, then try again.';
+        ? t('common.error.weCouldnTLoadTheVerificationChallengeIfYouUseAnAd')
+        : t('common.description.pleaseCompleteTheVerificationChallengeAboveThenTryAgain');
 }
 
 /** Whether a response body is the API's Turnstile rejection. */

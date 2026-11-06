@@ -44,12 +44,13 @@ async function render() {
 const button = (text: string) => [...container!.querySelectorAll('button')].find((b) => b.textContent?.includes(text));
 
 describe('PlanChooser and family places', () => {
-  it('does not list the places add-on', async () => {
+  it('lists the places add-on as its own block, with the people it makes', async () => {
     await render();
     expect(container!.textContent).toContain('100 GB');
-    // No picker row for places ("$1/mo each"). The order summary still itemises
-    // the bought places, because they are part of the total the plan change bills.
-    expect(container!.textContent).not.toContain('$1/mo each');
+    const block = container!.querySelector('[data-addon-kind="family_places"]')!;
+    expect(block.textContent).toContain('+1 family place');
+    expect(block.textContent).toContain('2 extra places');
+    expect(container!.querySelector('[data-testid="family-summary"]')!.textContent).toBe('5 included · 2 extra · 7 people');
   });
 
   it('keeps the bought places in the cart it sends on a plan change', async () => {

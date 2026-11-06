@@ -8,6 +8,7 @@ import { Button, buttonVariants } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { rememberPostAuthPath } from '@/lib/post-auth-path';
 import { cn } from '@/lib/utils';
+import { useT } from '@/lib/i18n';
 
 type State =
   | { kind: 'loading' }
@@ -24,6 +25,7 @@ type State =
  * emailed link stays valid for 7 days either way.
  */
 export default function FamilyJoinPage() {
+  const t = useT();
   const { token = '' } = useParams();
   const location = useLocation();
   const [state, setState] = useState<State>({ kind: 'loading' });
@@ -37,9 +39,10 @@ export default function FamilyJoinPage() {
         if (cancelled) return;
         if (e instanceof ApiError && e.status === 401) setState({ kind: 'signed_out' });
         else if (e instanceof ApiError && e.status === 404) setState({ kind: 'missing' });
-        else setState({ kind: 'error', message: apiErrorMessage(e, 'Could not load this invitation') });
+        else setState({ kind: 'error', message: apiErrorMessage(e, t('family-join.error.couldNotLoadThisInvitation')) });
       });
     return () => { cancelled = true; };
+      // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
   const accept = async () => {
@@ -48,55 +51,54 @@ export default function FamilyJoinPage() {
       const r = await acceptFamilyJoin(token);
       setState({ kind: 'accepted', planName: r.plan.name });
     } catch (e) {
-      setState({ kind: 'error', message: apiErrorMessage(e, 'Could not accept the invitation') });
+      setState({ kind: 'error', message: apiErrorMessage(e, t('family-join.error.couldNotAcceptTheInvitation')) });
     } finally { setBusy(false); }
   };
 
   let body: JSX.Element;
   switch (state.kind) {
     case 'loading':
-      body = <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="size-4 animate-spin" /> Loading invitation</div>;
+      body = <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="size-4 animate-spin" /> {t('family-join.label.loadingInvitation')}</div>;
       break;
     case 'signed_out':
       body = (
         <>
-          <h1 className="text-xl font-semibold">Sign in to see this invitation</h1>
-          <p className="text-sm text-muted-foreground">Sign in with the address the invitation was sent to. The link in your email stays valid for 7 days.</p>
-          <Link to="/login" onClick={() => rememberPostAuthPath(location.pathname)} className={cn(buttonVariants(), 'h-10')}>Sign in</Link>
+          <h1 className="text-xl font-semibold">{t('family-join.heading.signInToSeeThisInvitation')}</h1>
+          <p className="text-sm text-muted-foreground">{t('family-join.description.signInWithTheAddressTheInvitationWasSentToThe')}</p>
+          <Link to="/login" onClick={() => rememberPostAuthPath(location.pathname)} className={cn(buttonVariants(), 'h-10')}>{t('common.action.signIn')}</Link>
         </>
       );
       break;
     case 'missing':
-      body = <><h1 className="text-xl font-semibold">Invitation not found</h1><p className="text-sm text-muted-foreground">It may have been revoked or already used. Ask the person who invited you to send a new one.</p></>;
+      body = <><h1 className="text-xl font-semibold">{t('family-join.heading.invitationNotFound')}</h1><p className="text-sm text-muted-foreground">{t('family-join.description.itMayHaveBeenRevokedOrAlreadyUsedAskThePerson')}</p></>;
       break;
     case 'accepted':
       body = (
         <>
           <CheckCircle2 className="size-8 text-primary" />
-          <h1 className="text-xl font-semibold">You are now on the {state.planName} plan</h1>
-          <p className="text-sm text-muted-foreground">Your files stay yours. You can see the shared pool and leave at any time from Billing.</p>
-          <Link to="/billing" className={cn(buttonVariants(), 'h-10')}>Open Billing</Link>
+          <h1 className="text-xl font-semibold">{t('family-join.heading.youAreNowOnTheStateplannamePlan', { statePlanName: state.planName })}</h1>
+          <p className="text-sm text-muted-foreground">{t('family-join.description.yourFilesStayYoursYouCanSeeTheSharedPoolAnd')}</p>
+          <Link to="/billing" className={cn(buttonVariants(), 'h-10')}>{t('family-join.action.openBilling')}</Link>
         </>
       );
       break;
     case 'error':
-      body = <><AlertCircle className="size-8 text-destructive" /><h1 className="text-xl font-semibold">Something went wrong</h1><p className="text-sm text-muted-foreground">{state.message}</p></>;
+      body = <><AlertCircle className="size-8 text-destructive" /><h1 className="text-xl font-semibold">{t('family-join.heading.somethingWentWrong')}</h1><p dir="auto" className="text-sm text-muted-foreground">{state.message}</p></>;
       break;
     case 'preview': {
       const d = state.data;
       body = (
         <>
           <Users className="size-8" />
-          <h1 className="text-xl font-semibold">{d.payer.name} invited you to share their {d.plan.name} plan</h1>
+          <h1 className="text-xl font-semibold">{t('family-join.heading.payernameInvitedYouToShareTheirPlannamePlan', { payerName: d.payer.name, planName: d.plan.name })}</h1>
           <p className="text-sm text-muted-foreground">
-            {d.pool_label} of storage, shared between everyone in the family. You keep your own account and your files stay private.
-            Sent to {d.invited_email}.
+            {t('family-join.description.dpoolLabelOfStorageSharedBetweenEveryoneInTheFamilyYouKeep', { dPool_label: d.pool_label, dInvited_email: d.invited_email })}
           </p>
-          {d.state === 'expired' && <p className="text-sm text-destructive">This invitation has expired. Ask {d.payer.name} to send a new one.</p>}
-          {d.state === 'blocked' && d.block && <p className="text-sm text-destructive">{d.block.message}</p>}
+          {d.state === 'expired' && <p className="text-sm text-destructive">{t('family-join.description.thisInvitationHasExpiredAskPayernameToSendANewOne', { payerName: d.payer.name })}</p>}
+          {d.state === 'blocked' && d.block && <p dir="auto" className="text-sm text-destructive">{d.block.message}</p>}
           {d.state === 'ready' && (
             <Button onClick={() => void accept()} disabled={busy} className="h-10">
-              {busy ? <Loader2 className="size-4 animate-spin" /> : 'Accept invitation'}
+              {busy ? <Loader2 className="size-4 animate-spin" /> : t('family-join.action.acceptInvitation')}
             </Button>
           )}
         </>

@@ -1,11 +1,13 @@
 import { Button } from '@/components/ui/button';
 import { Home, ArrowLeft, Bug } from 'lucide-react';
 import { Logo } from "@/components/brand/logo";
+import { useT } from '@/lib/i18n';
 
 // Shared full-page layout for 404 / 500 / error states.
 // `code` is optional: states like the post-deploy reload are not an HTTP
 // status, and a giant empty number would just leave a hole above the title.
 export function ErrorLayout({ code, title, message, onReport }: { code?: string; title: string; message: string; onReport?: () => void }) {
+  const t = useT();
   return (
     <div className="min-h-screen bg-background flex flex-col items-center justify-center text-center px-4" style={{ backgroundImage: 'url(/grid.svg)', backgroundRepeat: 'repeat' }}>
       <a href="/" className="inline-flex items-center gap-2 font-mono italic font-semibold text-lg mb-10">
@@ -19,22 +21,22 @@ export function ErrorLayout({ code, title, message, onReport }: { code?: string;
 
       <div className="flex flex-wrap items-center justify-center gap-3">
         <a href="/">
-          <Button className="gap-2"><Home className="size-4" /> Go home</Button>
+          <Button className="gap-2"><Home className="size-4" /> {t('common.action.goHome')}</Button>
         </a>
         <Button variant="outline" className="gap-2" onClick={() => window.history.back()}>
-          <ArrowLeft className="size-4" /> Go back
+          <ArrowLeft className="size-4 rtl:-scale-x-100" /> {t('common.action.goBack')}
         </Button>
         {onReport && (
           <Button variant="outline" className="gap-2" onClick={onReport}>
-            <Bug className="size-4" /> Report this
+            <Bug className="size-4" /> {t('common.action.reportThis')}
           </Button>
         )}
       </div>
 
       <p className="mt-10 text-sm text-muted-foreground">
-        <a href="https://status.dosya.dev" target="_blank" rel="noreferrer" className="underline underline-offset-2 hover:text-foreground">Status</a>
+        <a href="https://status.dosya.dev" target="_blank" rel="noreferrer" className="underline underline-offset-2 hover:text-foreground">{t('common.action.status')}</a>
         {' · '}
-        <a href="https://dosya.dev/contact" target="_blank" rel="noreferrer" className="underline underline-offset-2 hover:text-foreground">Contact support</a>
+        <a href="https://dosya.dev/contact" target="_blank" rel="noreferrer" className="underline underline-offset-2 hover:text-foreground">{t('common.action.contactSupport')}</a>
       </p>
     </div>
   );

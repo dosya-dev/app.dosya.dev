@@ -75,7 +75,7 @@ describe('MentionComposer', () => {
   it('shows the anchor chip and clears it', async () => {
     const onClearAnchor = vi.fn();
     await setup({ anchor: { kind: 'time', ms: 42_000 }, onClearAnchor });
-    expect(el!.textContent).toContain('at 0:42');
+    expect(el!.textContent).toContain('At 0:42');
     act(() => (el!.querySelector('[aria-label="Remove anchor"]') as HTMLButtonElement).click());
     expect(onClearAnchor).toHaveBeenCalled();
   });

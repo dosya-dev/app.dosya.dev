@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { req } from '@/api/req';
 import { Card, CardContent } from '@/components/ui/card';
 import { toast } from '@/lib/toast';
+import { useT } from '@/lib/i18n';
+import type { MessageKey } from '@/i18n/keys';
 import { enableWebPush } from '@/lib/web-push';
 
 // ── Notifications ──────────────────────────────────────────
@@ -25,13 +27,16 @@ interface NotifGroup {
   options: { key: string; label: string; description: string; enabled: boolean }[];
 }
 
-const CHANNELS = [
-  ['in_app', 'In-app'],
-  ['email', 'Email'],
-  ['push', 'Browser push'],
-] as const;
+// Labels are catalog keys, translated at render. "In-app" has no catalog entry
+// (uncatalogued), so its slot holds null and renders the English literal.
+const CHANNELS: readonly (readonly [string, MessageKey | null])[] = [
+  ['in_app', null],
+  ['email', 'common.label.email'],
+  ['push', 'profile.label.browserPush'],
+];
 
 export function NotificationsSection() {
+  const t = useT();
   const [groups, setGroups] = useState<NotifGroup[] | null>(null);
   const [channels, setChannels] = useState<Record<string, boolean>>({ in_app: true, email: true, push: true });
 
@@ -62,7 +67,7 @@ export function NotificationsSection() {
     });
     if (!res.ok) {
       setValue(key, !next);
-      toast.error('Couldn\'t save', res.error ?? 'Your notification preference could not be saved.');
+      toast.error(t('common.error.couldnTSave'), res.error ?? t('profile.error.yourNotificationPreferenceCouldNotBeSaved'));
     }
   };
 
@@ -73,29 +78,29 @@ export function NotificationsSection() {
     });
     if (!res.ok) {
       setChannels((c) => ({ ...c, [key]: !next }));
-      toast.error('Couldn\'t save', res.error ?? 'Your channel preference could not be saved.');
+      toast.error(t('common.error.couldnTSave'), res.error ?? t('profile.error.yourChannelPreferenceCouldNotBeSaved'));
     }
   };
 
   const handleEnablePush = async () => {
     const r = await enableWebPush();
-    if (r === 'enabled') toast.success('Browser notifications enabled');
-    else if (r === 'denied') toast.error('Permission denied', 'Allow notifications in your browser settings');
-    else toast.error('Not supported', "This browser can't receive web push");
+    if (r === 'enabled') toast.success(t('profile.feedback.browserNotificationsEnabled'));
+    else if (r === 'denied') toast.error(t('profile.error.permissionDenied'), t('profile.error.allowNotificationsInYourBrowserSettings'));
+    else toast.error(t('profile.error.notSupported'), t('profile.error.thisBrowserCanTReceiveWebPush'));
   };
 
   const loading = groups === null;
 
   return (
     <section id="section-notifications">
-      <h2 className="text-base font-semibold mb-3">Notifications</h2>
+      <h2 className="text-base font-semibold mb-3">{t('common.heading.notifications')}</h2>
       <Card>
         <CardContent>
           <div className="mb-6">
-            <h3 className="text-sm font-medium mb-2">Delivery channels</h3>
-            {CHANNELS.map(([key, label]) => (
+            <h3 className="text-sm font-medium mb-2">{t('profile.heading.deliveryChannels')}</h3>
+            {CHANNELS.map(([key, labelKey]) => (
               <div key={key} className="flex items-center justify-between py-2">
-                <span className="text-sm">{label}</span>
+                <span className="text-sm">{labelKey ? t(labelKey) : t('profile.label.inApp')}</span>
                 <Toggle
                   checked={channels[key] ?? true}
                   onChange={(v) => toggleChannel(key, v)}
@@ -107,7 +112,7 @@ export function NotificationsSection() {
               className="text-sm px-3 py-1.5 rounded-md border hover:bg-muted mt-2"
               onClick={handleEnablePush}
             >
-              Enable browser notifications
+              {t('profile.action.enableBrowserNotifications')}
             </button>
           </div>
           {(groups ?? []).map((g) => (
@@ -121,7 +126,7 @@ export function NotificationsSection() {
                   {g.note && <p className="text-[11px] text-muted-foreground italic mt-0.5">{g.note}</p>}
                 </div>
                 {g.alwaysOn === 'all' ? (
-                  <span className="text-[11px] text-muted-foreground shrink-0">Always on</span>
+                  <span className="text-[11px] text-muted-foreground shrink-0">{t('profile.label.alwaysOn')}</span>
                 ) : (
                   <Toggle
                     checked={g.enabled}
@@ -131,7 +136,7 @@ export function NotificationsSection() {
                 )}
               </div>
               {g.options.length > 0 && (
-                <div className="pl-4 border-l ml-1">
+                <div className="ps-4 border-s ms-1">
                   {g.options.map((o) => (
                     <div key={o.key} className="flex items-center justify-between gap-4 py-1.5">
                       <div className="min-w-0">
@@ -167,7 +172,7 @@ function Toggle({ checked, disabled, onChange }: { checked: boolean; disabled?: 
       onClick={() => onChange(!checked)}
       className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${checked ? 'bg-green-600' : 'bg-muted-foreground/30'} ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
     >
-      <span className={`absolute top-[2px] w-4 h-4 bg-white rounded-full shadow transition-all ${checked ? 'left-[18px]' : 'left-[2px]'}`} />
+      <span className={`absolute top-[2px] w-4 h-4 bg-white rounded-full shadow transition-all ${checked ? 'inset-s-[18px]' : 'inset-s-[2px]'}`} />
     </button>
   );
 }

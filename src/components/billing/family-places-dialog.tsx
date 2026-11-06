@@ -1,3 +1,4 @@
+import { formatDateWith } from '@/lib/format-locale';
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Loader2, Minus, Plus } from 'lucide-react';
@@ -8,10 +9,11 @@ import {
 import { apiErrorMessage } from '@/api/client';
 import {
   getCatalog, previewSubscription, updateSubscription,
-  type BillingStatus, type CartPayload, type CatalogAddon,
+  type BillingStatus, type CartPayload, type CatalogAddon, type Currency,
 } from '@/api/billing';
 import { formatCents } from '@/lib/billing/cart-math';
 import { rememberPlanChange, rememberStorageBeforePurchase } from '@/lib/checkout-return';
+import { useT } from '@/lib/i18n';
 
 const PLACES_ID = 'family_places';
 
@@ -31,9 +33,11 @@ export function FamilyPlacesDialog({ open, onClose, billing, current, included, 
   included: number;
   max: number;
 }) {
+  const t = useT();
   const navigate = useNavigate();
   const [qty, setQty] = useState(current);
   const [addon, setAddon] = useState<CatalogAddon | null>(null);
+  const [currency, setCurrency] = useState<Currency>('usd');
   const [preview, setPreview] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -45,7 +49,7 @@ export function FamilyPlacesDialog({ open, onClose, billing, current, included, 
   useEffect(() => { if (open) { setQty(current); setError(null); } }, [open, current]);
   useEffect(() => {
     if (!open) return;
-    getCatalog().then((c) => setAddon(c.addons.find((a) => a.id === PLACES_ID) ?? null)).catch((e) => setError(apiErrorMessage(e, 'Could not load prices')));
+    getCatalog().then((c) => { setCurrency(c.currency ?? 'usd'); setAddon(c.addons.find((a) => a.id === PLACES_ID) ?? null); }).catch((e) => setError(apiErrorMessage(e, t('billing.error.couldNotLoadPrices'))));
   }, [open]);
 
   const cap = addon?.max_quantity ?? max;
@@ -68,12 +72,12 @@ export function FamilyPlacesDialog({ open, onClose, billing, current, included, 
     if (!open || qty === current) { setPreview(null); return; }
     const mine = ++seq.current;
     setPreview(null); setPreviewFailed(false);
-    const t = setTimeout(() => {
+    const timer = setTimeout(() => {
       previewSubscription(cart(qty))
         .then((r) => { if (seq.current === mine) setPreview(r.amount_due); })
         .catch(() => { if (seq.current === mine) { setPreview(null); setPreviewFailed(true); } });
     }, 400);
-    return () => clearTimeout(t);
+    return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, qty, current]);
 
@@ -86,80 +90,83 @@ export function FamilyPlacesDialog({ open, onClose, billing, current, included, 
       onClose();
       navigate('/checkout/success?change=1');
     } catch (e) {
-      setError(apiErrorMessage(e, 'Could not update spots'));
+      setError(apiErrorMessage(e, t('billing.error.couldNotUpdateSpots')));
       setBusy(false);
     }
   };
 
   const people = included + qty;
-  const unitLabel = interval === 'year' ? 'a year' : 'a month';
+  const unitLabel = interval === 'year' ? t('billing.label.aYear') : t('billing.label.aMonth');
   const currentBill = billing.items.reduce((sum, i) => sum + (i.unit_amount ?? 0) * i.quantity, 0);
   const newBill = currentBill + (qty - current) * (unit ?? 0);
   const changed = qty !== current;
   const pricesKnown = billing.items.every((i) => i.unit_amount != null);
   const billDelta = (qty - current) * (unit ?? 0);
-  const deltaLabel = `${billDelta < 0 ? '-' : '+'}${formatCents(Math.abs(billDelta))} ${unitLabel}`;
+  const deltaLabel = `${billDelta < 0 ? '-' : '+'}${formatCents(Math.abs(billDelta), currency)} ${unitLabel}`;
   const delta = qty - current;
   const periodEnd = billing.subscription?.current_period_end;
-  const invoiceDate = periodEnd ? new Date(periodEnd * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : null;
-  const confirmLabel = !changed ? 'No change' : delta > 0 ? `Add ${delta} ${delta === 1 ? 'spot' : 'spots'}` : `Remove ${-delta} ${delta === -1 ? 'spot' : 'spots'}`;
+  const invoiceDate = periodEnd ? formatDateWith(periodEnd, { month: 'short', day: 'numeric', year: 'numeric' }) : null;
+  const confirmLabel = !changed
+    ? t('billing.label.noChange')
+    : delta > 0
+      ? t('billing.description.addDeltaPluralOneSpotOtherSpots', { delta })
+      : t('billing.description.removeDeltaPluralOneSpotOtherSpots', { delta: -delta });
   const btn = 'size-11 rounded-full';
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o && !busy) onClose(); }}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Purchase more family spots</DialogTitle>
+          <DialogTitle>{t('billing.heading.purchaseMoreFamilySpots')}</DialogTitle>
           <DialogDescription>
-            Your plan includes {included} people besides you.
-            {unit !== null && ` Each extra spot is ${formatCents(unit)} ${unitLabel}.`}
+            {t('billing.description.yourPlanIncludesIncludedPeopleBesidesYouUniteachextra', { included, unitEachExtra: unit !== null ? t('billing.description.eachExtraSpotIsPriceUnitLabel', { price: formatCents(unit, currency), unitLabel }) : '' }).trimEnd()}
           </DialogDescription>
         </DialogHeader>
         <div className="flex items-center justify-between gap-3 rounded-lg border px-4 py-3">
           <div>
-            <p className="text-sm font-medium">Extra spots</p>
-            <p className="text-xs text-muted-foreground">0 to {cap}</p>
+            <p className="text-sm font-medium">{t('billing.label.extraSpots')}</p>
+            <p className="text-xs text-muted-foreground">{t('billing.label.0ToCap', { cap })}</p>
           </div>
           <div className="flex items-center gap-3">
-            <Button type="button" variant="outline" size="icon" className={btn} aria-label="Remove a spot" disabled={busy || qty <= 0} onClick={() => setQty((q) => Math.max(0, q - 1))}>
+            <Button type="button" variant="outline" size="icon" className={btn} aria-label={t('billing.action.removeASpot')} disabled={busy || qty <= 0} onClick={() => setQty((q) => Math.max(0, q - 1))}>
               <Minus className="size-4" />
             </Button>
             <span className="w-10 text-center font-mono text-3xl tabular-nums" aria-live="polite">{qty}</span>
-            <Button type="button" variant="outline" size="icon" className={btn} aria-label="Add a spot" disabled={busy || !available || qty >= cap} onClick={() => setQty((q) => Math.min(cap, q + 1))}>
+            <Button type="button" variant="outline" size="icon" className={btn} aria-label={t('billing.action.addASpot')} disabled={busy || !available || qty >= cap} onClick={() => setQty((q) => Math.min(cap, q + 1))}>
               <Plus className="size-4" />
             </Button>
           </div>
         </div>
         <dl className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-2.5 rounded-lg border px-4 py-3 text-sm">
-          <dt className="text-muted-foreground">People who can join you</dt>
-          <dd className="text-right font-mono">{people}</dd>
+          <dt className="text-muted-foreground">{t('billing.label.peopleWhoCanJoinYou')}</dt>
+          <dd className="text-end font-mono">{people}</dd>
           {pricesKnown ? (<>
-            <dt className="text-muted-foreground">{interval === 'year' ? 'Yearly price before discounts' : 'Monthly price before discounts'}</dt>
-            <dd className="text-right font-mono">
-              {changed ? (<><s className="mr-2 text-muted-foreground">{formatCents(currentBill)}</s>{formatCents(newBill)}</>) : formatCents(currentBill)}
+            <dt className="text-muted-foreground">{interval === 'year' ? t('billing.label.yearlyPriceBeforeDiscounts') : t('billing.label.monthlyPriceBeforeDiscounts')}</dt>
+            <dd className="text-end font-mono">
+              {changed ? (<><s className="me-2 text-muted-foreground">{formatCents(currentBill, currency)}</s>{formatCents(newBill, currency)}</>) : formatCents(currentBill, currency)}
             </dd>
           </>) : changed && (<>
-            <dt className="text-muted-foreground">Change to your bill</dt>
-            <dd className="text-right font-mono">{deltaLabel}</dd>
+            <dt className="text-muted-foreground">{t('billing.label.changeToYourBill')}</dt>
+            <dd className="text-end font-mono">{deltaLabel}</dd>
           </>)}
           {changed && (<>
-            <dt className="text-muted-foreground">Next invoice{invoiceDate ? `, ${invoiceDate}` : ''}</dt>
-            <dd className="text-right font-mono" aria-live="polite">
-              {previewFailed ? 'Could not price this change.' : preview === null ? 'Working out...' : formatCents(preview)}
+            <dt className="text-muted-foreground">{t('billing.description.nextInvoiceHasdate', { hasDate: invoiceDate ? 'true' : 'false', invoiceDate: invoiceDate ?? '' })}</dt>
+            <dd className="text-end font-mono" aria-live="polite">
+              {previewFailed ? t('billing.error.couldNotPriceThisChange') : preview === null ? t('billing.description.workingOut') : formatCents(preview, currency)}
             </dd>
           </>)}
         </dl>
         {changed && (
-          <p className="text-xs text-muted-foreground">Includes the prorated difference for the rest of this period. Nothing is charged today.</p>
+          <p className="text-xs text-muted-foreground">{t('billing.description.includesTheProratedDifferenceForTheRestOfThisPeriodNothing')}</p>
         )}
         {qty < current && (
-          <p className="text-xs text-muted-foreground">Nobody is removed when spots go down. If more people remain than spots, new invitations wait until someone leaves or you add spots again.</p>
+          <p className="text-xs text-muted-foreground">{t('billing.description.nobodyIsRemovedWhenSpotsGoDownIfMorePeopleRemain')}</p>
         )}
-        {error && <p className="text-sm text-destructive">{error}</p>}
+        {error && <p dir="auto" className="text-sm text-destructive">{error}</p>}
         <DialogFooter>
-          <Button variant="outline" onClick={onClose} disabled={busy}>Cancel</Button>
+          <Button variant="outline" onClick={onClose} disabled={busy}>{t('common.cancel')}</Button>
           <Button onClick={() => void confirm()} disabled={busy || !available || !changed}>
             {busy && <Loader2 className="size-4 animate-spin" />}
-            {busy ? 'Updating' : confirmLabel}
+            {busy ? t('billing.status.updating') : confirmLabel}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -1,3 +1,4 @@
+import { formatDateWith } from '@/lib/format-locale';
 export type AnalyticsRange = '24h' | '7d' | '30d';
 
 export interface SeriesBucket { t: number; total: number; errors: number }
@@ -26,9 +27,8 @@ export interface LogsResponse { ok: true; logs: LogRow[]; has_more: boolean }
 
 /** X-axis label for a bucket timestamp (unix seconds), in the viewer's local time. */
 export function bucketLabel(t: number, range: AnalyticsRange): string {
-  const d = new Date(t * 1000);
-  const time = d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
-  const day = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  const time = formatDateWith(t, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }, 'en-US');
+  const day = formatDateWith(t, { month: 'short', day: 'numeric' }, 'en-US');
   if (range === '24h') return time;
   if (range === '7d') return `${day} ${time}`;
   return day;

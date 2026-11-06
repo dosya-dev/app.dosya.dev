@@ -11,6 +11,7 @@ describe('deep links', () => {
     expect(readViewerIntent(new URLSearchParams('tab=comments&comment=c1&t=42000')))
       .toEqual({ tab: 'comments', anchor: { ms: 42000 }, commentId: 'c1' });
     expect(readViewerIntent(new URLSearchParams('p=4'))).toEqual({ tab: null, anchor: { page: 4 }, commentId: null });
+    expect(readViewerIntent(new URLSearchParams('tab=versions')).tab).toBe('versions');
     expect(readViewerIntent(new URLSearchParams('t=-5&p=0&tab=x'))).toEqual({ tab: null, anchor: null, commentId: null });
   });
 });

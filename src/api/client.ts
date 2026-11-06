@@ -7,13 +7,14 @@ export const API_BASE = import.meta.env.VITE_API_URL
 import { humanizeApiError } from './error-copy';
 import { notifyMaintenance } from '@/lib/maintenance-signal';
 import { notifyUnauthorized } from '@/lib/session-expiry';
+import { t } from '@/lib/i18n';
 
 export class ApiError extends Error {
   status: number;
   body: string;
 
   constructor(status: number, body: string) {
-    super(`API ${status}: ${body}`);
+    super(t('common.label.apiStatusBody', { status, body }));
     this.name = 'ApiError';
     this.status = status;
     this.body = body;
@@ -52,8 +53,22 @@ export function apiErrorCode(err: unknown): string | null {
   }
 }
 
+/**
+ * The JSON body of a thrown ApiError, for refusals that carry figures next to
+ * their `code` (a 409 with `max_gb`, say). Null for anything else.
+ */
+export function apiErrorBody(err: unknown): Record<string, unknown> | null {
+  if (!(err instanceof ApiError)) return null;
+  try {
+    const parsed = JSON.parse(err.body) as unknown;
+    return parsed && typeof parsed === 'object' ? parsed as Record<string, unknown> : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Extract the server's error message from a thrown ApiError (falls back for real network failures). */
-export function apiErrorMessage(err: unknown, fallback = 'Network error. Please try again.'): string {
+export function apiErrorMessage(err: unknown, fallback = t('common.description.networkErrorPleaseTryAgain')): string {
   if (err instanceof ApiError) {
     try {
       const parsed = JSON.parse(err.body) as { error?: string };
@@ -61,7 +76,7 @@ export function apiErrorMessage(err: unknown, fallback = 'Network error. Please 
     } catch { /* non-JSON body */ }
     // A non-JSON body is a gateway/HTML error page - not something to show users.
     if (err.body && !err.body.trimStart().startsWith('<')) return err.body;
-    return `Request failed (${err.status}). Please try again.`;
+    return t('common.error.requestFailedErrstatusPleaseTryAgain', { errStatus: err.status });
   }
   return fallback;
 }
@@ -106,5 +121,9 @@ export async function api<T>(
     throw new ApiError(res.status, text || res.statusText);
   }
 
+  // A 204 (DELETE /api/e2ee/user-keys) has no body to parse: res.json() threw
+  // "Unexpected end of JSON input" for a call that had succeeded, so a
+  // destroyed Vault was reported as an error.
+  if (res.status === 204) return undefined as T;
   return res.json();
 }

@@ -4,6 +4,10 @@ import { api, API_BASE } from '@/api/client';
 import { apiErrorMessage } from '@/api/client';
 import { toast } from '@/lib/toast';
 import { langFromExtension } from '@/lib/text-detect';
+import { t, useT } from '@/lib/i18n';
+
+// Prose files get a direction per line; everything else is code and reads left to right.
+const PROSE_LANGS = new Set(['text', 'markdown']);
 
 interface Props {
   file: { id: string; name: string; mime_type: string };
@@ -32,6 +36,7 @@ async function loadLanguage(lang: string) {
 }
 
 export function TextEditorOverlay({ file, rawUrl, workspaceId, onClose, onSaved }: Props) {
+  const tr = useT();
   const rootRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<import('@codemirror/view').EditorView | null>(null);
@@ -61,13 +66,16 @@ export function TextEditorOverlay({ file, rawUrl, workspaceId, onClose, onSaved 
         if (cancelled || !containerRef.current) return;
         const extensions = [basicSetup, oneDark, EditorView.lineWrapping];
         if (langExt) extensions.push(langExt);
+        const lang = langFromExtension(file.name);
+        if (PROSE_LANGS.has(lang)) extensions.push(EditorView.perLineTextDirection.of(true));
+        else containerRef.current.dir = 'ltr';
         viewRef.current = new EditorView({
           doc: text,
           extensions,
           parent: containerRef.current,
         });
       } catch {
-        toast.error('Editor unavailable', 'Could not open the text editor.');
+        toast.error(t('common.error.editorUnavailable'), t('common.error.couldNotOpenTheTextEditor'));
         onClose();
       }
     })();
@@ -91,7 +99,7 @@ export function TextEditorOverlay({ file, rawUrl, workspaceId, onClose, onSaved 
           mime_type: file.mime_type || 'text/plain',
         }),
       });
-      if (!init.ok || !init.session_id) { toast.error('Save failed', init.error ?? 'Could not start upload'); setSaving(false); return; }
+      if (!init.ok || !init.session_id) { toast.error(t('common.error.saveFailed'), init.error ?? t('common.error.couldNotStartUpload')); setSaving(false); return; }
       const put = await fetch(`${API_BASE}/api/upload/${init.session_id}`, {
         method: 'PUT',
         credentials: 'include',
@@ -99,12 +107,12 @@ export function TextEditorOverlay({ file, rawUrl, workspaceId, onClose, onSaved 
         body: blob,
       });
       const putData = await put.json() as { ok: boolean; error?: string };
-      if (!put.ok || !putData.ok) { toast.error('Save failed', putData.error ?? 'Failed to save'); setSaving(false); return; }
-      toast.success('Saved', 'File saved as new version.');
+      if (!put.ok || !putData.ok) { toast.error(t('common.error.saveFailed'), putData.error ?? t('common.error.failedToSave')); setSaving(false); return; }
+      toast.success(t('common.feedback.saved'), t('common.feedback.fileSavedAsNewVersion'));
       onSaved();
       onClose();
     } catch (err) {
-      toast.error('Save failed', apiErrorMessage(err));
+      toast.error(t('common.error.saveFailed'), apiErrorMessage(err));
       setSaving(false);
     }
   };
@@ -116,9 +124,9 @@ export function TextEditorOverlay({ file, rawUrl, workspaceId, onClose, onSaved 
         <div className="flex items-center gap-1">
           <button onClick={save} disabled={saving}
             className="h-7 px-2.5 rounded-md border flex items-center gap-1.5 text-xs font-medium hover:bg-muted disabled:opacity-50">
-            <Save className="size-3" /> {saving ? 'Saving…' : 'Save version'}
+            <Save className="size-3" /> {saving ? tr('common.status.saving') : tr('common.action.saveVersion')}
           </button>
-          <button onClick={onClose} className="size-8 rounded-md flex items-center justify-center hover:bg-muted" title="Close">
+          <button onClick={onClose} className="size-8 rounded-md flex items-center justify-center hover:bg-muted" title={tr('common.close')}>
             <X className="size-4 text-muted-foreground" />
           </button>
         </div>

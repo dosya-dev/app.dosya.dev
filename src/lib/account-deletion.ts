@@ -1,3 +1,5 @@
+import { formatDateWith } from '@/lib/format-locale';
+import { t } from '@/lib/i18n';
 /**
  * Pure logic behind the account-deletion flow.
  *
@@ -54,11 +56,11 @@ export function cooldownRemaining(sentAt: number | null, now: number): number {
  */
 export function describeBlocker(b: DeletionBlocker): string {
   const n = b.member_count;
-  return `${b.workspace_name} still has ${n} other ${n === 1 ? 'member' : 'members'}. Transfer it or remove them first.`;
+  return t('profile.description.bworkspaceNameStillHasNOtherNPluralOneMemberOtherMembers', { bWorkspace_name: b.workspace_name, n });
 }
 
 export function formatScheduledDate(scheduledFor: number): string {
-  return new Date(scheduledFor * 1000).toLocaleDateString(undefined, {
+  return formatDateWith(scheduledFor, {
     day: 'numeric', month: 'long', year: 'numeric',
   });
 }
@@ -108,9 +110,9 @@ export function classifyDeleteError(err: unknown): DeleteFailure {
 
   if (status === 429) {
     if (/request a new code/i.test(raw)) {
-      return { kind: 'code_burned', message: 'Too many tries on that code. Request a new one.' };
+      return { kind: 'code_burned', message: t('profile.description.tooManyTriesOnThatCodeRequestANewOne') };
     }
-    return { kind: 'rate_limited', message: 'Too many attempts. Wait a few minutes, then try again.' };
+    return { kind: 'rate_limited', message: t('profile.description.tooManyAttemptsWaitAFewMinutesThenTryAgain') };
   }
 
   if (status === 400 && /other members|transfer/i.test(raw)) {
@@ -119,21 +121,21 @@ export function classifyDeleteError(err: unknown): DeleteFailure {
 
   // delete-now on an account whose deletion was cancelled in another tab.
   if (status === 400 && /no deletion is scheduled/i.test(raw)) {
-    return { kind: 'not_scheduled', message: 'No deletion is scheduled any more. Reload the page.' };
+    return { kind: 'not_scheduled', message: t('profile.description.noDeletionIsScheduledAnyMoreReloadThePage') };
   }
 
   // 403 is the password proof failing: the caller IS signed in, it just
   // typed the wrong thing (see apps/api/src/lib/account/proof.ts).
   if (status === 403) {
-    return { kind: 'wrong_password', message: 'That password is not correct.' };
+    return { kind: 'wrong_password', message: t('profile.description.thatPasswordIsNotCorrect') };
   }
 
   if (status === 400) {
     return {
       kind: 'wrong_code',
-      message: 'That code is not right, or it has expired. Check the 6 digits, or request a new one.',
+      message: t('profile.description.thatCodeIsNotRightOrItHasExpiredCheckThe'),
     };
   }
 
-  return { kind: 'unknown', message: raw.trim() || 'Could not delete your account. Please try again.' };
+  return { kind: 'unknown', message: raw.trim() || t('profile.error.couldNotDeleteYourAccountPleaseTryAgain') };
 }

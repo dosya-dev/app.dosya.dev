@@ -12,6 +12,8 @@
  * read for a long time in one sitting, and sepia on a bright screen at night is
  * a different decision from which accent colour the file browser uses.
  */
+import { t } from '@/lib/i18n';
+
 export interface ReaderTheme {
   id: string;
   label: string;
@@ -29,10 +31,11 @@ export interface ReaderTheme {
  * is a choice people make about a book, not about an app.
  */
 export const READER_THEMES: ReaderTheme[] = [
-  { id: "app", label: "Match app", bg: "", fg: "" },
-  { id: "light", label: "Light", bg: "#ffffff", fg: "#1a1a1a" },
-  { id: "sepia", label: "Sepia", bg: "#f4ecd8", fg: "#5b4636" },
-  { id: "dark", label: "Dark", bg: "#121212", fg: "#c8c8c8" },
+  // `label` translates on read (getter), so the table holds no English.
+  { id: "app", get label() { return t("common.option.matchApp"); }, bg: "", fg: "" },
+  { id: "light", get label() { return t("common.option.light"); }, bg: "#ffffff", fg: "#1a1a1a" },
+  { id: "sepia", get label() { return t("common.option.sepia"); }, bg: "#f4ecd8", fg: "#5b4636" },
+  { id: "dark", get label() { return t("common.option.dark"); }, bg: "#121212", fg: "#c8c8c8" },
 ];
 
 export const DEFAULT_THEME_ID = "app";

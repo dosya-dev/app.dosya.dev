@@ -7,6 +7,7 @@
  * whether Load more has anything to fetch. Never infer "more" from a page's
  * length - a page can be shorter than the limit and still have a cursor.
  */
+import { t } from '@/lib/i18n';
 import { useCallback, useMemo } from 'react';
 import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { api, apiErrorMessage } from '@/api/client';
@@ -26,7 +27,7 @@ export interface LibraryResult extends Library {
 
 async function fetchLibraryPage(path: string): Promise<LibraryPage> {
   const data = await api<LibraryPage>(path);
-  if (!data.ok) throw new Error('Your library could not be loaded.');
+  if (!data.ok) throw new Error(t('files.error.yourLibraryCouldNotBeLoaded'));
   return data;
 }
 
@@ -70,7 +71,7 @@ export function useLibrary(view: LibraryView | null): LibraryResult {
     isLoading: query.isLoading,
     isPlaceholder: query.isPlaceholderData,
     isLoadingMore: query.isFetchingNextPage,
-    error: query.isError ? apiErrorMessage(query.error, 'Your library could not be loaded.') : null,
+    error: query.isError ? apiErrorMessage(query.error, t('files.error.yourLibraryCouldNotBeLoaded')) : null,
     loadMore,
     refresh,
   };

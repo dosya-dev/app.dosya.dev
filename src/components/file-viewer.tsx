@@ -1,3 +1,6 @@
+import { formatDateWith, localDigits } from '@/lib/format-locale';
+import { currentDir, t as tNow, useT } from '@/lib/i18n';
+import { richText } from '@/lib/rich-text';
 import { useState, useEffect, useCallback, useMemo, useRef, Suspense, type ReactNode } from 'react';
 import { api, API_BASE } from '@/api/client';
 import {
@@ -5,13 +8,16 @@ import {
   Star, Share2, MoreHorizontal, PanelRight, Trash2, Move, Lock, LockOpen,
   Minus, Plus, Maximize, Check, Link2, MessageSquare, FileText,
 } from 'lucide-react';
-import { humanSize, extOf, isImage, isVideo, isAudio, fileIconSrc, isOfficeFile, isBook, isArchive, colorFor, regionLabel, originLabel, timeAgo } from '@/lib/helpers';
+import { PeopleChips } from '@/components/personas/people-chips';
+import { humanSize, extOf, isImage, isVideo, isAudio, fileIconSrc, isOfficeFile, isArchive, colorFor, regionLabel, originLabel, timeAgo } from '@/lib/helpers';
 import { FilePreviewImage } from '@/components/file-preview-image';
+import { DecodedPreview } from '@/components/decoded-preview';
 import { ArchiveViewer } from '@/components/archive-viewer/archive-viewer';
 import { toast } from '@/lib/toast';
 import { openReport } from '@/stores/report-problem';
 import { lazyChunk } from '@/lib/chunk-reload';
 import { decodeTextBytes, isTextReadable, langFromExtension, looksBinary } from '@/lib/text-detect';
+import { previewKindFor } from '@/lib/preview-formats.generated';
 import { parseCsvTable } from '@/lib/csv-table';
 import { parseMarkdown, type InlineToken, type MdBlock } from '@/lib/markdown';
 import { BookViewer } from '@/components/book-viewer';
@@ -19,14 +25,17 @@ import { highlightToHtml } from '@/lib/text-highlight';
 import { useInFileFind } from '@/lib/use-in-file-find';
 import { TextFindBar } from '@/components/text-find-bar';
 import { TextEditorOverlay } from '@/components/text-editor';
+import { TEXT_EDIT_MAX_BYTES, canEditText as canEditInTextEditor } from '@/lib/text-edit';
 import { VCardView } from '@/components/vcard-viewer';
+import { CalendarView } from '@/components/calendar-viewer';
 import { AudioPlayer } from '@/components/audio/audio-player';
+import { VideoPlayer } from '@/components/video/video-player';
 import { OfficePreview } from '@/components/office-preview';
 import { collapseLiveTwins, isLiveStill, isLiveTwin, liveTwinOf } from '@/lib/live-photos';
 import { LivePhotoStage } from './live-photo-stage';
 import { LiveBadge } from './live-badge';
 import type { FileItem } from '@/lib/file-types';
-import { AnchorProvider, useRegisterAnchorTarget, useAnchorMarkers, type AnchorTarget, type PendingAnchor } from '@/components/comments/anchor-context';
+import { AnchorProvider, type PendingAnchor } from '@/components/comments/anchor-context';
 import { CommentsPanel } from '@/components/comments/comments-panel';
 import { useFileComments, markersFrom } from '@/components/comments/use-file-comments';
 import { olderVersionNote } from '@/components/comments/format';
@@ -71,16 +80,21 @@ interface FileViewerProps {
   onNavigate: (file: FileItem) => void;
   onRefresh: () => void;
   actions?: FileViewerActions;
-  /** Deep links (a mention notification) open straight onto the Comments tab. */
+  /** Deep links open straight onto a tab: Comments (a mention notification) or Versions (the text editor's Version history). */
   initialTab?: 'details' | 'versions' | 'comments';
   initialAnchor?: { ms: number } | { page: number } | null;
   initialCommentId?: string | null;
+  /**
+   * Opens a Markdown or plain-text file in the full-page editor
+   * (/text-editor/:id). Hosts pass it with their router's navigate; without
+   * it, Edit on such a file falls back to the in-viewer text editor.
+   */
+  onEditText?: (file: FileItem) => void;
 }
 
 // ── Helpers ───────────────────────────────────────────────
 
 function isPdf(name: string) { return extOf(name) === 'pdf'; }
-function isVcard(name: string) { const e = extOf(name); return e === 'vcf' || e === 'vcard'; }
 function isEditable(name: string) { return isImage(name) || isVideo(name); }
 
 const THUMB_WINDOW = 6;
@@ -150,7 +164,8 @@ function applyEditorTheme(container: HTMLElement, attempt = 0): void {
 
 // ── Component ─────────────────────────────────────────────
 
-export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRefresh, actions, initialTab, initialAnchor, initialCommentId }: FileViewerProps) {
+export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRefresh, actions, initialTab, initialAnchor, initialCommentId, onEditText }: FileViewerProps) {
+  const t = useT();
   const [versions, setVersions] = useState<Version[]>([]);
   const [activeVersion, setActiveVersion] = useState(-1);
   const [closing, setClosing] = useState(false);
@@ -158,7 +173,7 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
   // Rail on desktop, bottom sheet on mobile - one state, CSS decides which.
   // Starts open on desktop, closed on small screens (jsdom has no matchMedia).
   const [inspectorOpen, setInspectorOpen] = useState(
-    () => initialTab === 'comments' || typeof window.matchMedia !== 'function' || window.matchMedia('(min-width: 768px)').matches,
+    () => initialTab === 'comments' || initialTab === 'versions' || typeof window.matchMedia !== 'function' || window.matchMedia('(min-width: 768px)').matches,
   );
   const [inspectorTab, setInspectorTab] = useState<'details' | 'versions' | 'comments'>(initialTab ?? 'details');
   const [menuOpen, setMenuOpen] = useState(false);
@@ -170,8 +185,14 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
   const [textEditOpen, setTextEditOpen] = useState(false);
   const closeTextEdit = useCallback(() => setTextEditOpen(false), []);
   const canTextEdit = isTextReadable(file.name, file.mime_type)
-    && file.size_bytes <= 2 * 1024 * 1024
+    && file.size_bytes <= TEXT_EDIT_MAX_BYTES
     && file.lock_mode !== 'full_lock';
+  // Markdown and .txt get the full-page editor (split preview, find and
+  // replace, drafts); other text (JSON, code, ...) keeps the in-viewer one.
+  const editText = () => {
+    if (onEditText && canEditInTextEditor(file)) onEditText(file);
+    else setTextEditOpen(true);
+  };
 
   // A Live Photo is one stop: its twin leaves the prev/next order and the
   // filmstrip. Opened directly (from list view or search) the twin is still an
@@ -191,11 +212,12 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
   const idx = navFiles.findIndex((f) => f.id === file.id);
   const hasPrev = idx > 0;
   const hasNext = idx >= 0 && idx < navFiles.length - 1;
-  const counter = idx >= 0 ? `${idx + 1} / ${navFiles.length}` : '';
+  const counter = idx >= 0 ? `${localDigits(idx + 1)} / ${localDigits(navFiles.length)}` : '';
 
   // Header slot elements the PDF viewer portals its controls into. Callback
   // refs are stable and identity-guarded so header re-renders don't loop state.
   const [pdfSlots, setPdfSlots] = useState<{ left: HTMLDivElement | null; center: HTMLDivElement | null }>({ left: null, center: null });
+  // rtl-ok: code, a slot name in state (not a CSS property)
   const setPdfSlotLeft = useCallback((el: HTMLDivElement | null) => setPdfSlots((s) => (s.left === el ? s : { ...s, left: el })), []);
   const setPdfSlotCenter = useCallback((el: HTMLDivElement | null) => setPdfSlots((s) => (s.center === el ? s : { ...s, center: el })), []);
 
@@ -250,14 +272,14 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
         body: JSON.stringify({ version_number: versionNumber }),
       });
       if (res.ok) {
-        toast.success('Restored', `Restored to v${versionNumber}.`);
+        toast.success(tNow('common.feedback.restored'), tNow('common.feedback.restoredToVVersionnumber', { versionNumber }));
         loadVersions();
         onRefresh();
       } else {
-        toast.error('Restore failed', res.error ?? 'Restore failed');
+        toast.error(tNow('common.error.restoreFailed'), res.error ?? tNow('common.error.restoreFailed'));
       }
     } catch {
-      toast.error('Restore failed', 'Restore failed.');
+      toast.error(tNow('common.error.restoreFailed'), tNow('common.error.restoreFailed.restoreFailed'));
     } finally {
       setRestoringVer(null);
     }
@@ -359,8 +381,12 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
       if (e.key === 'Escape') { handleClose(); return; }
-      if (e.key === 'ArrowLeft' && hasPrev) onNavigate(navFiles[idx - 1]);
-      if (e.key === 'ArrowRight' && hasNext) onNavigate(navFiles[idx + 1]);
+      // Arrow keys follow the reading direction: the arrow on the inline-end side opens the next file.
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        const forward = (e.key === 'ArrowRight') === (currentDir() === 'ltr');
+        if (forward && hasNext) onNavigate(navFiles[idx + 1]);
+        if (!forward && hasPrev) onNavigate(navFiles[idx - 1]);
+      }
       if (e.key === 'ArrowUp') { e.preventDefault(); navigateVersion(-1); }
       if (e.key === 'ArrowDown') { e.preventDefault(); navigateVersion(1); }
       if (e.key === 'i' || e.key === 'I') setInspectorOpen((o) => !o);
@@ -419,7 +445,7 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
           defaults.locale = { ...defaults.locale, ...pinturaVideo.plugin_trim_locale_en_gb };
 
           const res = await fetch(src, { credentials: 'include' });
-          if (!res.ok) throw new Error(`Failed to load video (HTTP ${res.status})`);
+          if (!res.ok) throw new Error(tNow('common.error.failedToLoadVideoHttpResstatus', { resStatus: res.status }));
           const blob = await res.blob();
           const ext = extOf(file.name);
           const mimeMap: Record<string, string> = {
@@ -437,7 +463,7 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
           // app's own credentialed request works) and hand Pintura a local File -
           // same approach as the video branch above.
           const res = await fetch(src, { credentials: 'include' });
-          if (!res.ok) throw new Error(`Failed to load image (HTTP ${res.status})`);
+          if (!res.ok) throw new Error(tNow('common.error.failedToLoadImageHttpResstatus', { resStatus: res.status }));
           const blob = await res.blob();
           if (cancelled || !editorContainerRef.current) return;
           const imageFile = new File([blob], file.name, { type: blob.type || file.mime_type });
@@ -463,8 +489,8 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
               }),
             });
             if (!initRes.ok || !initRes.session_id) {
-              toast.error('Upload failed', initRes.error ?? 'Could not start upload', {
-                action: { label: 'Report', onClick: () => openReport({ errorMessage: initRes.error ?? 'Could not start upload' }) },
+              toast.error(tNow('common.error.uploadFailed'), initRes.error ?? tNow('common.error.couldNotStartUpload'), {
+                action: { label: tNow('common.error.report'), onClick: () => openReport({ errorMessage: initRes.error ?? tNow('common.error.couldNotStartUpload') }) },
               });
               return;
             }
@@ -476,15 +502,15 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
             });
             const uploadData = await uploadRes.json() as { ok: boolean; error?: string };
             if (!uploadRes.ok || !uploadData.ok) {
-              toast.error('Save failed', uploadData.error ?? 'Failed to save');
+              toast.error(tNow('common.error.saveFailed'), uploadData.error ?? tNow('common.error.failedToSave'));
               return;
             }
-            toast.success('Saved', isVideo(file.name) ? 'Video saved as new version.' : 'Image saved as new version.');
+            toast.success(tNow('common.feedback.saved'), isVideo(file.name) ? tNow('common.feedback.videoSavedAsNewVersion') : tNow('common.feedback.imageSavedAsNewVersion'));
             closeEditor();
             onRefresh();
             loadVersions();
           } catch {
-            toast.error('Save failed', 'Failed to save edited file.');
+            toast.error(tNow('common.error.saveFailed'), tNow('common.error.failedToSaveEditedFile'));
           }
         });
       } catch (err) {
@@ -492,7 +518,7 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
         // import means the Pintura chunk didn't load (commonly the private-registry
         // package installed as the public stub because NPM_TOKEN was missing at build).
         console.error('[pintura] failed to load/init editor', err);
-        toast.error('Editor unavailable', err instanceof Error ? err.message : 'Image editor not available.');
+        toast.error(tNow('common.error.editorUnavailable'), err instanceof Error ? err.message : tNow('common.error.imageEditorNotAvailable'));
         setEditingOpen(false);
       }
     })();
@@ -524,31 +550,31 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
         {/* Header: identity left, type-specific controls dead center (the PDF
             toolbar portals into the center slot; images get the zoom cluster),
             actions right. */}
-        <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 pl-3 pr-2 py-2 border-b shrink-0 relative z-30 bg-background">
+        <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 ps-3 pe-2 py-2 border-b shrink-0 relative z-30 bg-background">
           <div className="flex items-center gap-2 min-w-0">
-            {isPdf(file.name) && <div data-pdf-slot="left" ref={setPdfSlotLeft} className="hidden sm:flex items-center shrink-0 -ml-1" />}
+            {isPdf(file.name) && <div data-pdf-slot="left" ref={setPdfSlotLeft} className="hidden sm:flex items-center shrink-0 -ms-1" />}
             <span
               className="size-[22px] rounded-md shrink-0 flex items-center justify-center text-[8px] font-bold tracking-wide text-white"
               style={{ backgroundColor: colorFor(file.name) }}
               aria-hidden="true"
             >
-              {(extOf(file.name) || 'file').toUpperCase().slice(0, 4)}
+              {(extOf(file.name) || t('common.label.fileBadge')).toUpperCase().slice(0, 4)}
             </span>
-            <span className="text-sm font-semibold truncate">{file.name}</span>
-            <span className="text-xs text-muted-foreground shrink-0 font-mono">{counter}</span>
+            <span className="text-sm font-semibold truncate" dir="auto">{file.name}</span>
+            <span className="text-xs text-muted-foreground shrink-0 font-mono" dir="ltr">{counter}</span>
           </div>
           <div className="flex items-center justify-center">
             {isPdf(file.name) && <div data-pdf-slot="center" ref={setPdfSlotCenter} className="hidden sm:flex items-center gap-1 shrink-0" />}
-            {isImage(file.name) && (
-              <div className="hidden sm:flex items-center gap-0.5 p-0.5 border rounded-lg bg-muted/40" role="group" aria-label="Zoom">
-                <button className="size-6.5 rounded-md flex items-center justify-center hover:bg-muted text-muted-foreground hover:text-foreground" aria-label="Zoom out" onClick={() => setZoom((z) => Math.max(25, z - 25))}>
+            {(isImage(file.name) || previewKindFor(file.name, file.mime_type) === 'decode') && (
+              <div className="hidden sm:flex items-center gap-0.5 p-0.5 border rounded-lg bg-muted/40" role="group" aria-label={t('common.accessibility.zoom')}>
+                <button className="size-6.5 rounded-md flex items-center justify-center hover:bg-muted text-muted-foreground hover:text-foreground" aria-label={t('common.action.zoomOut')} onClick={() => setZoom((z) => Math.max(25, z - 25))}>
                   <Minus className="size-3.5" />
                 </button>
                 <span className="text-[11px] font-mono text-muted-foreground min-w-11 text-center">{zoom}%</span>
-                <button className="size-6.5 rounded-md flex items-center justify-center hover:bg-muted text-muted-foreground hover:text-foreground" aria-label="Zoom in" onClick={() => setZoom((z) => Math.min(300, z + 25))}>
+                <button className="size-6.5 rounded-md flex items-center justify-center hover:bg-muted text-muted-foreground hover:text-foreground" aria-label={t('common.action.zoomIn')} onClick={() => setZoom((z) => Math.min(300, z + 25))}>
                   <Plus className="size-3.5" />
                 </button>
-                <button className="size-6.5 rounded-md flex items-center justify-center hover:bg-muted text-muted-foreground hover:text-foreground" aria-label="Fit to screen" onClick={() => setZoom(100)}>
+                <button className="size-6.5 rounded-md flex items-center justify-center hover:bg-muted text-muted-foreground hover:text-foreground" aria-label={t('common.action.fitToScreen')} onClick={() => setZoom(100)}>
                   <Maximize className="size-3.5" />
                 </button>
               </div>
@@ -558,7 +584,7 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
             {actions?.onToggleFavourite && (
               <button
                 className="size-8 rounded-md flex items-center justify-center hover:bg-muted"
-                aria-label={actions.isFavourite ? 'Remove from favourites' : 'Add to favourites'}
+                aria-label={actions.isFavourite ? t('common.action.removeFromFavourites') : t('common.label.addToFavourites')}
                 aria-pressed={!!actions.isFavourite}
                 onClick={() => actions.onToggleFavourite!(file)}
               >
@@ -566,7 +592,7 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
               </button>
             )}
             {actions?.onShare && (
-              <button className="size-8 rounded-md flex items-center justify-center hover:bg-muted" aria-label="Share" onClick={() => actions.onShare!(file)}>
+              <button className="size-8 rounded-md flex items-center justify-center hover:bg-muted" aria-label={t('common.action.share')} onClick={() => actions.onShare!(file)}>
                 <Share2 className="size-4 text-muted-foreground" />
               </button>
             )}
@@ -577,22 +603,22 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
             {isOfficeFile(file.name) ? (
               <a href={`/editor/${file.id}`} target="_blank" rel="noreferrer"
                 className="h-7 px-2.5 rounded-md border flex items-center gap-1.5 text-xs font-medium hover:bg-muted whitespace-nowrap">
-                <SquarePen className="size-3 text-muted-foreground" /> Edit
+                <SquarePen className="size-3 text-muted-foreground" /> {t('common.edit')}
               </a>
             ) : (isEditable(file.name) || canTextEdit) && (
               <button className="h-7 px-2.5 rounded-md border flex items-center gap-1.5 text-xs font-medium hover:bg-muted"
-                onClick={() => (canTextEdit ? setTextEditOpen(true) : openEditor())}>
-                <Pencil className="size-3 text-muted-foreground" /> Edit
+                onClick={() => (canTextEdit ? editText() : openEditor())}>
+                <Pencil className="size-3 text-muted-foreground" /> {t('common.edit')}
               </button>
             )}
-            <a href={downloadUrl} download className="size-8 rounded-md flex items-center justify-center hover:bg-muted" title="Download">
+            <a href={downloadUrl} download className="size-8 rounded-md flex items-center justify-center hover:bg-muted" title={t('common.action.download')}>
               <Download className="size-4 text-muted-foreground" />
             </a>
             {actions && (actions.onRename || actions.onMove || actions.onLock || actions.onDelete) && (
               <div className="relative">
                 <button
                   className="size-8 rounded-md flex items-center justify-center hover:bg-muted"
-                  aria-label="More actions"
+                  aria-label={t('common.accessibility.moreActions')}
                   aria-haspopup="menu"
                   aria-expanded={menuOpen}
                   onClick={(e) => { e.stopPropagation(); setMenuOpen((o) => !o); }}
@@ -600,28 +626,28 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
                   <MoreHorizontal className="size-4 text-muted-foreground" />
                 </button>
                 {menuOpen && (
-                  <div role="menu" aria-label="More actions" className="absolute right-0 top-full mt-1.5 w-48 rounded-xl border bg-popover text-popover-foreground shadow-lg p-1 z-50">
+                  <div role="menu" aria-label={t('common.action.moreActions')} className="absolute inset-e-0 top-full mt-1.5 w-48 rounded-xl border bg-popover text-popover-foreground shadow-lg p-1 z-50">
                     {actions.onRename && (
-                      <button role="menuitem" className="flex items-center gap-2.5 w-full px-2.5 py-1.5 rounded-lg text-[13px] font-medium hover:bg-muted text-left" onClick={() => { setMenuOpen(false); actions.onRename!(file); }}>
-                        <Pencil className="size-3.5 text-muted-foreground" /> Rename
+                      <button role="menuitem" className="flex items-center gap-2.5 w-full px-2.5 py-1.5 rounded-lg text-[13px] font-medium hover:bg-muted text-start" onClick={() => { setMenuOpen(false); actions.onRename!(file); }}>
+                        <Pencil className="size-3.5 text-muted-foreground" /> {t('common.action.rename')}
                       </button>
                     )}
                     {actions.onMove && (
-                      <button role="menuitem" className="flex items-center gap-2.5 w-full px-2.5 py-1.5 rounded-lg text-[13px] font-medium hover:bg-muted text-left" onClick={() => { setMenuOpen(false); actions.onMove!(file); }}>
-                        <Move className="size-3.5 text-muted-foreground" /> Move to folder
+                      <button role="menuitem" className="flex items-center gap-2.5 w-full px-2.5 py-1.5 rounded-lg text-[13px] font-medium hover:bg-muted text-start" onClick={() => { setMenuOpen(false); actions.onMove!(file); }}>
+                        <Move className="size-3.5 text-muted-foreground" /> {t('common.action.moveToFolder')}
                       </button>
                     )}
                     {actions.onLock && (
-                      <button role="menuitem" className="flex items-center gap-2.5 w-full px-2.5 py-1.5 rounded-lg text-[13px] font-medium hover:bg-muted text-left" onClick={() => { setMenuOpen(false); actions.onLock!(file); }}>
+                      <button role="menuitem" className="flex items-center gap-2.5 w-full px-2.5 py-1.5 rounded-lg text-[13px] font-medium hover:bg-muted text-start" onClick={() => { setMenuOpen(false); actions.onLock!(file); }}>
                         {file.lock_mode !== 'none' ? <LockOpen className="size-3.5 text-muted-foreground" /> : <Lock className="size-3.5 text-muted-foreground" />}
-                        {file.lock_mode !== 'none' ? 'Unlock' : 'Lock'}
+                        {file.lock_mode !== 'none' ? t('common.action.unlock') : t('common.action.lock')}
                       </button>
                     )}
                     {actions.onDelete && (
                       <>
                         <div className="h-px bg-border my-1" role="separator" />
-                        <button role="menuitem" className="flex items-center gap-2.5 w-full px-2.5 py-1.5 rounded-lg text-[13px] font-medium hover:bg-muted text-left text-destructive" onClick={() => { setMenuOpen(false); actions.onDelete!(file); }}>
-                          <Trash2 className="size-3.5" /> Move to trash
+                        <button role="menuitem" className="flex items-center gap-2.5 w-full px-2.5 py-1.5 rounded-lg text-[13px] font-medium hover:bg-muted text-start text-destructive" onClick={() => { setMenuOpen(false); actions.onDelete!(file); }}>
+                          <Trash2 className="size-3.5" /> {t('common.action.moveToTrash')}
                         </button>
                       </>
                     )}
@@ -632,14 +658,14 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
             <div className="w-px h-5 bg-border mx-1" aria-hidden="true" />
             <button
               className={`size-8 rounded-md flex items-center justify-center hover:bg-muted ${inspectorOpen ? 'bg-muted' : ''}`}
-              aria-label="Toggle inspector"
+              aria-label={t('common.action.toggleInspector')}
               aria-pressed={inspectorOpen}
-              title="Inspector (i)"
+              title={t('common.action.inspectorI')}
               onClick={() => setInspectorOpen((o) => !o)}
             >
-              <PanelRight className="size-4 text-muted-foreground" />
+              <PanelRight className="size-4 text-muted-foreground rtl:-scale-x-100" />
             </button>
-            <button className="size-8 rounded-md flex items-center justify-center hover:bg-muted" onClick={handleClose} title="Close (Esc)">
+            <button className="size-8 rounded-md flex items-center justify-center hover:bg-muted" onClick={handleClose} title={t('common.tooltip.closeEsc')}>
               <X className="size-4 text-muted-foreground" />
             </button>
           </div>
@@ -665,22 +691,22 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
               <FileContent file={file} files={files} rawUrl={rawUrl()} stableRawUrl={stableRawUrl} downloadUrl={downloadUrl} version={previewVersion} workspaceId={workspaceId} pdfToolbarSlots={pdfSlots} zoom={zoom} onSaved={() => { onRefresh(); loadVersions(); }} onNavigate={onNavigate} />
             </div>
             <button
-              className={`absolute left-4 top-1/2 -translate-y-1/2 size-10 rounded-full backdrop-blur-sm flex items-center justify-center disabled:opacity-30 disabled:pointer-events-none transition-colors z-10 ${isAudio(file.name) ? 'bg-foreground/10 text-foreground hover:bg-foreground/15' : 'bg-white/10 text-[oklch(0.93_0.008_238.5)] hover:bg-white/20'}`}
-              aria-label="Previous file"
-              title="Previous (←)"
+              className={`absolute inset-s-4 top-1/2 -translate-y-1/2 size-10 rounded-full backdrop-blur-sm flex items-center justify-center disabled:opacity-30 disabled:pointer-events-none transition-colors z-10 ${isAudio(file.name) ? 'bg-foreground/10 text-foreground hover:bg-foreground/15' : 'bg-white/10 text-[oklch(0.93_0.008_238.5)] hover:bg-white/20'}`}
+              aria-label={t('common.action.previousFile')}
+              title={t('common.tooltip.previous')}
               disabled={!hasPrev}
               onClick={() => onNavigate(navFiles[idx - 1])}
             >
-              <ChevronLeft className="size-4" />
+              <ChevronLeft className="size-4 rtl:-scale-x-100" />
             </button>
             <button
-              className={`absolute right-4 top-1/2 -translate-y-1/2 size-10 rounded-full backdrop-blur-sm flex items-center justify-center disabled:opacity-30 disabled:pointer-events-none transition-colors z-10 ${isAudio(file.name) ? 'bg-foreground/10 text-foreground hover:bg-foreground/15' : 'bg-white/10 text-[oklch(0.93_0.008_238.5)] hover:bg-white/20'}`}
-              aria-label="Next file"
-              title="Next (→)"
+              className={`absolute inset-e-4 top-1/2 -translate-y-1/2 size-10 rounded-full backdrop-blur-sm flex items-center justify-center disabled:opacity-30 disabled:pointer-events-none transition-colors z-10 ${isAudio(file.name) ? 'bg-foreground/10 text-foreground hover:bg-foreground/15' : 'bg-white/10 text-[oklch(0.93_0.008_238.5)] hover:bg-white/20'}`}
+              aria-label={t('common.action.nextFile')}
+              title={t('common.tooltip.next')}
               disabled={!hasNext}
               onClick={() => onNavigate(navFiles[idx + 1])}
             >
-              <ChevronRight className="size-4" />
+              <ChevronRight className="size-4 rtl:-scale-x-100" />
             </button>
           </div>
 
@@ -690,8 +716,8 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
               <div className="md:hidden fixed inset-0 z-40 bg-black/40" onClick={() => setInspectorOpen(false)} aria-hidden="true" />
               <aside
                 data-testid="viewer-inspector"
-                aria-label="File inspector"
-                className="flex flex-col min-h-0 bg-background md:w-[316px] md:shrink-0 md:border-l max-md:fixed max-md:inset-x-0 max-md:bottom-0 max-md:z-50 max-md:max-h-[72dvh] max-md:rounded-t-2xl max-md:border-t max-md:shadow-2xl"
+                aria-label={t('common.accessibility.fileInspector')}
+                className="flex flex-col min-h-0 bg-background md:w-[316px] md:shrink-0 md:border-s max-md:fixed max-md:inset-x-0 max-md:bottom-0 max-md:z-50 max-md:max-h-[72dvh] max-md:rounded-t-2xl max-md:border-t max-md:shadow-2xl"
               >
                 <div className="px-4 pt-4 shrink-0 max-md:pt-2">
                   <div className="md:hidden w-9 h-1 rounded-full bg-border mx-auto mb-3" aria-hidden="true" />
@@ -701,23 +727,27 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
                       style={{ backgroundColor: colorFor(file.name) }}
                       aria-hidden="true"
                     >
-                      {(extOf(file.name) || 'file').toUpperCase().slice(0, 4)}
+                      {(extOf(file.name) || t('common.label.fileBadge')).toUpperCase().slice(0, 4)}
                     </span>
                     <div className="min-w-0">
-                      <p className="text-[15px] font-semibold leading-snug break-all">{file.name}</p>
+                      <p className="text-[15px] font-semibold leading-snug break-all"><bdi>{file.name}</bdi></p>
                       <p className="text-[11px] text-muted-foreground mt-0.5">
-                        <span className="font-mono">{humanSize(file.size_bytes)}</span> &middot; {file.mime_type} &middot; v{versions[0]?.version_number ?? file.current_version}
+                        {richText(t('common.label.filesizeBytesMiddotFilemimeTypeMiddotVVersionsversionNumberfile'), {
+                          fileSize_bytes: <span className="font-mono"><bdi>{humanSize(file.size_bytes)}</bdi></span>,
+                          fileMime_type: <bdi>{file.mime_type}</bdi>,
+                          versionsVersion_numberFile: <bdi>{versions[0]?.version_number ?? file.current_version}</bdi>,
+                        })}
                       </p>
                     </div>
                   </div>
-                  <div role="tablist" aria-label="Inspector sections" className="flex gap-0.5 mt-4 p-0.5 bg-muted rounded-lg">
+                  <div role="tablist" aria-label={t('common.accessibility.inspectorSections')} className="flex gap-0.5 mt-4 p-0.5 bg-muted rounded-lg">
                     <button
                       role="tab"
                       aria-selected={inspectorTab === 'details'}
                       className={`flex-1 h-7 rounded-md text-xs font-medium transition-colors ${inspectorTab === 'details' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
                       onClick={() => setInspectorTab('details')}
                     >
-                      Details
+                      {t('common.action.details')}
                     </button>
                     <button
                       role="tab"
@@ -725,8 +755,9 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
                       className={`flex-1 h-7 rounded-md text-xs font-medium transition-colors flex items-center justify-center gap-1.5 ${inspectorTab === 'versions' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
                       onClick={() => setInspectorTab('versions')}
                     >
-                      Versions
-                      <span className="font-mono text-[10px] text-muted-foreground">{versions.length}</span>
+                      {richText(t('common.action.versionsVersionscount'), {
+                        versionsCount: <span className="font-mono text-[10px] text-muted-foreground">{localDigits(versions.length)}</span>,
+                      })}
                     </button>
                     <button
                       role="tab"
@@ -734,8 +765,9 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
                       className={`flex-1 h-7 rounded-md text-xs font-medium transition-colors flex items-center justify-center gap-1.5 ${inspectorTab === 'comments' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
                       onClick={() => setInspectorTab('comments')}
                     >
-                      Comments
-                      <span className="font-mono text-[10px] text-muted-foreground">{thread.comments.length}</span>
+                      {richText(t('common.action.commentsCommentscount'), {
+                        commentsCount: <span className="font-mono text-[10px] text-muted-foreground">{localDigits(thread.comments.length)}</span>,
+                      })}
                     </button>
                   </div>
                 </div>
@@ -746,57 +778,58 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
                   {inspectorTab === 'details' ? (
                     <>
                       <dl>
-                        <PropRow label="Size"><span className="font-mono font-normal">{humanSize(file.size_bytes)}</span></PropRow>
-                        <PropRow label="Type">{file.mime_type}</PropRow>
-                        <PropRow label="Region">{regionLabel(file.region)}</PropRow>
-                        <PropRow label="Uploaded by">{file.uploader_name ?? 'Unknown'}</PropRow>
-                        <PropRow label="Created">{timeAgo(file.created_at)}</PropRow>
-                        <PropRow label="Modified">{timeAgo(file.updated_at)}</PropRow>
+                        <PropRow label={t('common.label.size')}><span className="font-mono font-normal"><bdi>{humanSize(file.size_bytes)}</bdi></span></PropRow>
+                        <PropRow label={t('common.label.type')}><bdi>{file.mime_type}</bdi></PropRow>
+                        <PropRow label={t('common.label.region')}>{regionLabel(file.region)}</PropRow>
+                        <PropRow label={t('common.label.uploadedBy')}>{file.uploader_name ?? t('common.label.unknown')}</PropRow>
+                        <PropRow label={t('common.label.created')}>{timeAgo(file.created_at)}</PropRow>
+                        <PropRow label={t('common.label.modified')}>{timeAgo(file.updated_at)}</PropRow>
                         {twinId && (
-                          <PropRow label="Live Photo video">
+                          <PropRow label={t('common.label.livePhotoVideo')}>
                             <span className="inline-flex items-center gap-2">
                               {twinName && <span className="font-mono">{twinName}</span>}
                               {/* The spec's Details row names the twin AND says
                                   how big it is - the Download link beside it is
                                   an ask to spend that many bytes. */}
                               {twinSize && <span className="font-mono text-muted-foreground">{twinSize}</span>}
-                              <a href={`${API_BASE}/api/files/${twinId}/download`} className="text-xs underline">Download</a>
+                              <a href={`${API_BASE}/api/files/${twinId}/download`} className="text-xs underline">{t('common.action.download')}</a>
                             </span>
                           </PropRow>
                         )}
                         {file.origin && (
-                          <PropRow label="Origin">
-                            <span className="inline-flex items-center text-[10px] font-semibold uppercase tracking-[0.07em] text-muted-foreground border rounded-full px-2 py-px">
+                          <PropRow label={t('common.label.origin')}>
+                            <span className="whitespace-nowrap inline-flex items-center text-[10px] font-semibold uppercase tracking-[0.07em] text-muted-foreground border rounded-full px-2 py-px">
                               {originLabel(file.origin)}
                             </span>
                           </PropRow>
                         )}
                         {file.is_synced === 1 && (
-                          <PropRow label="Synced">
+                          <PropRow label={t('common.status.synced')}>
                             <span className="inline-flex items-center gap-1 text-primary font-semibold">
-                              <Check className="size-3.5" /> Yes
+                              <Check className="size-3.5" /> {t('common.label.yes')}
                             </span>
                           </PropRow>
                         )}
                       </dl>
+                      {isImage(file.name) && <PeopleChips wsId={workspaceId} fileId={file.id} />}
                       <div className="mt-5 border rounded-xl p-3.5">
-                        <p className="text-[10px] font-semibold uppercase tracking-[0.07em] text-muted-foreground">Sharing</p>
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.07em] text-muted-foreground">{t('common.label.sharing')}</p>
                         <div className="flex items-center gap-2 text-xs mt-2.5">
                           <Link2 className="size-3.5 text-muted-foreground" />
-                          <span>Share links</span>
-                          <span className="font-mono text-muted-foreground ml-auto">{file.share_count > 0 ? `${file.share_count} active` : 'None'}</span>
+                          <span>{t('common.label.shareLinks')}</span>
+                          <span className="font-mono text-muted-foreground ms-auto">{file.share_count > 0 ? t('common.label.fileshareCountActive', { fileShare_count: file.share_count }) : t('common.label.none')}</span>
                         </div>
                         <div className="flex items-center gap-2 text-xs mt-2.5">
                           <MessageSquare className="size-3.5 text-muted-foreground" />
-                          <span>Comments</span>
-                          <span className="font-mono text-muted-foreground ml-auto">{file.comment_count}</span>
+                          <span>{t('common.label.comments')}</span>
+                          <span className="font-mono text-muted-foreground ms-auto">{localDigits(file.comment_count)}</span>
                         </div>
                         {actions?.onShare && (
                           <button
                             className="mt-3.5 w-full h-8 rounded-lg bg-primary text-primary-foreground text-[13px] font-medium flex items-center justify-center gap-1.5 hover:opacity-90 transition-opacity whitespace-nowrap"
                             onClick={() => actions.onShare!(file)}
                           >
-                            <Share2 className="size-3.5" /> Share
+                            <Share2 className="size-3.5" /> {t('common.action.share')}
                           </button>
                         )}
                       </div>
@@ -808,14 +841,14 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
                     <div className="text-center py-7">
                       <Clock className="size-5 text-muted-foreground/60 mx-auto mb-2.5" />
                       <p className="text-xs text-muted-foreground leading-relaxed">
-                        No version history yet.<br />New uploads with the same name will appear here.
+                        {t('common.description.noVersionHistoryYet')}<br />{t('common.description.newUploadsWithTheSameNameWillAppearHere')}
                       </p>
                     </div>
                   ) : (
                     <>
                       {versions.length > 1 && (
                         <div className="flex items-center justify-end gap-1 mb-2">
-                          <span className="text-[11px] text-muted-foreground mr-0.5">Switch</span>
+                          <span className="text-[11px] text-muted-foreground me-0.5">{t('common.label.switch')}</span>
                           <kbd className="inline-flex items-center justify-center min-w-5 h-5 px-1 border rounded text-[10px] text-muted-foreground bg-muted/50">↑</kbd>
                           <kbd className="inline-flex items-center justify-center min-w-5 h-5 px-1 border rounded text-[10px] text-muted-foreground bg-muted/50">↓</kbd>
                         </div>
@@ -823,34 +856,35 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
                       {versions.map((v) => {
                         const isActive = v.version_number === activeVersion;
                         const isLatest = v.version_number === versions[0].version_number;
-                        const d = new Date(v.created_at * 1000);
-                        const dateStr = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-                        const timeStr = d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+                        const dateStr = formatDateWith(v.created_at, { month: 'short', day: 'numeric', year: 'numeric' }, 'en-US');
+                        const timeStr = formatDateWith(v.created_at, { hour: '2-digit', minute: '2-digit' }, 'en-US');
                         return (
                           <div
                             key={v.version_number}
                             role="button"
                             tabIndex={0}
-                            className={`w-full text-left px-2.5 py-2 rounded-lg mb-0.5 border transition-colors cursor-pointer ${isActive ? 'bg-muted border-border' : 'border-transparent hover:bg-muted/50'}`}
+                            className={`w-full text-start px-2.5 py-2 rounded-lg mb-0.5 border transition-colors cursor-pointer ${isActive ? 'bg-muted border-border' : 'border-transparent hover:bg-muted/50'}`}
                             onClick={() => setActiveVersion(v.version_number)}
                             onKeyDown={(e) => { if (e.key === 'Enter') setActiveVersion(v.version_number); }}
                           >
                             <div className="flex items-center gap-1.5 text-xs font-semibold">
                               v{v.version_number}
                               {isLatest ? (
-                                <span className="text-[9px] font-semibold uppercase tracking-wide text-primary border border-primary/45 rounded-full px-1.5 py-px">Latest</span>
+                                <span className="whitespace-nowrap text-[9px] font-semibold uppercase tracking-wide text-primary border border-primary/45 rounded-full px-1.5 py-px">{t('common.status.latest')}</span>
                               ) : (
                                 <button
-                                  className="ml-auto text-[11px] font-medium text-muted-foreground hover:text-foreground border rounded-md px-2 py-0.5 disabled:opacity-40"
+                                  className="whitespace-nowrap ms-auto text-[11px] font-medium text-muted-foreground hover:text-foreground border rounded-md px-2 py-0.5 disabled:opacity-40"
                                   disabled={restoringVer !== null}
                                   onClick={(e) => { e.stopPropagation(); restoreVersion(v.version_number); }}
                                 >
-                                  Restore
+                                  {t('common.action.restore')}
                                 </button>
                               )}
                             </div>
                             <div className="text-[11px] text-muted-foreground mt-0.5">
-                              <span className="font-mono">{humanSize(v.size_bytes)}</span> &middot; {dateStr} {timeStr}
+                              {richText(t('common.label.vsizeBytesMiddotDatestrTimestr'), {
+                                vSize_bytes: <span className="font-mono">{humanSize(v.size_bytes)}</span>, dateStr, timeStr,
+                              })}
                             </div>
                             {v.uploader_name && (
                               <div className="text-[11px] text-muted-foreground">{v.uploader_name}</div>
@@ -859,7 +893,7 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
                         );
                       })}
                       <p className="text-[11px] text-muted-foreground leading-relaxed mt-3 pt-3 border-t">
-                        Uploading a file with the same name creates a new version.
+                        {t('common.description.uploadingAFileWithTheSameNameCreatesANewVersion')}
                       </p>
                     </>
                   )}
@@ -900,9 +934,9 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
                     className="w-full h-full object-cover"
                     fallback={<img src={fileIconSrc(f.name)} alt="" className="size-6" />}
                   />
-                  {isLiveStill(f) && <LiveBadge size="glyph" className="absolute top-0.5 left-0.5" />}
+                  {isLiveStill(f) && <LiveBadge size="glyph" className="absolute top-0.5 inset-s-0.5" />}
                   {isVideo(f.name) && (
-                    <div className="absolute bottom-0.5 right-0.5 w-3.5 h-3.5 rounded bg-black/50 flex items-center justify-center">
+                    <div className="absolute bottom-0.5 inset-e-0.5 w-3.5 h-3.5 rounded bg-black/50 flex items-center justify-center">
                       <svg viewBox="0 0 8 8" fill="none" width="8" height="8"><path d="M2 1.5l4.5 2.5L2 6.5z" fill="#fff" /></svg>
                     </div>
                   )}
@@ -917,7 +951,7 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
           )}
           <button
             className="size-6.5 rounded-md flex items-center justify-center hover:bg-muted text-muted-foreground shrink-0"
-            aria-label={stripCollapsed ? 'Expand filmstrip' : 'Collapse filmstrip'}
+            aria-label={stripCollapsed ? t('common.action.expandFilmstrip') : t('common.action.collapseFilmstrip')}
             onClick={() => setStripCollapsed((c) => !c)}
           >
             <ChevronDown className={`size-3.5 transition-transform ${stripCollapsed ? 'rotate-180' : ''}`} />
@@ -931,13 +965,13 @@ export function FileViewer({ file, files, workspaceId, onClose, onNavigate, onRe
           <div className="flex items-center justify-between px-4 py-2.5 border-b shrink-0">
             <div className="flex items-center gap-2 text-sm font-semibold">
               <Pencil className="size-3.5 text-muted-foreground" />
-              {file.name}
+              <bdi>{file.name}</bdi>
             </div>
             <button className="size-8 rounded-md flex items-center justify-center hover:bg-muted" onClick={closeEditor}>
               <X className="size-4 text-muted-foreground" />
             </button>
           </div>
-          <div ref={editorContainerRef} className="flex-1 min-h-0" />
+          <div ref={editorContainerRef} dir="ltr" className="flex-1 min-h-0" />
         </div>
       )}
 
@@ -961,19 +995,34 @@ function PropRow({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="flex items-baseline justify-between gap-3 py-1.5 border-b last:border-b-0">
       <dt className="text-xs text-muted-foreground shrink-0">{label}</dt>
-      <dd className="text-xs font-medium text-right truncate">{children}</dd>
+      <dd className="text-xs font-medium text-end truncate">{children}</dd>
     </div>
   );
 }
 
 function FileContent({ file, files, rawUrl, stableRawUrl, downloadUrl, version, workspaceId, pdfToolbarSlots, zoom, onSaved, onNavigate }: { file: FileItem; files: FileItem[]; rawUrl: string; stableRawUrl: string; downloadUrl: string; version?: number; workspaceId: string; pdfToolbarSlots: { left: HTMLElement | null; center: HTMLElement | null }; zoom?: number; onSaved: () => void; onNavigate: (f: FileItem) => void }) {
+  const t = useT();
   const ext = extOf(file.name);
+  // The same question the share page asks (packages/shared/src/files/
+  // preview-formats.ts), so a file opens the same way in both places.
+  const kind = previewKindFor(file.name, file.mime_type);
 
-  if (isVcard(file.name)) {
+  if (kind === 'contact') {
     return <VCardView file={file} rawUrl={rawUrl} workspaceId={workspaceId} onSaved={onSaved} />;
   }
 
-  if (isImage(file.name)) {
+  if (kind === 'calendar') {
+    return (
+      <CalendarView
+        file={file}
+        rawUrl={rawUrl}
+        source={<TextViewer file={file} rawUrl={rawUrl} downloadUrl={downloadUrl} />}
+        oversize={<OversizeFallback file={file} downloadUrl={downloadUrl} />}
+      />
+    );
+  }
+
+  if (kind === 'image') {
     if (isLiveStill(file)) {
       return <LivePhotoStage key={file.live_video_id!} file={file} twinId={file.live_video_id!} version={version} zoom={zoom} />;
     }
@@ -995,29 +1044,32 @@ function FileContent({ file, files, rawUrl, stableRawUrl, downloadUrl, version, 
     );
   }
 
-  if (isVideo(file.name)) {
+  if (kind === 'video') {
     // A Live Photo's twin opened directly (list view, search) is an ordinary
     // video slide with one addition: a way back to the still it belongs to.
     const still = isLiveTwin(file) ? files.find((f) => f.id === file.live_photo_id) : null;
-    // Keyed on the url so a decode failure on one file does not follow the
-    // user to the next one in the strip.
+    // Keyed on the file, not the url: the url's cache token moves when the
+    // versions load, and a remount there restarted playback. The player
+    // re-mounts itself on a version switch (its identity includes it), and the
+    // key still keeps one file's decode failure from following the user to the
+    // next one in the strip.
     return (
-      <div className="relative max-w-full max-h-full flex items-center justify-center">
-        <VideoPlayer key={rawUrl} file={file} rawUrl={rawUrl} downloadUrl={downloadUrl} />
+      <div className="relative h-full w-full max-w-full max-h-full flex items-center justify-center">
+        <VideoPlayer key={file.id} file={file} stableRawUrl={stableRawUrl} version={version} downloadUrl={downloadUrl} />
         {still && (
           <button
             type="button"
-            className="absolute top-3 left-3 z-10 rounded-full bg-black/45 px-2 py-0.5 font-mono text-[10px] text-white hover:bg-black/60"
+            className="absolute top-3 inset-s-3 z-10 rounded-full bg-black/45 px-2 py-0.5 font-mono text-[10px] text-white hover:bg-black/60"
             onClick={() => onNavigate(still)}
           >
-            Live Photo video of {still.name}
+            {t('common.action.livePhotoVideoOfStillName', { stillName: still.name })}
           </button>
         )}
       </div>
     );
   }
 
-  if (isAudio(file.name)) {
+  if (kind === 'audio') {
     return (
       <AudioPlayer
         file={file}
@@ -1030,7 +1082,7 @@ function FileContent({ file, files, rawUrl, stableRawUrl, downloadUrl, version, 
     );
   }
 
-  if (isPdf(file.name)) {
+  if (kind === 'pdf') {
     return (
       <Suspense
         fallback={
@@ -1048,28 +1100,28 @@ function FileContent({ file, files, rawUrl, stableRawUrl, downloadUrl, version, 
 
   // Before the text check: an .epub is a zip so isTextReadable could not claim
   // it, but a .fb2 is XML and would otherwise render as markup instead of a book.
-  if (isBook(file.name)) {
+  if (kind === 'ebook') {
     return <BookViewer file={file} />;
   }
 
   // An archive is browsed, not rendered: the pane lists its entries and points
   // the existing viewers at one entry at a time. After isBook on purpose -
   // .cbz and .epub are zips too, and they already have a better home.
-  if (isArchive(file.name)) {
+  if (kind === 'archive') {
     return <ArchiveViewer key={file.id} file={file} version={version} />;
   }
 
   // Ahead of the text check: these are text with a better shape available
   // (same split the mobile viewer makes). Both fall back to the plain text
   // viewer for degenerate content, so the split costs nothing when wrong.
-  if (ext === 'md' || ext === 'markdown') {
+  if (kind === 'markdown') {
     return <MarkdownViewer file={file} rawUrl={rawUrl} downloadUrl={downloadUrl} />;
   }
-  if (ext === 'csv' || ext === 'tsv') {
+  if (kind === 'table') {
     return <CsvViewer file={file} rawUrl={rawUrl} downloadUrl={downloadUrl} />;
   }
 
-  if (isTextReadable(file.name, file.mime_type)) {
+  if (kind === 'text') {
     return <TextViewer file={file} rawUrl={rawUrl} downloadUrl={downloadUrl} />;
   }
 
@@ -1078,29 +1130,35 @@ function FileContent({ file, files, rawUrl, stableRawUrl, downloadUrl, version, 
   // files, so it's conditional here rather than duplicated in both callers.
   const fallbackCard = (
     <div className="bg-background border rounded-xl p-10 text-center min-w-70">
-      <p className="text-4xl font-bold text-muted-foreground/30 tracking-wider mb-3">{ext.toUpperCase() || 'FILE'}</p>
-      <p className="text-sm text-muted-foreground mb-5 break-all">{file.name}</p>
+      <p className="text-4xl font-bold text-muted-foreground/30 tracking-wider mb-3">{ext.toUpperCase() || t('common.label.fileBadge')}</p>
+      <p className="text-sm text-muted-foreground mb-5 break-all"><bdi>{file.name}</bdi></p>
       {isOfficeFile(file.name) && (
         <a
           href={`/editor/${file.id}`}
           target="_blank"
           rel="noreferrer"
-          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-foreground text-background text-sm font-semibold hover:opacity-90 mr-2"
+          className="whitespace-nowrap inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-foreground text-background text-sm font-semibold hover:opacity-90 me-2"
         >
-          <SquarePen className="size-4" /> Open in editor
+          <SquarePen className="size-4" /> {t('common.label.openInEditor')}
         </a>
       )}
       <a
         href={downloadUrl}
         download
-        className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-foreground text-background text-sm font-semibold hover:opacity-90"
+        className="whitespace-nowrap inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-foreground text-background text-sm font-semibold hover:opacity-90"
       >
-        <Download className="size-4" /> Download
+        <Download className="size-4" /> {t('common.action.download')}
       </a>
     </div>
   );
 
-  if (isOfficeFile(file.name)) {
+  // TIFF, RAW, PSD and iWork: decoded in this browser, only after Open.
+  // Fed the stable URL so a re-render never restarts a download in flight.
+  if (kind === 'decode') {
+    return <DecodedPreview key={file.id} file={file} rawUrl={stableRawUrl} downloadUrl={downloadUrl} zoom={zoom} />;
+  }
+
+  if (kind === 'office') {
     return <OfficePreview file={file} version={version} fallback={fallbackCard} />;
   }
 
@@ -1118,6 +1176,7 @@ function FileContent({ file, files, rawUrl, stableRawUrl, downloadUrl, version, 
  * content, so both paths keep one behavior.
  */
 function UnsupportedPreview({ file, rawUrl, downloadUrl }: { file: FileItem; rawUrl: string; downloadUrl: string }) {
+  const t = useT();
   const [asText, setAsText] = useState(false);
   const ext = extOf(file.name);
 
@@ -1127,23 +1186,23 @@ function UnsupportedPreview({ file, rawUrl, downloadUrl }: { file: FileItem; raw
 
   return (
     <div className="bg-background border rounded-xl p-10 text-center min-w-70 max-w-105">
-      <p className="text-4xl font-bold text-muted-foreground/30 tracking-wider mb-3">{ext.toUpperCase() || 'FILE'}</p>
-      <p className="text-sm text-muted-foreground mb-2 break-all">{file.name}</p>
+      <p className="text-4xl font-bold text-muted-foreground/30 tracking-wider mb-3">{ext.toUpperCase() || t('common.label.fileBadge')}</p>
+      <p className="text-sm text-muted-foreground mb-2 break-all"><bdi>{file.name}</bdi></p>
       <p className="text-xs text-muted-foreground mb-5">
-        Preview isn't available for this file type. You can open it as plain text - binary content will show up garbled.
+        {t('common.description.previewIsnTAvailableForThisFileTypeYouCanOpenIt')}
       </p>
       <button
         onClick={() => setAsText(true)}
-        className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg border text-sm font-semibold hover:bg-muted mr-2"
+        className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg border text-sm font-semibold hover:bg-muted me-2"
       >
-        <FileText className="size-4" /> Open as text
+        <FileText className="size-4" /> {t('common.action.openAsText')}
       </button>
       <a
         href={downloadUrl}
         download
-        className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-foreground text-background text-sm font-semibold hover:opacity-90"
+        className="whitespace-nowrap inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-foreground text-background text-sm font-semibold hover:opacity-90"
       >
-        <Download className="size-4" /> Download
+        <Download className="size-4" /> {t('common.action.download')}
       </a>
     </div>
   );
@@ -1153,6 +1212,7 @@ const TEXT_PREVIEW_MAX = 2 * 1024 * 1024; // 2 MB
 const HIGHLIGHT_MAX = 300 * 1024;         // 300 KB
 
 function TextViewer({ file, rawUrl, downloadUrl, force }: { file: FileItem; rawUrl: string; downloadUrl: string; force?: boolean }) {
+  const t = useT();
   const ext = extOf(file.name);
   const [plain, setPlain] = useState<string | null>(null);
   const [html, setHtml] = useState<string | null>(null);
@@ -1220,17 +1280,17 @@ function TextViewer({ file, rawUrl, downloadUrl, force }: { file: FileItem; rawU
     return <OversizeFallback file={file} downloadUrl={downloadUrl} />;
   }
   if (state === 'error') {
-    return <OversizeFallback file={file} downloadUrl={downloadUrl} note="Failed to load file content." />;
+    return <OversizeFallback file={file} downloadUrl={downloadUrl} note={t('common.error.failedToLoadFileContent')} />;
   }
   if (state === 'binary' && !accepted) {
     return <OversizeFallback file={file} downloadUrl={downloadUrl}
-      note="This file doesn't look like text. You can still open it as plain text - binary content will show up garbled."
+      note={t('common.description.thisFileDoesnTLookLikeTextYouCanStillOpenIt')}
       action={
         <button
           onClick={() => setAccepted(true)}
-          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg border text-sm font-semibold hover:bg-muted mr-2"
+          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg border text-sm font-semibold hover:bg-muted me-2"
         >
-          <FileText className="size-4" /> Open as text
+          <FileText className="size-4" /> {t('common.action.openAsText')}
         </button>
       } />;
   }
@@ -1244,94 +1304,24 @@ function TextViewer({ file, rawUrl, downloadUrl, force }: { file: FileItem; rawU
       <div ref={contentRef} className="flex-1 overflow-auto text-[13px] leading-relaxed [&_pre]:m-0 [&_pre]:!bg-transparent [&_pre]:px-4 [&_pre]:py-4 [&_pre]:whitespace-pre-wrap [&_pre]:break-words">
         {html
           ? <div dangerouslySetInnerHTML={{ __html: html }} />
-          : <pre className="m-0 px-4 py-4 text-[#d4d4d4] font-mono whitespace-pre-wrap break-words">{plain ?? 'Loading\u2026'}</pre>}
+          : <pre className="m-0 px-4 py-4 text-[#d4d4d4] font-mono whitespace-pre-wrap break-words">{plain ?? t('common.status.loading')}</pre>}
       </div>
     </div>
   );
 }
 
 function OversizeFallback({ file, downloadUrl, note, action }: { file: FileItem; downloadUrl: string; note?: string; action?: ReactNode }) {
+  const t = useT();
   const sizeStr = humanSize(file.size_bytes);
   return (
     <div className="bg-background border rounded-xl p-10 text-center min-w-70 max-w-105">
-      <p className="text-4xl font-bold text-muted-foreground/30 tracking-wider mb-3">{extOf(file.name).toUpperCase() || 'FILE'}</p>
+      <p className="text-4xl font-bold text-muted-foreground/30 tracking-wider mb-3">{extOf(file.name).toUpperCase() || t('common.label.fileBadge')}</p>
       <p className="text-sm text-muted-foreground mb-2 break-all">{file.name}</p>
-      <p className="text-xs text-muted-foreground mb-5">{note ?? `File too large to preview inline (${sizeStr}).`}</p>
+      <p className="text-xs text-muted-foreground mb-5">{note ?? t('common.error.fileTooLargeToPreviewInlineSizeStr', { sizeStr })}</p>
       {action}
-      <a href={downloadUrl} download className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-foreground text-background text-sm font-semibold hover:opacity-90">
-        <Download className="size-4" /> Download
+      <a href={downloadUrl} download className="whitespace-nowrap inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-foreground text-background text-sm font-semibold hover:opacity-90">
+        <Download className="size-4" /> {t('common.action.download')}
       </a>
-    </div>
-  );
-}
-
-// ── Video with an honest failure card ─────────────────────
-
-/**
- * The <video> element fails silently: an AVI or WMV - or an MKV whose codec
- * this browser lacks - used to render as a dead black player that never
- * starts, indistinguishable from a slow connection. The mobile viewer
- * routes these to libVLC; a browser cannot bundle one, so the honest offer
- * is the file, a name for the problem, and the player that will open it.
- */
-function VideoPlayer({ file, rawUrl, downloadUrl }: { file: FileItem; rawUrl: string; downloadUrl: string }) {
-  const [failed, setFailed] = useState(false);
-  const ext = extOf(file.name);
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const [duration, setDuration] = useState(0);
-  const { markers, selectComment } = useAnchorMarkers();
-  const videoMarkers = markers.filter((m) => m.ms != null);
-  // Stable until the duration is known (or decoding fails): the functions
-  // read the element, never state, so timeupdate cannot churn registration.
-  const anchorTarget = useMemo<AnchorTarget | null>(() => (duration > 0 && !failed ? {
-    kind: 'time',
-    now: () => Math.round((videoRef.current?.currentTime ?? 0) * 1000),
-    seek: (ms) => { if (videoRef.current) videoRef.current.currentTime = Math.min(duration, Math.max(0, ms / 1000)); },
-    pause: () => videoRef.current?.pause(),
-  } : null), [duration, failed]);
-  useRegisterAnchorTarget(anchorTarget);
-
-  if (failed) {
-    return (
-      <div className="bg-background border rounded-xl p-10 text-center min-w-70">
-        <p className="text-4xl font-bold text-muted-foreground/30 tracking-wider mb-3">{ext.toUpperCase() || 'VIDEO'}</p>
-        <p className="text-sm text-muted-foreground mb-2 break-all">{file.name}</p>
-        <p className="text-xs text-muted-foreground mb-5">
-          This browser can't decode this video. Download it and open it in a player like VLC, which decodes everything.
-        </p>
-        <a href={downloadUrl} download className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-foreground text-background text-sm font-semibold hover:opacity-90">
-          <Download className="size-4" /> Download
-        </a>
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex max-h-full max-w-full flex-col items-stretch">
-      <video
-        ref={videoRef}
-        src={rawUrl}
-        controls
-        autoPlay
-        className="max-h-full max-w-full rounded-md bg-black"
-        onError={() => setFailed(true)}
-        onLoadedMetadata={(e) => setDuration(Number.isFinite(e.currentTarget.duration) ? e.currentTarget.duration : 0)}
-      />
-      {duration > 0 && videoMarkers.length > 0 && (
-        <div data-testid="video-marker-strip" className="relative mt-1 h-1.5 rounded-full bg-muted">
-          {videoMarkers.map((m) => (
-            <button
-              key={m.id}
-              type="button"
-              title={m.excerpt}
-              aria-label={`Comment: ${m.excerpt}`}
-              className="absolute top-1/2 size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary"
-              style={{ left: `${Math.min(1, m.ms! / 1000 / duration) * 100}%`, opacity: m.dim ? 0.45 : 1 }}
-              onClick={() => { if (videoRef.current) videoRef.current.currentTime = Math.min(duration, m.ms! / 1000); selectComment(m.id); }}
-            />
-          ))}
-        </div>
-      )}
     </div>
   );
 }
@@ -1375,12 +1365,13 @@ function useTextBody(file: FileItem, rawUrl: string): { text: string | null; sta
  * back to the highlighted text view, which renders degenerate shapes fine.
  */
 function CsvViewer({ file, rawUrl, downloadUrl }: { file: FileItem; rawUrl: string; downloadUrl: string }) {
+  const t = useT();
   const { text, state } = useTextBody(file, rawUrl);
   const table = useMemo(() => (text == null ? null : parseCsvTable(text)), [text]);
 
   if (state === 'toobig') return <OversizeFallback file={file} downloadUrl={downloadUrl} />;
   if (state === 'binary' || state === 'error') {
-    return <OversizeFallback file={file} downloadUrl={downloadUrl} note={state === 'binary' ? 'This file is not text-previewable.' : 'Failed to load file content.'} />;
+    return <OversizeFallback file={file} downloadUrl={downloadUrl} note={state === 'binary' ? t('common.description.thisFileIsNotTextPreviewable') : t('common.error.failedToLoadFileContent')} />;
   }
   if (state === 'loading') {
     return <div className="w-full h-full flex items-center justify-center"><Loader2 className="size-6 animate-spin text-muted-foreground" /></div>;
@@ -1392,14 +1383,14 @@ function CsvViewer({ file, rawUrl, downloadUrl }: { file: FileItem; rawUrl: stri
     <div className="relative w-full h-full rounded-lg border bg-background overflow-hidden self-stretch flex flex-col">
       <div className="sticky top-0 flex items-baseline gap-3 px-4 py-2 border-b text-xs font-mono text-muted-foreground z-10">
         <span className="uppercase">{extOf(file.name) || 'csv'}</span>
-        <span className="ml-auto">{totalRows} {totalRows === 1 ? 'row' : 'rows'} &times; {table.columns} cols</span>
+        <span className="ms-auto">{t('common.description.totalrowsPluralOneRowOtherRowsTimesTablecolumnsCols', { totalRows, tableColumns: table.columns })}</span>
       </div>
       <div className="flex-1 overflow-auto">
         <table className="w-max min-w-full border-collapse font-mono text-xs">
           <thead className="sticky top-0 bg-muted">
             <tr>
               {table.header.map((cell, c) => (
-                <th key={c} className="text-left font-semibold px-3 py-2 border-b whitespace-nowrap max-w-105 overflow-hidden text-ellipsis">{cell}</th>
+                <th key={c} className="text-start font-semibold px-3 py-2 border-b whitespace-nowrap max-w-105 overflow-hidden text-ellipsis">{cell}</th>
               ))}
             </tr>
           </thead>
@@ -1415,7 +1406,7 @@ function CsvViewer({ file, rawUrl, downloadUrl }: { file: FileItem; rawUrl: stri
         </table>
         {table.truncatedRows > 0 && (
           <p className="px-3 py-2.5 text-xs font-mono text-muted-foreground">
-            + {table.truncatedRows} more {table.truncatedRows === 1 ? 'row' : 'rows'} - download the file for all of it
+            {t('common.description.tabletruncatedrowsMoreTabletruncatedrowsPluralOneRowOtherRowsDownload', { tableTruncatedRows: table.truncatedRows })}
           </p>
         )}
       </div>
@@ -1429,13 +1420,14 @@ function CsvViewer({ file, rawUrl, downloadUrl }: { file: FileItem; rawUrl: stri
  * its syntax are often the same person a minute apart.
  */
 function MarkdownViewer({ file, rawUrl, downloadUrl }: { file: FileItem; rawUrl: string; downloadUrl: string }) {
+  const t = useT();
   const { text, state } = useTextBody(file, rawUrl);
   const [mode, setMode] = useState<'rendered' | 'source'>('rendered');
   const blocks = useMemo(() => (text == null || mode !== 'rendered' ? null : parseMarkdown(text)), [text, mode]);
 
   if (state === 'toobig') return <OversizeFallback file={file} downloadUrl={downloadUrl} />;
   if (state === 'binary' || state === 'error') {
-    return <OversizeFallback file={file} downloadUrl={downloadUrl} note={state === 'binary' ? 'This file is not text-previewable.' : 'Failed to load file content.'} />;
+    return <OversizeFallback file={file} downloadUrl={downloadUrl} note={state === 'binary' ? t('common.description.thisFileIsNotTextPreviewable') : t('common.error.failedToLoadFileContent')} />;
   }
   if (state === 'loading') {
     return <div className="w-full h-full flex items-center justify-center"><Loader2 className="size-6 animate-spin text-muted-foreground" /></div>;
@@ -1444,8 +1436,8 @@ function MarkdownViewer({ file, rawUrl, downloadUrl }: { file: FileItem; rawUrl:
   return (
     <div className="relative w-full h-full rounded-lg border bg-background overflow-hidden self-stretch flex flex-col">
       <div className="sticky top-0 flex items-center gap-3 px-4 py-2 border-b z-10">
-        <span className="text-xs font-mono text-muted-foreground uppercase">Markdown</span>
-        <div role="tablist" aria-label="Markdown view" className="ml-auto flex gap-0.5 p-0.5 bg-muted rounded-lg">
+        <span className="text-xs font-mono text-muted-foreground uppercase">{t('common.label.markdown')}</span>
+        <div role="tablist" aria-label={t('common.accessibility.markdownView')} className="ms-auto flex gap-0.5 p-0.5 bg-muted rounded-lg">
           {(['rendered', 'source'] as const).map((m) => (
             <button
               key={m}
@@ -1454,7 +1446,7 @@ function MarkdownViewer({ file, rawUrl, downloadUrl }: { file: FileItem; rawUrl:
               className={`h-6 px-2.5 rounded-md text-xs font-medium capitalize transition-colors ${mode === m ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
               onClick={() => setMode(m)}
             >
-              {m}
+              {m === 'rendered' ? t('common.label.rendered') : t('common.label.sourceLowercase')}
             </button>
           ))}
         </div>
@@ -1490,7 +1482,7 @@ function MdBlockView({ block }: { block: MdBlock }) {
   }
   if (block.kind === 'quote') {
     return (
-      <blockquote className="mt-3 border-l-2 pl-3 text-sm leading-relaxed text-muted-foreground italic">
+      <blockquote className="mt-3 border-s-2 ps-3 text-sm leading-relaxed text-muted-foreground italic">
         <MdInline tokens={block.inline} />
       </blockquote>
     );
@@ -1498,7 +1490,7 @@ function MdBlockView({ block }: { block: MdBlock }) {
   if (block.kind === 'list') {
     const L = block.ordered ? 'ol' : 'ul';
     return (
-      <L className={`mt-3 pl-5 text-sm leading-relaxed space-y-1 ${block.ordered ? 'list-decimal' : 'list-disc'}`}>
+      <L className={`mt-3 ps-5 text-sm leading-relaxed space-y-1 ${block.ordered ? 'list-decimal' : 'list-disc'}`}>
         {block.items.map((item, i) => <li key={i}><MdInline tokens={item} /></li>)}
       </L>
     );

@@ -9,8 +9,11 @@ import { NotificationBell } from '../notifications/notification-bell';
 import { SetupPill } from '@/components/onboarding/setup-pill';
 import { ProfileMenu } from './profile-menu';
 import { GlobalSearch } from './global-search';
+import { LanguageMenu } from '@/components/language-menu';
+import { useLocale } from '@/lib/i18n';
 
 export function DashboardTopbar() {
+  useLocale(); // the page label below is translated by titleForPath; re-render on a switch
   const location = useLocation();
   const PageIcon = iconForPath(location.pathname);
   const pageLabel = titleForPath(location.pathname);
@@ -24,7 +27,7 @@ export function DashboardTopbar() {
   }, [userId]);
 
   return (
-    <header className="flex h-14 items-center gap-3 border-b px-4 shrink-0">
+    <header className="flex h-14 items-center gap-1.5 sm:gap-3 border-b px-2 sm:px-4 shrink-0">
       <SidebarTrigger />
       <Separator orientation="vertical" className="self-stretch! my-3" />
 
@@ -42,9 +45,11 @@ export function DashboardTopbar() {
       <GlobalSearch />
 
       {/* Right side */}
-      <div className="flex items-center gap-2 ml-auto">
+      <div className="flex shrink-0 items-center gap-1 sm:gap-2 ms-auto">
         {/* Setup progress */}
         <SetupPill />
+
+        <LanguageMenu align="end" />
 
         {/* Notifications */}
         <NotificationBell />

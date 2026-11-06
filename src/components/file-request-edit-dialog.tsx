@@ -1,3 +1,4 @@
+import { formatDateWith } from '@/lib/format-locale';
 import { useState } from 'react';
 import { api } from '@/api/client';
 import { Button } from '@/components/ui/button';
@@ -12,6 +13,7 @@ import {
 } from '@/components/ui/select';
 import { ChevronDown, FolderOpen, Home, Loader2 } from 'lucide-react';
 import { toast } from '@/lib/toast';
+import { useT } from '@/lib/i18n';
 import { FolderPickerDialog } from '@/components/folder-picker-dialog';
 
 export interface EditableFileRequest {
@@ -35,6 +37,7 @@ export function FileRequestEditDialog({ request: r, workspaceId, onClose, onSave
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const t = useT();
   const [title, setTitle] = useState(r.title ?? '');
   const [message, setMessage] = useState(r.message ?? '');
   const [expiry, setExpiry] = useState(r.expires_at ? 'keep' : '0');
@@ -55,13 +58,13 @@ export function FileRequestEditDialog({ request: r, workspaceId, onClose, onSave
   const expiryOptions = [
     ...(r.expires_at ? [{
       value: 'keep',
-      label: `Keep current (${new Date(r.expires_at * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })})`,
+      label: t('common.label.keepCurrentFormatteddate', { formattedDate: formatDateWith(r.expires_at, { month: 'short', day: 'numeric' }, 'en-US') }),
     }] : []),
-    { value: '0', label: 'Never' },
-    { value: '1', label: '1 day' },
-    { value: '7', label: '7 days' },
-    { value: '30', label: '30 days' },
-    { value: '90', label: '90 days' },
+    { value: '0', label: t('common.label.never') },
+    { value: '1', label: t('common.label.oneDay') },
+    { value: '7', label: t('common.label.sevenDays') },
+    { value: '30', label: t('common.label.thirtyDays') },
+    { value: '90', label: t('common.label.ninetyDays') },
   ];
 
   const handleSave = async () => {
@@ -76,7 +79,7 @@ export function FileRequestEditDialog({ request: r, workspaceId, onClose, onSave
     if (removePassword) {
       body.password = '';
     } else if (password.trim()) {
-      if (password.trim().length < 8) { setError('Password must be at least 8 characters.'); return; }
+      if (password.trim().length < 8) { setError(t('file-requests.error.passwordMustBeAtLeastMinCharactersFullStop', { min: '8' })); return; }
       body.password = password.trim();
     }
     if (folderId !== r.folder_id) body.folder_id = folderId;
@@ -94,14 +97,14 @@ export function FileRequestEditDialog({ request: r, workspaceId, onClose, onSave
         method: 'PATCH', body: JSON.stringify(body),
       });
       if (res.ok) {
-        toast.success('Request updated', 'Your changes have been saved.');
+        toast.success(t('common.feedback.requestUpdated'), t('common.feedback.yourChangesHaveBeenSaved'));
         onSaved();
       } else {
-        setError(res.error ?? 'Failed to save');
+        setError(res.error ?? t('common.error.failedToSave'));
         setSaving(false);
       }
     } catch {
-      setError('Network error');
+      setError(t('common.error.networkError'));
       setSaving(false);
     }
   };
@@ -111,39 +114,39 @@ export function FileRequestEditDialog({ request: r, workspaceId, onClose, onSave
       <Dialog open onOpenChange={() => onClose()}>
         <DialogContent className="max-w-md max-h-[85vh] flex flex-col">
           <DialogHeader>
-            <DialogTitle>Edit request</DialogTitle>
+            <DialogTitle>{t('common.heading.editRequest')}</DialogTitle>
           </DialogHeader>
 
           <div className="flex-1 overflow-y-auto space-y-4 -mx-4 px-4">
             <div>
-              <Label className="text-xs font-medium text-muted-foreground mb-1 block">Title <span className="font-normal">(optional)</span></Label>
-              <Input value={title} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setTitle(e.target.value)} placeholder="e.g. Q1 invoices" className="h-8 text-xs" />
+              <Label className="text-xs font-medium text-muted-foreground mb-1 block">{t('common.label.titleOptional')}</Label>
+              <Input value={title} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setTitle(e.target.value)} placeholder={t('common.placeholder.eGQ1Invoices')} className="h-8 text-xs" />
             </div>
 
             <div>
-              <Label className="text-xs font-medium text-muted-foreground mb-1 block">Message <span className="font-normal">(optional)</span></Label>
-              <Textarea value={message} onChange={(e) => setMessage(e.target.value)} placeholder="Please send the signed contracts..." className="h-14 min-h-0 px-3 text-xs md:text-xs resize-y" />
+              <Label className="text-xs font-medium text-muted-foreground mb-1 block">{t('common.label.messageOptional')}</Label>
+              <Textarea value={message} onChange={(e) => setMessage(e.target.value)} placeholder={t('common.placeholder.pleaseSendTheSignedContracts')} className="h-14 min-h-0 px-3 text-xs md:text-xs resize-y" />
             </div>
 
             <div className="flex gap-3">
               <div className="flex-1">
-                <Label className="text-xs font-medium text-muted-foreground mb-1 block">Password</Label>
+                <Label className="text-xs font-medium text-muted-foreground mb-1 block">{t('common.label.password')}</Label>
                 {r.is_password_protected && !removePassword ? (
-                  <Input type="password" value={password} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPassword(e.target.value)} placeholder="Leave blank to keep" className="h-8 text-xs" autoComplete="off" />
+                  <Input type="password" value={password} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPassword(e.target.value)} placeholder={t('common.placeholder.leaveBlankToKeep')} className="h-8 text-xs" autoComplete="off" />
                 ) : !r.is_password_protected ? (
-                  <Input type="password" value={password} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPassword(e.target.value)} placeholder="Min 8 chars (optional)" className="h-8 text-xs" autoComplete="off" />
+                  <Input type="password" value={password} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPassword(e.target.value)} placeholder={t('common.placeholder.min8CharsOptional')} className="h-8 text-xs" autoComplete="off" />
                 ) : (
-                  <div className="h-8 flex items-center text-xs text-muted-foreground italic">Will be removed</div>
+                  <div className="h-8 flex items-center text-xs text-muted-foreground italic">{t('common.label.willBeRemoved')}</div>
                 )}
                 {r.is_password_protected ? (
                   <label className="flex items-center gap-1.5 mt-1.5 text-[11px] text-muted-foreground cursor-pointer">
                     <input type="checkbox" checked={removePassword} onChange={(e) => { setRemovePassword(e.target.checked); if (e.target.checked) setPassword(''); }} className="size-3" />
-                    Remove password
+                    {t('common.label.removePassword')}
                   </label>
                 ) : null}
               </div>
               <div className="flex-1">
-                <Label className="text-xs font-medium text-muted-foreground mb-1 block">Expires</Label>
+                <Label className="text-xs font-medium text-muted-foreground mb-1 block">{t('common.label.expires')}</Label>
                 <Select value={expiry} onValueChange={(v) => setExpiry(v as string)} items={expiryOptions}>
                   <SelectTrigger className="w-full h-8 text-xs">
                     <SelectValue />
@@ -158,21 +161,21 @@ export function FileRequestEditDialog({ request: r, workspaceId, onClose, onSave
             </div>
 
             <div>
-              <Label className="text-xs font-medium text-muted-foreground mb-1 block">Upload destination</Label>
+              <Label className="text-xs font-medium text-muted-foreground mb-1 block">{t('common.label.uploadDestination')}</Label>
               <button
                 type="button"
-                className="w-full h-8 border rounded-md px-2.5 text-xs bg-background flex items-center gap-2 hover:bg-muted/50 text-left"
+                className="w-full h-8 border rounded-md px-2.5 text-xs bg-background flex items-center gap-2 hover:bg-muted/50 text-start"
                 onClick={() => setPickerOpen(true)}
               >
                 {folderId ? (
                   <>
                     <FolderOpen className="size-3 text-muted-foreground shrink-0" />
-                    <span className="flex-1 truncate">{folderName || 'Selected folder'}</span>
+                    <span className="flex-1 truncate">{folderName || t('common.action.selectedFolder')}</span>
                   </>
                 ) : (
                   <>
                     <Home className="size-3 text-muted-foreground shrink-0" />
-                    <span className="flex-1 truncate">Root (workspace top level)</span>
+                    <span className="flex-1 truncate">{t('common.action.rootWorkspaceTopLevel')}</span>
                   </>
                 )}
                 <ChevronDown className="size-3 text-muted-foreground shrink-0" />
@@ -181,36 +184,36 @@ export function FileRequestEditDialog({ request: r, workspaceId, onClose, onSave
 
             <div>
               <button className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground" onClick={() => setShowAdvanced(!showAdvanced)}>
-                <ChevronDown className={`size-3 transition-transform ${showAdvanced ? 'rotate-180' : ''}`} /> Advanced options
+                <ChevronDown className={`size-3 transition-transform ${showAdvanced ? 'rotate-180' : ''}`} /> {t('common.action.advancedOptions')}
               </button>
               {showAdvanced && (
                 <div className="mt-2 space-y-3">
                   <div>
-                    <Label className="text-xs font-medium text-muted-foreground mb-1 block">Allowed extensions</Label>
-                    <Input value={allowedExts} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setAllowedExts(e.target.value)} placeholder=".pdf, .docx, .jpg" className="h-8 text-xs" />
+                    <Label className="text-xs font-medium text-muted-foreground mb-1 block">{t('common.label.allowedExtensions')}</Label>
+                    <Input value={allowedExts} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setAllowedExts(e.target.value)} placeholder={t('common.placeholder.pdfDocxJpg')} className="h-8 text-xs" />
                   </div>
                   <div className="flex gap-3">
                     <div className="flex-1">
-                      <Label className="text-xs font-medium text-muted-foreground mb-1 block">Max file size (MB)</Label>
-                      <Input type="number" value={maxSizeMb} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setMaxSizeMb(e.target.value)} placeholder="No limit" className="h-8 text-xs" />
+                      <Label className="text-xs font-medium text-muted-foreground mb-1 block">{t('common.label.maxFileSizeMb')}</Label>
+                      <Input type="number" value={maxSizeMb} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setMaxSizeMb(e.target.value)} placeholder={t('common.placeholder.noLimit')} className="h-8 text-xs" />
                     </div>
                     <div className="flex-1">
-                      <Label className="text-xs font-medium text-muted-foreground mb-1 block">Max files</Label>
-                      <Input type="number" value={maxFiles} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setMaxFiles(e.target.value)} placeholder="Unlimited" className="h-8 text-xs" />
+                      <Label className="text-xs font-medium text-muted-foreground mb-1 block">{t('common.label.maxFiles')}</Label>
+                      <Input type="number" value={maxFiles} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setMaxFiles(e.target.value)} placeholder={t('common.placeholder.unlimited')} className="h-8 text-xs" />
                     </div>
                   </div>
                 </div>
               )}
             </div>
 
-            {error && <p className="text-xs text-destructive bg-destructive/10 border border-destructive/20 rounded-md px-3 py-2">{error}</p>}
+            {error && <p dir="auto" className="text-xs text-destructive bg-destructive/10 border border-destructive/20 rounded-md px-3 py-2">{error}</p>}
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={onClose}>Cancel</Button>
+            <Button variant="outline" onClick={onClose}>{t('common.cancel')}</Button>
             <Button onClick={handleSave} disabled={saving}>
-              {saving ? <Loader2 className="size-4 animate-spin mr-1.5" /> : null}
-              {saving ? 'Saving...' : 'Save changes'}
+              {saving ? <Loader2 className="size-4 animate-spin me-1.5" /> : null}
+              {saving ? t('common.action.saving') : t('common.action.saveChanges')}
             </Button>
           </DialogFooter>
         </DialogContent>

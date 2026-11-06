@@ -1,13 +1,38 @@
-import { Info, Shield, Lock, Users, AlertTriangle, type LucideIcon } from 'lucide-react';
+import { Info, Shield, Lock, Sparkles, Users, AlertTriangle, type LucideIcon } from 'lucide-react';
+import { t } from '@/lib/i18n';
+import type { MessageKey } from '@/i18n/keys';
 
-export type SettingsSectionId = 'info' | 'limits' | 'security' | 'roles' | 'danger';
+export type SettingsSectionId = 'info' | 'limits' | 'security' | 'ai' | 'roles' | 'danger';
 
-export const SETTINGS_SECTIONS: readonly { id: SettingsSectionId; label: string; icon: LucideIcon; group: string; danger?: boolean }[] = [
-  { id: 'info', label: 'Workspace info', icon: Info, group: 'General' },
-  { id: 'limits', label: 'Hard limits', icon: Shield, group: 'General' },
-  { id: 'security', label: 'Security', icon: Lock, group: 'General' },
-  { id: 'roles', label: 'Roles & permissions', icon: Users, group: 'Members' },
-  { id: 'danger', label: 'Danger zone', icon: AlertTriangle, group: 'Danger', danger: true },
+interface SettingsSection {
+  id: SettingsSectionId;
+  /** Catalog keys. The table holds keys; `label` and `group` translate when read. */
+  labelKey: MessageKey;
+  groupKey: MessageKey;
+  readonly label: string;
+  /** Stable English group id, matched by settings.tsx. Show `groupKey` translated instead. */
+  group: 'General' | 'Members' | 'Danger';
+  icon: LucideIcon;
+  danger?: boolean;
+}
+
+function section(
+  id: SettingsSectionId, labelKey: MessageKey, icon: LucideIcon, group: SettingsSection['group'], groupKey: MessageKey, danger?: boolean,
+): SettingsSection {
+  return {
+    id, labelKey, group, groupKey, icon,
+    get label() { return t(labelKey); },
+    ...(danger ? { danger } : {}),
+  };
+}
+
+export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
+  section('info', 'settings.label.workspaceInfo', Info, 'General', 'settings.label.general'),
+  section('limits', 'settings.label.hardLimits', Shield, 'General', 'settings.label.general'),
+  section('security', 'common.label.security', Lock, 'General', 'settings.label.general'),
+  section('ai', 'settings.label.aiSearch', Sparkles, 'General', 'settings.label.general'),
+  section('roles', 'settings.label.rolesPermissions', Users, 'Members', 'common.label.members'),
+  section('danger', 'settings.label.dangerZone', AlertTriangle, 'Danger', 'settings.label.danger', true),
 ];
 
 /** `#section-security` -> 'security'; anything else -> null. Search links land here. */

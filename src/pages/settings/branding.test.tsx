@@ -43,6 +43,9 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+/** The sample note branding-share-preview.tsx draws above the stage. */
+const SAMPLE_NOTE_TITLE = 'Q4 numbers for Thursday';
+
 const flush = async () => { await act(async () => { await Promise.resolve(); await Promise.resolve(); }); };
 
 async function mount(node: React.ReactNode) {
@@ -420,7 +423,7 @@ describe('full-size view', () => {
     expect(replica()).toBeTruthy();
   });
 
-  it('shows the draft name on the share page and hides Save to dosya when asked', async () => {
+  it('shows the draft name on the share page and hides the Save to dosya button when asked', async () => {
     await page();
     await type(byValue('Kaya Studio')!, 'Northbank');
     await openView();
@@ -430,14 +433,18 @@ describe('full-size view', () => {
     expect(r.textContent).toContain('Q4-report.pdf');
     expect(r.textContent).toContain('2.4 MB');
     expect(r.textContent).toContain('Shared by Firat');
-    expect(r.textContent).toContain('dosya hosts this file and does not review shared content.');
+    expect(r.textContent).toContain('Hosted by dosya');
+    expect(r.textContent).not.toContain('No account, no tracking');
+    expect(r.textContent).toContain('Privacy');
+    expect(r.textContent).toContain('Report abuse');
+    expect(r.textContent).toContain(SAMPLE_NOTE_TITLE);
     expect(r.textContent).not.toContain('Save to dosya');
     // The brand colour, through a style prop, on the Download button.
     const download = [...r.querySelectorAll<HTMLElement>('[data-role="download"]')][0];
     expect(download.style.backgroundColor).toBe('rgb(180, 71, 46)');
   });
 
-  it('keeps Save to dosya when hide_save_cta is off', async () => {
+  it('keeps the Save to dosya button when hide_save_cta is off', async () => {
     apiMock.mockResolvedValue({ ...PAID, branding: { ...PAID.branding, hide_save_cta: false } });
     await page();
     await openView();
@@ -451,6 +458,7 @@ describe('full-size view', () => {
     const r = replica()!;
     expect(r.textContent).toContain('dosya.dev');
     expect(r.textContent).toContain('Save to dosya');
+    expect(r.textContent).toContain('Hosted by dosya.dev. No account, no tracking.');
     expect(r.innerHTML).not.toContain('180, 71, 46');
   });
 
@@ -477,6 +485,7 @@ describe('full-size view', () => {
     expect(r.textContent).not.toContain('Q4-report.pdf');
     expect(r.textContent).not.toContain('2.4 MB');
     expect(r.textContent).not.toContain('Shared by Firat');
+    expect(r.textContent).not.toContain(SAMPLE_NOTE_TITLE);
     expect(r.textContent).toContain('Kaya Studio');
     expect(r.textContent).toContain('Enter the password Kaya Studio shared with you.');
   });

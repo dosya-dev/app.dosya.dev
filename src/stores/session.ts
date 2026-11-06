@@ -27,6 +27,10 @@ export interface SessionUser {
   plan?: { id: string; name: string } | null;
   /** Family plan role (API 0401). Older API builds omit it. */
   family?: { role: 'none' | 'payer' | 'member' } | null;
+  /** Feature gates the API turns on per account. Older API builds omit it. */
+  features?: { support_chat: boolean };
+  /** False for an Apple or Google sign-in account that never set a password. */
+  has_password?: boolean;
 }
 
 export interface SessionWorkspace {

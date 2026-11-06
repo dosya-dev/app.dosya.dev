@@ -1,3 +1,5 @@
+import { fixedNumber, sizeUnits } from '@/lib/format-locale';
+import { t } from '@/lib/i18n';
 /**
  * Which desktop build a visitor should be offered, and what is true about it.
  *
@@ -40,10 +42,11 @@ export function isHandheld(userAgent: string): boolean {
 	return /android|iphone|ipad|ipod|mobile/.test(userAgent.toLowerCase());
 }
 
-export const OS_LABEL: Record<DesktopOs, string> = {
-	windows: 'Windows',
+/** Display names. The table holds catalog keys (macOS has no entry: it is the same in every language) and each name is translated when read. */
+export const OS_LABEL: Readonly<Record<DesktopOs, string>> = {
+	get windows() { return t('common.label.windows'); },
 	mac: 'macOS',
-	linux: 'Linux',
+	get linux() { return t('common.label.linux'); },
 };
 
 /** The shape of GET /api/desktop/info that this page reads. */
@@ -70,8 +73,10 @@ export interface DesktopInfo {
  */
 export function macArchitecture(info: DesktopInfo | null): string {
 	const name = info?.builds?.mac?.fileName;
-	if (!name) return 'Apple Silicon';
-	return /arm64/i.test(name) ? 'Apple Silicon' : 'Apple Silicon and Intel';
+	if (!name) return t('integrations-desktop.label.appleSilicon');
+	return /arm64/i.test(name)
+		? t('integrations-desktop.label.appleSilicon')
+		: t('integrations-desktop.label.appleSiliconAndIntel');
 }
 
 /**
@@ -93,5 +98,5 @@ export function snapInstallCommand(info: DesktopInfo | null): string | null {
 export function buildSize(bytes: number | undefined): string | null {
 	if (!bytes || bytes <= 0) return null;
 	const mb = bytes / 1_000_000;
-	return mb >= 1000 ? `${(mb / 1000).toFixed(1)} GB` : `${Math.round(mb)} MB`;
+	return mb >= 1000 ? `${fixedNumber(mb / 1000, 1)} ${sizeUnits().GB}` : `${fixedNumber(Math.round(mb), 0)} ${sizeUnits().MB}`;
 }

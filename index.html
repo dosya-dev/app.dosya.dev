@@ -36,6 +36,17 @@
         animation: splash-breathe 1.2s cubic-bezier(0.45, 0, 0.55, 1) infinite; }
       html.dark #splash .seal { fill: #22c55e; }
       @keyframes splash-breathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.3); } }
+      /* Added by splash-escape.js only if the app never mounts. Positioned under
+         the mark so the seal does not move. */
+      #splash { position: relative; }
+      #splash .splash-escape { position: absolute; top: calc(50% + 44px); left: 0; right: 0;
+        display: flex; flex-direction: column; align-items: center; gap: 12px;
+        font: 14px/1.4 system-ui, -apple-system, sans-serif; }
+      #splash .splash-escape p { margin: 0; opacity: 0.6; }
+      #splash .splash-escape button { font: inherit; font-size: 13px; padding: 5px 12px;
+        border-radius: 8px; border: 1px solid rgba(127,127,127,0.35); background: transparent;
+        color: inherit; cursor: pointer; }
+      #splash .splash-escape button:hover { background: rgba(127,127,127,0.12); }
     </style>
   </head>
   <body>
@@ -45,6 +56,7 @@
         <noscript>dosya.dev needs JavaScript enabled.</noscript>
       </div>
     </div>
+    <script src="/splash-escape.js"></script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

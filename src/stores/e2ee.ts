@@ -14,17 +14,25 @@ import {
   grantAccess as engineGrantAccess,
   revokeAccess as engineRevokeAccess,
   listMembers as engineListMembers,
+  createHighWaterPersistence,
   type ApiClient,
   type Session,
   type Workspace,
   type FileDeps,
 } from '@dosya-dev/e2ee-client';
-import { api as restApi, apiErrorMessage } from '@/api/client';
+import { api as restApi, apiErrorMessage, ApiError } from '@/api/client';
 import { buildE2eeClient, normalizeRecoveryKey } from '@/lib/e2ee/client';
 import { saveBytes } from '@/lib/e2ee/save';
 import { toast } from '@/lib/toast';
+import { t } from '@/lib/i18n';
+import { translateExternal } from '@/lib/external-text';
+import type { MessageKey } from '@/i18n/keys';
+import enMessages from '@/i18n/messages/en.json';
 import { openReport } from '@/stores/report-problem';
 import { useWorkspace } from '@/stores/workspace';
+import { useSession } from '@/stores/session';
+import { wipePersonasDevice } from '@/lib/personas-device/wipe';
+import { stopPersonas } from '@/lib/personas-device/teardown';
 
 export type E2eeStatus = 'locked' | 'unlocking' | 'unlocked';
 export type EncryptedEntry = { id: string; name: string; kind: 'file' | 'folder' };
@@ -64,6 +72,13 @@ export type WorkspaceMember = { userId: string; email: string; ed25519Pub: strin
  * below - never a raw KEK, private key, recovery key, or Session/Workspace
  * value.
  */
+/**
+ * What confirms a Vault destroy: the account password (a string), or the code
+ * mailed by POST /api/e2ee/destroy-request. The code is the only proof an
+ * Apple or Google sign-in account has - it was never given a password.
+ */
+export type DestroyProof = string | { code: string };
+
 export interface E2eeEngine {
   hasIdentity(): Promise<boolean>;
   /** first-time setup; returns the recovery key as hex to show ONCE. */
@@ -82,8 +97,15 @@ export interface E2eeEngine {
    * that with the user first. `totpCode` is required when the account has
    * 2FA (the server answers 400 `2fa_required` otherwise).
    */
-  destroyIdentity(password: string, totpCode?: string): Promise<void>;
+  destroyIdentity(proof: DestroyProof, totpCode?: string): Promise<void>;
   lock(): void;
+  /**
+   * The unlocked identity's X25519 keys (copies), for on-device Personas to
+   * open or seal the user's personas key (lib/personas-device/engine-host.ts
+   * unlockPersonas). Null while locked. Optional so test engines need not
+   * implement it.
+   */
+  personasIdentity?(): { x25519Pub: Uint8Array; x25519Priv: Uint8Array } | null;
   /**
    * `name` is sealed INTO the Space (its root index), not merely stored in
    * this browser, so every other device reads the same label.
@@ -175,6 +197,26 @@ function toHex(bytes: Uint8Array): string {
 }
 
 /**
+ * Where each Space's rollback high-water mark lives between sessions. Not a
+ * secret (a version number and a public root hash), so localStorage is fine;
+ * what matters is that it outlives the in-memory `Workspace`, so a reload or a
+ * Space switch cannot be served a pre-revocation head unnoticed. Storage that
+ * throws (private mode, quota) degrades to trust-on-first-use, as before.
+ */
+const highWaterStore = {
+  get(key: string): string | null {
+    try {
+      return localStorage.getItem(key);
+    } catch {
+      return null;
+    }
+  },
+  set(key: string, value: string): void {
+    localStorage.setItem(key, value);
+  },
+};
+
+/**
  * The real engine: wraps `buildE2eeClient()` and holds the in-memory
  * `Session`/`Workspace` in closure - neither is ever exposed to callers.
  */
@@ -182,6 +224,12 @@ export function defaultEngine(): E2eeEngine {
   const { api, transport } = buildE2eeClient();
   let session: Session | null = null;
   let ws: Workspace | null = null;
+  const highWater = createHighWaterPersistence(highWaterStore);
+
+  /** The persisted mark to check `id`'s head against, and the hook that keeps it current. */
+  async function markOpts(s: Session, id: string) {
+    return { highWater: await highWater.load(s, id), onAdvance: highWater.onAdvance(s, id) };
+  }
 
   /** Builds a fresh `FileDeps` for a single call, after asserting we're unlocked with an open workspace. */
   function fileDeps(): FileDeps {
@@ -213,8 +261,9 @@ export function defaultEngine(): E2eeEngine {
       session = await recover(api, normalizeRecoveryKey(recoveryKey));
     },
 
-    async destroyIdentity(password, totpCode) {
-      const body: { password: string; totp_code?: string } = { password };
+    async destroyIdentity(proof, totpCode) {
+      const body: { password?: string; code?: string; totp_code?: string } =
+        typeof proof === 'string' ? { password: proof } : { code: proof.code };
       if (totpCode) body.totp_code = totpCode;
       // `restApi` is the cookie-authed REST helper; `api` in this closure is
       // the e2ee ApiClient, which has no method for this route.
@@ -231,9 +280,18 @@ export function defaultEngine(): E2eeEngine {
       ws = null;
     },
 
+    personasIdentity() {
+      if (!session) return null;
+      const { publicKey, privateKey } = session.identity.x25519;
+      return { x25519Pub: publicKey.slice(), x25519Priv: privateKey.slice() };
+    },
+
     async createWorkspace(id, name) {
       if (!session) throw new Error('e2ee: locked');
-      ws = await engineCreateWorkspace(api, session, id, name === undefined ? undefined : { name });
+      ws = await engineCreateWorkspace(api, session, id, {
+        ...(name === undefined ? {} : { name }),
+        onAdvance: highWater.onAdvance(session, id),
+      });
     },
 
     async readWorkspaceName() {
@@ -247,7 +305,7 @@ export function defaultEngine(): E2eeEngine {
       // must not close whatever Space the person is looking at. selfFounded
       // stays false (TOFU) exactly as `openWorkspace`'s doc comment requires
       // for a Space this client did not itself create.
-      const other = await engineOpenWorkspace(api, session, id, { selfFounded: false });
+      const other = await engineOpenWorkspace(api, session, id, { selfFounded: false, ...(await markOpts(session, id)) });
       return engineReadWorkspaceName(api, session, other);
     },
 
@@ -268,7 +326,9 @@ export function defaultEngine(): E2eeEngine {
       // server-derived value is a forge vector. The store (never this
       // facade) decides the value: true for a workspace this account
       // created, false for one merely discovered/shared (TOFU).
-      ws = await engineOpenWorkspace(api, session, id, { selfFounded });
+      // The persisted high-water mark is what makes rollback detection
+      // survive this fresh handle - see `Workspace.floor` in workspace.ts.
+      ws = await engineOpenWorkspace(api, session, id, { selfFounded, ...(await markOpts(session, id)) });
     },
 
     async listFolder(folderId) {
@@ -313,7 +373,17 @@ export function defaultEngine(): E2eeEngine {
 
 interface E2eeState {
   status: E2eeStatus;
+  /**
+   * The failure as English text, or text from the encryption library / server
+   * (library output is shown as is). Kept for callers that read the sentence.
+   */
   error: string | null;
+  /**
+   * The message key behind `error` when the sentence is ours. Screens show
+   * `errorText(state)` so it follows the chosen language; the store itself
+   * never holds a translated sentence.
+   */
+  errorKey: MessageKey | null;
   engine: E2eeEngine;
   hasIdentity: boolean | null;
   workspaces: KnownWorkspace[];
@@ -337,7 +407,7 @@ interface E2eeState {
    * on success; on refusal `error` carries the server's sentence (wrong
    * password, missing 2FA code) and the identity is untouched.
    */
-  destroyIdentity(password: string, totpCode?: string): Promise<boolean>;
+  destroyIdentity(proof: DestroyProof, totpCode?: string): Promise<boolean>;
   lock(): void;
   createWorkspace(name: string): Promise<void>;
   openWorkspace(id: string): Promise<void>;
@@ -397,8 +467,58 @@ function isScopeRequired(e: unknown): boolean {
   return e instanceof Error && /\(412\)/.test(e.message);
 }
 
-function errorMessage(e: unknown, fallback: string): string {
-  return e instanceof Error && e.message ? e.message : fallback;
+const EN = enMessages as Record<string, string>;
+
+/** The English text of one of our keys (the `error` field's text). */
+const english = (key: MessageKey): string => EN[key];
+
+type Failure = { error: string; errorKey: MessageKey | null };
+
+/** A failure that is one of our own sentences. */
+const keyed = (key: MessageKey): Failure => ({ error: english(key), errorKey: key });
+
+/**
+ * The engine's own developer-worded errors, which reach `error` when a call is
+ * made in the wrong state. Matched exactly; anything else is library output.
+ */
+const INTERNAL_ERRORS: Record<string, MessageKey> = {
+  'e2ee: locked': 'vault.error.e2eeLocked',
+  'e2ee: no active workspace': 'vault.error.e2eeNoActiveWorkspace',
+  'e2ee: recovery unlock unavailable in this build': 'vault.error.e2eeRecoveryUnlockUnavailableInThisBuild',
+};
+
+/**
+ * What a thrown error becomes: our own key for the fallback and the engine's
+ * internal states, or the text the library / server sent, kept as the value.
+ */
+function failure(e: unknown, fallback: MessageKey): Failure {
+  if (e instanceof Error && e.message) {
+    const internal = INTERNAL_ERRORS[e.message];
+    if (internal) return keyed(internal);
+    return { error: e.message, errorKey: null };
+  }
+  return keyed(fallback);
+}
+
+/**
+ * The error to show, in the chosen language. The key only counts while
+ * `error` still holds its English text, so an error set directly as text is
+ * shown as it is.
+ */
+export function errorText(s: { error: string | null; errorKey: MessageKey | null }, translate: (k: MessageKey) => string = t): string | null {
+  if (s.error === null) return null;
+  if (s.errorKey !== null && s.error === english(s.errorKey)) return translate(s.errorKey);
+  // Text from @dosya-dev/e2ee-client (or the server) is shown as sent, except
+  // the client's own fixed sentences, which the strict matcher recognises.
+  return translateExternal(s.error, 'error');
+}
+
+/** A Space's name as shown: a placeholder name (not yet read from the Space) follows the language. */
+export function spaceLabel(w: Pick<KnownWorkspace, 'name' | 'stub' | 'shared'>, translate: (k: MessageKey) => string = t): string {
+  if (w.stub !== true) return w.name;
+  if (w.name === 'Shared Space') return translate('vault.status.sharedSpace');
+  if (w.name === 'Space') return translate('common.label.space');
+  return w.name;
 }
 
 export const useE2ee = create<E2eeState>()(
@@ -406,6 +526,7 @@ export const useE2ee = create<E2eeState>()(
     (set, get) => ({
       status: 'locked',
       error: null,
+      errorKey: null,
       engine: defaultEngine(),
       hasIdentity: null,
       workspaces: [],
@@ -419,7 +540,7 @@ export const useE2ee = create<E2eeState>()(
       async checkIdentity() {
         try {
           const hasIdentity = await get().engine.hasIdentity();
-          set({ hasIdentity, error: null });
+          set({ hasIdentity, error: null, errorKey: null });
         } catch (e) {
           // We genuinely don't know whether an identity exists - do NOT set
           // `false` here. That would route a transient network blip into the
@@ -427,12 +548,12 @@ export const useE2ee = create<E2eeState>()(
           // identity keys, silently orphaning any real encrypted workspaces.
           // Leave `hasIdentity` as `null` (unknown) and surface `error` so the
           // gate shows a retry banner instead of Setup.
-          set({ hasIdentity: null, error: errorMessage(e, 'Could not check encryption status.') });
+          set({ hasIdentity: null, ...failure(e, 'vault.error.couldNotCheckEncryptionStatus') });
         }
       },
 
       async setup(passphrase) {
-        set({ busy: true, error: null });
+        set({ busy: true, error: null, errorKey: null });
         try {
           const { recoveryKeyHex } = await get().engine.setup(passphrase);
           set({
@@ -441,17 +562,18 @@ export const useE2ee = create<E2eeState>()(
             recoveryKeyOnce: recoveryKeyHex,
             busy: false,
             error: null,
+            errorKey: null,
           });
         } catch (e) {
-          set({ busy: false, error: errorMessage(e, 'Could not set up encryption.') });
+          set({ busy: false, ...failure(e, 'vault.error.couldNotSetUpEncryption') });
         }
       },
 
       async unlock(passphrase) {
-        set({ status: 'unlocking', error: null, busy: true });
+        set({ status: 'unlocking', error: null, errorKey: null, busy: true });
         try {
           await get().engine.unlock(passphrase);
-          set({ status: 'unlocked', hasIdentity: true, busy: false, error: null });
+          set({ status: 'unlocked', hasIdentity: true, busy: false, error: null, errorKey: null });
         } catch {
           // The engine throws one opaque error for every failure mode (wrong
           // passphrase, no identity, corrupt record) - surface a single
@@ -459,19 +581,19 @@ export const useE2ee = create<E2eeState>()(
           set({
             status: 'locked',
             busy: false,
-            error: 'Incorrect passphrase or no identity found.',
+            ...keyed('vault.error.incorrectPassphraseOrNoIdentityFound'),
           });
         }
       },
 
       async unlockWithRecoveryKey(recoveryKey) {
-        set({ status: 'unlocking', error: null, busy: true });
+        set({ status: 'unlocking', error: null, errorKey: null, busy: true });
         try {
           // The spacing and dashes belong to however the key was pasted, not
           // to the key - normalised once here, at the boundary every caller
           // (the unlock gate today) goes through.
           await get().engine.unlockWithRecoveryKey(normalizeRecoveryKey(recoveryKey));
-          set({ status: 'unlocked', hasIdentity: true, busy: false, error: null });
+          set({ status: 'unlocked', hasIdentity: true, busy: false, error: null, errorKey: null });
         } catch (e) {
           // Same opacity rule as `unlock`: one generic sentence, never the
           // engine's own text - except when the build has no recovery path at
@@ -480,17 +602,23 @@ export const useE2ee = create<E2eeState>()(
           set({
             status: 'locked',
             busy: false,
-            error: unavailable
-              ? 'Recovery key unlock is not available in this version yet. Please try again after the next update.'
-              : 'That recovery key did not unlock your Vault.',
+            ...keyed(
+              unavailable
+                ? 'vault.error.recoveryKeyUnlockIsNotAvailableInThisVersion'
+                : 'vault.description.thatRecoveryKeyDidNotUnlockYourVault',
+            ),
           });
         }
       },
 
-      async destroyIdentity(password, totpCode) {
-        set({ busy: true, error: null });
+      async destroyIdentity(proof, totpCode) {
+        set({ busy: true, error: null, errorKey: null });
         try {
-          await get().engine.destroyIdentity(password, totpCode);
+          await get().engine.destroyIdentity(proof, totpCode);
+          // The personas key was sealed to the identity that is gone: drop the
+          // copy cached on this device too (never throws).
+          stopPersonas(); // so nothing running re-persists the key
+          await wipePersonasDevice(useSession.getState().user?.id ?? null);
           // Everything the old identity described is gone with it: the
           // persisted Spaces list would otherwise point at grants that no
           // longer exist. hasIdentity=false routes the gate to Setup.
@@ -504,21 +632,26 @@ export const useE2ee = create<E2eeState>()(
             recoveryKeyOnce: null,
             busy: false,
             error: null,
+            errorKey: null,
           });
           return true;
         } catch (e) {
-          set({ busy: false, error: apiErrorMessage(e, errorMessage(e, 'Could not destroy the Vault.')) });
+          set({
+            busy: false,
+            // The server's sentence (wrong password, missing 2FA code) is shown as sent.
+            ...(e instanceof ApiError ? { error: apiErrorMessage(e), errorKey: null } : failure(e, 'vault.error.couldNotDestroyTheVault')),
+          });
           return false;
         }
       },
 
       lock() {
         get().engine.lock();
-        set({ status: 'locked', entries: [], activeWorkspaceId: null, members: [], error: null });
+        set({ status: 'locked', entries: [], activeWorkspaceId: null, members: [], error: null, errorKey: null });
       },
 
       async createWorkspace(name) {
-        set({ busy: true, error: null });
+        set({ busy: true, error: null, errorKey: null });
         const gw = useWorkspace.getState().activeId;
         const id = crypto.randomUUID();
         try {
@@ -537,12 +670,12 @@ export const useE2ee = create<E2eeState>()(
             busy: false,
           }));
         } catch (e) {
-          set({ busy: false, error: errorMessage(e, 'Could not create Space.') });
+          set({ busy: false, ...failure(e, 'vault.error.couldNotCreateSpace') });
         }
       },
 
       async openWorkspace(id) {
-        set({ busy: true, error: null });
+        set({ busy: true, error: null, errorKey: null });
         try {
           // SECURITY: `selfFounded` comes ONLY from our own persisted
           // `workspaces` list (client-authored - created via createWorkspace,
@@ -555,7 +688,7 @@ export const useE2ee = create<E2eeState>()(
           set({ activeWorkspaceId: id, members: [], busy: false });
           void get().reconcileWorkspaceName(id);
         } catch (e) {
-          set({ busy: false, error: errorMessage(e, 'Could not open Space.') });
+          set({ busy: false, ...failure(e, 'vault.error.couldNotOpenSpace') });
         }
       },
 
@@ -612,7 +745,7 @@ export const useE2ee = create<E2eeState>()(
       },
 
       async renameWorkspace(id, name) {
-        set({ busy: true, error: null });
+        set({ busy: true, error: null, errorKey: null });
         try {
           if (get().activeWorkspaceId !== id) await get().openWorkspace(id);
           await get().engine.renameWorkspace(name);
@@ -621,7 +754,7 @@ export const useE2ee = create<E2eeState>()(
             busy: false,
           }));
         } catch (e) {
-          set({ busy: false, error: errorMessage(e, 'Could not rename Space.') });
+          set({ busy: false, ...failure(e, 'vault.error.couldNotRenameSpace') });
         }
       },
 
@@ -656,7 +789,7 @@ export const useE2ee = create<E2eeState>()(
           // The list is already on screen; the labels arrive behind it.
           void get().resolveSpaceNames();
         } catch (e) {
-          set({ error: errorMessage(e, 'Could not check for shared Spaces.') });
+          set({ ...failure(e, 'vault.error.couldNotCheckForSharedSpaces') });
         }
       },
 
@@ -672,17 +805,17 @@ export const useE2ee = create<E2eeState>()(
       },
 
       async refreshFolder(folderId = '') {
-        set({ busy: true, error: null });
+        set({ busy: true, error: null, errorKey: null });
         try {
           const entries = await get().engine.listFolder(folderId);
           set({ entries, busy: false });
         } catch (e) {
-          set({ busy: false, error: errorMessage(e, 'Could not load folder.') });
+          set({ busy: false, ...failure(e, 'vault.error.couldNotLoadFolder') });
         }
       },
 
       async uploadFiles(files, folderId = '') {
-        set({ busy: true, error: null });
+        set({ busy: true, error: null, errorKey: null });
         try {
           for (const file of Array.from(files)) {
             const bytes = new Uint8Array(await file.arrayBuffer());
@@ -708,67 +841,70 @@ export const useE2ee = create<E2eeState>()(
           }
           await get().refreshFolder(folderId);
           set({ busy: false });
-          toast.success('Uploaded', files.length === 1 ? Array.from(files)[0].name : `${files.length} files`);
+          toast.success(t('vault.feedback.uploaded'), files.length === 1 ? Array.from(files)[0].name : t('vault.feedback.filescountFiles', { fileCount: files.length }));
         } catch (e) {
-          const msg = errorMessage(e, 'Could not upload file.');
-          set({ busy: false, error: msg });
-          toast.error('Upload failed', msg, { action: { label: 'Report', onClick: () => openReport({ errorMessage: msg }) } });
+          const failed = failure(e, 'vault.error.couldNotUploadFile');
+          const msg = errorText(failed) ?? failed.error;
+          set({ busy: false, ...failed });
+          toast.error(t('common.error.uploadFailed'), msg, { action: { label: t('common.error.report'), onClick: () => openReport({ errorMessage: failed.error }) } });
         }
       },
 
       async downloadEntry(entryId, name, folderId = '') {
-        set({ busy: true, error: null });
+        set({ busy: true, error: null, errorKey: null });
         try {
           const bytes = await get().engine.downloadFile(folderId, entryId);
           get().saver(name, bytes);
           set({ busy: false });
-          toast.success('Downloaded', name);
+          toast.success(t('vault.feedback.downloaded'), name);
         } catch (e) {
-          set({ busy: false, error: errorMessage(e, 'Could not download file.') });
-          toast.error('Download failed', errorMessage(e, 'Could not download file.'));
+          const failed = failure(e, 'vault.error.couldNotDownloadFile');
+          set({ busy: false, ...failed });
+          toast.error(t('common.error.downloadFailed'), errorText(failed) ?? failed.error);
         }
       },
 
       async refreshMembers() {
-        set({ busy: true, error: null });
+        set({ busy: true, error: null, errorKey: null });
         try {
           const members = await get().engine.listMembers();
           set({ members, busy: false });
         } catch (e) {
-          set({ busy: false, error: errorMessage(e, 'Could not load members.') });
+          set({ busy: false, ...failure(e, 'vault.error.couldNotLoadMembers') });
         }
       },
 
       async inviteMember(email) {
-        set({ busy: true, error: null });
+        set({ busy: true, error: null, errorKey: null });
         try {
           await get().engine.inviteMember(email);
           await get().refreshMembers();
           set({ busy: false });
-          toast.success('Invited', email);
+          toast.success(t('vault.feedback.invited'), email);
         } catch (e) {
           // The engine's directory-lookup failure is worded for a developer
           // ("that user has no E2EE identity"); surface a friendly,
           // user-facing message instead of leaking that phrasing verbatim.
-          const message =
+          const failed =
             e instanceof Error && e.message.includes('no E2EE identity')
-              ? "That user hasn't set up encryption yet"
-              : errorMessage(e, 'Could not invite that user.');
-          set({ busy: false, error: message });
-          toast.error('Invite failed', message);
+              ? keyed('vault.label.thatUserHasnTSetUpEncryptionYet')
+              : failure(e, 'vault.error.couldNotInviteThatUser');
+          set({ busy: false, ...failed });
+          toast.error(t('vault.error.inviteFailed'), errorText(failed) ?? failed.error);
         }
       },
 
       async revokeMember(userId, ed25519Pub) {
-        set({ busy: true, error: null });
+        set({ busy: true, error: null, errorKey: null });
         try {
           await get().engine.revokeMember(userId, ed25519Pub);
           await get().refreshMembers();
           set({ busy: false });
-          toast.success('Access revoked');
+          toast.success(t('vault.feedback.accessRevoked'));
         } catch (e) {
-          set({ busy: false, error: errorMessage(e, 'Could not revoke that member.') });
-          toast.error('Revoke failed', errorMessage(e, 'Could not revoke that member.'));
+          const failed = failure(e, 'vault.error.couldNotRevokeThatMember');
+          set({ busy: false, ...failed });
+          toast.error(t('common.error.revokeFailed'), errorText(failed) ?? failed.error);
         }
       },
 

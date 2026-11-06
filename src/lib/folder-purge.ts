@@ -1,3 +1,5 @@
+import { t } from '@/lib/i18n';
+import { formatNumber } from '@/lib/format-locale';
 /**
  * Permanently deleting a trashed folder, one bounded pass at a time.
  *
@@ -115,30 +117,35 @@ export interface PurgeMessage {
 }
 
 /** The title both paths use when a purge stopped with work still to do. */
-const STILL_EMPTYING_TITLE = 'Still emptying';
+const stillEmptyingTitle = () => t('files.label.stillEmptying');
 
 /** "Ask again" is the whole recovery, so both paths say it the same way. */
-const CARRY_ON = 'Choose "Delete permanently" again to carry on.';
+const carryOn = () => t('files.description.chooseDeletePermanentlyAgainToCarryOn');
 
-const plural = (n: number, word: string) => `${n.toLocaleString()} ${word}${n === 1 ? '' : 's'}`;
+// The count phrases ("3 files", "2 folders", "2 items") are the catalog's plural messages.
+const files = (n: number) => t('file-requests.status.ruploadCountPluralOneFileOtherFiles', { rUpload_count: n });
+const items = (n: number) => t('welcome.action.countPluralOneItemOtherItems', { count: n });
+const folders = (n: number) => t('files.label.folders', { count: n });
 
 /** What to tell the user when the loop stops, finished or not. */
 export function purgeSummary(outcome: PurgeOutcome, folderName: string): PurgeMessage {
-  const files = outcome.filesAffected.toLocaleString();
+  const filesCount = formatNumber(outcome.filesAffected);
   if (outcome.complete) {
     return {
       kind: 'success',
-      title: 'Deleted',
+      title: t('files.heading.deleted'),
       body: outcome.filesAffected > 0
-        ? `"${folderName}" and its ${files} file${outcome.filesAffected === 1 ? '' : 's'} were permanently deleted.`
-        : `"${folderName}" was permanently deleted.`,
+        ? t('files.description.foldernameAndItsFilesFileOutcomefilesaffectedPluralOneOtherSWere', { folderName, files: filesCount, outcomeFilesAffected: outcome.filesAffected })
+        : t('files.message.foldernameWasPermanentlyDeleted', { folderName }),
     };
   }
   return {
     kind: 'info',
-    title: STILL_EMPTYING_TITLE,
-    body: `"${folderName}" is very large - ${files} file${outcome.filesAffected === 1 ? '' : 's'} removed so far, `
-      + `about ${outcome.remaining.toLocaleString()} to go. ${CARRY_ON}`,
+    title: stillEmptyingTitle(),
+    body: t('files.description.foldernameIsVeryLargeFilesFileOutcomefilesaffectedPluralOneOther', {
+      folderName, files: filesCount, outcomeFilesAffected: outcome.filesAffected,
+      remainingToLocaleString: formatNumber(outcome.remaining), CARRY_ON: carryOn(),
+    }),
   };
 }
 
@@ -170,16 +177,16 @@ export function bulkPurgeStillEmptying(opts: {
   const left = incomplete.reduce((sum, f) => sum + f.remaining, 0);
 
   const parts: string[] = [];
-  if (deleted > 0) parts.push(`${plural(deleted, 'item')} permanently deleted.`);
+  if (deleted > 0) parts.push(t('files.description.deletedPermanentlyDeleted', { deleted: items(deleted) }));
   parts.push(
     incomplete.length === 1
-      ? `"${incomplete[0].name}" is very large - ${plural(removed, 'file')} removed so far, about ${left.toLocaleString()} to go.`
-      : `${plural(incomplete.length, 'folder')} are very large - ${plural(removed, 'file')} removed so far, about ${left.toLocaleString()} to go.`,
+      ? t('files.description.nameIsVeryLargeRemovedRemovedSoFarAboutLefttolocalestring', { name: incomplete[0].name, removed: files(removed), leftToLocaleString: formatNumber(left) })
+      : t('files.description.incompletecountAreVeryLargeRemovedRemovedSoFarAboutLefttolocalestring', { incompleteCount: folders(incomplete.length), removed: files(removed), leftToLocaleString: formatNumber(left) }),
   );
-  parts.push(CARRY_ON);
-  if (failed > 0) parts.push(`${plural(failed, 'item')} could not be deleted.`);
+  parts.push(carryOn());
+  if (failed > 0) parts.push(t('files.error.failedCouldNotBeDeleted', { failed: items(failed) }));
 
-  return { kind: 'info', title: STILL_EMPTYING_TITLE, body: parts.join(' ') };
+  return { kind: 'info', title: stillEmptyingTitle(), body: parts.join(' ') };
 }
 
 /**
@@ -192,8 +199,8 @@ export function partialProgressNote(partial: UnfinishedFolder[]): string {
   const withWork = partial.filter((f) => f.filesAffected > 0);
   if (withWork.length === 0) return '';
   const removed = withWork.reduce((sum, f) => sum + f.filesAffected, 0);
-  const where = withWork.length === 1 ? `"${withWork[0].name}"` : plural(withWork.length, 'folder');
-  return `${plural(removed, 'file')} had already been removed from ${where}.`;
+  const where = withWork.length === 1 ? `"${withWork[0].name}"` : folders(withWork.length);
+  return t('files.description.removedHadAlreadyBeenRemovedFromWhere', { removed: files(removed), where });
 }
 
 /**
@@ -208,10 +215,10 @@ export function bulkPurgeCancelled(opts: {
   partial: UnfinishedFolder[];
 }): PurgeMessage {
   const note = partialProgressNote(opts.partial);
-  const counts = `${plural(opts.deleted, 'item')} already deleted, ${opts.leftInTrash.toLocaleString()} left in the trash.`;
+  const counts = t('files.description.optsdeletedAlreadyDeletedLeftintrashtolocalestringLeftInTheTrash', { optsDeleted: items(opts.deleted), leftInTrashToLocaleString: formatNumber(opts.leftInTrash) });
   return {
     kind: 'info',
-    title: 'Delete cancelled',
+    title: t('files.heading.deleteCancelled'),
     body: note ? `${counts} ${note}` : counts,
   };
 }

@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
-import { useE2ee } from '@/stores/e2ee';
+import { useE2ee, errorText } from '@/stores/e2ee';
+import { useT } from '@/lib/i18n';
+import { richText } from '@/lib/rich-text';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -12,7 +14,8 @@ import {
 } from '@/components/ui/dialog';
 import { Lock, ShieldCheck, KeyRound, Copy, TriangleAlert, Trash2 } from 'lucide-react';
 import { toast } from '@/lib/toast';
-import { api } from '@/api/client';
+import { api, apiErrorMessage, ApiError } from '@/api/client';
+import { useSession } from '@/stores/session';
 
 /**
  * Gate shown whenever the encrypted workspaces aren't unlocked yet. Resolves
@@ -21,8 +24,9 @@ import { api } from '@/api/client';
  * a passphrase/recovery key anywhere but their own fields.
  */
 export function UnlockGate() {
+  const t = useT();
   const hasIdentity = useE2ee((s) => s.hasIdentity);
-  const error = useE2ee((s) => s.error);
+  const error = useE2ee((s) => errorText(s, t));
   const checkIdentity = useE2ee((s) => s.checkIdentity);
 
   useEffect(() => {
@@ -39,8 +43,7 @@ export function UnlockGate() {
         </div>
         <h1 className="text-lg font-semibold">Vault</h1>
         <p className="text-xs text-muted-foreground">
-          Your files are encrypted in this browser before they ever leave your device. dosya only ever
-          stores ciphertext.
+          {t('vault.description.yourFilesAreEncryptedInThisBrowserBeforeTheyEverLeave')}
         </p>
         <a
           href="https://dosya.dev/vault"
@@ -48,7 +51,7 @@ export function UnlockGate() {
           rel="noopener noreferrer"
           className="text-xs font-medium text-primary underline underline-offset-2 hover:opacity-80"
         >
-          What is Vault? Learn more
+          {t('vault.action.whatIsVaultLearnMore')}
         </a>
       </div>
 
@@ -82,18 +85,19 @@ export function UnlockGate() {
  * distinct from SetupCard/UnlockCard - offers a retry, not a form that could
  * end up overwriting real keys. */
 function RetryCard({ error, onRetry }: { error: string; onRetry: () => void }) {
+  const t = useT();
   return (
     <Card className="w-full">
       <CardHeader>
-        <CardTitle className="text-base">Couldn&apos;t check encryption status</CardTitle>
+        <CardTitle className="text-base">{t('vault.error.couldnTCheckEncryptionStatus')}</CardTitle>
       </CardHeader>
       <CardContent>
         <div className="flex items-start gap-2 rounded-lg border border-amber-300/60 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-400">
           <TriangleAlert className="mt-0.5 size-3.5 shrink-0" />
           <div className="flex-1">
-            <p>{error}</p>
+            <p dir="auto">{error}</p>
             <button type="button" onClick={onRetry} className="mt-1 font-medium underline underline-offset-2">
-              Retry
+              {t('common.retry')}
             </button>
           </div>
         </div>
@@ -102,7 +106,9 @@ function RetryCard({ error, onRetry }: { error: string; onRetry: () => void }) {
   );
 }
 
-function SetupCard({ error }: { error: string | null }) {
+/** First-time Vault setup (also embedded by the Personas first run). */
+export function SetupCard({ error }: { error: string | null }) {
+  const t = useT();
   const setup = useE2ee((s) => s.setup);
   const busy = useE2ee((s) => s.busy);
   const [pass, setPass] = useState('');
@@ -122,9 +128,9 @@ function SetupCard({ error }: { error: string | null }) {
     <Card className="w-full">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
-          <ShieldCheck className="size-4 text-primary" /> Set up encryption
+          <ShieldCheck className="size-4 text-primary" /> {t('vault.heading.setUpEncryption')}
         </CardTitle>
-        <CardDescription>Choose a passphrase to protect your Vault.</CardDescription>
+        <CardDescription>{t('vault.description.chooseAPassphraseToProtectYourVault')}</CardDescription>
       </CardHeader>
       <form onSubmit={handleSubmit}>
         <CardContent className="space-y-3">
@@ -132,21 +138,21 @@ function SetupCard({ error }: { error: string | null }) {
               server call failed) - checkIdentity's own "couldn't tell"
               errors never reach this card, since hasIdentity stays `null`
               (not `false`) in that case; see the top-level RetryCard. */}
-          {error && <p className="text-xs text-destructive">{error}</p>}
+          {error && <p dir="auto" className="text-xs text-destructive">{error}</p>}
           <div className="space-y-1.5">
-            <Label htmlFor="e2ee-setup-pass">Passphrase</Label>
+            <Label htmlFor="e2ee-setup-pass">{t('vault.label.passphrase')}</Label>
             <Input
               id="e2ee-setup-pass"
               type="password"
               autoComplete="new-password"
               value={pass}
               onChange={(e) => setPass(e.target.value)}
-              placeholder="Enter a strong passphrase"
+              placeholder={t('vault.placeholder.enterAStrongPassphrase')}
               disabled={busy}
             />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="e2ee-setup-pass-confirm">Confirm passphrase</Label>
+            <Label htmlFor="e2ee-setup-pass-confirm">{t('vault.label.confirmPassphrase')}</Label>
             <Input
               id="e2ee-setup-pass-confirm"
               type="password"
@@ -154,19 +160,20 @@ function SetupCard({ error }: { error: string | null }) {
               value={confirm}
               onChange={(e) => setConfirm(e.target.value)}
               onBlur={() => setConfirmTouched(true)}
-              placeholder="Re-enter your passphrase"
+              placeholder={t('vault.placeholder.reEnterYourPassphrase')}
               disabled={busy}
             />
-            {mismatch && <p className="text-xs text-destructive">Passphrases do not match.</p>}
+            {mismatch && <p className="text-xs text-destructive">{t('vault.error.passphrasesDoNotMatch')}</p>}
           </div>
           <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
-            If you lose this passphrase <strong>and</strong> your recovery key, your encrypted files are
-            unrecoverable. We cannot reset it.
+            {richText(t('vault.error.ifYouLoseThisPassphraseEmphasis1YourRecoveryKeyYourEncrypted'), {
+              emphasis1: <strong>{t('vault.label.and')}</strong>,
+            })}
           </div>
         </CardContent>
         <CardFooter>
           <Button type="submit" className="w-full" disabled={!canSubmit}>
-            {busy ? 'Setting up…' : 'Set up'}
+            {busy ? t('vault.action.settingUp') : t('common.action.setUp')}
           </Button>
         </CardFooter>
       </form>
@@ -178,9 +185,11 @@ function SetupCard({ error }: { error: string | null }) {
  * Returning user: passphrase unlock, with the two ways out of a forgotten
  * passphrase (2026-09-02 field report, Contract 6). The recovery key is the
  * one shown once at setup; destroying the Vault is the last resort when that
- * is gone too, and is confirmed with the account password (and 2FA code).
+ * is gone too, and is confirmed with the account password or an emailed code.
+ * The Personas first run embeds it too.
  */
-function UnlockCard({ error }: { error: string | null }) {
+export function UnlockCard({ error }: { error: string | null }) {
+  const t = useT();
   const status = useE2ee((s) => s.status);
   const unlock = useE2ee((s) => s.unlock);
   const unlockWithRecoveryKey = useE2ee((s) => s.unlockWithRecoveryKey);
@@ -210,21 +219,21 @@ function UnlockCard({ error }: { error: string | null }) {
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
             {mode === 'recovery'
-              ? <><KeyRound className="size-4 text-primary" /> Unlock with recovery key</>
-              : <><Lock className="size-4 text-primary" /> Unlock Vault</>}
+              ? <><KeyRound className="size-4 text-primary" /> {t('vault.heading.unlockWithRecoveryKey')}</>
+              : <><Lock className="size-4 text-primary" /> {t('vault.heading.unlockVault')}</>}
           </CardTitle>
           <CardDescription>
             {mode === 'recovery'
-              ? 'Paste the recovery key you saved when you set up your Vault. Spaces and dashes are ignored.'
-              : 'Enter your passphrase to decrypt your files in this browser.'}
+              ? t('vault.description.pasteTheRecoveryKeyYouSavedWhenYouSet')
+              : t('vault.description.enterYourPassphraseToDecryptYourFilesInThisBrowser')}
           </CardDescription>
         </CardHeader>
         <form onSubmit={handleSubmit}>
           <CardContent className="space-y-3">
-            {error && <p className="text-xs text-destructive">{error}</p>}
+            {error && <p dir="auto" className="text-xs text-destructive">{error}</p>}
             {mode === 'recovery' ? (
               <div className="space-y-1.5">
-                <Label htmlFor="e2ee-recovery-key">Recovery key</Label>
+                <Label htmlFor="e2ee-recovery-key">{t('vault.label.recoveryKey')}</Label>
                 <Input
                   id="e2ee-recovery-key"
                   type="text"
@@ -234,13 +243,13 @@ function UnlockCard({ error }: { error: string | null }) {
                   value={recoveryKey}
                   onChange={(e) => setRecoveryKey(e.target.value)}
                   disabled={unlocking}
-                  placeholder="Your recovery key"
+                  placeholder={t('vault.placeholder.yourRecoveryKey')}
                   className="font-mono"
                 />
               </div>
             ) : (
               <div className="space-y-1.5">
-                <Label htmlFor="e2ee-unlock-pass">Passphrase</Label>
+                <Label htmlFor="e2ee-unlock-pass">{t('vault.label.passphrase')}</Label>
                 <Input
                   id="e2ee-unlock-pass"
                   type="password"
@@ -249,14 +258,14 @@ function UnlockCard({ error }: { error: string | null }) {
                   value={pass}
                   onChange={(e) => setPass(e.target.value)}
                   disabled={unlocking}
-                  placeholder="Your encryption passphrase"
+                  placeholder={t('vault.placeholder.yourEncryptionPassphrase')}
                 />
               </div>
             )}
           </CardContent>
           <CardFooter className="flex-col items-stretch gap-3">
             <Button type="submit" className="w-full" disabled={unlocking || !canSubmit}>
-              {unlocking ? 'Unlocking…' : 'Unlock'}
+              {unlocking ? t('vault.status.unlocking') : t('common.action.unlock')}
             </Button>
             <div className="flex items-center justify-between text-xs">
               <button
@@ -265,7 +274,7 @@ function UnlockCard({ error }: { error: string | null }) {
                 onClick={() => setMode(mode === 'recovery' ? 'passphrase' : 'recovery')}
                 disabled={unlocking}
               >
-                {mode === 'recovery' ? 'Use passphrase' : 'Use recovery key'}
+                {mode === 'recovery' ? t('vault.action.usePassphrase') : t('vault.action.useRecoveryKey')}
               </button>
               <button
                 type="button"
@@ -273,7 +282,7 @@ function UnlockCard({ error }: { error: string | null }) {
                 onClick={() => setDestroyOpen(true)}
                 disabled={unlocking}
               >
-                Destroy vault and start over
+                {t('vault.action.destroyVaultAndStartOver')}
               </button>
             </div>
           </CardFooter>
@@ -288,43 +297,84 @@ function UnlockCard({ error }: { error: string | null }) {
  * Last resort for a Vault whose passphrase and recovery key are both lost:
  * delete the identity so setup can run again. Everything encrypted under it
  * is unrecoverable afterwards, which is said in plain words before the
- * button. Confirmed with the account password, plus a 2FA code when the
- * account has one (the API refuses without it).
+ * button. Confirmed with the account password, or - for an Apple or Google
+ * sign-in account, which has no password, and an email-code 2FA account,
+ * which the password path refuses - a code mailed to the account address.
+ * An authenticator-app account also gives its 2FA code either way.
  */
 function DestroyVaultDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
+  const t = useT();
   const destroyIdentity = useE2ee((s) => s.destroyIdentity);
   const busy = useE2ee((s) => s.busy);
+  const hasPassword = useSession((s) => s.user?.has_password) !== false;
+  const [twoFaMethod, setTwoFaMethod] = useState<string | null>(null);
   const [password, setPassword] = useState('');
+  const [emailCode, setEmailCode] = useState('');
+  const [codeSent, setCodeSent] = useState(false);
+  const [forceEmailCode, setForceEmailCode] = useState(false);
+  const [sending, setSending] = useState(false);
   const [code, setCode] = useState('');
   const [needsCode, setNeedsCode] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
+  const useEmailCode = forceEmailCode || !hasPassword || twoFaMethod === 'email';
 
   useEffect(() => {
     if (!open) return;
-    setPassword(''); setCode(''); setConfirmed(false); setLocalError(null); setNeedsCode(false);
+    setPassword(''); setEmailCode(''); setCodeSent(false); setForceEmailCode(false); setCode('');
+    setConfirmed(false); setLocalError(null); setNeedsCode(false); setTwoFaMethod(null);
     let cancelled = false;
     api<{ ok: boolean; method: string | null }>('/api/me/2fa/status')
-      .then((r) => { if (!cancelled) setNeedsCode(!!r.method); })
+      .then((r) => {
+        if (cancelled) return;
+        setTwoFaMethod(r.method);
+        setNeedsCode(r.method === 'totp');
+      })
       .catch(() => { /* the server still refuses without a code; the field just appears after the first refusal */ });
     return () => { cancelled = true; };
   }, [open]);
 
-  const submit = async () => {
-    if (!password || busy) return;
+  const sendCode = async () => {
+    if (sending || busy) return;
+    setSending(true);
     setLocalError(null);
-    const ok = await destroyIdentity(password, needsCode && code ? code : undefined);
+    try {
+      await api('/api/e2ee/destroy-request', { method: 'POST' });
+      setCodeSent(true);
+      toast.success(t('profile.label.weEmailedYouACode'), t('profile.feedback.checkYourInboxForThe6DigitCode'));
+    } catch (e) {
+      setLocalError(apiErrorMessage(e));
+      // 429 within the cooldown means a code from a moment ago is still live
+      // (the dialog was closed and reopened): let them type that one.
+      if (e instanceof ApiError && e.status === 429) setCodeSent(true);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const proofReady = useEmailCode ? emailCode.length === 6 : password.length > 0;
+
+  const submit = async () => {
+    if (!proofReady || busy) return;
+    setLocalError(null);
+    const proof = useEmailCode ? { code: emailCode } : password;
+    const ok = await destroyIdentity(proof, needsCode && code ? code : undefined);
     if (ok) {
-      toast.success('Vault destroyed', 'Set up encryption again whenever you are ready.');
+      toast.success(t('vault.feedback.vaultDestroyed'), t('vault.feedback.setUpEncryptionAgainWheneverYouAreReady'));
       onOpenChange(false);
       return;
     }
-    const err = useE2ee.getState().error;
-    setLocalError(err);
+    const state = useE2ee.getState();
+    const err = state.error;
+    setLocalError(errorText(state, t));
     // Contract 6: 400 `2fa_required` when the account has 2FA and no code
     // came. The store surfaces that code as its sentence (api/error-copy.ts),
     // so match either spelling - the copy can change, the meaning cannot.
-    if (err && /two-factor|2fa/i.test(err)) setNeedsCode(true);
+    // The password path refused an account it cannot serve (no password, or
+    // email-code 2FA): move to the emailed code rather than dead-ending. This
+    // must be checked first - the email-2FA refusal also says "two-factor".
+    if (err && /emailed code|email codes for two-factor/i.test(err)) setForceEmailCode(true);
+    else if (err && /two-factor|2fa/i.test(err)) setNeedsCode(true);
   };
 
   return (
@@ -332,29 +382,61 @@ function DestroyVaultDialog({ open, onOpenChange }: { open: boolean; onOpenChang
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-destructive">
-            <Trash2 className="size-4" /> Destroy vault and start over
+            <Trash2 className="size-4" /> {t('vault.heading.destroyVaultAndStartOver')}
           </DialogTitle>
         </DialogHeader>
         <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
-          This deletes your Vault identity. Every file in every Space you encrypted with it becomes
-          permanently unreadable - to you and to anyone you shared a Space with. There is no undo.
+          {t('vault.description.thisDeletesYourVaultIdentityEveryFileInEverySpaceYou')}
         </div>
-        {localError && <p className="text-xs text-destructive">{localError}</p>}
-        <div className="space-y-1.5">
-          <Label htmlFor="e2ee-destroy-password">Account password</Label>
-          <Input
-            id="e2ee-destroy-password"
-            type="password"
-            autoComplete="current-password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            disabled={busy}
-            placeholder="Your dosya password"
-          />
-        </div>
+        {localError && <p dir="auto" className="text-xs text-destructive">{localError}</p>}
+        {useEmailCode ? (
+          codeSent ? (
+            <div className="space-y-1.5">
+              <Label htmlFor="e2ee-destroy-email-code">{t('profile.label.enterYourCode')}</Label>
+              <p className="text-xs text-muted-foreground">
+                {t('profile.description.weEmailedYouACodeLengthDigitCodeEnterItToConfirm', { CODE_LENGTH: 6 })}
+              </p>
+              <Input
+                id="e2ee-destroy-email-code"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                autoFocus
+                value={emailCode}
+                onChange={(e) => setEmailCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                disabled={busy}
+                placeholder={t('common.placeholder.6DigitCode')}
+              />
+              <button
+                type="button"
+                className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+                onClick={sendCode}
+                disabled={sending || busy}
+              >
+                {t('common.action.resendCode')}
+              </button>
+            </div>
+          ) : (
+            <Button type="button" variant="outline" className="w-full" onClick={sendCode} disabled={sending || busy}>
+              {t('profile.action.sendCode')}
+            </Button>
+          )
+        ) : (
+          <div className="space-y-1.5">
+            <Label htmlFor="e2ee-destroy-password">{t('vault.label.accountPassword')}</Label>
+            <Input
+              id="e2ee-destroy-password"
+              type="password"
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              disabled={busy}
+              placeholder={t('vault.placeholder.yourDosyaPassword')}
+            />
+          </div>
+        )}
         {needsCode && (
           <div className="space-y-1.5">
-            <Label htmlFor="e2ee-destroy-code">Two-factor code</Label>
+            <Label htmlFor="e2ee-destroy-code">{t('vault.label.twoFactorCode')}</Label>
             <Input
               id="e2ee-destroy-code"
               inputMode="numeric"
@@ -362,7 +444,7 @@ function DestroyVaultDialog({ open, onOpenChange }: { open: boolean; onOpenChang
               value={code}
               onChange={(e) => setCode(e.target.value.replace(/\s/g, '').slice(0, 10))}
               disabled={busy}
-              placeholder="6-digit code"
+              placeholder={t('common.placeholder.6DigitCode')}
             />
           </div>
         )}
@@ -374,12 +456,12 @@ function DestroyVaultDialog({ open, onOpenChange }: { open: boolean; onOpenChang
             onChange={(e) => setConfirmed(e.target.checked)}
             disabled={busy}
           />
-          <span>I understand my encrypted files cannot be recovered after this.</span>
+          <span>{t('vault.error.iUnderstandMyEncryptedFilesCannotBeRecoveredAfterThis')}</span>
         </label>
         <DialogFooter>
-          <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>Cancel</Button>
-          <Button type="button" variant="destructive" onClick={submit} disabled={busy || !password || !confirmed}>
-            {busy ? 'Destroying…' : 'Destroy my vault'}
+          <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>{t('common.cancel')}</Button>
+          <Button type="button" variant="destructive" onClick={submit} disabled={busy || !proofReady || !confirmed}>
+            {busy ? t('vault.action.destroying') : t('vault.action.destroyMyVault')}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -398,6 +480,7 @@ function DestroyVaultDialog({ open, onOpenChange }: { open: boolean; onOpenChang
  * confirms they've saved the key.
  */
 export function RecoveryKeyDialog() {
+  const t = useT();
   const recoveryKeyHex = useE2ee((s) => s.recoveryKeyOnce);
   const dismissRecoveryKey = useE2ee((s) => s.dismissRecoveryKey);
   const [copied, setCopied] = useState(false);
@@ -407,10 +490,10 @@ export function RecoveryKeyDialog() {
     try {
       await navigator.clipboard.writeText(recoveryKeyHex);
       setCopied(true);
-      toast.success('Copied', 'Recovery key copied to clipboard.');
+      toast.success(t('common.feedback.copied'), t('vault.feedback.recoveryKeyCopiedToClipboard'));
       window.setTimeout(() => setCopied(false), 2000);
     } catch {
-      toast.error('Copy failed', 'Select and copy the key manually.');
+      toast.error(t('common.error.copyFailed'), t('vault.error.selectAndCopyTheKeyManually'));
     }
   };
 
@@ -419,24 +502,22 @@ export function RecoveryKeyDialog() {
       <DialogContent className="sm:max-w-md" showCloseButton={false}>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <KeyRound className="size-4 text-primary" /> Save your recovery key
+            <KeyRound className="size-4 text-primary" /> {t('vault.heading.saveYourRecoveryKey')}
           </DialogTitle>
         </DialogHeader>
         <p className="text-xs text-muted-foreground">
-          This is the only time this key will ever be shown. Store it somewhere safe, in a password manager
-          or an offline note. If you forget your passphrase, this key is the only way to recover your
-          encrypted files.
+          {t('vault.description.thisIsTheOnlyTimeThisKeyWillEver')}
         </p>
         <div className="flex items-center gap-2 rounded-lg border bg-muted/40 px-3 py-2">
           <code className="flex-1 break-all font-mono text-xs">{recoveryKeyHex}</code>
-          <Button type="button" variant="outline" size="icon-sm" onClick={handleCopy} title="Copy recovery key">
+          <Button type="button" variant="outline" size="icon-sm" onClick={handleCopy} title={t('vault.action.copyRecoveryKey')}>
             <Copy className="size-3.5" />
           </Button>
         </div>
-        {copied && <p className="text-[11px] text-green-600">Copied to clipboard.</p>}
+        {copied && <p className="text-[11px] text-green-600">{t('common.description.copiedToClipboard')}</p>}
         <DialogFooter>
           <Button type="button" className="w-full sm:w-auto" onClick={() => dismissRecoveryKey()}>
-            I&apos;ve saved it
+            {t('vault.action.iVeSavedIt')}
           </Button>
         </DialogFooter>
       </DialogContent>

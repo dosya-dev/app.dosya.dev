@@ -5,6 +5,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Plug, Plus, Loader2 } from 'lucide-react';
 import { toast } from '@/lib/toast';
+import { useT } from '@/lib/i18n';
 import { timeAgo } from '@/lib/helpers';
 import { PROVIDER_LABELS, PROVIDER_ICONS } from '@/lib/cloud-providers';
 import { listProviders, type CloudProvider } from '@/api/cloud-import';
@@ -34,12 +35,13 @@ export default function IntegrationsPage() {
 // ── Integrations ───────────────────────────────────────────
 
 export function IntegrationsSection({ accounts, providers, onChanged }: { accounts: DriveAccount[]; providers: CloudProvider[]; onChanged: () => void }) {
+  const t = useT();
   const [disconnecting, setDisconnecting] = useState<string | null>(null);
 
   const disconnect = async (id: string) => {
     setDisconnecting(id);
     const res = await req(`/api/cloud/accounts/${id}`, { method: 'DELETE' });
-    if (res.ok) { toast.success('Account disconnected', 'The account has been removed.'); onChanged(); } else toast.error('Disconnect failed', res.error ?? 'The account could not be disconnected.');
+    if (res.ok) { toast.success(t('common.feedback.accountDisconnected'), t('common.feedback.theAccountHasBeenRemoved')); onChanged(); } else toast.error(t('common.error.disconnectFailed'), res.error ?? t('common.error.theAccountCouldNotBeDisconnected'));
     setDisconnecting(null);
   };
 
@@ -50,7 +52,7 @@ export function IntegrationsSection({ accounts, providers, onChanged }: { accoun
 
   return (
     <section id="section-integrations">
-      <h2 className="text-base font-semibold mb-3">Integrations</h2>
+      <h2 className="text-base font-semibold mb-3">{t('common.heading.integrations')}</h2>
       <Card>
         <CardContent>
           {providers.map((p) => (
@@ -61,18 +63,18 @@ export function IntegrationsSection({ accounts, providers, onChanged }: { accoun
                   : <Plug className="size-5 text-muted-foreground" />}
                 <div>
                   <p className="text-sm font-medium">{p.label}</p>
-                  <p className="text-xs text-muted-foreground">Import files directly from your {p.label}</p>
+                  <p className="text-xs text-muted-foreground">{t('profile.label.importFilesDirectlyFromYourPlabel', { pLabel: p.label })}</p>
                 </div>
               </div>
               <a href={`${API_BASE}/api/cloud/connect/${p.id}`}>
                 <Button variant="outline" size="sm" className="text-xs gap-1">
-                  <Plus className="size-3" /> Connect account
+                  <Plus className="size-3" /> {t('profile.action.connectAccount')}
                 </Button>
               </a>
             </div>
           ))}
           {accounts.length === 0 ? (
-            <p className="py-4 text-center text-xs text-muted-foreground">No accounts connected</p>
+            <p className="py-4 text-center text-xs text-muted-foreground">{t('profile.label.noAccountsConnected')}</p>
           ) : (
             connectedProviders.map((provider) => (
               <div key={provider}>
@@ -104,11 +106,11 @@ export function IntegrationsSection({ accounts, providers, onChanged }: { accoun
                       </div>
                       <div className="min-w-0">
                         <p className="text-xs font-medium truncate">{acc.account_email}</p>
-                        <p className="text-[11px] text-muted-foreground">Connected {timeAgo(acc.created_at)}</p>
+                        <p className="text-[11px] text-muted-foreground">{t('common.label.connectedAcccreatedAt', { date: timeAgo(acc.created_at) })}</p>
                       </div>
                     </div>
                     <Button variant="outline" size="sm" className="text-xs text-destructive border-destructive/30" onClick={() => disconnect(acc.id)} disabled={disconnecting === acc.id}>
-                      {disconnecting === acc.id ? <Loader2 className="size-3 animate-spin" /> : 'Disconnect'}
+                      {disconnecting === acc.id ? <Loader2 className="size-3 animate-spin" /> : t('common.action.disconnect')}
                     </Button>
                   </div>
                 ))}

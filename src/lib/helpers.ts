@@ -1,5 +1,9 @@
-import { actionPhrase } from "@/lib/activity-catalog.generated";
+import { activityPhrase } from "@/lib/activity-labels";
+import { byteCount, fixedNumber, formatDateParts, formatDateWith, formatRelative, formatShortDate, sizeUnits } from '@/lib/format-locale';
+import { currentLocale, t } from '@/lib/i18n';
+import type { MessageKey } from '@/i18n/keys';
 import { EXTENSION_FAMILY, FILE_FAMILY, SWATCH_BY_NAME, defaultSwatch } from '@/lib/palette';
+import { ARCHIVE_BROWSABLE_EXTS, AUDIO_EXTS, BOOK_READABLE_EXTS, IMAGE_PREVIEW_EXTS, VIDEO_EXTS, isOfficeExt } from '@/lib/preview-formats.generated';
 
 /**
  * `now` (unix seconds) is injectable so the formatting is testable.
@@ -16,22 +20,7 @@ export function timeAgo(
   now: number = Math.floor(Date.now() / 1000),
   opts: { utc?: boolean } = {},
 ): string {
-  const diff = now - ts;
-  if (diff < 60) return 'just now';
-  if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
-  if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
-  if (diff < 604800) return Math.floor(diff / 86400) + 'd ago';
-  const d = new Date(ts * 1000);
-  const m = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  // A bare "Jul 23" can't tell a 2024 upload from a 2026 one. The year is only
-  // added when it differs from the current one, so the common case stays short.
-  const year = opts.utc ? d.getUTCFullYear() : d.getFullYear();
-  const nowDate = new Date(now * 1000);
-  const thisYear = opts.utc ? nowDate.getUTCFullYear() : nowDate.getFullYear();
-  const suffix = year === thisYear ? '' : `, ${year}`;
-  const month = opts.utc ? d.getUTCMonth() : d.getMonth();
-  const day = opts.utc ? d.getUTCDate() : d.getDate();
-  return `${m[month]} ${day}${suffix}`;
+  return formatRelative(ts, now, opts);
 }
 
 /**
@@ -43,17 +32,13 @@ export function timeAgo(
  */
 export function timeUntil(ts: number, now: number = Math.floor(Date.now() / 1000)): string {
   const diff = ts - now;
-  if (diff <= 0) return 'Expired';
-  if (diff < 60) return 'in under a minute';
-  if (diff < 3600) return `in ${Math.floor(diff / 60)}m`;
-  if (diff < 86400) return `in ${Math.floor(diff / 3600)}h`;
+  if (diff <= 0) return t('common.status.expired');
+  if (diff < 60) return t('common.label.inUnderAMinute');
+  if (diff < 3600) return t('integrations-webhooks.label.inMathfloorM', { MathFloor: Math.floor(diff / 60) });
+  if (diff < 86400) return t('integrations-webhooks.label.inMathfloorH', { MathFloor: Math.floor(diff / 3600) });
   const days = Math.ceil(diff / 86400);
-  if (days <= 60) return `in ${days} day${days === 1 ? '' : 's'}`;
-  const d = new Date(ts * 1000);
-  const m = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  const year = d.getFullYear();
-  const suffix = year === new Date(now * 1000).getFullYear() ? '' : `, ${year}`;
-  return `${m[d.getMonth()]} ${d.getDate()}${suffix}`;
+  if (days <= 60) return t('common.label.inDays', { days });
+  return formatShortDate(ts, now);
 }
 
 /**
@@ -62,16 +47,17 @@ export function timeUntil(ts: number, now: number = Math.floor(Date.now() / 1000
  * invite links read as already lapsed.
  */
 export function expiryLabel(ts: number | null | undefined, now: number = Math.floor(Date.now() / 1000)): string {
-  if (!ts) return 'No expiry';
-  const until = timeUntil(ts, now);
-  return until === 'Expired' ? 'Expired' : `Expires ${until}`;
+  if (!ts) return t('common.label.noExpiry');
+  if (ts - now <= 0) return t('common.status.expired');
+  return t('common.label.expiresDate', { date: timeUntil(ts, now) });
 }
 
 export function humanSize(b: number): string {
-  if (b < 1024) return b + ' B';
-  if (b < 1048576) return (b / 1024).toFixed(0) + ' KB';
-  if (b < 1073741824) return (b / 1048576).toFixed(1) + ' MB';
-  return (b / 1073741824).toFixed(2) + ' GB';
+  const u = sizeUnits();
+  if (b < 1024) return `${byteCount(b)} ${u.B}`;
+  if (b < 1048576) return `${fixedNumber(b / 1024, 0)} ${u.KB}`;
+  if (b < 1073741824) return `${fixedNumber(b / 1048576, 1)} ${u.MB}`;
+  return `${fixedNumber(b / 1073741824, 2)} ${u.GB}`;
 }
 
 /**
@@ -80,10 +66,11 @@ export function humanSize(b: number): string {
  * reporting a 500 KB account as "0 MB used" reads as "nothing is stored".
  */
 export function humanSizeShort(b: number): string {
-  if (b < 1024) return b + ' B';
-  if (b < 1048576) return (b / 1024).toFixed(0) + ' KB';
-  if (b < 1073741824) return (b / 1048576).toFixed(0) + ' MB';
-  return (b / 1073741824).toFixed(1) + ' GB';
+  const u = sizeUnits();
+  if (b < 1024) return `${byteCount(b)} ${u.B}`;
+  if (b < 1048576) return `${fixedNumber(b / 1024, 0)} ${u.KB}`;
+  if (b < 1073741824) return `${fixedNumber(b / 1048576, 0)} ${u.MB}`;
+  return `${fixedNumber(b / 1073741824, 1)} ${u.GB}`;
 }
 
 export function extOf(name: string): string {
@@ -103,15 +90,15 @@ export function colorFor(name: string, scheme: 'light' | 'dark' = 'light'): stri
 
 export function labelFor(name: string): string {
   const e = extOf(name);
-  return e ? e.toUpperCase() : 'FILE';
+  return e ? e.toUpperCase() : t('common.label.fileBadge');
 }
 
-// avif is browser-native everywhere this app supports. tiff/dng are NOT here
-// on purpose: no browser decodes them and the server thumbnailer only knows
-// heic/png/jpeg, so the honest download card is the right rendering.
-const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'avif', 'bmp', 'svg', 'ico', 'heic', 'heif']);
+// The extension lists below come from packages/shared/src/files/preview-formats.ts
+// (through a generated copy), the same lists the share page renders with, so a
+// file previews the same way here and on its share link. tiff/dng are not
+// images to preview: no browser decodes them and neither does the server.
 export function isImage(name: string): boolean {
-  return IMAGE_EXTS.has(extOf(name));
+  return IMAGE_PREVIEW_EXTS.has(extOf(name));
 }
 
 const HEIC_EXTS = new Set(['heic', 'heif']);
@@ -120,7 +107,6 @@ export function isHeic(name: string): boolean {
   return HEIC_EXTS.has(extOf(name));
 }
 
-const VIDEO_EXTS = new Set(['mp4', 'mov', 'avi', 'mkv', 'webm', 'wmv', 'flv']);
 export function isVideo(name: string): boolean {
   return VIDEO_EXTS.has(extOf(name));
 }
@@ -135,20 +121,12 @@ export function isText(name: string): boolean {
   return TEXT_EXTS.has(extOf(name));
 }
 
-const OFFICE_EXTS = new Set([
-  'docx', 'xlsx', 'pptx', 'doc', 'xls', 'ppt', 'odt', 'ods', 'odp', 'rtf', 'csv',
-]);
-
 // Files that open in the ONLYOFFICE editor at /editor/:fileId. Keep in sync
 // with apps/api/src/lib/onlyoffice/formats.ts.
 export function isOfficeFile(name: string): boolean {
-  return OFFICE_EXTS.has(extOf(name));
+  return isOfficeExt(extOf(name));
 }
 
-// opus/oga play natively in Chromium and Firefox; mka rides Chromium's
-// Matroska demuxer. wma plays NOWHERE - it stays listed so the player's
-// decode-failure card claims the file rather than the generic fallback.
-const AUDIO_EXTS = new Set(['mp3', 'wav', 'ogg', 'oga', 'opus', 'flac', 'aac', 'm4a', 'mka', 'wma']);
 /**
  * Formats the ebook reader can open. foliate-js also handles mobi/azw3/fb2/cbz
  * and they are vendored, so they are listed rather than falling through to a
@@ -157,10 +135,8 @@ const AUDIO_EXTS = new Set(['mp3', 'wav', 'ogg', 'oga', 'opus', 'flac', 'aac', '
  * .pdf is deliberately absent: foliate's PDF path wants a pdfjs build that is
  * not vendored, and this app renders PDFs natively.
  */
-const BOOK_EXTS = new Set(['epub', 'mobi', 'azw3', 'fb2', 'cbz']);
-
 export function isBook(name: string): boolean {
-  return BOOK_EXTS.has(extOf(name));
+  return BOOK_READABLE_EXTS.has(extOf(name));
 }
 
 // Deliberately narrow. `.cbz` and `.epub` are zips too, but both already route
@@ -168,9 +144,8 @@ export function isBook(name: string): boolean {
 // away and replace it with a file tree.
 // `iso` and `img` open in the same pane: the API lists an ISO 9660 image the
 // way it lists a zip, and refuses a raw .img with a sentence the pane shows.
-const ARCHIVE_EXTS = new Set(['zip', 'iso', 'img']);
 export function isArchive(name: string): boolean {
-  return ARCHIVE_EXTS.has(extOf(name));
+  return ARCHIVE_BROWSABLE_EXTS.has(extOf(name));
 }
 
 export function isAudio(name: string): boolean {
@@ -201,13 +176,17 @@ export function folderIconSrc(fileCount: number, isSynced?: boolean): string {
   return fileCount > 0 ? '/file-icons/folder-full.svg' : '/file-icons/folder-empty.svg';
 }
 
-const ORIGIN_LABELS: Record<string, string> = {
-  web: 'Web', desktop: 'Desktop', mobile: 'Mobile', cli: 'CLI',
-  webdav: 'WebDAV', s3: 'S3', ftp: 'FTP', import: 'Import',
+const ORIGIN_KEYS: Record<string, MessageKey> = {
+  web: 'common.label.web', desktop: 'common.label.desktop', mobile: 'common.label.mobileTitleCase',
+  cli: 'common.heading.cli', import: 'common.label.import',
 };
+// Protocol names are the same in every language.
+const ORIGIN_NAMES: Record<string, string> = { webdav: 'WebDAV', s3: 'S3', ftp: 'FTP' };
 
 export function originLabel(origin: string | null | undefined): string {
-  return (origin && ORIGIN_LABELS[origin]) || '-';
+  if (!origin) return '-';
+  const key = ORIGIN_KEYS[origin];
+  return key ? t(key) : (ORIGIN_NAMES[origin] ?? '-');
 }
 
 // "Hidden" is never binary from the viewer's own perspective - if they can
@@ -216,8 +195,8 @@ export function originLabel(origin: string | null | undefined): string {
 // links - it must never read as "hidden from you".
 export function hiddenTitle(hiddenMode: string | null | undefined): string {
   return hiddenMode === 'everyone'
-    ? 'Hidden from everyone. Not included in share links.'
-    : 'Hidden from some people. Not included in share links.';
+    ? t('common.label.hiddenFromEveryoneNotIncludedInShareLinks')
+    : t('common.label.hiddenFromSomePeopleNotIncludedInShareLinks');
 }
 
 /**
@@ -237,29 +216,35 @@ export function initials(name: string | null | undefined): string {
 
 export function greeting(): string {
   const h = new Date().getHours();
-  if (h < 12) return 'Good morning';
-  if (h < 18) return 'Good afternoon';
-  return 'Good evening';
+  if (h < 12) return t('common.label.goodMorning');
+  if (h < 18) return t('common.label.goodAfternoon');
+  return t('common.label.goodEvening');
 }
 
 export function todayStr(): string {
   const d = new Date();
-  const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-  const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-  return `${days[d.getDay()]}, ${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
+  if (currentLocale() === 'en') {
+    // "Sunday, 19 October 2026": the English layout, kept as it was.
+    const part = (type: string, o: Intl.DateTimeFormatOptions) =>
+      formatDateParts(d, o, 'en').find((p) => p.type === type)?.value ?? '';
+    const o = { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' } as const;
+    return `${part('weekday', o)}, ${part('day', o)} ${part('month', o)} ${part('year', o)}`;
+  }
+  return formatDateWith(d, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 }
 
-const REGION_LABELS: Record<string, string> = {
-  'us-east-1': 'US East', 'us-west-1': 'US West', 'us-west-2': 'US West 2',
-  'eu-west-1': 'EU West', 'eu-central-1': 'EU Central',
-  'ap-southeast-1': 'Singapore', 'ap-southeast-2': 'Sydney', 'ap-northeast-1': 'Tokyo',
-  'sa-east-1': 'Sao Paulo', 'me-south-1': 'Bahrain',
-  'af-south-1': 'Cape Town', 'auto': 'Auto',
+const REGION_KEYS: Record<string, MessageKey> = {
+  'us-east-1': 'common.label.usEast', 'us-west-1': 'common.label.usWest', 'us-west-2': 'common.label.usWest2',
+  'eu-west-1': 'common.label.euWest', 'eu-central-1': 'common.label.euCentral',
+  'ap-southeast-1': 'common.label.singapore', 'ap-southeast-2': 'common.label.sydney', 'ap-northeast-1': 'common.label.tokyo',
+  'sa-east-1': 'common.label.saoPaulo', 'me-south-1': 'common.label.bahrain',
+  'af-south-1': 'common.label.capeTown', 'auto': 'common.label.auto',
 };
 
 export function regionLabel(code: string): string {
-  if (code === 'multi') return 'Multiple regions';
-  return REGION_LABELS[code] ?? code;
+  if (code === 'multi') return t('common.label.multipleRegions');
+  const key = REGION_KEYS[code];
+  return key ? t(key) : code;
 }
 
 /**
@@ -269,7 +254,7 @@ export function regionLabel(code: string): string {
  * so a new action code had to be added four times.
  */
 export function actionLabel(action: string): string {
-  return actionPhrase(action);
+  return activityPhrase(action);
 }
 
 // Actions whose target no longer exists - linking to it would be a dead click.
@@ -289,9 +274,11 @@ export function activityLink(entityType: string | null | undefined, entityId: st
 
 /** Compact absolute timestamp for feed rows, e.g. "Jul 23, 14:05". */
 export function shortDateTime(ts: number): string {
-  const d = new Date(ts * 1000);
-  const m = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  const hh = String(d.getHours()).padStart(2, '0');
-  const mm = String(d.getMinutes()).padStart(2, '0');
-  return `${m[d.getMonth()]} ${d.getDate()}, ${hh}:${mm}`;
+  if (currentLocale() === 'en') {
+    const d = new Date(ts * 1000);
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mm = String(d.getMinutes()).padStart(2, '0');
+    return `${formatDateWith(d, { month: 'short', day: 'numeric' }, 'en')}, ${hh}:${mm}`;
+  }
+  return formatDateWith(ts, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
 }

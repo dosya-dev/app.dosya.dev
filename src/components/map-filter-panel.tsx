@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { FolderOpen, X } from 'lucide-react';
 import { FolderPickerDialog } from '@/components/folder-picker-dialog';
 import type { MapFilters } from '@/lib/map-pins';
+import { useT } from '@/lib/i18n';
 
 const CHIP = 'rounded-full bg-background/90 backdrop-blur px-3 py-1.5 text-xs shadow flex items-center gap-1.5';
 
@@ -26,19 +27,20 @@ export function MapFilterPanel({ value, onChange, workspaceId }: {
   onChange: (next: MapFilters) => void;
   workspaceId: string;
 }) {
+  const t = useT();
   const [pickerOpen, setPickerOpen] = useState(false);
   const active = Boolean(value.folderId) || value.from != null || value.to != null;
 
   return (
     <div className="flex flex-wrap items-center gap-2">
       <button type="button" className={`${CHIP} hover:bg-muted/60`} onClick={() => setPickerOpen(true)}
-        title="Filter by folder">
+        title={t('map.action.filterByFolder')}>
         <FolderOpen className="size-3.5 text-muted-foreground" />
-        <span className="max-w-[9rem] truncate">{value.folderName || 'All folders'}</span>
+        <span className="max-w-[9rem] truncate">{value.folderName || t('map.action.allFolders')}</span>
       </button>
 
       <div className={CHIP}>
-        <span className="text-muted-foreground">From</span>
+        <span className="text-muted-foreground">{t('map.label.from')}</span>
         <input
           type="date"
           className="bg-transparent outline-none [color-scheme:light] dark:[color-scheme:dark]"
@@ -46,7 +48,7 @@ export function MapFilterPanel({ value, onChange, workspaceId }: {
           max={toDateInput(value.to) || undefined}
           onChange={(e) => onChange({ ...value, from: fromDateInput(e.target.value, false) })}
         />
-        <span className="text-muted-foreground">To</span>
+        <span className="text-muted-foreground">{t('map.label.to')}</span>
         <input
           type="date"
           className="bg-transparent outline-none [color-scheme:light] dark:[color-scheme:dark]"
@@ -58,8 +60,8 @@ export function MapFilterPanel({ value, onChange, workspaceId }: {
 
       {active && (
         <button type="button" className={`${CHIP} hover:bg-muted/60`} onClick={() => onChange({})}
-          title="Clear filters">
-          <X className="size-3.5" /> Clear
+          title={t('common.action.clearFilters')}>
+          <X className="size-3.5" /> {t('common.action.clear')}
         </button>
       )}
 
@@ -69,8 +71,8 @@ export function MapFilterPanel({ value, onChange, workspaceId }: {
         workspaceId={workspaceId}
         selectedId={value.folderId ?? null}
         selectedName={value.folderName ?? ''}
-        title="Filter map by folder"
-        confirmLabel="Apply folder"
+        title={t('map.tooltip.filterMapByFolder')}
+        confirmLabel={t('map.action.applyFolder')}
         onSelect={(id, name) => {
           // Root/Home (id === null) clears the folder scope.
           onChange({ ...value, folderId: id, folderName: id ? name : null });

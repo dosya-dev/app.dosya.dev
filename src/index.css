@@ -466,6 +466,35 @@ body {
   border-color: var(--border);
 }
 
+/* East Asian scripts and Thai. Space Grotesk covers Latin only, so these glyphs come from the
+   system. Each rule matches the exact <html lang> (zh-Hans and zh-Hant draw different
+   glyphs for the same code point) and puts the platform's best face for that script right
+   after the Latin face. Latin text keeps Space Grotesk; every other language is untouched. */
+:root:lang(zh-Hans) { --font-sans: "Space Grotesk", ui-sans-serif, system-ui, -apple-system, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", "Noto Sans SC", "Source Han Sans SC", "Segoe UI", Roboto, sans-serif; }
+:root:lang(zh-Hant) { --font-sans: "Space Grotesk", ui-sans-serif, system-ui, -apple-system, "PingFang TC", "Hiragino Sans CNS", "Microsoft JhengHei", "Noto Sans CJK TC", "Noto Sans TC", "Source Han Sans TC", "Segoe UI", Roboto, sans-serif; }
+:root:lang(ja) { --font-sans: "Space Grotesk", ui-sans-serif, system-ui, -apple-system, "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Yu Gothic", Meiryo, "Noto Sans CJK JP", "Noto Sans JP", "Source Han Sans JP", "Segoe UI", Roboto, sans-serif; }
+:root:lang(ko) { --font-sans: "Space Grotesk", ui-sans-serif, system-ui, -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans CJK KR", "Noto Sans KR", "Source Han Sans K", "Segoe UI", Roboto, sans-serif; }
+:root:lang(th) { --font-sans: "Space Grotesk", ui-sans-serif, system-ui, -apple-system, Thonburi, "Sukhumvit Set", "Leelawadee UI", "Noto Sans Thai", Tahoma, "Segoe UI", Roboto, sans-serif; }
+/* Tracking (tracking-tight or tracking-wide) crowds or splits these scripts; Thai also loses
+   the visual cohesion of stacked vowel and tone marks. Unlayered so it beats the utilities. */
+:root:is(:lang(zh-Hans), :lang(zh-Hant), :lang(ja), :lang(ko), :lang(th)) *,
+:root:is(:lang(zh-Hans), :lang(zh-Hant), :lang(ja), :lang(ko), :lang(th)) *::before,
+:root:is(:lang(zh-Hans), :lang(zh-Hant), :lang(ja), :lang(ko), :lang(th)) *::after { letter-spacing: normal; }
+
+/* Language names in the pickers carry their own lang, so each one draws in its own script's face
+   whatever the UI language: the root rules above only follow <html lang>, and font-family is
+   inherited as a resolved value, so these names re-declare it. Arabic, Persian and Hebrew are
+   named here too (the UI keeps the default stack in those languages). */
+.lang-name { font-family: var(--font-sans); letter-spacing: normal; }
+.lang-name:lang(zh-Hans) { --font-sans: "Space Grotesk", ui-sans-serif, system-ui, -apple-system, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", "Noto Sans SC", "Source Han Sans SC", "Segoe UI", Roboto, sans-serif; }
+.lang-name:lang(zh-Hant) { --font-sans: "Space Grotesk", ui-sans-serif, system-ui, -apple-system, "PingFang TC", "Hiragino Sans CNS", "Microsoft JhengHei", "Noto Sans CJK TC", "Noto Sans TC", "Source Han Sans TC", "Segoe UI", Roboto, sans-serif; }
+.lang-name:lang(ja) { --font-sans: "Space Grotesk", ui-sans-serif, system-ui, -apple-system, "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Yu Gothic", Meiryo, "Noto Sans CJK JP", "Noto Sans JP", "Source Han Sans JP", "Segoe UI", Roboto, sans-serif; }
+.lang-name:lang(ko) { --font-sans: "Space Grotesk", ui-sans-serif, system-ui, -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans CJK KR", "Noto Sans KR", "Source Han Sans K", "Segoe UI", Roboto, sans-serif; }
+.lang-name:lang(th) { --font-sans: "Space Grotesk", ui-sans-serif, system-ui, -apple-system, Thonburi, "Sukhumvit Set", "Leelawadee UI", "Noto Sans Thai", Tahoma, "Segoe UI", Roboto, sans-serif; }
+.lang-name:is(:lang(ar), :lang(fa)) { --font-sans: "Space Grotesk", ui-sans-serif, system-ui, -apple-system, "SF Arabic", "Geeza Pro", "Segoe UI", "Noto Sans Arabic", "Noto Naskh Arabic", sans-serif; }
+.lang-name:lang(he) { --font-sans: "Space Grotesk", ui-sans-serif, system-ui, -apple-system, "SF Hebrew", "Arial Hebrew", "Segoe UI", "Noto Sans Hebrew", sans-serif; }
+
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
@@ -508,11 +537,16 @@ body {
   from { transform: translateX(40px); opacity: 0; }
   to { transform: translateX(0); opacity: 1; }
 }
+@keyframes panel-slide-in-rtl {
+  from { transform: translateX(-40px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
 @keyframes mobile-slide-up {
   from { transform: translateY(100%); }
   to { transform: translateY(0); }
 }
 .animate-panel-slide-in { animation: panel-slide-in 0.25s cubic-bezier(0.4, 0, 0.2, 1); }
+[dir="rtl"] .animate-panel-slide-in { animation-name: panel-slide-in-rtl; }
 .animate-mobile-slide-up { animation: mobile-slide-up 0.3s ease-out; }
 
 /* Deep-link highlight: a file opened from the upload dock flashes a green glow
@@ -532,7 +566,12 @@ body {
   0%   { transform: translateX(-100%); }
   100% { transform: translateX(300%); }
 }
+@keyframes indeterminate-slide-rtl {
+  0%   { transform: translateX(100%); }
+  100% { transform: translateX(-300%); }
+}
 .animate-indeterminate { animation: indeterminate-slide 1.2s ease-in-out infinite; }
+[dir="rtl"] .animate-indeterminate { animation-name: indeterminate-slide-rtl; }
 
 /* ── Loading: the seal and the hairline ─────────────────────
    The two loading signals the app has, replacing the bare grey ring that used
@@ -575,7 +614,7 @@ body {
 .hairline {
   position: absolute;
   top: 0;
-  left: 0;
+  left: 0; /* rtl-ok: physical geometry, full-width bar; the slide is mirrored below */
   width: 100%;
   height: 2px;
   z-index: 20;
@@ -588,6 +627,10 @@ body {
   transition: transform 6s cubic-bezier(0.1, 0.7, 0.2, 1);
 }
 @starting-style { .hairline[data-state="running"] { transform: translateX(-100%); } }
+[dir="rtl"] .hairline { transform: translateX(100%); }
+[dir="rtl"] .hairline[data-state="running"] { transform: translateX(15%); }
+@starting-style { [dir="rtl"] .hairline[data-state="running"] { transform: translateX(100%); } }
+[dir="rtl"] .hairline[data-state="done"] { transform: translateX(0); }
 .hairline[data-state="done"] {
   transform: translateX(0);
   opacity: 0;
@@ -638,7 +681,7 @@ body {
 .tabs-indicator-line {
   position: absolute;
   bottom: -1px;
-  left: 0;
+  left: 0; /* rtl-ok: physical geometry, --active-tab-left is a physical offset measured from the left edge */
   width: 1px;
   height: 2px;
   background: var(--foreground);
@@ -686,11 +729,11 @@ body {
   background: linear-gradient(100deg, #d9dee4 30%, #eef2f6 50%, #d9dee4 70%); background-size: 200% 100%;
   animation: dosya-pin-shimmer 1.15s ease-in-out infinite; }
 @keyframes dosya-pin-shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
-.dosya-pin__count { position: absolute; left: 6px; bottom: 5px; color: #fff; font-weight: 700; z-index: 1;
+.dosya-pin__count { position: absolute; left: 6px; /* rtl-ok: map marker, a drawn object that does not mirror */ bottom: 5px; color: #fff; font-weight: 700; z-index: 1;
   font-size: 14px; line-height: 1; text-shadow: 0 1px 3px rgba(0,0,0,.9); }
 /* downward tail; its tip is the marker's bottom (anchored to the coordinate) */
 .dosya-pin::after { content: ''; display: block; width: 0; height: 0; margin: -1px auto 0;
-  border-left: 7px solid transparent; border-right: 7px solid transparent; border-top: 10px solid #fff; }
+  border-left: 7px solid transparent; border-right: 7px solid transparent; border-top: 10px solid #fff; } /* rtl-ok: physical geometry, symmetric triangle */
 /* approximate (IP-derived, not exact EXIF GPS): dashed frame so it's never disguised as precise */
 .dosya-pin--approx .dosya-pin__frame { border-style: dashed; opacity: 0.92; }
 
@@ -728,7 +771,8 @@ html[data-theme-sweep]::view-transition-new(root) {
 @media (prefers-reduced-motion: reduce) {
   .animate-slide-up,
   .animate-mobile-slide-up,
-  .animate-panel-slide-in { animation: fade-in-only 140ms var(--ease-out-strong); }
+  .animate-panel-slide-in,
+  [dir="rtl"] .animate-panel-slide-in { animation: fade-in-only 140ms var(--ease-out-strong); }
   .animate-slide-down { animation: none; }
   .animate-result-in { transition: opacity 200ms var(--ease-out-strong); }
   @starting-style { .animate-result-in { transform: none; } }
@@ -753,3 +797,67 @@ html[data-theme-sweep]::view-transition-new(root) {
 .cb-shiki span { color: var(--shiki-light); }
 .dark .cb-shiki pre,
 .dark .cb-shiki span { color: var(--shiki-dark); }
+
+/* Right-to-left. Code, paths and technical values stay left-to-right and are
+   isolated so they cannot reorder the text around them. */
+[dir="rtl"] :is(pre, code, kbd, samp) { direction: ltr; unicode-bidi: isolate; }
+/* Values that are always Latin: typed left-to-right, but flush with the start of the row. */
+/* In the base layer so a text-center or text-start utility on such an input still wins. */
+@layer base {
+  [dir="rtl"] input:is([type=email], [type=url], [type=tel], [type=password], [type=number]) { direction: ltr; text-align: right; } /* rtl-ok: rtl selector, right is the start edge of an RTL row */
+}
+/* Free text takes the direction of what is typed. */
+[dir="rtl"] :is(input:not([type]), input[type=text], input[type=search], textarea) { unicode-bidi: plaintext; }
+/* Letter-spacing breaks the joining of Arabic and Persian letters. Unlayered on
+   purpose so it beats Tailwind's tracking-* utilities; Hebrew keeps its tracking. */
+:root:is([lang|="ar"], [lang|="fa"]) *,
+:root:is([lang|="ar"], [lang|="fa"]) *::before,
+:root:is([lang|="ar"], [lang|="fa"]) *::after { letter-spacing: normal; }
+/* The video player root is left-to-right; its prose panels (report popover,
+   the "?" shortcuts overlay) are text and follow the page. */
+[dir="rtl"] :is(.dp-report, .dp-keys-panel) { direction: rtl; }
+
+/* ── Markdown editor: live preview ───────────────────────────────────────
+   The preview's HTML comes from marked + DOMPurify (lib/md-render.ts), which
+   strips every class and style attribute, so the look lives here and keys off
+   element names alone. Theme tokens and logical properties only: the pane
+   follows every theme in light and dark, and lists and quotes indent from the
+   start edge in a right-to-left page. */
+.md-preview {
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+.md-preview > :first-child { margin-top: 0; }
+.md-preview :is(h1, h2, h3, h4, h5, h6) { font-weight: 600; line-height: 1.3; margin: 20px 0 8px; }
+.md-preview h1 { font-size: 24px; }
+.md-preview h2 { font-size: 18px; }
+.md-preview h3 { font-size: 16px; }
+.md-preview :is(h4, h5, h6) { font-size: 14px; }
+.md-preview p { margin: 0 0 10px; }
+.md-preview :is(ul, ol) { margin: 0 0 10px; padding-inline-start: 22px; }
+.md-preview ul { list-style: disc; }
+.md-preview ol { list-style: decimal; }
+.md-preview li { margin: 2px 0; }
+.md-preview li > :is(ul, ol) { margin-bottom: 0; }
+/* GFM task items: marked emits <li><input type=checkbox disabled> text</li>. */
+.md-preview li:has(> input[type="checkbox"]) { list-style: none; margin-inline-start: -20px; }
+.md-preview input[type="checkbox"] { accent-color: var(--primary); margin: 0; margin-inline-end: 6px; vertical-align: -1px; }
+.md-preview a {
+  color: var(--primary);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in oklab, var(--primary) 40%, transparent);
+  text-underline-offset: 2px;
+}
+.md-preview code { font-family: var(--font-mono); font-size: 12px; background: var(--muted); border-radius: 4px; padding: 1px 5px; }
+.md-preview pre { background: var(--muted); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; margin: 0 0 12px; overflow-x: auto; }
+.md-preview pre code { background: none; padding: 0; font-size: 12px; line-height: 1.6; }
+.md-preview blockquote { margin: 0 0 10px; padding: 2px 12px; border-inline-start: 3px solid var(--border); color: var(--muted-foreground); }
+.md-preview hr { border: 0; border-top: 1px solid var(--border); margin: 16px 0; }
+.md-preview table { border-collapse: collapse; margin: 0 0 12px; display: block; overflow-x: auto; }
+.md-preview :is(th, td) { border: 1px solid var(--border); padding: 6px 10px; text-align: start; }
+.md-preview th { background: var(--muted); font-weight: 600; }
+.md-preview img { max-width: 100%; height: auto; border-radius: 6px; }
+.md-preview del { color: var(--muted-foreground); }

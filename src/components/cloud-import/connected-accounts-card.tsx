@@ -5,6 +5,7 @@ import { disconnectAccount, listAccounts, type CloudAccount } from '@/api/cloud-
 import { PROVIDER_ICONS, PROVIDER_LABELS } from '@/lib/cloud-providers';
 import { timeAgo } from '@/lib/helpers';
 import { toast } from '@/lib/toast';
+import { useT } from '@/lib/i18n';
 
 /**
  * Which accounts of one provider are connected, shown on that provider's
@@ -19,6 +20,7 @@ export function ConnectedAccountsCard({ provider, onImport }: {
   /** When given, each account row shows an Import button calling this with the account id. */
   onImport?: (accountId: string) => void;
 }) {
+  const t = useT();
   const [accounts, setAccounts] = useState<CloudAccount[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [disconnecting, setDisconnecting] = useState<string | null>(null);
@@ -41,10 +43,10 @@ export function ConnectedAccountsCard({ provider, onImport }: {
     setDisconnecting(id);
     try {
       await disconnectAccount(id);
-      toast.success('Account disconnected', 'The account has been removed.');
+      toast.success(t('common.feedback.accountDisconnected'), t('common.feedback.theAccountHasBeenRemoved'));
       await load();
     } catch {
-      toast.error('Disconnect failed', 'The account could not be disconnected.');
+      toast.error(t('common.error.disconnectFailed'), t('common.error.theAccountCouldNotBeDisconnected'));
     } finally {
       setDisconnecting(null);
     }
@@ -56,9 +58,9 @@ export function ConnectedAccountsCard({ provider, onImport }: {
 
   return (
     <div className="mt-2 rounded-lg border bg-card p-3" data-testid="connected-accounts-card">
-      <p className="text-xs font-semibold mb-1">Connected accounts</p>
+      <p className="text-xs font-semibold mb-1">{t('common.label.connectedAccounts')}</p>
       {accounts.length === 0 ? (
-        <p className="py-2 text-xs text-muted-foreground">No {label} account connected yet.</p>
+        <p className="py-2 text-xs text-muted-foreground">{t('common.description.noLabelAccountConnectedYet', { label })}</p>
       ) : (
         accounts.map((acc) => (
           <div key={acc.id} className="flex items-center justify-between py-2 border-b last:border-b-0">
@@ -72,13 +74,13 @@ export function ConnectedAccountsCard({ provider, onImport }: {
               </div>
               <div className="min-w-0">
                 <p className="text-xs font-medium truncate">{acc.account_email}</p>
-                <p className="text-[11px] text-muted-foreground">Connected {timeAgo(acc.created_at)}</p>
+                <p className="text-[11px] text-muted-foreground">{t('common.label.connectedAcccreatedAt', { date: timeAgo(acc.created_at) })}</p>
               </div>
             </div>
             <div className="flex items-center gap-2 shrink-0">
               {onImport && (
                 <Button size="sm" className="text-xs" onClick={() => onImport(acc.id)}>
-                  Import
+                  {t('common.action.import')}
                 </Button>
               )}
               <Button
@@ -88,7 +90,7 @@ export function ConnectedAccountsCard({ provider, onImport }: {
                 onClick={() => disconnect(acc.id)}
                 disabled={disconnecting === acc.id}
               >
-                {disconnecting === acc.id ? <Loader2 className="size-3 animate-spin" /> : 'Disconnect'}
+                {disconnecting === acc.id ? <Loader2 className="size-3 animate-spin" /> : t('common.action.disconnect')}
               </Button>
             </div>
           </div>

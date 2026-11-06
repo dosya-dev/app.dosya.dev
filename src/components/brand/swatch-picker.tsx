@@ -1,4 +1,6 @@
 import { SWATCHES, resolveSwatch } from '@/lib/palette';
+import { swatchLabel } from '@/lib/themes';
+import { useT } from '@/lib/i18n';
 
 /**
  * The colour picker for anything that carries an identity colour: a workspace, a folder
@@ -20,7 +22,7 @@ export function SwatchPicker({
   size = 'md',
   shape = 'circle',
   disabled,
-  label = 'Colour',
+  label,
 }: {
   value: string;
   onChange: (hex: string) => void;
@@ -29,13 +31,14 @@ export function SwatchPicker({
   disabled?: boolean;
   label?: string;
 }) {
+  const t = useT();
   const selected = resolveSwatch(value);
   const box = size === 'sm' ? 'size-5' : 'size-7';
   const corner = shape === 'circle' ? 'rounded-full' : 'rounded-lg';
   const ring = size === 'sm' ? 'ring-2 ring-offset-1' : 'ring-2 ring-offset-2';
 
   return (
-    <div className="flex flex-wrap gap-2" role="radiogroup" aria-label={label}>
+    <div className="flex flex-wrap gap-2" role="radiogroup" aria-label={label ?? t('common.label.colour')}>
       {SWATCHES.map((s) => {
         const isOn = selected ? selected === s.name : value === s.light;
         return (
@@ -44,8 +47,8 @@ export function SwatchPicker({
             type="button"
             role="radio"
             aria-checked={isOn}
-            aria-label={s.label}
-            title={s.label}
+            aria-label={swatchLabel(s.name)}
+            title={swatchLabel(s.name)}
             disabled={disabled}
             onClick={() => onChange(s.light)}
             className={`${box} ${corner} transition-transform ${

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ApiError, apiErrorMessage } from '@/api/client';
 import { browse, type CloudEntryDto, type SelectionEntry } from '@/api/cloud-import';
 import { retryAfterFromError } from '@/stores/cloud-imports';
+import { t } from '@/lib/i18n';
 
 export function toggleSelection(
   current: SelectionEntry[],
@@ -44,7 +45,7 @@ function isReconnectRequired(err: unknown): boolean {
 }
 
 export function useCloudBrowser(accountId: string | null) {
-  const [crumbs, setCrumbs] = useState<Crumb[]>([{ id: '', name: 'Home' }]);
+  const [crumbs, setCrumbs] = useState<Crumb[]>([{ id: '', name: t('common.label.home') }]);
   const [entries, setEntries] = useState<CloudEntryDto[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
   const [selection, setSelection] = useState<SelectionEntry[]>([]);
@@ -98,7 +99,7 @@ export function useCloudBrowser(accountId: string | null) {
       if (!isCurrent()) return; // stale error from a superseded request - discard
       if (isReconnectRequired(err)) {
         setReconnectRequired(true);
-        setError(apiErrorMessage(err, 'This account needs to be reconnected.'));
+        setError(apiErrorMessage(err, t('common.error.thisAccountNeedsToBeReconnected')));
         return;
       }
       const wait = retryAfterFromError(err);
@@ -109,7 +110,7 @@ export function useCloudBrowser(accountId: string | null) {
         }, wait * 1000);
         return;
       }
-      setError(apiErrorMessage(err, 'Could not list that folder'));
+      setError(apiErrorMessage(err, t('common.error.couldNotListThatFolder')));
     } finally {
       // Only the current request may clear the spinner - an older, already-
       // superseded request finishing late must not flip `loading` off while
@@ -137,7 +138,7 @@ export function useCloudBrowser(accountId: string | null) {
       clearTimeout(retryTimer.current);
       retryTimer.current = null;
     }
-    setCrumbs([{ id: '', name: 'Home' }]);
+    setCrumbs([{ id: '', name: t('common.label.home') }]);
     setEntries([]);
     setCursor(null);
     setSelection([]);

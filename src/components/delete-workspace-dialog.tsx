@@ -16,9 +16,13 @@
  * The server enforces all three independently (see the DELETE handler); nothing
  * here is the actual gate. This is the part that makes the gate legible.
  */
+import { formatNumber } from '@/lib/format-locale';
 import { useCallback, useEffect, useState } from 'react';
 import { AlertTriangle, Loader2, Mail, Check, Trash2 } from 'lucide-react';
 import { api, apiErrorMessage } from '@/api/client';
+import { useT } from '@/lib/i18n';
+import { richText } from '@/lib/rich-text';
+import type { MessageKey } from '@/i18n/keys';
 import { humanSize } from '@/lib/helpers';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -37,11 +41,9 @@ interface DeletePreview {
   blockers: string[];
 }
 
-const BLOCKER_COPY: Record<string, string> = {
-  has_members:
-    'This workspace still has other members. Remove them (or transfer ownership) before deleting it.',
-  last_workspace:
-    'This is your only workspace. Create another one first - an account must always have at least one.',
+const BLOCKER_COPY: Record<string, MessageKey> = {
+  has_members: 'settings.description.thisWorkspaceStillHasOtherMembersRemoveThemOrTransferOwnership',
+  last_workspace: 'settings.description.thisIsYourOnlyWorkspaceCreateAnotherOneFirstAn',
 };
 
 type Step = 'review' | 'verify' | 'confirm' | 'deleting';
@@ -57,6 +59,7 @@ interface DeleteWorkspaceDialogProps {
 }
 
 export function DeleteWorkspaceDialog({ open, onOpenChange, workspaceId, onDeleted }: DeleteWorkspaceDialogProps) {
+  const t = useT();
   const [step, setStep] = useState<Step>('review');
   const [preview, setPreview] = useState<DeletePreview | null>(null);
   const [loadingPreview, setLoadingPreview] = useState(false);
@@ -88,10 +91,10 @@ export function DeleteWorkspaceDialog({ open, onOpenChange, workspaceId, onDelet
     try {
       setPreview(await api<DeletePreview>(`/api/workspaces/${workspaceId}/delete-preview`));
     } catch (err) {
-      setPreviewError(apiErrorMessage(err, 'Could not load this workspace.'));
+      setPreviewError(apiErrorMessage(err, t('settings.error.couldNotLoadThisWorkspace')));
     }
     setLoadingPreview(false);
-  }, [workspaceId]);
+  }, [workspaceId, t]);
 
   useEffect(() => {
     if (open) void loadPreview();
@@ -113,7 +116,7 @@ export function DeleteWorkspaceDialog({ open, onOpenChange, workspaceId, onDelet
         setStep('verify');
       }
     } catch (err) {
-      setError(apiErrorMessage(err, 'Could not send the confirmation code.'));
+      setError(apiErrorMessage(err, t('settings.error.couldNotSendTheConfirmationCode')));
     }
     setSending(false);
   };
@@ -130,7 +133,7 @@ export function DeleteWorkspaceDialog({ open, onOpenChange, workspaceId, onDelet
     } catch (err) {
       // Back to the confirm step rather than closing: the code may simply have
       // been mistyped, and it is still valid for another few attempts.
-      setError(apiErrorMessage(err, 'The workspace could not be deleted.'));
+      setError(apiErrorMessage(err, t('settings.error.theWorkspaceCouldNotBeDeleted')));
       setStep('confirm');
     }
   };
@@ -143,14 +146,14 @@ export function DeleteWorkspaceDialog({ open, onOpenChange, workspaceId, onDelet
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-destructive">
-            <AlertTriangle className="size-4" /> Delete workspace
+            <AlertTriangle className="size-4" /> {t('settings.heading.deleteWorkspace')}
           </DialogTitle>
         </DialogHeader>
 
         {/* Step meter. Tracks the ceremony, not the server's work - there is no
             progress to report from a single DELETE, and a bar that invented one
             would be a lie told at the worst possible moment. */}
-        <div className="flex items-center gap-1.5" aria-label={`Step ${Math.min(stepIndex + 1, STEP_ORDER.length)} of ${STEP_ORDER.length}`}>
+        <div className="flex items-center gap-1.5" aria-label={t('settings.accessibility.stepMathminOfStepOrdercount', { shown: Math.min(stepIndex + 1, STEP_ORDER.length), total: STEP_ORDER.length })}>
           {STEP_ORDER.map((s, i) => (
             <div
               key={s}
@@ -160,7 +163,7 @@ export function DeleteWorkspaceDialog({ open, onOpenChange, workspaceId, onDelet
         </div>
 
         {error && (
-          <p className="text-xs text-destructive bg-destructive/10 border border-destructive/20 rounded-md px-3 py-2">
+          <p dir="auto" className="text-xs text-destructive bg-destructive/10 border border-destructive/20 rounded-md px-3 py-2">
             {error}
           </p>
         )}
@@ -169,40 +172,41 @@ export function DeleteWorkspaceDialog({ open, onOpenChange, workspaceId, onDelet
           <>
             {loadingPreview ? (
               <div className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
-                <Loader2 className="size-4 animate-spin" /> Counting what would be deleted...
+                <Loader2 className="size-4 animate-spin" /> {t('settings.description.countingWhatWouldBeDeleted')}
               </div>
             ) : previewError ? (
-              <p className="text-sm text-muted-foreground py-4">{previewError}</p>
+              <p dir="auto" className="text-sm text-muted-foreground py-4">{previewError}</p>
             ) : preview ? (
               <>
                 <p className="text-sm text-muted-foreground">
-                  Deleting <span className="font-semibold text-foreground break-all">{preview.workspace_name}</span> destroys
-                  everything in it. Deleted files are not recoverable - not by you, and not by dosya.dev support.
+                  {richText(
+                    t('settings.description.deletingPreviewworkspaceNameDestroysEverythingInItDeletedFilesAreNotRecoverable', { previewWorkspace_name: '{previewWorkspace_name}' }),
+                    { previewWorkspace_name: <span className="font-semibold text-foreground break-all">{preview.workspace_name}</span> },
+                  )}
                 </p>
                 <div className="rounded-lg border divide-y text-sm">
-                  <Row label="Files permanently deleted" value={preview.file_count.toLocaleString()} />
-                  <Row label="Storage freed" value={humanSize(preview.total_bytes)} />
-                  <Row label="Folders removed" value={preview.folder_count.toLocaleString()} />
+                  <Row label={t('settings.label.filesPermanentlyDeleted')} value={formatNumber(preview.file_count)} />
+                  <Row label={t('settings.label.storageFreed')} value={humanSize(preview.total_bytes)} />
+                  <Row label={t('settings.label.foldersRemoved')} value={formatNumber(preview.folder_count)} />
                   <Row
-                    label="Team members losing access"
-                    value={preview.member_count.toLocaleString()}
+                    label={t('settings.label.teamMembersLosingAccess')}
+                    value={formatNumber(preview.member_count)}
                   />
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Share links, file requests, comments and version history for these files are removed too.
-                  This action cannot be undone.
+                  {t('settings.error.shareLinksFileRequestsCommentsAndVersionHistoryForTheseFiles')}
                 </p>
                 {blockers.map((b) => (
                   <p key={b} className="text-xs text-destructive bg-destructive/10 border border-destructive/20 rounded-md px-3 py-2">
-                    {BLOCKER_COPY[b] ?? b}
+                    {BLOCKER_COPY[b] ? t(BLOCKER_COPY[b]) : b}
                   </p>
                 ))}
               </>
             ) : null}
             <DialogFooter>
-              <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+              <Button variant="outline" onClick={() => onOpenChange(false)}>{t('common.cancel')}</Button>
               <Button variant="destructive" onClick={sendCode} disabled={sending || blocked || !preview}>
-                {sending && <Loader2 className="size-4 animate-spin mr-1.5" />} Continue
+                {sending && <Loader2 className="size-4 animate-spin me-1.5" />} {t('common.continue')}
               </Button>
             </DialogFooter>
           </>
@@ -213,8 +217,10 @@ export function DeleteWorkspaceDialog({ open, onOpenChange, workspaceId, onDelet
             <div className="flex items-start gap-2.5 rounded-lg border bg-muted/40 px-3 py-2.5">
               <Mail className="size-4 mt-0.5 shrink-0 text-muted-foreground" />
               <p className="text-xs text-muted-foreground">
-                We sent a 6-digit code to <span className="font-medium text-foreground break-all">{sentTo || 'your email'}</span>.
-                It expires in 15 minutes.
+                {richText(
+                  t('settings.description.weSentA6DigitCodeToSenttoyouremailItExpiresIn15', { sentToYourEmail: '{sentToYourEmail}' }),
+                  { sentToYourEmail: <span className="font-medium text-foreground break-all">{sentTo || t('settings.label.yourEmail')}</span> },
+                )}
               </p>
             </div>
             <Input
@@ -233,12 +239,12 @@ export function DeleteWorkspaceDialog({ open, onOpenChange, workspaceId, onDelet
               disabled={sending}
               className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2 disabled:opacity-50"
             >
-              {sending ? 'Sending...' : 'Send a new code'}
+              {sending ? t('common.action.sending') : t('settings.action.sendANewCode')}
             </button>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setStep('review')}>Back</Button>
+              <Button variant="outline" onClick={() => setStep('review')}>{t('common.back')}</Button>
               <Button variant="destructive" onClick={() => setStep('confirm')} disabled={code.length !== 6}>
-                Continue
+                {t('common.continue')}
               </Button>
             </DialogFooter>
           </>
@@ -247,26 +253,32 @@ export function DeleteWorkspaceDialog({ open, onOpenChange, workspaceId, onDelet
         {step === 'confirm' && preview && (
           <>
             <p className="text-sm text-muted-foreground">
-              Type <span className="font-semibold text-foreground break-all">{preview.workspace_name}</span> to confirm.
-              This deletes {preview.file_count.toLocaleString()} files ({humanSize(preview.total_bytes)}) forever.
+              {richText(
+                t('settings.description.typePreviewworkspaceNameToConfirmThisDeletesFileCounttolocalestringFilesPreviewtotalBytesForever', {
+                  previewWorkspace_name: '{previewWorkspace_name}',
+                  file_countToLocaleString: formatNumber(preview.file_count),
+                  previewTotal_bytes: humanSize(preview.total_bytes),
+                }),
+                { previewWorkspace_name: <span className="font-semibold text-foreground break-all">{preview.workspace_name}</span> },
+              )}
             </p>
             <Input
               value={typedName}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => setTypedName(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && nameMatches && void doDelete()}
-              placeholder="Workspace name"
+              placeholder={t('settings.placeholder.workspaceName')}
               className="h-9"
               autoFocus
             />
             {nameMatches && (
               <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <Check className="size-3 text-green-600" /> Name matches
+                <Check className="size-3 text-green-600" /> {t('settings.label.nameMatches')}
               </p>
             )}
             <DialogFooter>
-              <Button variant="outline" onClick={() => setStep('verify')}>Back</Button>
+              <Button variant="outline" onClick={() => setStep('verify')}>{t('common.back')}</Button>
               <Button variant="destructive" onClick={doDelete} disabled={!nameMatches}>
-                <Trash2 className="size-4 mr-1.5" /> Delete forever
+                <Trash2 className="size-4 me-1.5" /> {t('settings.action.deleteForever')}
               </Button>
             </DialogFooter>
           </>
@@ -275,14 +287,14 @@ export function DeleteWorkspaceDialog({ open, onOpenChange, workspaceId, onDelet
         {step === 'deleting' && (
           <div className="py-6 space-y-3">
             <p className="flex items-center gap-2 text-sm text-foreground">
-              <Loader2 className="size-4 animate-spin" /> Deleting workspace...
+              <Loader2 className="size-4 animate-spin" /> {t('settings.description.deletingWorkspace')}
             </p>
             {/* The response reports whether physical cleanup is still pending. */}
             <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
               <div className="h-full w-1/3 rounded-full bg-destructive animate-indeterminate" />
             </div>
             <p className="text-xs text-muted-foreground">
-              Starting deletion of files, folders, share links and members.
+              {t('settings.description.startingDeletionOfFilesFoldersShareLinksAndMembers')}
             </p>
           </div>
         )}

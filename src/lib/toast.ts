@@ -2,6 +2,9 @@
 // icon on the left, title top-right, optional description underneath.
 // Rendered imperatively so it can be called from anywhere (no React context).
 
+import { t } from '@/lib/i18n';
+import type { MessageKey } from '@/i18n/keys';
+
 type ToastType = 'success' | 'error' | 'info';
 
 const ICONS: Record<ToastType, string> = {
@@ -28,7 +31,7 @@ function getContainer(): HTMLElement {
     // No `gap` here on purpose: the 8px lives on the toast itself (see the
     // stylesheet) so it collapses with the row when one leaves. A gap on the
     // container would survive the collapse and leave a hole behind.
-    el.style.cssText = 'position:fixed;top:20px;right:20px;z-index:9999;display:flex;flex-direction:column;pointer-events:none;max-width:calc(100vw - 40px)';
+    el.style.cssText = 'position:fixed;top:20px;inset-inline-end:20px;z-index:9999;display:flex;flex-direction:column;pointer-events:none;max-width:calc(100vw - 40px)';
     document.body.appendChild(el);
   }
   return el;
@@ -77,12 +80,15 @@ function show(title: string, opts: { type?: ToastType; description?: string; dur
   const titleEl = document.createElement('div');
   titleEl.className = 'dosya-toast__title';
   titleEl.textContent = title;
+  // Server text is not translated: each line takes its own direction.
+  titleEl.dir = 'auto';
   el.appendChild(titleEl);
 
   if (description) {
     const descEl = document.createElement('div');
     descEl.className = 'dosya-toast__desc';
     descEl.textContent = description;
+    descEl.dir = 'auto';
     el.appendChild(descEl);
   }
 
@@ -182,10 +188,11 @@ if (typeof document !== 'undefined' && !document.getElementById('dosya-toast-sty
   document.head.appendChild(style);
 }
 
-const DEFAULT_TITLE: Record<ToastType, string> = {
-  success: 'Success',
-  error: 'Error',
-  info: 'Notice',
+// Keys, not sentences: the title is translated when the toast is raised.
+const DEFAULT_TITLE: Record<ToastType, MessageKey> = {
+  success: 'common.label.success',
+  error: 'common.error.error',
+  info: 'common.label.notice',
 };
 
 // Two ways to call each:
@@ -196,7 +203,7 @@ function emit(type: ToastType, message: string, description?: string, opts?: { a
   if (description !== undefined) {
     show(message, { type, description, ...opts });
   } else {
-    show(DEFAULT_TITLE[type], { type, description: message, ...opts });
+    show(t(DEFAULT_TITLE[type]), { type, description: message, ...opts });
   }
 }
 

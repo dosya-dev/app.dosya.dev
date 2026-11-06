@@ -7,16 +7,14 @@
  * date/time in its title, and the preference below swaps the cell text itself
  * to the absolute string for people who always want it.
  *
- * Formatting goes through Intl with `undefined` as the locale so it follows
- * the browser's language and time zone rather than a hard-coded en-US/UTC.
+ * Formatting goes through lib/format-locale: the chosen app language, and for
+ * English the browser's locale and time zone rather than a hard-coded en-US/UTC.
  */
 import { create } from 'zustand';
+import { formatDate, formatDateWith } from '@/lib/format-locale';
 import { timeAgo } from '@/lib/helpers';
 
 export const EXACT_DATES_KEY = 'dosya_exact_dates';
-
-let exactFormatter: Intl.DateTimeFormat | null = null;
-let exactUtcFormatter: Intl.DateTimeFormat | null = null;
 
 /**
  * `wallClock` marks a value that is NOT a real instant: an EXIF capture date
@@ -32,12 +30,8 @@ export interface DateFormatOptions {
 
 /** "15 Jun 2024, 10:00" in the viewer's locale and zone (medium date, short time). */
 export function formatExactDateTime(unixSeconds: number, opts: DateFormatOptions = {}): string {
-  if (opts.wallClock) {
-    exactUtcFormatter ??= new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short', timeZone: 'UTC' });
-    return exactUtcFormatter.format(new Date(unixSeconds * 1000));
-  }
-  exactFormatter ??= new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' });
-  return exactFormatter.format(new Date(unixSeconds * 1000));
+  if (opts.wallClock) return formatDateWith(unixSeconds, { dateStyle: 'medium', timeStyle: 'short', timeZone: 'UTC' });
+  return formatDate(unixSeconds, 'datetime');
 }
 
 export interface DateCellText {

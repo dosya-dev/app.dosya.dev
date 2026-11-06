@@ -10,15 +10,24 @@
  * gate itself applies, so a file this screens out is exactly a file the server
  * would have refused, with the same sentence.
  */
+import { fixedNumber, sizeUnits } from '@/lib/format-locale';
 import { api } from '@/api/client';
+import { t } from '@/lib/i18n';
+import { translateExternal } from '@/lib/external-text';
 import {
-  checkUploadFile as checkUploadRules, checkBatchFitsQuota, summariseRejections, validateFileName,
-  sanitizeIngestName, type UploadLimits,
+  checkUploadFile as checkUploadRules, checkBatchFitsQuota, summariseRejections as summariseRejectionsEn,
+  validateFileName, sanitizeIngestName, type UploadLimits,
 } from '@/lib/validation-policy.generated';
 
-// Re-exported so callers have one import for the whole screening story, and so
-// desktop and web are demonstrably phrasing rejections with the same function.
-export { summariseRejections };
+/**
+ * The shared function that phrases a refused batch (desktop and web phrase
+ * rejections with the same one), its wrapper sentence in the chosen language.
+ * The reasons inside are already translated by checkUploadFile; the strict
+ * matcher keeps them exactly as given.
+ */
+export function summariseRejections(rejected: { name: string; reason: string }[]): string {
+  return translateExternal(summariseRejectionsEn(rejected), 'toast');
+}
 
 interface LimitsResponse extends UploadLimits {
   ok: boolean;
@@ -87,8 +96,9 @@ export function checkUploadFile(
   limits: UploadLimits,
 ): string | null {
   const nameError = validateFileName(sanitizeIngestName(file.name));
-  if (nameError) return nameError;
-  return checkUploadRules(file, limits);
+  if (nameError) return translateExternal(nameError, 'error');
+  const reason = checkUploadRules(file, limits);
+  return reason === null ? null : translateExternal(reason, 'error');
 }
 
 export interface Screened<T> {
@@ -131,15 +141,15 @@ export function screenBatch<T>(
   const fit = checkBatchFitsQuota(total, limits);
   const quotaWarning = fit.fits
     ? null
-    : `This upload is about ${formatBytes(fit.over)} larger than the space left in this workspace. `
-      + 'Some files may be refused.';
+    : t('common.description.thisUploadIsAboutFitoverLargerThanTheSpaceLeftIn', { fitOver: formatBytes(fit.over) });
 
   return { accepted, rejected, rejectedItems, quotaWarning };
 }
 
 function formatBytes(bytes: number): string {
   const MB = 1_048_576, GB = 1_073_741_824;
-  if (bytes >= GB) return `${(bytes / GB).toFixed(1)} GB`;
-  if (bytes >= MB) return `${(bytes / MB).toFixed(0)} MB`;
-  return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  const u = sizeUnits();
+  if (bytes >= GB) return `${fixedNumber(bytes / GB, 1)} ${u.GB}`;
+  if (bytes >= MB) return `${fixedNumber(bytes / MB, 0)} ${u.MB}`;
+  return `${fixedNumber(Math.max(1, Math.round(bytes / 1024)), 0)} ${u.KB}`;
 }

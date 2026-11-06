@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 
@@ -12,7 +12,7 @@ vi.mock('@/api/client', async (importOriginal) => ({
 // spawns workers; this suite is about which URL the <img> points at.
 vi.mock('@/lib/heic', () => ({ getHeicPreviewUrl: vi.fn(() => new Promise(() => {})) }));
 
-const { FilePreviewImage } = await import('./file-preview-image');
+const { FilePreviewImage, THUMB_RETRY_MS } = await import('./file-preview-image');
 
 beforeAll(() => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -30,11 +30,30 @@ describe('FilePreviewImage', () => {
   let root: Root | null = null;
   let container: HTMLDivElement | null = null;
 
+  beforeEach(() => { vi.useFakeTimers(); });
   afterEach(() => {
     if (root) act(() => root!.unmount());
     container?.remove();
     root = null; container = null;
+    vi.useRealTimers();
   });
+
+  const img = (c: HTMLElement) => c.querySelector('img') as HTMLImageElement | null;
+
+  /**
+   * A thumbnail that fails for good: the first error only earns one retry after
+   * a pause (same URL plus `retry=1`), and the second error is what moves the
+   * component on to the next step of its chain.
+   */
+  function failThumbForGood(c: HTMLElement) {
+    const before = img(c)!.src;
+    act(() => { img(c)!.dispatchEvent(new Event('error')); });
+    expect(img(c)!.src).toBe(before);
+    act(() => { vi.advanceTimersByTime(THUMB_RETRY_MS); });
+    expect(img(c)!.src).toContain('/thumb');
+    expect(img(c)!.src).toContain('retry=1');
+    act(() => { img(c)!.dispatchEvent(new Event('error')); });
+  }
 
   function render(node: React.ReactElement) {
     container = document.createElement('div');
@@ -43,8 +62,6 @@ describe('FilePreviewImage', () => {
     act(() => { root!.render(node); });
     return container;
   }
-
-  const img = (c: HTMLElement) => c.querySelector('img') as HTMLImageElement | null;
 
   it('asks for a thumbnail at the requested size, not the full original', () => {
     // Regression: this used to point straight at /raw and ignore `size`, so a
@@ -66,16 +83,16 @@ describe('FilePreviewImage', () => {
     expect(src).toContain('w=512');
   });
 
-  it('falls back to the raw original when the thumbnail fails to load', () => {
+  it('falls back to the raw original when the thumbnail fails to load (after one retry)', () => {
     const c = render(<FilePreviewImage fileId="f1" fileName="beach.jpg" size={256} fallback={<span>icon</span>} />);
     expect(img(c)!.src).toContain('/thumb');
-    act(() => { img(c)!.dispatchEvent(new Event('error')); });
+    failThumbForGood(c);
     expect(img(c)!.src).toBe('https://api.example.com/api/files/f1/raw');
   });
 
   it('shows the fallback only after the raw original fails too', () => {
     const c = render(<FilePreviewImage fileId="f1" fileName="beach.jpg" size={256} fallback={<span>icon</span>} />);
-    act(() => { img(c)!.dispatchEvent(new Event('error')); });
+    failThumbForGood(c);
     expect(c.textContent).not.toContain('icon');
     act(() => { img(c)!.dispatchEvent(new Event('error')); });
     expect(img(c)).toBeNull();
@@ -87,8 +104,9 @@ describe('FilePreviewImage', () => {
     expect(img(c)!.src).toContain('/api/files/f2/thumb');
     // A failed HEIC thumbnail means "the Worker could not decode it", so it
     // must NOT degrade to /raw (browsers cannot render HEIC) - it goes to the
-    // WASM decoder, which renders a placeholder while it works.
-    act(() => { img(c)!.dispatchEvent(new Event('error')); });
+    // WASM decoder, which renders a placeholder while it works. It still gets
+    // the one retry first: a 415 is final, but a 503 under load is not.
+    failThumbForGood(c);
     expect(img(c)).toBeNull();
     expect(c.querySelector('.animate-pulse')).not.toBeNull();
   });

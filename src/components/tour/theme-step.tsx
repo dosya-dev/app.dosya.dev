@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { api } from '@/api/client';
+import { useT } from '@/lib/i18n';
 import { THEMES } from '@/lib/themes';
 import { applyThemeAnimated, readCache, writeCache } from '@/lib/theme';
 
@@ -20,6 +21,7 @@ interface ThemeStepProps {
  * straight through with no mapping.
  */
 export function ThemeStep({ onThemeChange }: ThemeStepProps) {
+  const t = useT();
   const [selected, setSelected] = useState<string>(() => readCache().theme);
 
   const pick = async (themeId: string) => {
@@ -41,22 +43,22 @@ export function ThemeStep({ onThemeChange }: ThemeStepProps) {
 
   return (
     <div>
-      <p className="text-sm font-medium mb-1">Pick a theme</p>
-      <p className="text-xs text-muted-foreground mb-3">You can change it later in settings.</p>
+      <p className="text-sm font-medium mb-1">{t('welcome.label.pickATheme')}</p>
+      <p className="text-xs text-muted-foreground mb-3">{t('welcome.description.youCanChangeItLaterInSettings')}</p>
       <div className="flex flex-wrap items-center gap-2">
-        {THEMES.map((t) => (
+        {THEMES.map((th) => (
           <button
-            key={t.id}
+            key={th.id}
             type="button"
-            title={t.label}
-            aria-label={`Theme ${t.label}`}
-            data-testid={`tour-theme-${t.id}`}
-            data-selected={selected === t.id ? 'true' : 'false'}
-            onClick={() => { void pick(t.id); }}
+            title={th.label}
+            aria-label={t('welcome.action.themeTlabel', { tLabel: th.label })}
+            data-testid={`tour-theme-${th.id}`}
+            data-selected={selected === th.id ? 'true' : 'false'}
+            onClick={() => { void pick(th.id); }}
             className={`size-7 rounded-full border transition-transform hover:scale-110 ${
-              selected === t.id ? 'ring-2 ring-foreground ring-offset-2 ring-offset-background' : 'border-black/10'
+              selected === th.id ? 'ring-2 ring-foreground ring-offset-2 ring-offset-background' : 'border-black/10'
             }`}
-            style={{ background: t.swatch.primary }}
+            style={{ background: th.swatch.primary }}
           />
         ))}
       </div>

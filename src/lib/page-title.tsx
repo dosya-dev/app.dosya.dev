@@ -4,55 +4,62 @@ import {
   LayoutDashboard, FolderOpen, Upload, Share2, Users, Settings, User, Inbox,
   MessageSquare, Activity, Search, CreditCard, Shield, ShieldCheck, LogIn,
   Building2, Bell, MapPin, Plug, RefreshCw, HardDrive, Server, Cloud, Monitor,
-  Terminal, Code2, FolderInput, Gift, LayoutGrid, BarChart3, CopyX, FileText, type LucideIcon,
+  Terminal, Code2, FolderInput, Gift, LayoutGrid, BarChart3, CopyX, FileText, ScanFace, type LucideIcon,
 } from 'lucide-react';
 import { useUploads, uploadSummary, type UploadSummary } from '@/stores/uploads';
+import { t, useLocale, useT } from '@/lib/i18n';
+import type { MessageKey } from '@/i18n/keys';
 
 // Single source of truth for each route's browser tab title AND in-app header icon.
 // Browser title format: "<Page> · dosya.dev" (or just "dosya.dev" for unknown routes).
 
 const SUFFIX = 'dosya.dev';
 
-// Exact pathname → title
-const TITLES: Record<string, string> = {
-  '/': 'Dashboard',
-  '/files': 'Files',
-  '/file-requests': 'File requests',
-  '/map': 'Map',
-  '/duplicates': 'Duplicates',
-  '/uploads': 'Upload',
-  '/settings': 'Settings',
-  '/profile': 'Profile',
-  '/api-analytics': 'API analytics',
-  '/teams': 'Team',
-  '/integrations': 'Integrations',
+// Exact pathname → title (a catalog key, so the title follows the language)
+const TITLE_KEYS: Record<string, MessageKey> = {
+  '/': 'common.heading.dashboard',
+  '/files': 'common.heading.files',
+  '/file-requests': 'common.heading.fileRequests',
+  '/map': 'common.heading.map',
+  '/personas': 'common.label.personas',
+  '/duplicates': 'common.heading.duplicates',
+  '/uploads': 'common.heading.upload',
+  '/settings': 'common.heading.settings',
+  '/profile': 'common.heading.profile',
+  '/api-analytics': 'common.heading.apiAnalytics',
+  '/teams': 'common.heading.team',
+  '/integrations': 'common.heading.integrations',
+  '/integrations/desktop': 'common.heading.desktopApps',
+  '/integrations/cli': 'common.heading.cli',
+  '/integrations/rest-api': 'common.heading.restAPI',
+  '/shared': 'common.heading.sharedLinks',
+  '/comments': 'common.heading.comments',
+  '/activity': 'common.heading.activity',
+  '/notifications': 'common.heading.notifications',
+  '/search': 'common.heading.search',
+  '/billing': 'common.heading.billing',
+  '/referrals': 'common.heading.referFriends',
+  '/workspaces': 'common.heading.workspaceDashboard',
+  '/role-create': 'common.heading.createRole',
+  '/login': 'common.heading.signIn',
+  '/login/2fa': 'common.heading.twoFactorAuthentication',
+  '/sign-up': 'common.heading.signUp',
+  '/verify': 'common.heading.verifyYourEmail',
+  '/redeem': 'common.heading.redeemStoragePackage',
+  '/forgot-password': 'common.heading.resetPassword',
+  '/reset-password': 'common.heading.setANewPassword',
+  '/create-workspace': 'common.heading.createWorkspace',
+};
+
+// Product names: the same in every language, so they have no catalog entry.
+const NAME_TITLES: Record<string, string> = {
   '/integrations/rclone': 'rclone',
   '/integrations/webdav': 'WebDAV',
   '/integrations/sftp': 'SFTP',
   '/integrations/s3': 'S3',
-  '/integrations/desktop': 'Desktop apps',
-  '/integrations/cli': 'CLI',
-  '/integrations/rest-api': 'REST API',
   '/integrations/google': 'Google Drive',
   '/integrations/onedrive': 'OneDrive',
   '/integrations/dropbox': 'Dropbox',
-  '/shared': 'Shared links',
-  '/comments': 'Comments',
-  '/activity': 'Activity',
-  '/notifications': 'Notifications',
-  '/search': 'Search',
-  '/billing': 'Billing',
-  '/referrals': 'Refer friends',
-  '/workspaces': 'Workspace dashboard',
-  '/role-create': 'Create role',
-  '/login': 'Sign in',
-  '/login/2fa': 'Two-factor authentication',
-  '/sign-up': 'Sign up',
-  '/verify': 'Verify your email',
-  '/redeem': 'Redeem storage package',
-  '/forgot-password': 'Reset password',
-  '/reset-password': 'Set a new password',
-  '/create-workspace': 'Create workspace',
 };
 
 // Exact pathname → header icon
@@ -61,6 +68,7 @@ const ICONS: Record<string, LucideIcon> = {
   '/files': FolderOpen,
   '/file-requests': Inbox,
   '/map': MapPin,
+  '/personas': ScanFace,
   '/duplicates': CopyX,
   '/uploads': Upload,
   '/settings': Settings,
@@ -92,18 +100,23 @@ const ICONS: Record<string, LucideIcon> = {
   '/create-workspace': Building2,
 };
 
+/** The page's title in the current language ('' for an unknown route). */
 export function titleForPath(pathname: string): string {
-  if (pathname in TITLES) return TITLES[pathname];
-  if (pathname.startsWith('/file-requests/')) return 'File request';
-  if (pathname.startsWith('/integrations')) return 'Integrations';
-  if (pathname.startsWith('/editor/')) return 'Editor';
-  if (pathname.startsWith('/family/join/')) return 'Family invitation';
+  if (pathname in TITLE_KEYS) return t(TITLE_KEYS[pathname]);
+  if (pathname in NAME_TITLES) return NAME_TITLES[pathname];
+  if (pathname.startsWith('/file-requests/')) return t('common.heading.fileRequest');
+  if (pathname.startsWith('/personas/')) return t('common.label.personas');
+  if (pathname.startsWith('/integrations')) return t('common.heading.integrations');
+  if (pathname.startsWith('/editor/')) return t('common.heading.editor');
+  if (pathname.startsWith('/family/join/')) return t('common.heading.familyInvitation');
+  if (pathname.startsWith('/save/')) return t('common.action.saveToDosya');
   return '';
 }
 
 export function iconForPath(pathname: string): LucideIcon | null {
   if (pathname in ICONS) return ICONS[pathname];
   if (pathname.startsWith('/file-requests/')) return Inbox;
+  if (pathname.startsWith('/personas/')) return ScanFace;
   if (pathname.startsWith('/integrations')) return Plug;
   if (pathname.startsWith('/editor/')) return FileText;
   return null;
@@ -118,14 +131,18 @@ function isSelfManaged(pathname: string): boolean {
 /** Tab title while a file/folder upload is active, e.g. "73% · Uploading 3 files · dosya.dev". */
 export function formatUploadTitle(summary: UploadSummary): string | null {
   if (!summary.anyActive) return null;
-  const word = summary.active === 1 ? 'file' : 'files';
-  return `${summary.overallPct}% · Uploading ${summary.active} ${word} · ${SUFFIX}`;
+  return t('common.description.summaryoverallpctUploadingSummaryactivePluralOneFileOtherFiles', {
+    summaryOverallPct: summary.overallPct,
+    summaryActive: summary.active,
+    SUFFIX,
+  });
 }
 
 // Reactive so RouteTitle/useDocumentTitle's effects re-run (and fall back to
 // the normal title) the moment the last upload finishes, even with no route
 // change to trigger them otherwise.
 function useUploadTitleOverride(): string | null {
+  useT(); // re-render (and re-translate the title) when the language changes
   const items = useUploads((s) => s.items);
   return formatUploadTitle(uploadSummary(items));
 }
@@ -134,15 +151,16 @@ function useUploadTitleOverride(): string | null {
 export function RouteTitle() {
   const { pathname } = useLocation();
   const uploadTitle = useUploadTitleOverride();
+  const { locale } = useLocale();
   useEffect(() => {
     if (uploadTitle) {
       document.title = uploadTitle;
       return;
     }
     if (isSelfManaged(pathname)) return;
-    const t = titleForPath(pathname);
-    document.title = t ? `${t} · ${SUFFIX}` : SUFFIX;
-  }, [pathname, uploadTitle]);
+    const title = titleForPath(pathname);
+    document.title = title ? `${title} · ${SUFFIX}` : SUFFIX;
+  }, [pathname, uploadTitle, locale]);
   return null;
 }
 

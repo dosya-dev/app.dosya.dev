@@ -1,16 +1,19 @@
+import { formatDateWith } from '@/lib/format-locale';
 import { useState, useEffect } from 'react';
+import { flushSync } from 'react-dom';
 import { Link, useNavigate } from 'react-router-dom';
 import { getBillingStatus, syncBilling, createPortalSession, type BillingStatus, resumeSubscription } from '@/api/billing';
 import { getFamily } from '@/api/family';
 import { toast } from '@/lib/toast';
 import { RefundDialog } from '@/components/billing/refund-dialog';
 import { api, apiErrorMessage } from '@/api/client';
-import { formatBytes, formatCents, formatGigabytes } from '@/lib/billing/cart-math';
+import { activeTrialEnd, formatBytes, formatCents, formatGigabytes, isCurrency } from '@/lib/billing/cart-math';
 import { PlanChooser } from '@/components/billing/plan-chooser';
 import { Button } from '@/components/ui/button';
 import { CancelSubscriptionDialog } from '@/components/billing/cancel-dialog';
 import { Card } from '@/components/ui/card';
 import { FamilyCard } from '@/components/billing/family-card';
+import { AiProcessingCard } from '@/components/billing/ai-processing-card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
@@ -19,6 +22,7 @@ import {
 import { licenseIntervalLabel, licenseProviderLabel, licenseTimeline, formatLicenseDate } from '@/lib/license-timeline';
 import { cn } from '@/lib/utils';
 import { useSession } from '@/stores/session';
+import { useT } from '@/lib/i18n';
 
 /** A colour per storage source, used by both the ledger dots and the bar. */
 const SOURCE_COLORS = {
@@ -32,14 +36,15 @@ type SourceKind = keyof typeof SOURCE_COLORS;
 type LedgerRow = { key: string; label: string; detail?: string; bytes: number; kind: SourceKind };
 
 function longDate(unix: number): string {
-  return new Date(unix * 1000).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+  return formatDateWith(unix, { month: 'long', day: 'numeric', year: 'numeric' }, 'en-US');
 }
 
 function shortDate(unix: number): string {
-  return new Date(unix * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  return formatDateWith(unix, { month: 'short', day: 'numeric', year: 'numeric' }, 'en-US');
 }
 
 export default function BillingPage() {
+  const t = useT();
   const navigate = useNavigate();
   // A family member draws on the payer's pool and must leave it before buying
   // a plan of their own (the API refuses with 409 in_family otherwise).
@@ -83,7 +88,7 @@ export default function BillingPage() {
       await resumeSubscription();
       await reload();
     } catch (err) {
-      setCancelError(apiErrorMessage(err, 'Could not resume the subscription.'));
+      setCancelError(apiErrorMessage(err, t('billing.error.couldNotResumeTheSubscription')));
     }
     setResuming(false);
   };
@@ -101,9 +106,9 @@ export default function BillingPage() {
     const params = new URLSearchParams(window.location.search);
     if (params.get('success')) {
       syncBilling().finally(reload);
-      const t = setTimeout(reload, 2500);
+      const timer = setTimeout(reload, 2500);
       window.history.replaceState({}, '', '/billing');
-      return () => clearTimeout(t);
+      return () => clearTimeout(timer);
     }
     if (params.get('canceled')) window.history.replaceState({}, '', '/billing');
   }, []);
@@ -138,7 +143,7 @@ export default function BillingPage() {
   if (!data) {
     return (
       <div className="mx-auto max-w-5xl p-4 sm:p-6">
-        <p className="text-sm text-muted-foreground">Failed to load billing information.</p>
+        <p className="text-sm text-muted-foreground">{t('billing.error.failedToLoadBillingInformation')}</p>
       </div>
     );
   }
@@ -156,15 +161,20 @@ export default function BillingPage() {
   const listPrice = interval === 'year' && plan.price_yearly != null ? plan.price_yearly : plan.price_monthly;
   const price = planItem?.unit_amount ?? listPrice;
   const upcoming = data.invoices.find((invoice) => invoice.status === 'upcoming') ?? null;
+  // Each invoice says its own currency; one that doesn't (or names one we don't price) reads as the account's.
+  const currency = isCurrency(data.currency) ? data.currency : 'usd';
+  const invoiceCurrency = (c: string | null | undefined) => { const v = c?.toLowerCase(); return isCurrency(v) ? v : currency; };
+  const trialEnd = activeTrialEnd(sub);
 
   // One row per thing that adds storage, in the order they stack.
   const ledger: LedgerRow[] = [];
-  ledger.push({ key: 'plan', kind: 'plan', label: `${plan.name} plan`, bytes: plan.storage_bytes });
-  for (const item of data.items.filter((i) => i.kind !== 'plan' && i.addon_kind !== 'family_places')) {
+  ledger.push({ key: 'plan', kind: 'plan', label: t('common.label.plannamePlan', { planName: plan.name }), bytes: plan.storage_bytes });
+  // Only items that add bytes: places and Smart Search units are add-ons too, but not storage.
+  for (const item of data.items.filter((i) => i.kind !== 'plan' && (i.addon_kind == null || i.addon_kind === 'storage'))) {
     ledger.push({
       key: `${item.kind}-${item.ref_id}`,
       kind: 'addon',
-      label: item.kind === 'custom' ? 'Custom package' : `${item.ref_id} × ${item.quantity}`,
+      label: item.kind === 'custom' ? t('billing.label.customPackage') : `${item.ref_id} × ${item.quantity}`,
       bytes: item.total_bytes,
     });
   }
@@ -178,99 +188,108 @@ export default function BillingPage() {
     });
   }
   if (data.referral_bonus_bytes > 0) {
-    ledger.push({ key: 'referral', kind: 'referral', label: 'Referral bonus', bytes: data.referral_bonus_bytes });
+    ledger.push({ key: 'referral', kind: 'referral', label: t('billing.label.referralBonus'), bytes: data.referral_bonus_bytes });
   }
   const ledgerTotal = ledger.reduce((sum, row) => sum + row.bytes, 0);
 
   return (
     <div className="mx-auto max-w-5xl space-y-4 p-4 sm:p-6">
-      <h1 className="text-xl font-bold tracking-tight">Billing</h1>
+      <h1 className="text-xl font-bold tracking-tight">{t('common.heading.billing')}</h1>
 
       {/* The two states worth shouting about, each leading with the number. */}
       {overLimit && (
         <StateHero
           tone="red"
-          eyebrow="Over the limit"
+          eyebrow={t('billing.label.overTheLimit')}
           figure={formatGigabytes(usage.used_bytes)}
-          caption={`used of ${formatGigabytes(usage.limit_bytes)}`}
-          body="Uploads are paused across every workspace. Nothing has been deleted."
+          caption={t('billing.label.usedOfSize', { size: formatGigabytes(usage.limit_bytes) })}
+          body={t('billing.description.uploadsArePausedAcrossEveryWorkspaceNothingHasBeenDeleted')}
           bar={<><span className="h-full bg-primary" style={{ width: '96%' }} /><span className="h-full bg-destructive" style={{ width: '4%' }} /></>}
           actions={(
             <>
-              {!isFamilyMember && <Button size="sm" onClick={() => openChooser('addons')}>Add storage</Button>}
-              <Link to="/files" className="text-sm font-medium text-muted-foreground underline underline-offset-2">Free up space</Link>
+              {!isFamilyMember && <Button size="sm" onClick={() => openChooser('addons')}>{t('billing.action.addStorage')}</Button>}
+              <Link to="/files" className="text-sm font-medium text-muted-foreground underline underline-offset-2">{t('billing.action.freeUpSpace')}</Link>
             </>
           )}
-          note={`${formatGigabytes(overBytes)} over`}
+          note={t('billing.label.overbytesOver', { overBytes: formatGigabytes(overBytes) })}
         />
       )}
 
       {sub.cancel_at_period_end && sub.current_period_end && (
         <StateHero
           tone="amber"
-          eyebrow={`Ends ${longDate(sub.current_period_end)}`}
+          eyebrow={t('common.label.endsEndsat', { endsAt: longDate(sub.current_period_end) })}
           figure={formatGigabytes(usage.limit_bytes)}
-          caption="until then"
-          body="Your subscription will not renew. You keep this storage until the end date, then your paid storage for 14 more days before the free limit applies. Your files are never deleted."
+          caption={t('billing.label.untilThen')}
+          body={t('billing.description.yourSubscriptionWillNotRenewYouKeepThisStorageUntilThe')}
           bar={<><span className="h-full bg-primary" style={{ width: `${usedShare * 100}%` }} /><span className="h-full bg-muted-foreground/25" style={{ width: `${(1 - usedShare) * 100}%` }} /></>}
           actions={(
             <Button size="sm" variant="outline" onClick={onResume} disabled={resuming}>
-              {resuming ? 'Resuming…' : 'Resume subscription'}
+              {resuming ? t('billing.action.resuming') : t('billing.action.resumeSubscription')}
             </Button>
           )}
-          note={`${formatGigabytes(usage.used_bytes)} in use`}
+          note={t('billing.label.usageusedBytesInUse', { usageUsed_bytes: formatGigabytes(usage.used_bytes) })}
         />
       )}
-      {cancelError && <p className="text-xs text-red-600">{cancelError}</p>}
+      {cancelError && <p dir="auto" className="text-xs text-red-600">{cancelError}</p>}
 
       {/* Statement: the subscription on the left, what it buys on the right. */}
       <Card className="gap-0 overflow-hidden py-0">
         <div className="grid md:grid-cols-[320px_minmax(0,1fr)]">
-          <div className="border-b p-5 md:border-b-0 md:border-r">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">Subscription</p>
+          <div className="border-b p-5 md:border-b-0 md:border-e">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">{t('billing.label.subscription')}</p>
             <p className="mt-2 font-mono text-4xl font-bold tracking-[-0.03em] tabular-nums">
-              {formatCents(price)}
+              {formatCents(price, currency)}
               <span className="text-sm font-medium text-muted-foreground">/{interval === 'year' ? 'yr' : 'mo'}</span>
             </p>
             <p className="mt-2 text-xs text-muted-foreground">
               {sub.current_period_end
-                ? `${plan.name} plan · ${sub.cancel_at_period_end ? 'ends' : 'renews'} ${longDate(sub.current_period_end)}`
-                : `${plan.name} plan`}
+                ? t('billing.description.plannamePlanSubcancelAtPeriodEndSelectTrueEndsOtherRenewsSubcurrentPeriodEnd', { planName: plan.name, subCancel_at_period_end: String(sub.cancel_at_period_end), subCurrent_period_end: longDate(sub.current_period_end) })
+                : t('common.label.plannamePlan', { planName: plan.name })}
             </p>
             {card?.last4 && (
               <p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
                 <CreditCard className="size-3.5" aria-hidden="true" />
-                {card.brand ? card.brand.charAt(0).toUpperCase() + card.brand.slice(1) : 'Card'} •••• {card.last4}
+                {card.brand ? card.brand.charAt(0).toUpperCase() + card.brand.slice(1) : t('common.label.card')} •••• {card.last4}
               </p>
             )}
-            {upcoming && !sub.cancel_at_period_end && (
+            {trialEnd && !sub.cancel_at_period_end && (
               <p className="mt-1 text-xs text-muted-foreground">
-                Next invoice {formatCents(upcoming.amount)} on {shortDate(upcoming.period_end)}
+                {upcoming
+                  ? <>{t('billing.description.yourCardWillBeChargedUpcomingamountOnTrialend', { upcomingAmount: formatCents(upcoming.amount, invoiceCurrency(upcoming.currency)), trialEnd: longDate(trialEnd) })}</>
+                  : <>{t('billing.description.yourCardWillBeChargedOnTrialend', { trialEnd: longDate(trialEnd) })}</>}
+              </p>
+            )}
+            {upcoming && !trialEnd && !sub.cancel_at_period_end && (
+              <p className="mt-1 text-xs text-muted-foreground">
+                {t('billing.label.nextInvoiceUpcomingamountOnUpcomingperiodEnd', { upcomingAmount: formatCents(upcoming.amount, invoiceCurrency(upcoming.currency)), upcomingPeriod_end: shortDate(upcoming.period_end) })}
               </p>
             )}
             <div className="mt-3">
               {sub.cancel_at_period_end
-                ? <Badge variant="outline" className="text-[10px] text-amber-600 border-amber-200">Cancelling</Badge>
-                : sub.status === 'active'
-                  ? <Badge variant="outline" className="text-[10px] text-green-600 border-green-200">Active</Badge>
-                  : <Badge variant="outline" className="text-[10px] text-muted-foreground">{hasSubscription ? sub.status ?? 'Inactive' : 'No subscription'}</Badge>}
+                ? <Badge variant="outline" className="text-[10px] text-amber-600 border-amber-200">{t('billing.status.cancelling')}</Badge>
+                : trialEnd
+                  ? <Badge variant="outline" className="text-[10px] text-muted-foreground">{t('billing.status.freeTrialUntilTrialend', { trialEnd: longDate(trialEnd) })}</Badge>
+                  : sub.status === 'active'
+                  ? <Badge variant="outline" className="text-[10px] text-green-600 border-green-200">{t('common.status.active.subscription')}</Badge>
+                  : <Badge variant="outline" className="text-[10px] text-muted-foreground">{hasSubscription ? sub.status ?? t('billing.status.inactive') : t('billing.status.noSubscription')}</Badge>}
             </div>
 
             {isFamilyMember ? (
               <p className="mt-4 text-xs text-muted-foreground">
-                You are on a family plan. Leave it from the Family section to buy a plan of your own.
+                {t('billing.description.youAreOnAFamilyPlanLeaveItFromTheFamily')}
               </p>
             ) : (
             <div className="mt-4 grid gap-2">
                   <Button size="sm" onClick={() => openChooser('plan')}>
-                    {hasSubscription ? 'Change plan' : 'Choose a plan'}
+                    {hasSubscription ? t('billing.action.changePlan') : t('billing.action.chooseAPlan')}
                   </Button>
                   {hasSubscription && (
-                    <Button size="sm" variant="outline" onClick={() => openChooser('addons')}>Add storage</Button>
+                    <Button size="sm" variant="outline" onClick={() => openChooser('addons')}>{t('billing.action.addStorage')}</Button>
                   )}
                   {hasSubscription && (
                     <Button size="sm" variant="outline" onClick={openPortal} disabled={portalOpening}>
-                      {portalOpening ? 'Opening…' : 'Manage payment method'}
+                      {portalOpening ? t('common.status.opening') : t('billing.action.managePaymentMethod')}
                     </Button>
                   )}
                 {hasSubscription && (
@@ -281,29 +300,29 @@ export default function BillingPage() {
                         onClick={() => setShowCancel(true)}
                         className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
                       >
-                        Cancel subscription
+                        {t('billing.action.cancelSubscription')}
                       </button>
                     )}
                     {data.refund?.eligible && (
-                      <Button size="sm" variant="destructive" onClick={openRefund}>Request refund</Button>
+                      <Button size="sm" variant="destructive" onClick={openRefund}>{t('billing.action.requestRefund')}</Button>
                     )}
                     {data.refund?.reason === 'already_used' && (data.refund.window_ends_at ?? 0) * 1000 > Date.now() && (
                       <a href="/contact" className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground">
-                        Contact support for a refund
+                        {t('billing.action.contactSupportForARefund')}
                       </a>
                     )}
                   </div>
                 )}
               </div>
             )}
-            {portalError && <p className="mt-2 text-xs text-red-600">{portalError}</p>}
+            {portalError && <p dir="auto" className="mt-2 text-xs text-red-600">{portalError}</p>}
           </div>
 
           <div className="p-5">
             <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">Storage ledger</p>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">{t('billing.label.storageLedger')}</p>
               <p className="text-xs text-muted-foreground">
-                {usage.used_label} used · {overLimit ? `${formatGigabytes(overBytes)} over` : `${formatGigabytes(usage.limit_bytes - usage.used_bytes)} free`}
+                {t('billing.description.usageusedLabelUsedOverlimitSelectTrueOverbytesOverOtherFormattedvalueFree', { usageUsed_label: usage.used_label, overLimit: String(overLimit), overBytes: formatGigabytes(overBytes), formattedValue: formatGigabytes(usage.limit_bytes - usage.used_bytes) })}
               </p>
             </div>
 
@@ -319,33 +338,38 @@ export default function BillingPage() {
                 </div>
               ))}
               <div className="flex items-baseline justify-between gap-3 border-t pt-2 font-bold">
-                <dt>Total limit</dt>
+                <dt>{t('billing.label.totalLimit')}</dt>
                 <dd className="tabular-nums">{formatGigabytes(usage.limit_bytes)}</dd>
               </div>
             </dl>
             {ledgerTotal !== usage.limit_bytes && (
               <p className="mt-2 text-[11px] text-muted-foreground">
-                The total is what your account is entitled to; a line above can lag a change by a few seconds.
+                {t('billing.description.theTotalIsWhatYourAccountIsEntitledToALine')}
               </p>
             )}
 
-            <div className="mt-4 flex h-3 overflow-hidden rounded-full border bg-muted" role="img" aria-label={`${usage.used_label} used of ${formatGigabytes(usage.limit_bytes)}`}>
+            <div className="mt-4 flex h-3 overflow-hidden rounded-full border bg-muted" role="img" aria-label={t('billing.accessibility.usageusedLabelUsedOfUsagelimitBytes', { usageUsed_label: usage.used_label, usageLimit_bytes: formatGigabytes(usage.limit_bytes) })}>
               <span className={cn('h-full', overLimit ? 'bg-destructive' : 'bg-primary')} style={{ width: `${usedShare * 100}%` }} />
               <span className="h-full bg-muted-foreground/25" style={{ width: `${(1 - usedShare) * 100}%` }} />
             </div>
             {!overLimit && usedShare >= 0.8 && (
               <p className="mt-2 flex items-center gap-1.5 text-xs text-amber-600">
                 <AlertTriangle className="size-3.5" aria-hidden="true" />
-                {Math.round((1 - usedShare) * 100)}% remaining
+                {t('common.label.mathroundRemaining', { MathRound: Math.round((1 - usedShare) * 100) })}
               </p>
             )}
           </div>
         </div>
       </Card>
 
+      {/* AI processing units, account-wide, next to the storage statement.
+          Renders nothing when the plan has no AI search. */}
+      <AiProcessingCard />
+
       {showChooser && !isFamilyMember && (
         <PlanChooser
           hasSubscription={hasSubscription}
+          trialEligible={!!data.trial_eligible}
           usedBytes={usage.used_bytes}
           limitBytes={usage.limit_bytes}
           currentPlanId={plan.id}
@@ -357,6 +381,13 @@ export default function BillingPage() {
           }}
           onUpdated={() => navigate('/checkout/success?change=1')}
           onClose={() => setShowChooser(false)}
+          onEditReservations={() => {
+            // The chooser sits above the Family card: unmount it first, or the
+            // scroll is aimed at where the card was and lands past it.
+            flushSync(() => setShowChooser(false));
+            const still = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+            document.getElementById('family-plan')?.scrollIntoView({ behavior: still ? 'auto' : 'smooth', block: 'start' });
+          }}
         />
       )}
 
@@ -364,27 +395,27 @@ export default function BillingPage() {
 
       <Card className="gap-0 overflow-hidden py-0">
         <div className="flex items-center justify-between gap-4 border-b px-5 py-3">
-          <h2 className="text-sm font-semibold">Invoices</h2>
+          <h2 className="text-sm font-semibold">{t('billing.heading.invoices')}</h2>
           {hasSubscription && (
             <button type="button" onClick={openPortal} className="text-xs font-medium text-primary hover:underline underline-offset-2">
-              Open Stripe portal
+              {t('billing.action.openStripePortal')}
             </button>
           )}
         </div>
         {data.invoices.length === 0 ? (
-          <p className="py-8 text-center text-xs text-muted-foreground">No invoices yet</p>
+          <p className="py-8 text-center text-xs text-muted-foreground">{t('billing.label.noInvoicesYet')}</p>
         ) : (
           data.invoices.map((invoice) => (
             <div key={invoice.id} className="flex items-center gap-3 border-b px-5 py-2.5 font-mono text-[13px] last:border-b-0 hover:bg-muted/50">
               <span className="min-w-0 flex-1 truncate">
-                {shortDate(invoice.period_start)} <span className="text-muted-foreground">to {shortDate(invoice.period_end)}</span>
+                {shortDate(invoice.period_start)} <span className="text-muted-foreground">{t('billing.label.toInvoiceperiodEnd', { invoicePeriod_end: shortDate(invoice.period_end) })}</span>
               </span>
-              <span className="shrink-0 tabular-nums">{formatCents(invoice.amount)}</span>
+              <span className="shrink-0 tabular-nums">{formatCents(invoice.amount, invoiceCurrency(invoice.currency))}</span>
               <Badge variant={invoice.status === 'paid' ? 'secondary' : 'outline'} className="shrink-0 text-[10px]">
                 {invoice.status}
               </Badge>
               {invoice.pdf_url ? (
-                <a href={invoice.pdf_url} target="_blank" rel="noreferrer" className="flex size-7 shrink-0 items-center justify-center rounded hover:bg-muted" title="Download PDF">
+                <a href={invoice.pdf_url} target="_blank" rel="noreferrer" className="flex size-7 shrink-0 items-center justify-center rounded hover:bg-muted" title={t('billing.action.downloadPdf')}>
                   <Download className="size-3.5 text-muted-foreground" />
                 </a>
               ) : (
@@ -399,8 +430,8 @@ export default function BillingPage() {
         <Card className="gap-0 overflow-hidden py-0">
           <div className="flex items-center justify-between gap-4 border-b px-5 py-3">
             <div>
-              <h2 className="text-sm font-semibold">Redeemed packages</h2>
-              <p className="mt-0.5 text-xs text-muted-foreground">Storage from redeemed codes and packages.</p>
+              <h2 className="text-sm font-semibold">{t('billing.heading.redeemedPackages')}</h2>
+              <p className="mt-0.5 text-xs text-muted-foreground">{t('billing.description.storageFromRedeemedCodesAndPackages')}</p>
             </div>
             {licenseGrants.some((g) => g.provider === 'gumroad') && (
               <a
@@ -409,7 +440,7 @@ export default function BillingPage() {
                 rel="noreferrer"
                 className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-primary hover:underline underline-offset-2"
               >
-                Manage on Gumroad <ExternalLink className="size-3" aria-hidden="true" />
+                {t('billing.action.manageOnGumroad')} <ExternalLink className="size-3" aria-hidden="true" />
               </a>
             )}
           </div>
@@ -436,7 +467,7 @@ export default function BillingPage() {
                     </Badge>
                   </div>
                   <p className="mt-0.5 text-xs text-muted-foreground">
-                    {licenseProviderLabel(grant.provider)}{grant.interval ? ` · ${licenseIntervalLabel(grant.interval)}` : ''} · Redeemed {formatLicenseDate(grant.linked_at)}
+                    {t('billing.description.grantproviderHasintervalRedeemedGrantlinkedAt', { grantProvider: licenseProviderLabel(grant.provider), hasInterval: grant.interval ? 'true' : 'other', grantInterval: grant.interval ? licenseIntervalLabel(grant.interval) : '', grantLinked_at: formatLicenseDate(grant.linked_at) })}
                   </p>
                   <p
                     className={
@@ -446,14 +477,14 @@ export default function BillingPage() {
                           ? 'mt-1.5 flex items-center gap-1.5 text-xs font-medium text-foreground'
                           : 'mt-1.5 flex items-center gap-1.5 text-xs text-muted-foreground'
                     }
-                    title={grant.renews_at && !grant.ends_at && grant.provider === 'gumroad' ? 'Estimated from your purchase date. Gumroad sets the exact charge date.' : undefined}
+                    title={grant.renews_at && !grant.ends_at && grant.provider === 'gumroad' ? t('billing.tooltip.estimatedFromYourPurchaseDateGumroadSetsTheExactChargeDate') : undefined}
                   >
                     <CalendarClock className="size-3.5 shrink-0" aria-hidden="true" />
                     {timeline.text}
                   </p>
                 </div>
                 <p className={isActive ? 'shrink-0 text-xs font-medium' : 'shrink-0 text-xs text-muted-foreground'}>
-                  Adds {formatBytes(grant.contribution_bytes)}
+                  {t('billing.label.addsGrantcontributionBytes', { grantContribution_bytes: formatBytes(grant.contribution_bytes) })}
                 </p>
               </div>
             );
@@ -467,7 +498,7 @@ export default function BillingPage() {
           familyMembers={familyMembers}
           onClose={() => setShowRefund(false)}
           onRefunded={() => {
-            toast.success('Refund issued. Your account is on the free plan now.');
+            toast.success(t('billing.feedback.refundIssuedYourAccountIsOnTheFreePlanNow'));
             void reload();
             void useSession.getState().fetchMe();
           }}
@@ -514,7 +545,7 @@ function StateHero({ tone, eyebrow, figure, caption, body, bar, actions, note }:
           </p>
           <p className={cn('mt-1.5 font-mono text-4xl font-bold leading-none tracking-[-0.04em] tabular-nums sm:text-5xl', tone === 'red' && 'text-destructive')}>
             {figure}
-            <span className="ml-2 text-sm font-medium tracking-normal text-muted-foreground">{caption}</span>
+            <span className="ms-2 text-sm font-medium tracking-normal text-muted-foreground">{caption}</span>
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">{actions}</div>

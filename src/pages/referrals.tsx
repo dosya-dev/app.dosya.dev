@@ -6,9 +6,15 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Progress } from '@/components/ui/progress';
+import { useT } from '@/lib/i18n';
 import { friendStatusLabel, getReferralSummary, type ReferralSummary } from '@/api/referrals';
 
+// TODO(catalog): the catalog wrote the "5 GB" and "50 MB" figures with a plain
+// space; the page used a no-break space between the number and the unit.
+const nbspUnits = (s: string) => s.replace(/(\d) (GB|MB)\b/g, '$1\u00a0$2');
+
 export default function ReferralsPage() {
+  const t = useT();
   const [data, setData] = useState<ReferralSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
@@ -36,7 +42,7 @@ export default function ReferralsPage() {
   if (!data) {
     return (
       <div className="p-6 max-w-2xl mx-auto">
-        <p className="text-sm text-muted-foreground">Failed to load your referrals. Please try again.</p>
+        <p className="text-sm text-muted-foreground">{t('referrals.error.failedToLoadYourReferralsPleaseTryAgain')}</p>
       </div>
     );
   }
@@ -44,42 +50,43 @@ export default function ReferralsPage() {
   const joined = Math.min(data.credited_count, data.max_rewards);
   const pct = Math.round((joined / data.max_rewards) * 100);
   const atCap = data.credited_count >= data.max_rewards;
+  const inviteText = t('referrals.description.inviteAFriendAndEarn5GbMaxfriendsTotalgb', { maxFriends: data.max_rewards, totalGb: data.max_rewards * 5 });
 
   return (
     <div className="p-6 max-w-2xl mx-auto space-y-6">
       <div>
         <h1 className="text-lg font-semibold flex items-center gap-2">
-          <Gift className="size-5" /> Refer friends
+          <Gift className="size-5" /> {t('common.heading.referFriends')}
         </h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Invite a friend and earn 5&nbsp;GB once they start using dosya - up to {data.max_rewards} friends ({data.max_rewards * 5}&nbsp;GB total).
+          {nbspUnits(inviteText)}
         </p>
         <p className="text-xs text-muted-foreground mt-1">
-          A friend counts once their account is a week old and they have uploaded at least 50&nbsp;MB. We check once a day.
+          {nbspUnits(t('referrals.description.aFriendCountsOnceTheirAccountIsAWeekOldAnd'))}
         </p>
       </div>
 
       <Card className="gap-0 py-0 p-5 space-y-4">
         <div>
-          <p className="text-sm font-medium mb-2">Your invite link</p>
+          <p className="text-sm font-medium mb-2">{t('common.label.yourInviteLink')}</p>
           <div className="flex items-center gap-2">
             <code className="flex-1 truncate rounded-md border bg-muted/50 px-3 py-2 text-sm">{data.link}</code>
             <Button variant="outline" size="sm" onClick={copy}>
               <CopyCheck copied={copied} className="size-4" />
-              {copied ? 'Copied' : 'Copy'}
+              {copied ? t('common.action.copied') : t('common.copy')}
             </Button>
           </div>
         </div>
 
         <div className="space-y-2">
           <div className="flex items-center justify-between text-sm">
-            <span className="text-muted-foreground">{joined} of {data.max_rewards} friends counted</span>
-            <span className="font-medium">+{data.bonus_label} earned</span>
+            <span className="text-muted-foreground">{t('referrals.label.joinedOfDatamaxRewardsFriendsCounted', { joined, dataMax_rewards: data.max_rewards })}</span>
+            <span className="font-medium">{t('referrals.label.databonusLabelEarned', { dataBonus_label: data.bonus_label })}</span>
           </div>
           <Progress value={pct} />
           {atCap && (
             <p className="text-xs text-muted-foreground">
-              You've earned the maximum bonus - thanks for spreading the word!
+              {t('referrals.description.youVeEarnedTheMaximumBonusThanksForSpreadingTheWord')}
             </p>
           )}
         </div>
@@ -87,11 +94,11 @@ export default function ReferralsPage() {
 
       <Card className="gap-0 py-0 overflow-hidden">
         <div className="px-5 py-3 border-b">
-          <p className="text-sm font-medium">Invited friends</p>
+          <p className="text-sm font-medium">{t('referrals.label.invitedFriends')}</p>
         </div>
         {data.friends.length === 0 ? (
           <p className="py-8 text-center text-xs text-muted-foreground">
-            No invites yet - share your link to get started.
+            {t('referrals.description.noInvitesYetShareYourLinkToGetStarted')}
           </p>
         ) : (
           data.friends.map((f, i) => (

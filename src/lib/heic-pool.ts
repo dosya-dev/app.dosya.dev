@@ -1,3 +1,5 @@
+import { t } from '@/lib/i18n';
+
 /** Minimal surface of a Worker that the pool needs. Lets tests inject a fake. */
 export interface PoolWorker {
   postMessage(msg: unknown): void;
@@ -61,7 +63,7 @@ export function createHeicPool(opts: { spawn: () => PoolWorker; size: number }):
       entry.current = null;
       try {
         if (!job || job.id !== id) return; // stale or unrecognized reply; ignore
-        if (error !== undefined || !blob) job.reject(new Error(error ?? 'HEIC decode failed'));
+        if (error !== undefined || !blob) job.reject(new Error(error ?? t('common.error.heicDecodeFailed')));
         else job.resolve(blob);
       } finally {
         pump();
@@ -69,11 +71,11 @@ export function createHeicPool(opts: { spawn: () => PoolWorker; size: number }):
     };
 
     entry.worker.onerror = () => {
-      fail(entry, new Error('HEIC decoder crashed'));
+      fail(entry, new Error(t('common.error.heicDecoderCrashed')));
     };
 
     entry.worker.onmessageerror = () => {
-      fail(entry, new Error('HEIC decoder message error'));
+      fail(entry, new Error(t('common.error.heicDecoderMessageError')));
     };
   }
 

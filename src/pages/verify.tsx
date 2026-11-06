@@ -10,8 +10,11 @@ import { TurnstileWidget, type TurnstileHandle } from '@/components/turnstile-wi
 import { resolveTurnstileToken, turnstileFailureMessage, isTurnstileRejection } from '@/lib/turnstile-submit';
 import { pendingPostAuthPath } from '@/lib/redemption-claim';
 import { Logo } from "@/components/brand/logo";
+import { useT } from '@/lib/i18n';
+import { richText } from '@/lib/rich-text';
 
 export default function VerifyPage() {
+  const t = useT();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const email = searchParams.get('email') ?? '';
@@ -25,7 +28,7 @@ export default function VerifyPage() {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(''); setInfo('');
-    if (!/^\d{6}$/.test(code)) { setError('Enter the 6-digit code from your email.'); return; }
+    if (!/^\d{6}$/.test(code)) { setError(t('verify.error.enterThe6DigitCodeFromYourEmail')); return; }
     setLoading(true);
     try {
       // Awaited, not read: typing six digits and hitting Enter is fast enough
@@ -46,10 +49,10 @@ export default function VerifyPage() {
       turnstileRef.current?.reset();
       if (res.ok && data.ok) navigate(pendingPostAuthPath() ?? data.redirect ?? '/create-workspace');
       else if (isTurnstileRejection(data)) setError(turnstileFailureMessage(turnstileRef.current));
-      else setError(data.error ?? 'Verification failed');
+      else setError(data.error ?? t('common.error.verificationFailed'));
     } catch {
       turnstileRef.current?.reset();
-      setError("Can't reach the server. Check your connection and try again.");
+      setError(t('common.error.canTReachTheServerCheckYourConnectionAnd'));
     }
     setLoading(false);
   };
@@ -74,12 +77,12 @@ export default function VerifyPage() {
       // page's one widget with submit() - both routes serve the same
       // verify-your-email flow for the same user.
       turnstileRef.current?.reset();
-      if (res.ok && data.ok) setInfo('A new code has been sent to your email.');
+      if (res.ok && data.ok) setInfo(t('verify.description.aNewCodeHasBeenSentToYourEmail'));
       else if (isTurnstileRejection(data)) setError(turnstileFailureMessage(turnstileRef.current));
-      else setError(data.error ?? 'Could not resend code');
+      else setError(data.error ?? t('verify.error.couldNotResendCode'));
     } catch {
       turnstileRef.current?.reset();
-      setError("Can't reach the server. Check your connection and try again.");
+      setError(t('common.error.canTReachTheServerCheckYourConnectionAnd'));
     }
     setResending(false);
   };
@@ -96,13 +99,18 @@ export default function VerifyPage() {
                   <Logo className="h-7 w-7" />
                   dosya.dev
                 </a>
-                <h1 className="text-2xl font-bold mt-2">Verify your email</h1>
+                <h1 className="text-2xl font-bold mt-2">{t('common.heading.verifyYourEmail')}</h1>
                 <p className="text-sm text-muted-foreground mt-1">
-                  Enter the 6-digit code we sent{email ? <> to <span className="font-medium text-foreground">{email}</span></> : ' to your email'}.
+                  {email
+                    ? richText(
+                        t('verify.description.weSentA6DigitCodeToEmail', { email: '{email}' }),
+                        { email: <span className="font-medium text-foreground">{email}</span> },
+                      )
+                    : t('verify.description.enterThe6DigitCodeWeSentToYourEmail')}
                 </p>
               </div>
 
-              {error && <div className="bg-destructive/10 border border-destructive/30 text-destructive text-sm rounded-lg px-4 py-2.5 mb-4">{error}</div>}
+              {error && <div dir="auto" className="bg-destructive/10 border border-destructive/30 text-destructive text-sm rounded-lg px-4 py-2.5 mb-4">{error}</div>}
               {info && <div className="bg-green-500/10 border border-green-500/30 text-green-600 dark:text-green-400 text-sm rounded-lg px-4 py-2.5 mb-4">{info}</div>}
 
               <form onSubmit={submit} className="space-y-4">
@@ -116,34 +124,38 @@ export default function VerifyPage() {
                 />
                 <TurnstileWidget action="verify" ref={turnstileRef} />
                 <Button type="submit" className="w-full h-10" disabled={loading}>
-                  {loading ? <Loader2 className="size-4 animate-spin mr-2" /> : null}
-                  Verify email
+                  {loading ? <Loader2 className="size-4 animate-spin me-2" /> : null}
+                  {t('common.action.verifyEmail')}
                 </Button>
               </form>
 
               <div className="mt-6 text-center text-sm text-muted-foreground">
-                Didn't get the code?{' '}
+                {t('verify.description.didnTGetTheCode')}{' '}
                 <button type="button" onClick={resend} disabled={resending} className="font-medium underline underline-offset-4 hover:text-foreground disabled:opacity-50">
-                  {resending ? 'Sending…' : 'Resend code'}
+                  {resending ? t('common.status.sending') : t('common.action.resendCode')}
                 </button>
               </div>
               {/* Resending is not always the answer: a typo in the address or a
                   mail server that drops us needs a person, or a fresh start. */}
               <p className="mt-2 text-center text-xs text-muted-foreground">
-                Still nothing?{' '}
-                <a
-                  href="https://dosya.dev/contact?topic=verification"
-                  className="font-medium underline underline-offset-4 hover:text-foreground"
-                >
-                  Contact support
-                </a>
-                {' · '}
-                <Link to="/sign-up" className="font-medium underline underline-offset-4 hover:text-foreground">
-                  Use a different email
-                </Link>
+                {richText(t('verify.label.stillNothingLink1Link2', { link1: '{link1}', link2: '{link2}' }), {
+                  link1: (
+                    <a
+                      href="https://dosya.dev/contact?topic=verification"
+                      className="font-medium underline underline-offset-4 hover:text-foreground"
+                    >
+                      {t('common.action.contactSupport')}
+                    </a>
+                  ),
+                  link2: (
+                    <Link to="/sign-up" className="font-medium underline underline-offset-4 hover:text-foreground">
+                      {t('verify.action.useADifferentEmail')}
+                    </Link>
+                  ),
+                })}
               </p>
               <p className="mt-2 text-center text-sm text-muted-foreground">
-                <a href="/login" className="font-medium underline underline-offset-4 hover:text-foreground">Back to login</a>
+                <a href="/login" className="font-medium underline underline-offset-4 hover:text-foreground">{t('common.action.backToLogin')}</a>
               </p>
             </CardContent>
           </Card>

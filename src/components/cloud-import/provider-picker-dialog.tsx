@@ -8,6 +8,7 @@ import { listAccounts, type CloudAccount, type CloudEntryDto } from '@/api/cloud
 import { useCloudImports } from '@/stores/cloud-imports';
 import { useWorkspace } from '@/stores/workspace';
 import { toast } from '@/lib/toast';
+import { useT } from '@/lib/i18n';
 import { PROVIDER_LABELS } from '@/lib/cloud-providers';
 import { useCloudBrowser } from './use-cloud-browser';
 
@@ -39,6 +40,7 @@ interface Props {
 export function ProviderPickerDialog({
   open, onOpenChange, provider, destFolderId, destLabel, initialAccountId,
 }: Props) {
+  const t = useT();
   const workspaceId = useWorkspace((s) => s.activeId);
   const start = useCloudImports((s) => s.start);
 
@@ -104,8 +106,8 @@ export function ProviderPickerDialog({
       });
       const account = accounts.find((a) => a.id === accountId);
       toast.success(
-        'Import started',
-        account ? `From ${account.account_email}` : undefined,
+        t('common.feedback.importStarted'),
+        account ? t('common.feedback.fromAccountaccountEmail', { from: account.account_email }) : undefined,
       );
       browser.clearSelection();
       onOpenChange(false);
@@ -116,7 +118,7 @@ export function ProviderPickerDialog({
       // rejection unhandled: the dialog just sat there, `starting` reverted
       // via `finally` below, but the user saw no explanation at all. Keep
       // the dialog open (so the selection isn't lost) and surface the error.
-      toast.error('Import failed to start', apiErrorMessage(err, 'The import could not be started.'));
+      toast.error(t('common.error.importFailedToStart'), apiErrorMessage(err, t('common.error.theImportCouldNotBeStarted')));
     } finally {
       setStarting(false);
     }
@@ -126,7 +128,7 @@ export function ProviderPickerDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Import from {providerLabel}</DialogTitle>
+          <DialogTitle>{t('common.heading.importFromProviderlabel', { providerLabel })}</DialogTitle>
         </DialogHeader>
 
         {!accountsLoaded ? (
@@ -135,16 +137,16 @@ export function ProviderPickerDialog({
           </div>
         ) : accounts.length === 0 ? (
           <div className="py-8 text-center text-sm text-muted-foreground">
-            <p>No account connected yet.</p>
+            <p>{t('common.description.noAccountConnectedYet')}</p>
             <Button className="mt-3" nativeButton={false} render={<a href={connectUrl} />}>
-              Connect an account
+              {t('common.action.connectAnAccount')}
             </Button>
           </div>
         ) : browser.reconnectRequired ? (
           <div className="py-8 text-center text-sm text-muted-foreground">
-            <p>This account needs to be reconnected before you can import.</p>
+            <p>{t('common.description.thisAccountNeedsToBeReconnectedBeforeYouCanImport')}</p>
             <Button className="mt-3" nativeButton={false} render={<a href={connectUrl} />}>
-              Reconnect
+              {t('common.action.reconnect')}
             </Button>
           </div>
         ) : (
@@ -180,7 +182,7 @@ export function ProviderPickerDialog({
                     className="hover:text-foreground hover:underline"
                     onClick={() => browser.goTo(index)}
                   >
-                    {crumb.name}
+                    {crumb.id === '' ? t('common.label.home') : crumb.name}
                   </button>
                 </span>
               ))}
@@ -188,15 +190,17 @@ export function ProviderPickerDialog({
 
             {browser.rateLimitedSeconds !== null && (
               <p className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-600 dark:text-amber-400">
-                {providerLabel} is briefly rate-limiting requests - retrying automatically in
-                {' '}{browser.rateLimitedSeconds}s.
+                {t('common.description.providerlabelIsBrieflyRateLimitingRequestsRetryingAutomaticallyInBrowserratelimitedsecondsS', {
+                  providerLabel,
+                  browserRateLimitedSeconds: String(browser.rateLimitedSeconds),
+                })}
               </p>
             )}
 
             {browser.error && !browser.reconnectRequired && browser.rateLimitedSeconds === null && (
               <div className="flex items-center justify-between gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
                 <span>{browser.error}</span>
-                <Button variant="ghost" size="xs" onClick={() => browser.reload()}>Retry</Button>
+                <Button variant="ghost" size="xs" onClick={() => browser.reload()}>{t('common.retry')}</Button>
               </div>
             )}
 
@@ -216,7 +220,7 @@ export function ProviderPickerDialog({
                         checked={isSelected(entry.id)}
                         disabled={entry.unsupported}
                         onCheckedChange={() => browser.toggle(entry)}
-                        aria-label={`Select ${entry.name}`}
+                        aria-label={t('common.accessibility.selectName', { name: entry.name })}
                       />
                       {entry.kind === 'folder'
                         ? <Folder className="size-4 text-muted-foreground" />
@@ -233,20 +237,20 @@ export function ProviderPickerDialog({
                         <span className="truncate">{entry.name}</span>
                       )}
                       {entry.unsupported && (
-                        <span className="ml-auto text-xs text-muted-foreground">
-                          Cannot be imported
+                        <span className="ms-auto text-xs text-muted-foreground">
+                          {t('common.error.cannotBeImported')}
                         </span>
                       )}
                       {entry.exportAs && (
-                        <span className="ml-auto text-xs text-muted-foreground">
-                          will import as {entry.exportAs.ext}
+                        <span className="ms-auto text-xs text-muted-foreground">
+                          {t('common.label.willImportAsExportasext', { exportAsExt: entry.exportAs.ext })}
                         </span>
                       )}
                     </div>
                   ))}
                   {browser.entries.length === 0 && !browser.error && browser.rateLimitedSeconds === null && (
                     <p className="px-3 py-6 text-center text-sm text-muted-foreground">
-                      This folder is empty.
+                      {t('common.description.thisFolderIsEmpty')}.
                     </p>
                   )}
                 </>
@@ -255,7 +259,7 @@ export function ProviderPickerDialog({
 
             {browser.cursor && (
               <Button variant="ghost" size="sm" onClick={() => browser.loadMore()}>
-                Load more
+                {t('common.action.loadMore')}
               </Button>
             )}
           </>
@@ -263,16 +267,18 @@ export function ProviderPickerDialog({
 
         <DialogFooter className="items-center justify-between gap-3 sm:justify-between">
           <span className="text-xs text-muted-foreground">
-            {browser.selection.length} selected - importing into{' '}
-            {destLabel ?? (destFolderId ? 'this folder' : 'workspace root')}
+            {t('common.label.selectioncountSelectedImportingIntoDestlabeldestfolderidthis', {
+              selectionCount: String(browser.selection.length),
+              destLabelDestFolderIdThis: destLabel ?? (destFolderId ? t('common.label.thisFolder') : t('common.label.workspaceRoot')),
+            })}
           </span>
           <div className="flex gap-2">
-            <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
+            <Button variant="ghost" onClick={() => onOpenChange(false)}>{t('common.cancel')}</Button>
             <Button
               disabled={browser.selection.length === 0 || starting || !workspaceId}
               onClick={() => void onImport()}
             >
-              {starting ? 'Starting...' : 'Import'}
+              {starting ? t('common.action.starting') : t('common.action.import')}
             </Button>
           </div>
         </DialogFooter>

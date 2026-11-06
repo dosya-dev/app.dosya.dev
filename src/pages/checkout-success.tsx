@@ -1,3 +1,4 @@
+import { formatDateWith, formatNumberWith } from '@/lib/format-locale';
 import { useEffect, useRef, useState } from 'react';
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { ArrowRight, Check, ChevronDown, ExternalLink, Loader2, RefreshCw } from 'lucide-react';
@@ -6,10 +7,14 @@ import { getBillingStatus, syncBilling, type BillingStatus } from '@/api/billing
 import { buttonVariants, Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { MsStoreBadge } from '@/components/ms-store-badge';
-import { formatBytes, formatGigabytes } from '@/lib/billing/cart-math';
+import { activeTrialEnd, formatBytes, formatGigabytes } from '@/lib/billing/cart-math';
 import { INTEGRATIONS, type IntegrationSlug } from '@/lib/integrations';
 import { clearStorageBeforePurchase, readStorageBeforePurchase, takeRecentPlanChange } from '@/lib/checkout-return';
 import { cn } from '@/lib/utils';
+import { t as tNow, useT, currentLocale } from '@/lib/i18n';
+import { richText } from '@/lib/rich-text';
+import { tidyText } from '@/lib/billing/catalog-select';
+import type { MessageKey } from '@/i18n/keys';
 
 type Card = { brand?: string; last4?: string } | null;
 
@@ -45,19 +50,19 @@ const POLL_MS = 2500;
 function money(cents: number | null, currency: string | null): string | null {
   if (cents === null || !currency) return null;
   try {
-    return new Intl.NumberFormat('en-US', { style: 'currency', currency: currency.toUpperCase() }).format(cents / 100);
+    return formatNumberWith(cents / 100, { style: 'currency', currency: currency.toUpperCase() }, 'en-US');
   } catch {
     return `${(cents / 100).toFixed(2)} ${currency.toUpperCase()}`;
   }
 }
 
 function longDate(unix: number | null): string | null {
-  return unix ? new Date(unix * 1000).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : null;
+  return unix ? formatDateWith(unix, { year: 'numeric', month: 'long', day: 'numeric' }, 'en-US') : null;
 }
 
 function cardLabel(card: Card): string | null {
   if (!card?.last4) return null;
-  const brand = card.brand ? card.brand.charAt(0).toUpperCase() + card.brand.slice(1) : 'Card';
+  const brand = card.brand ? card.brand.charAt(0).toUpperCase() + card.brand.slice(1) : tNow('common.label.card');
   return `${brand} •••• ${card.last4}`;
 }
 
@@ -118,6 +123,7 @@ function splitSize(bytes: number): [string, string] {
 }
 
 export default function CheckoutSuccessPage() {
+  const t = useT();
   const location = useLocation();
   const navigate = useNavigate();
   // This page is only ever reached one of two ways: back from a Stripe Checkout
@@ -217,8 +223,13 @@ export default function CheckoutSuccessPage() {
   const counted = useCountUp(entry.before ?? 0, target, !!status);
   const [figure, unit] = splitSize(counted);
   const fillShare = target > 0 ? Math.max(0, Math.min(1, counted / target)) : 1;
-  const planName = status ? `${status.plan.name} · ${status.interval === 'year' ? 'yearly' : 'monthly'}` : null;
+  // TODO(catalog): the interval word has no lower-case entry: the capitalised label is lowered in the chosen language.
+  const planName = status ? `${status.plan.name} · ${t(status.interval === 'year' ? 'common.label.yearly' : 'common.label.monthly').toLocaleLowerCase(currentLocale())}` : null;
   const paymentPending = receipt?.kind === 'checkout' && !receipt.paid;
+  // A trial's first invoice is $0. The server marks the subscription active, so
+  // the trial shows only through trial_end.
+  const trialEnd = activeTrialEnd(status?.subscription);
+  const trialStarted = receipt?.kind === 'checkout' && receipt.paid && receipt.amount === 0 && trialEnd !== null;
   const beforeShare = showsAdded && total > 0 ? Math.max(0, Math.min(1, entry.before! / total)) : 0;
 
   return (
@@ -229,15 +240,25 @@ export default function CheckoutSuccessPage() {
         {/* Headline left, the figure it is all about on the right. */}
         <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between lg:gap-10">
           <div className="min-w-0">
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-green-600/30 bg-green-50 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-green-700 dark:border-green-400/25 dark:bg-green-500/10 dark:text-green-400">
+            <span className="whitespace-nowrap inline-flex items-center gap-1.5 rounded-full border border-green-600/30 bg-green-50 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-green-700 dark:border-green-400/25 dark:bg-green-500/10 dark:text-green-400">
               <Check className="size-3.5" strokeWidth={2.6} aria-hidden="true" />
-              {isChange ? 'Plan updated' : 'Purchase complete'}
+              {isChange ? t('checkout-success.label.planUpdated') : trialStarted ? t('checkout-success.label.trialStarted') : t('checkout-success.label.purchaseComplete')}
             </span>
 
             <h1 className="mt-5 max-w-[18ch] text-balance text-3xl font-bold leading-[1.1] tracking-tight sm:text-4xl lg:text-5xl">
-              <span>{isChange ? 'Your plan is updated.' : 'Thank you for your purchase.'}</span>{' '}
-              <span className="text-muted-foreground">{showsAdded ? 'Here is your new space.' : 'Here is your space now.'}</span>
+              <span>{isChange ? t('checkout-success.description.yourPlanIsUpdated') : trialStarted ? t('checkout-success.description.your7DayTrialHasStarted') : t('checkout-success.description.thankYouForYourPurchase')}</span>
+              {trialStarted ? null : (
+                <>
+                  {' '}
+                  <span className="text-muted-foreground">{showsAdded ? t('checkout-success.description.hereIsYourNewSpace') : t('checkout-success.description.hereIsYourSpaceNow')}</span>
+                </>
+              )}
             </h1>
+            {trialStarted ? (
+              <p className="mt-3 max-w-[48ch] text-base text-muted-foreground sm:text-lg">
+                {t('checkout-success.description.youWonTBeChargedUntilTrialendCancelAnyTimeBeforeThen', { trialEnd: longDate(trialEnd) ?? '' })}
+              </p>
+            ) : null}
           </div>
 
           {status ? (
@@ -245,9 +266,9 @@ export default function CheckoutSuccessPage() {
               className="flex shrink-0 items-start font-mono font-bold leading-none tracking-tighter tabular-nums lg:justify-end"
               data-testid="capacity-figure"
             >
-              {showsAdded ? <span className="mr-1 mt-[0.2em] text-[clamp(1.75rem,6vw,3.5rem)] text-green-600 dark:text-green-400">+</span> : null}
+              {showsAdded ? <span className="me-1 mt-[0.2em] text-[clamp(1.75rem,6vw,3.5rem)] text-green-600 dark:text-green-400">+</span> : null}
               <span className="text-[clamp(3.25rem,12vw,7rem)]">{figure}</span>
-              <span className="ml-2 mt-[0.35em] text-lg font-semibold tracking-normal text-green-600 sm:text-2xl dark:text-green-400">{unit}</span>
+              <span className="ms-2 mt-[0.35em] text-lg font-semibold tracking-normal text-green-600 sm:text-2xl dark:text-green-400">{unit}</span>
             </p>
           ) : (
             <Skeleton className="h-20 w-56 shrink-0 rounded-lg" />
@@ -261,12 +282,12 @@ export default function CheckoutSuccessPage() {
                 className="flex h-4 overflow-hidden rounded-full border bg-muted sm:h-5"
                 role="img"
                 aria-label={showsAdded
-                  ? `${formatGigabytes(added!)} added, ${formatGigabytes(total)} in total`
-                  : `${formatGigabytes(total)} in total`}
+                  ? t('checkout-success.accessibility.formattedvalueAddedTotalInTotal', { formattedValue: formatGigabytes(added!), total: formatGigabytes(total) })
+                  : t('checkout-success.accessibility.totalInTotal', { total: formatGigabytes(total) })}
               >
                 {showsAdded ? <span className="h-full bg-muted-foreground/35" style={{ width: `${beforeShare * 100}%` }} /> : null}
                 <span
-                  className="checkout-fill h-full flex-1 origin-left"
+                  className="checkout-fill h-full flex-1 ltr:origin-left rtl:origin-right"
                   style={{
                     ...(showsAdded ? {} : { background: 'var(--primary)' }),
                     transform: `scaleX(${fillShare})`,
@@ -279,10 +300,10 @@ export default function CheckoutSuccessPage() {
                     key={share}
                     className={cn(
                       'absolute whitespace-nowrap',
-                      share === 0 ? 'left-0' : share === 1 ? 'right-0' : '-translate-x-1/2',
+                      share === 0 ? 'inset-s-0' : share === 1 ? 'inset-e-0' : 'ltr:-translate-x-1/2 rtl:translate-x-1/2',
                       share > 0 && share < 1 && 'max-sm:hidden',
                     )}
-                    style={share > 0 && share < 1 ? { left: `${share * 100}%` } : undefined}
+                    style={share > 0 && share < 1 ? { insetInlineStart: `${share * 100}%` } : undefined}
                   >
                     {share === 0 ? '0' : formatGigabytes(total * share)}
                   </span>
@@ -294,23 +315,23 @@ export default function CheckoutSuccessPage() {
                     <>
                       <span className="inline-flex items-center gap-2">
                         <span className="inline-block h-3 w-5 rounded-sm bg-muted-foreground/35" aria-hidden="true" />
-                        Before {formatGigabytes(entry.before!)}
+                        {t('checkout-success.label.before')} {formatGigabytes(entry.before!)}
                       </span>
                       <span className="inline-flex items-center gap-2">
                         <span className="checkout-fill inline-block h-3 w-5 rounded-sm" aria-hidden="true" />
-                        Added by this {isChange ? 'change' : 'purchase'}
+                        {t('checkout-success.label.addedByThis')} {isChange ? t('checkout-success.label.change') : t('checkout-success.label.purchase')}
                       </span>
                     </>
                   ) : (
-                    <span>Your storage on {status.plan.name}</span>
+                    <span>{t('checkout-success.label.yourStorageOnPlanname', { planName: status.plan.name })}</span>
                   )}
                 </span>
-                <span className="font-mono font-semibold tabular-nums">{formatGigabytes(total)} total</span>
+                <span className="font-mono font-semibold tabular-nums">{t('checkout-success.label.totalTotal', { total: formatGigabytes(total) })}</span>
               </div>
             </div>
           </div>
         ) : (
-          <div className="mt-10" aria-label="Loading your storage">
+          <div className="mt-10" aria-label={t('checkout-success.accessibility.loadingYourStorage')}>
             <Skeleton className="h-5 w-full rounded-full" />
           </div>
         )}
@@ -319,59 +340,62 @@ export default function CheckoutSuccessPage() {
       <div className="grid grid-cols-1 items-start gap-10 px-4 pt-8 sm:px-6 lg:grid-cols-[minmax(0,1fr)_380px] lg:gap-12 lg:px-8 lg:pt-12">
         {/* Steps */}
         <section aria-labelledby="checkout-steps-title">
-          <h2 id="checkout-steps-title" className="sr-only">What happens next</h2>
+          <h2 id="checkout-steps-title" className="sr-only">{t('checkout-success.heading.whatHappensNext')}</h2>
           <ol>
             <Step
               state={paymentPending ? 'current' : 'done'}
-              eyebrow={paymentPending ? 'Processing' : 'Done'}
-              title={isChange ? 'Plan changed' : paymentPending ? 'Payment processing' : 'Payment received'}
+              eyebrow={paymentPending ? t('checkout-success.label.processing') : t('common.done')}
+              title={isChange ? t('checkout-success.tooltip.planChanged') : paymentPending ? t('checkout-success.tooltip.paymentProcessing') : trialStarted ? t('checkout-success.tooltip.trialStarted') : t('checkout-success.tooltip.paymentReceived')}
             >
               {isChange
-                ? 'Stripe adds the prorated difference to your next invoice.'
+                ? t('checkout-success.description.stripeAddsTheProratedDifferenceToYourNextInvoice')
                 : paymentPending
-                  ? 'Stripe is still confirming the payment. Storage is added as soon as it clears.'
-                  : [planName, longDate(receipt?.kind === 'checkout' ? receipt.paid_at : null)].filter(Boolean).join(' · ') || 'Your payment went through.'}
+                  ? t('checkout-success.description.stripeIsStillConfirmingThePaymentStorageIsAddedAsSoon')
+                  : trialStarted
+                    ? t('checkout-success.description.youWonTBeChargedUntilTrialend', { trialEnd: longDate(trialEnd) ?? '' })
+                  : [planName, longDate(receipt?.kind === 'checkout' ? receipt.paid_at : null)].filter(Boolean).join(' · ') || t('checkout-success.description.yourPaymentWentThrough')}
             </Step>
 
             <Step
               state={settled ? 'done' : gaveUp ? 'failed' : 'current'}
-              eyebrow={settled ? 'Done' : gaveUp ? 'Taking longer' : 'In progress'}
-              title={settled ? (unchanged ? 'Subscription updated' : 'Storage added') : (unchanged ? 'Updating your subscription' : 'Adding your storage')}
+              eyebrow={settled ? t('common.done') : gaveUp ? t('checkout-success.label.takingLonger') : t('checkout-success.label.inProgress')}
+              title={settled ? (unchanged ? t('checkout-success.tooltip.subscriptionUpdated') : t('checkout-success.tooltip.storageAdded')) : (unchanged ? t('checkout-success.tooltip.updatingYourSubscription') : t('checkout-success.tooltip.addingYourStorage'))}
             >
               {settled ? (
-                added === 0 ? `Your storage stays at ${formatGigabytes(total)}.` : `Your account now has ${formatGigabytes(total)} of storage.`
+                added === 0 ? t('checkout-success.description.yourStorageStaysAtTotal', { total: formatGigabytes(total) }) : t('checkout-success.description.yourAccountNowHasTotalOfStorage', { total: formatGigabytes(total) })
               ) : gaveUp ? (
                 <span className="flex flex-col items-start gap-3">
-                  <span>Stripe has not confirmed the subscription yet. It normally appears within a minute.</span>
+                  <span>{t('checkout-success.description.stripeHasNotConfirmedTheSubscriptionYetItNormallyAppearsWithin')}</span>
                   <Button size="sm" variant="outline" onClick={() => setAttempt((n) => n + 1)}>
                     <RefreshCw className="size-3.5" aria-hidden="true" />
-                    Check again
+                    {t('checkout-success.action.checkAgain')}
                   </Button>
                 </span>
               ) : (
                 <span className="inline-flex items-center gap-2">
                   <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
-                  This usually takes a few seconds.
+                  {t('checkout-success.description.thisUsuallyTakesAFewSeconds')}
                 </span>
               )}
             </Step>
 
-            <Step state={settled ? 'current' : 'todo'} eyebrow="Next step" title="Upload anything" last>
+            <Step state={settled ? 'current' : 'todo'} eyebrow={t('checkout-success.label.nextStep')} title={t('checkout-success.tooltip.uploadAnything')} last>
               <span className="flex flex-col items-start gap-4">
                 <span>
-                  Use the web app, or connect{' '}
-                  <Link className="underline-offset-2 hover:underline" to="/integrations/desktop">desktop</Link>,{' '}
-                  <Link className="underline-offset-2 hover:underline" to="/integrations/cli">CLI</Link>,{' '}
-                  <Link className="underline-offset-2 hover:underline" to="/integrations/webdav">WebDAV</Link> or{' '}
-                  <Link className="underline-offset-2 hover:underline" to="/integrations/s3">S3</Link>.
+                  {richText(t('checkout-success.description.useTheWebAppOrConnectLink1Link2Link3OrLink4', { link1: '{link1}', link2: '{link2}', link3: '{link3}', link4: '{link4}' }), {
+                    link1: <Link className="underline-offset-2 hover:underline" to="/integrations/desktop">{t('checkout-success.action.desktop')}</Link>,
+                    link2: <Link className="underline-offset-2 hover:underline" to="/integrations/cli">{t('checkout-success.action.cli')}</Link>,
+                    link3: <Link className="underline-offset-2 hover:underline" to="/integrations/webdav">WebDAV</Link>,
+                    link4: <Link className="underline-offset-2 hover:underline" to="/integrations/s3">S3</Link>,
+                  })}
                 </span>
                 <span className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
                   <Link to="/files" className={cn(buttonVariants(), 'h-10 w-full sm:w-auto')}>
-                    Open files
-                    <ArrowRight className="size-4" aria-hidden="true" />
+                    {t('common.action.openFiles')}
+                    <ArrowRight className="size-4 rtl:-scale-x-100" aria-hidden="true" />
                   </Link>
                   <Link to="/billing" className={cn(buttonVariants({ variant: 'outline' }), 'h-10 w-full sm:w-auto')}>
-                    View billing
+                    {t('common.action.viewBilling')}
                   </Link>
                 </span>
               </span>
@@ -385,22 +409,26 @@ export default function CheckoutSuccessPage() {
             <div className="checkout-slip relative rounded-t-xl bg-card px-5 pb-5 pt-5 font-mono text-sm">
               <div className="flex items-center justify-between gap-3">
                 <h2 id="checkout-receipt-title" className="text-xs font-semibold uppercase tracking-[0.12em]">
-                  {isChange ? 'Plan change' : 'Order receipt'} · Stripe
+                  {t('checkout-success.heading.ischangeSelectTruePlanChangeOtherOrderReceiptStripe', { isChange: String(isChange) })}
                 </h2>
-                <span className="rounded border border-green-600/40 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-widest text-green-700 dark:text-green-400">
-                  {isChange ? 'Updated' : paymentPending ? 'Pending' : 'Paid'}
+                <span className={trialStarted
+                  ? 'rounded border px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-widest text-muted-foreground'
+                  : 'rounded border border-green-600/40 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-widest text-green-700 dark:text-green-400'}>
+                  {isChange ? t('checkout-success.label.updated') : trialStarted ? t('checkout-success.label.trial') : paymentPending ? t('common.label.pending') : t('checkout-success.label.paid')}
                 </span>
               </div>
-              <ReceiptRows receipt={receipt} failed={receiptFailed} status={status} planName={planName} />
+              <ReceiptRows receipt={receipt} failed={receiptFailed} status={status} planName={planName} trial={trialStarted} />
             </div>
           </div>
           <p className="mt-6 text-xs leading-relaxed text-muted-foreground">
             {isChange
-              ? 'Invoices and your payment method are in Billing. '
-              : 'Every package is covered by our 14-day money-back guarantee. '}
+              ? `${t('checkout-success.description.invoicesAndYourPaymentMethodAreInBilling')} `
+              : trialStarted
+                ? `${t('checkout-success.description.afterYourTrialPaymentsAreCoveredByOur14DayMoneyBackGuarantee')} `
+                : `${t('checkout-success.description.everyPackageIsCoveredByOur14DayMoneyBackGuarantee')} `}
             {receipt?.kind === 'checkout' && receipt.invoice_url ? (
               <a className="inline-flex items-center gap-1 text-foreground underline underline-offset-2" href={receipt.invoice_url} target="_blank" rel="noreferrer">
-                View invoice <ExternalLink className="size-3" aria-hidden="true" />
+                {t('checkout-success.action.viewInvoice')} <ExternalLink className="size-3" aria-hidden="true" />
               </a>
             ) : null}
           </p>
@@ -415,9 +443,7 @@ export default function CheckoutSuccessPage() {
 
       <div className="px-4 pt-10 sm:px-6 lg:px-8">
         <div className="rounded-xl border bg-muted/40 p-5 text-sm text-muted-foreground">
-          <span className="font-medium text-foreground">Something not right?</span>{' '}
-          Email <a className="font-medium text-foreground underline underline-offset-2" href="mailto:support@dosya.dev">support@dosya.dev</a>
-          {receipt?.kind === 'checkout' && receipt.invoice_number ? ` with invoice ${receipt.invoice_number}` : ''}.
+          <SupportLine invoiceNumber={receipt?.kind === 'checkout' ? receipt.invoice_number : null} />
         </div>
       </div>
 
@@ -425,7 +451,7 @@ export default function CheckoutSuccessPage() {
         .checkout-fill { background: repeating-linear-gradient(135deg, #16a34a 0 7px, #22c55e 7px 14px); }
         .checkout-slip-wrap { padding-bottom: 10px; filter: drop-shadow(0 0 0.75px var(--border)) drop-shadow(0 2px 3px rgb(0 0 0 / 0.06)); }
         .dark .checkout-slip-wrap { filter: drop-shadow(0 0 0.75px var(--border)) drop-shadow(0 2px 4px rgb(0 0 0 / 0.35)); }
-        .checkout-slip::after { content: ""; position: absolute; left: 0; right: 0; bottom: -10px; height: 10px;
+        .checkout-slip::after { content: ""; position: absolute; inset-inline: 0; bottom: -10px; height: 10px;
           background: radial-gradient(circle at 8px 10px, transparent 6.5px, var(--card) 7px) repeat-x; background-size: 16px 10px; }
       `}</style>
     </div>
@@ -609,23 +635,26 @@ function Step({ state, eyebrow, title, children, last = false }: {
   );
 }
 
-function ReceiptRows({ receipt, failed, status, planName }: {
+function ReceiptRows({ receipt, failed, status, planName, trial = false }: {
   receipt: Receipt | null;
   failed: boolean;
   status: BillingStatus | null;
   planName: string | null;
+  trial?: boolean;
 }) {
+  const t = useT();
   if (failed) {
     return (
       <p className="mt-4 border-t border-dashed pt-4 font-sans text-xs text-muted-foreground">
-        The receipt details could not be loaded from Stripe. Your invoices are in{' '}
-        <Link className="text-foreground underline underline-offset-2" to="/billing">Billing</Link>.
+        {richText(t('checkout-success.error.theReceiptDetailsCouldNotBeLoadedFromStripeYourInvoices', { link1: '{link1}' }), {
+          link1: <Link className="text-foreground underline underline-offset-2" to="/billing">{t('common.action.billing')}</Link>,
+        })}
       </p>
     );
   }
   if (!receipt) {
     return (
-      <div className="mt-4 space-y-3 border-t border-dashed pt-4" aria-label="Loading receipt">
+      <div className="mt-4 space-y-3 border-t border-dashed pt-4" aria-label={t('checkout-success.accessibility.loadingReceipt')}>
         {[0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-8 w-full rounded" />)}
       </div>
     );
@@ -633,20 +662,20 @@ function ReceiptRows({ receipt, failed, status, planName }: {
 
   const rows: Array<[string, string | null]> = receipt.kind === 'checkout'
     ? [
-      ['Invoice', receipt.invoice_number],
-      ['Date', longDate(receipt.paid_at)],
-      ['Plan', planName],
-      ['Amount', money(receipt.amount, receipt.currency)],
-      ['Card', cardLabel(receipt.card)],
-      ['Email', receipt.email],
+      [t('checkout-success.label.invoice'), receipt.invoice_number],
+      [t('checkout-success.label.date'), longDate(receipt.paid_at)],
+      [t('common.label.plan'), planName],
+      [trial ? t('checkout-success.label.dueToday') : t('checkout-success.label.amount'), money(receipt.amount, receipt.currency)],
+      [t('common.label.card'), cardLabel(receipt.card)],
+      [t('common.label.email'), receipt.email],
     ]
     : [
-      ['Plan', planName],
-      ['Storage', status ? formatGigabytes(status.usage.limit_bytes) : null],
-      ['Next invoice', money(receipt.next_amount, receipt.currency)],
-      ['Invoice date', longDate(receipt.next_invoice_at)],
-      ['Card', cardLabel(receipt.card)],
-      ['Email', receipt.email],
+      [t('common.label.plan'), planName],
+      [t('common.label.storage'), status ? formatGigabytes(status.usage.limit_bytes) : null],
+      [t('checkout-success.label.nextInvoice'), money(receipt.next_amount, receipt.currency)],
+      [t('checkout-success.label.invoiceDate'), longDate(receipt.next_invoice_at)],
+      [t('common.label.card'), cardLabel(receipt.card)],
+      [t('common.label.email'), receipt.email],
     ];
 
   return (
@@ -670,14 +699,15 @@ function ReceiptRows({ receipt, failed, status, planName }: {
 const CONNECT: IntegrationSlug[] = ['desktop', 'cli', 'webdav', 's3', 'rclone'];
 
 function ConnectSection() {
+  const t = useT();
   const cards = CONNECT
     .map((slug) => INTEGRATIONS.find((integration) => integration.slug === slug))
     .filter((integration): integration is NonNullable<typeof integration> => !!integration);
 
   return (
     <section className="px-4 pt-12 sm:px-6 lg:px-8" aria-labelledby="connect-title">
-      <h2 id="connect-title" className="text-lg font-semibold">Put your storage to work</h2>
-      <p className="mt-1 text-sm text-muted-foreground">Upload from your computer, your terminal, or any tool that speaks S3 or WebDAV.</p>
+      <h2 id="connect-title" className="text-lg font-semibold">{t('checkout-success.heading.putYourStorageToWork')}</h2>
+      <p className="mt-1 text-sm text-muted-foreground">{t('checkout-success.description.uploadFromYourComputerYourTerminalOrAnyToolThatSpeaks')}</p>
       <ul className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {cards.map((integration) => {
           const Icon = integration.icon;
@@ -691,7 +721,7 @@ function ConnectSection() {
                 <p className="mt-0.5 text-sm text-muted-foreground">{integration.description}</p>
                 <p className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
                   <Link className="font-medium text-primary hover:underline underline-offset-2" to={`/integrations/${integration.slug}`}>
-                    Set up
+                    {t('common.action.setUp')}
                   </Link>
                   {integration.docsUrl ? (
                     <a
@@ -700,7 +730,7 @@ function ConnectSection() {
                       target="_blank"
                       rel="noreferrer"
                     >
-                      Guide <ExternalLink className="size-3" aria-hidden="true" />
+                      {t('checkout-success.action.guide')} <ExternalLink className="size-3" aria-hidden="true" />
                     </a>
                   ) : null}
                 </p>
@@ -721,27 +751,28 @@ function ConnectSection() {
  * The Microsoft one is not here: it is the real <ms-store-badge> web component
  * now (see ../components/ms-store-badge), which goes to the Store itself.
  */
-const BADGES: Array<{ src: string; alt: string; href: string; width: number }> = [
-  { src: '/badges/appstore.svg', alt: 'Download on the App Store', href: 'https://apps.apple.com/app/id6796702157', width: 114 },
-  { src: '/badges/googleplay.svg', alt: 'Get it on Google Play', href: 'https://play.google.com/store/apps/details?id=dev.dosya', width: 129 },
-  { src: '/badges/mac-appstore.svg', alt: 'Download on the Mac App Store', href: 'https://apps.apple.com/app/id6818700723?mt=12', width: 149 },
+const BADGES: Array<{ src: string; altKey: MessageKey; href: string; width: number }> = [
+  { src: '/badges/appstore.svg', altKey: 'checkout-success.label.downloadOnTheAppStore', href: 'https://apps.apple.com/app/id6796702157', width: 114 },
+  { src: '/badges/googleplay.svg', altKey: 'checkout-success.label.getItOnGooglePlay', href: 'https://play.google.com/store/apps/details?id=dev.dosya', width: 129 },
+  { src: '/badges/mac-appstore.svg', altKey: 'common.label.downloadOnTheMacAppStore', href: 'https://apps.apple.com/app/id6818700723?mt=12', width: 149 },
 ];
 
 function AppsSection() {
+  const t = useT();
   return (
     <section className="px-4 pt-10 sm:px-6 lg:px-8" aria-labelledby="apps-title">
       <div className="rounded-xl border p-5 sm:p-6">
-        <h2 id="apps-title" className="text-lg font-semibold">Get the apps</h2>
+        <h2 id="apps-title" className="text-lg font-semibold">{t('checkout-success.heading.getTheApps')}</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Keep a folder in sync on your computer, and back up your phone automatically.{' '}
-          <a className="font-medium text-foreground underline underline-offset-2" href="https://dosya.dev/desktop/" target="_blank" rel="noreferrer">Desktop</a>
-          {' · '}
-          <a className="font-medium text-foreground underline underline-offset-2" href="https://dosya.dev/mobile/" target="_blank" rel="noreferrer">Mobile</a>
+          {richText(t('checkout-success.description.keepAFolderInSyncOnYourComputerAndBackUp', { link1: '{link1}', link2: '{link2}' }), {
+            link1: <a className="font-medium text-foreground underline underline-offset-2" href="https://dosya.dev/desktop/" target="_blank" rel="noreferrer">{t('common.action.desktop')}</a>,
+            link2: <a className="font-medium text-foreground underline underline-offset-2" href="https://dosya.dev/mobile/" target="_blank" rel="noreferrer">{t('checkout-success.action.mobile')}</a>,
+          })}
         </p>
         <div className="mt-4 flex flex-wrap items-center gap-3">
           {BADGES.map((badge) => (
-            <a key={badge.alt} href={badge.href} target="_blank" rel="noreferrer" className="transition-opacity hover:opacity-80">
-              <img src={badge.src} alt={badge.alt} width={badge.width} height={38} className="h-[38px] w-auto" loading="lazy" />
+            <a key={badge.altKey} href={badge.href} target="_blank" rel="noreferrer" className="transition-opacity hover:opacity-80">
+              <img src={badge.src} alt={t(badge.altKey)} width={badge.width} height={38} className="h-[38px] w-auto" loading="lazy" />
             </a>
           ))}
           <MsStoreBadge />
@@ -757,103 +788,108 @@ function AppsSection() {
 // <details> rather than a JS accordion: every answer is in the page at rest,
 // findable with the browser's own find-in-page.
 
-const FAQ: Array<{ q: string; a: React.ReactNode }> = [
+const L = 'underline underline-offset-2';
+const FAQ: Array<{ q: MessageKey; a: (t: ReturnType<typeof useT>) => React.ReactNode }> = [
   {
-    q: 'When does my new storage appear?',
-    a: (
-      <>
-        Within seconds of the payment clearing. This page checks with Stripe itself, so it does not wait for
-        anything in the background. If it has not appeared, open <Link className="underline underline-offset-2" to="/billing">Billing</Link>,
-        which reconciles again on every visit.
-      </>
-    ),
+    q: 'checkout-success.description.whenDoesMyNewStorageAppear',
+    a: (t) => richText(t('checkout-success.description.withinSecondsOfThePaymentClearingThisPageChecksWithStripe', { link1: '{link1}' }), {
+      link1: <Link className={L} to="/billing">{t('common.action.billing')}</Link>,
+    }),
   },
   {
-    q: 'Where do I find my invoices?',
-    a: (
-      <>
-        Every invoice is listed on <Link className="underline underline-offset-2" to="/billing">Billing</Link>, with a PDF for each one.
-        Your payment method lives there too, under Manage billing.
-      </>
-    ),
+    q: 'checkout-success.description.whereDoIFindMyInvoices',
+    a: (t) => richText(t('checkout-success.description.everyInvoiceIsListedOnLink1WithAPdfForEach', { link1: '{link1}' }), {
+      link1: <Link className={L} to="/billing">{t('common.action.billing')}</Link>,
+    }),
   },
   {
-    q: 'Can I change or cancel my plan later?',
-    a: (
-      <>
-        Yes, from <Link className="underline underline-offset-2" to="/billing">Billing</Link>, at any time. A cancellation keeps your
-        access until the period you already paid for ends. Every package is covered by our 14-day money-back guarantee, set out in
-        the <a className="underline underline-offset-2" href="https://dosya.dev/terms-of-service/" target="_blank" rel="noreferrer">Terms</a>.
-      </>
-    ),
+    q: 'checkout-success.description.canIChangeOrCancelMyPlanLater',
+    a: (t) => richText(t('checkout-success.description.yesFromLink1AtAnyTimeACancellationKeepsYourAccess', { link1: '{link1}', link2: '{link2}' }), {
+      link1: <Link className={L} to="/billing">{t('common.action.billing')}</Link>,
+      link2: <a className={L} href="https://dosya.dev/terms-of-service/" target="_blank" rel="noreferrer">{t('checkout-success.action.terms')}</a>,
+    }),
   },
   {
-    q: 'How do I upload a lot of files at once?',
-    a: (
-      <>
-        Install the <Link className="underline underline-offset-2" to="/integrations/desktop">desktop app</Link> and keep a folder in sync, or
-        script it with the <Link className="underline underline-offset-2" to="/integrations/cli">CLI</Link>.
-        For large migrations, <Link className="underline underline-offset-2" to="/integrations/rclone">rclone</Link> copies straight from another
-        provider. There is also <Link className="underline underline-offset-2" to="/integrations/google">Google Drive, OneDrive and Dropbox import</Link>.
-      </>
-    ),
+    q: 'checkout-success.description.howDoIUploadALotOfFilesAtOnce',
+    a: (t) => richText(t('checkout-success.description.installTheLink1AndKeepAFolderInSyncOrScript', { link1: '{link1}', link2: '{link2}', link3: '{link3}', link4: '{link4}' }), {
+      link1: <Link className={L} to="/integrations/desktop">{t('checkout-success.action.desktopApp')}</Link>,
+      link2: <Link className={L} to="/integrations/cli">{t('checkout-success.action.cli')}</Link>,
+      link3: <Link className={L} to="/integrations/rclone">rclone</Link>,
+      link4: <Link className={L} to="/integrations/google">{t('checkout-success.action.googleDriveOnedriveAndDropboxImport')}</Link>,
+    }),
   },
   {
-    q: 'Can I mount my storage as a drive?',
-    a: (
-      <>
-        Yes. <Link className="underline underline-offset-2" to="/integrations/webdav">WebDAV</Link> mounts it as a network drive on macOS,
-        Windows and Linux, and <Link className="underline underline-offset-2" to="/integrations/sftp">SFTP</Link> works with FileZilla, WinSCP
-        and Cyberduck.
-      </>
-    ),
+    q: 'checkout-success.description.canIMountMyStorageAsADrive',
+    a: (t) => richText(t('checkout-success.description.yesLink1MountsItAsANetworkDriveOnMacosWindows', { link1: '{link1}', link2: '{link2}' }), {
+      link1: <Link className={L} to="/integrations/webdav">WebDAV</Link>,
+      link2: <Link className={L} to="/integrations/sftp">SFTP</Link>,
+    }),
   },
   {
-    q: 'Does it work with my S3 tools?',
-    a: (
-      <>
-        Point any S3-compatible tool or SDK at your workspace with{' '}
-        <Link className="underline underline-offset-2" to="/integrations/s3">S3 credentials</Link>, or use the{' '}
-        <Link className="underline underline-offset-2" to="/integrations/rest-api">REST API</Link> directly.
-      </>
-    ),
+    q: 'checkout-success.description.doesItWorkWithMyS3Tools',
+    a: (t) => richText(t('checkout-success.description.pointAnyS3CompatibleToolOrSdkAtYourWorkspaceWithLink1', { link1: '{link1}', link2: '{link2}' }), {
+      link1: <Link className={L} to="/integrations/s3">{t('checkout-success.action.s3Credentials')}</Link>,
+      link2: <Link className={L} to="/integrations/rest-api">{t('checkout-success.action.restApi')}</Link>,
+    }),
   },
   {
-    q: 'Does my storage work on my phone?',
-    a: (
-      <>
-        Yes. The <a className="underline underline-offset-2" href="https://dosya.dev/mobile/" target="_blank" rel="noreferrer">mobile app</a> uploads
-        photos and videos in the background, and files you add anywhere show up everywhere.
-      </>
-    ),
+    q: 'checkout-success.description.doesMyStorageWorkOnMyPhone',
+    a: (t) => richText(t('checkout-success.description.yesTheLink1UploadsPhotosAndVideosInTheBackgroundAnd', { link1: '{link1}' }), {
+      link1: <a className={L} href="https://dosya.dev/mobile/" target="_blank" rel="noreferrer">{t('checkout-success.action.mobileApp')}</a>,
+    }),
   },
   {
-    q: 'Can I share files with people who have no account?',
-    a: (
-      <>
-        Yes, with share links, which can carry a password and an expiry date. See{' '}
-        <a className="underline underline-offset-2" href="https://dosya.dev/resources/share-links/" target="_blank" rel="noreferrer">how share links work</a>,
-        or collect files from others with a <Link className="underline underline-offset-2" to="/file-requests">file request</Link>.
-      </>
-    ),
+    q: 'checkout-success.description.canIShareFilesWithPeopleWhoHaveNoAccount',
+    a: (t) => richText(t('checkout-success.description.yesWithShareLinksWhichCanCarryAPasswordAndAn', { link1: '{link1}', link2: '{link2}' }), {
+      link1: <a className={L} href="https://dosya.dev/resources/share-links/" target="_blank" rel="noreferrer">{t('checkout-success.action.howShareLinksWork')}</a>,
+      link2: <Link className={L} to="/file-requests">{t('checkout-success.action.fileRequest')}</Link>,
+    }),
   },
 ];
 
 function FaqSection() {
+  const t = useT();
   return (
     <section className="px-4 pt-10 sm:px-6 lg:px-8" aria-labelledby="faq-title">
-      <h2 id="faq-title" className="text-lg font-semibold">Questions people ask after buying</h2>
+      <h2 id="faq-title" className="text-lg font-semibold">{t('checkout-success.heading.questionsPeopleAskAfterBuying')}</h2>
       <div className="mt-4 divide-y rounded-xl border">
         {FAQ.map(({ q, a }) => (
           <details key={q} className="group px-4 py-3 [&_a]:font-medium">
             <summary className="flex cursor-pointer list-none items-center justify-between gap-4 text-sm font-medium marker:hidden">
-              {q}
+              {t(q)}
               <ChevronDown className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" aria-hidden="true" />
             </summary>
-            <div className="pb-1 pt-2 text-sm leading-6 text-muted-foreground">{a}</div>
+            <div className="pb-1 pt-2 text-sm leading-6 text-muted-foreground">{a(t)}</div>
           </details>
         ))}
       </div>
     </section>
+  );
+}
+
+/**
+ * "Something not right? Email support@dosya.dev with invoice N." One catalog
+ * sentence. TODO(catalog): its tail leaves a space before the full stop and a
+ * double space around the empty invoice branch (tidyText closes both), and the
+ * bold lead-in is part of the message, so it is cut off at the first question mark.
+ */
+function SupportLine({ invoiceNumber }: { invoiceNumber: string | null }) {
+  const t = useT();
+  // The template is tidied with the invoice number held back as a token, so the data is never touched.
+  const sentence = tidyText(t('checkout-success.description.somethingNotRightEmailLink1ReceiptkindcheckoutSelectTrueWithInvoice', {
+    link1: '{link1}',
+    receiptKindCheckout: String(!!invoiceNumber),
+    receiptInvoice_number: '\uE004',
+  })).split('\uE004').join(invoiceNumber ?? '');
+  const cut = sentence.search(/[?\uFF1F]/);
+  const lead = cut >= 0 ? sentence.slice(0, cut + 1) : '';
+  const rest = cut >= 0 ? sentence.slice(cut + 1) : sentence;
+  return (
+    <>
+      {lead ? <><span className="font-medium text-foreground">{lead}</span>{' '}</> : null}
+      {richText(rest.replace(/^ +/, ''), {
+        link1: <a className="font-medium text-foreground underline underline-offset-2" href="mailto:support@dosya.dev">{t('checkout-success.action.supportDosyaDev')}</a>,
+      })}
+    </>
   );
 }

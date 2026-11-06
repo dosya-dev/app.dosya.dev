@@ -3,31 +3,37 @@
 // A message that is simply always there, invisible until the console is
 // opened, gets the same result honestly.
 
+import { t } from '@/lib/i18n';
+import type { MessageKey } from '@/i18n/keys';
+
 const BUG_BOUNTY_URL = 'https://dosya.dev/bug-bounty';
 
 interface GreetingLine {
-  text: string;
+  /** A catalog key, or a literal (the brand name and the URL) when `literal` is set. */
+  text: MessageKey | string;
+  literal?: boolean;
   style?: string;
 }
 
 const GREETING_LINES: GreetingLine[] = [
-  { text: 'dosya.dev', style: 'color:#5fb0ff;font-weight:800;font-size:20px;' },
+  { text: 'dosya.dev', literal: true, style: 'color:#5fb0ff;font-weight:800;font-size:20px;' },
   { text: '' },
-  { text: 'Poking around in here? We like that.' },
+  { text: 'common.description.pokingAroundInHereWeLikeThat' },
   { text: '' },
-  { text: 'If you spot something that shouldn’t be possible -' },
-  { text: 'an access-control gap, a bypass, anything - we’d' },
-  { text: 'rather hear it from you first.' },
+  { text: 'common.description.ifYouSpotSomethingThatShouldnTBePossible' },
+  { text: 'common.description.anAccessControlGapABypassAnythingWeD' },
+  { text: 'common.description.ratherHearItFromYouFirst' },
   { text: '' },
-  { text: 'Our bug bounty program:' },
-  { text: BUG_BOUNTY_URL, style: 'color:#5fb0ff;font-weight:700;' },
+  { text: 'common.label.ourBugBountyProgram' },
+  { text: BUG_BOUNTY_URL, literal: true, style: 'color:#5fb0ff;font-weight:700;' },
   { text: '' },
-  { text: 'Scope, rules of engagement, and safe harbor are all there.', style: 'color:#7d8590;' },
+  { text: 'common.description.scopeRulesOfEngagementAndSafeHarborAreAllThere', style: 'color:#7d8590;' },
 ];
 
 export function logConsoleGreeting(): void {
   for (const line of GREETING_LINES) {
-    if (line.style) console.log(`%c${line.text}`, line.style);
-    else console.log(line.text);
+    const text = line.literal || line.text === '' ? line.text : t(line.text as MessageKey);
+    if (line.style) console.log(`%c${text}`, line.style);
+    else console.log(text);
   }
 }

@@ -86,7 +86,7 @@ describe('plan chooser promo code billing interval', () => {
     await render('year');
     await applyCode('YEAR60');
 
-    expect(validateCoupon).toHaveBeenCalledWith('YEAR60', 'year');
+    expect(validateCoupon).toHaveBeenCalledWith('YEAR60', 'year', 'usd');
     expect(container!.textContent).toContain('Code YEAR60 applied');
     expect(container!.textContent).toContain('Discount');
   });
@@ -96,7 +96,7 @@ describe('plan chooser promo code billing interval', () => {
     await render('month');
     await applyCode('YEAR60');
 
-    expect(validateCoupon).toHaveBeenCalledWith('YEAR60', 'month');
+    expect(validateCoupon).toHaveBeenCalledWith('YEAR60', 'month', 'usd');
     expect(container!.textContent).toContain('This code is for yearly billing only.');
     expect(container!.textContent).not.toContain('applied');
   });
