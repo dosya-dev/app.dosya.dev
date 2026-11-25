@@ -1,4 +1,7 @@
 import { consumeAcquisition } from '@/lib/acquisition-context';
+import { checkoutIntentPath } from '@/lib/checkout-intent';
+import { rememberPostAuthPath } from '@/lib/post-auth-path';
+import { trackSignUp } from '@/lib/analytics';
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
@@ -38,12 +41,33 @@ export default function SignUpPage() {
     try { return localStorage.getItem('dosya_last_login_method'); } catch { return null; }
   });
   const turnstileRef = useRef<TurnstileHandle>(null);
+  // Email sign-up is switched on and off from the admin dashboard; the API
+  // refuses it when off (apps/api/src/lib/email-signup.ts). Null while asking,
+  // so the form never flashes up and vanishes. If the question itself fails,
+  // show the form: the server still has the final say.
+  const [emailSignupOpen, setEmailSignupOpen] = useState<boolean | null>(null);
+  useEffect(() => {
+    let live = true;
+    fetch(`${API_BASE}/api/auth/signup`, { credentials: 'omit' })
+      .then((r) => r.json())
+      .then((d: { email_signup?: unknown }) => { if (live) setEmailSignupOpen(d.email_signup !== false); })
+      .catch(() => { if (live) setEmailSignupOpen(true); });
+    return () => { live = false; };
+  }, []);
   // One probe for the page; see the same line in login.tsx.
   const account = useSessionAccount();
 
   useEffect(() => {
     const r = searchParams.get('ref');
     if (r) sessionStorage.setItem('dosya_ref', r);
+  }, [searchParams]);
+
+  // A purchase started on dosya.dev/promo (?plan=&billing=&promo=): resume it
+  // in Billing once the account exists, instead of landing on the free plan
+  // with the code lost. See lib/checkout-intent.ts.
+  useEffect(() => {
+    const path = checkoutIntentPath(searchParams);
+    if (path) rememberPostAuthPath(path);
   }, [searchParams]);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -83,6 +107,7 @@ export default function SignUpPage() {
       turnstileRef.current?.reset();
       if (res.ok && data.ok) {
         try { sessionStorage.removeItem('dosya_ref'); } catch { /* */ }
+        trackSignUp('password');
         navigate(data.redirect ?? '/verify');
       } else if (isTurnstileRejection(data)) {
         setError(turnstileFailureMessage(turnstileRef.current));
@@ -167,6 +192,7 @@ export default function SignUpPage() {
                 </div>
               </div>
 
+              {emailSignupOpen === true && (<>
               <div className="relative mb-6">
                 <div className="absolute inset-0 flex items-center"><span className="w-full border-t" /></div>
                 <div className="relative flex justify-center text-xs uppercase"><span className="bg-card px-2 text-muted-foreground">{t('common.label.or')}</span></div>
@@ -203,6 +229,7 @@ export default function SignUpPage() {
                   {t('sign-up.action.createAccount')}
                 </Button>
               </form>
+              </>)}
 
               {/* Covers the OAuth buttons above the form, which create a real
                   account without ever touching the consent checkbox. */}

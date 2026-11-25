@@ -4,6 +4,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
@@ -12,6 +13,8 @@ import { Loader2, ShieldCheck, Smartphone, Download, RefreshCw } from 'lucide-re
 import { CopyCheck } from '@/components/ui/copy-check';
 import { toast } from '@/lib/toast';
 import { useT } from '@/lib/i18n';
+import { activeKeys, defaultRevokeKeys, type ApiKey } from '@/lib/api-keys';
+import { PasskeysSection } from './passkeys';
 import { SettingRow, type ProfileContext, type TfaStatus } from './shared';
 
 export default function PasswordPage({ user }: ProfileContext) {
@@ -26,7 +29,12 @@ export default function PasswordPage({ user }: ProfileContext) {
 
   // Default to true while /api/me is loading: better to show an action that may
   // 401 than to hide a working one from someone who does have a password.
-  return <PasswordSection tfa={tfa} onTfaChanged={load2fa} hasPassword={user?.has_password ?? true} />;
+  return (
+    <div className="space-y-6">
+      <PasswordSection tfa={tfa} onTfaChanged={load2fa} hasPassword={user?.has_password ?? true} />
+      <PasskeysSection />
+    </div>
+  );
 }
 
 // ── Password & 2FA ─────────────────────────────────────────
@@ -45,20 +53,55 @@ export function PasswordSection({ tfa, onTfaChanged, hasPassword }: { tfa: TfaSt
   const [regenModal, setRegenModal] = useState(false);
   const [enablingEmail, setEnablingEmail] = useState(false);
 
+  // "Also sign out apps and API keys": PUT /api/me/password revokes every key
+  // unless told `revoke_api_keys: false` (bug bounty 2026-11, report 08), so
+  // the dialog asks. The list is read fresh each time the dialog opens, and
+  // the submit button waits for it so nobody submits before seeing the box.
+  // keyCount null = the read failed; the box shows only for >= 1 working key.
+  const [keyCount, setKeyCount] = useState<number | null>(null);
+  const [keysLoading, setKeysLoading] = useState(false);
+  const [revokeKeys, setRevokeKeys] = useState(false);
+  useEffect(() => {
+    if (!passwordModal) return;
+    let cancelled = false;
+    setKeyCount(null);
+    setKeysLoading(true);
+    void req<{ ok: boolean; keys: ApiKey[] }>('/api/me/api-keys').then((res) => {
+      if (cancelled) return;
+      setKeysLoading(false);
+      if (!res?.ok) return;
+      const now = Math.floor(Date.now() / 1000);
+      setKeyCount(activeKeys(res.keys ?? [], now).length);
+      setRevokeKeys(defaultRevokeKeys(res.keys ?? [], now));
+    });
+    return () => { cancelled = true; };
+  }, [passwordModal]);
+
   // Contract 7 (2026-09-02 field report): an account created through OAuth has
   // no password to confirm, so the API accepts a missing current_password
   // while password_set_at IS NULL. The dialog reads "Set a password" and asks
   // only for the new one.
+
   const changePassword = async () => {
     if (newPw !== confirm) { toast.error(t('profile.error.passwordsDoNotMatch'), t('profile.error.theNewPasswordAndConfirmationAreDifferent')); return; }
     if (newPw.length < 8) { toast.error(t('profile.error.passwordTooShort'), t('profile.error.passwordMustBeAtLeast8Characters', { min: 8 })); return; }
+    if (keysLoading) return; // Enter in the confirm field skips the disabled button
     setSaving(true);
-    const body = hasPassword ? { current_password: current, new_password: newPw } : { new_password: newPw };
-    const res = await req('/api/me/password', { method: 'PUT', body: JSON.stringify(body) });
+    // Always explicit, so this dialog never leans on the server default.
+    // Unknown key list (the read failed): the server's own default, revoke,
+    // and the success message says how many went. No working key: nothing to
+    // ask about, so keep (expired keys authenticate nothing anyway).
+    const revoke_api_keys = keyCount === null ? true : keyCount > 0 && revokeKeys;
+    const body = hasPassword
+      ? { current_password: current, new_password: newPw, revoke_api_keys }
+      : { new_password: newPw, revoke_api_keys };
+    const res = await req<{ ok: boolean; revoked_api_keys?: number; error?: string }>('/api/me/password', { method: 'PUT', body: JSON.stringify(body) });
     if (res.ok) {
+      const removed = res.revoked_api_keys ?? 0;
+      const detail = hasPassword ? t('profile.feedback.yourPasswordHasBeenUpdated') : t('profile.feedback.youCanNowSignInWithYourEmailAndPasswordToo');
       toast.success(
         hasPassword ? t('profile.feedback.passwordChanged') : t('profile.feedback.passwordSet'),
-        hasPassword ? t('profile.feedback.yourPasswordHasBeenUpdated') : t('profile.feedback.youCanNowSignInWithYourEmailAndPasswordToo'),
+        removed > 0 ? `${detail} ${t('profile.feedback.weRemovedCountPluralOneApiKeyOtherApiKeys', { count: removed })}` : detail,
       );
       setPasswordModal(false); setCurrent(''); setNewPw(''); setConfirm('');
       if (!hasPassword) onTfaChanged();
@@ -163,10 +206,19 @@ export function PasswordSection({ tfa, onTfaChanged, hasPassword }: { tfa: TfaSt
             <Input type="password" placeholder={t('profile.placeholder.newPassword')} value={newPw} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewPw(e.target.value)} className="h-9 text-sm" />
             <Input type="password" placeholder={t('profile.placeholder.confirmNewPassword')} value={confirm} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setConfirm(e.target.value)} className="h-9 text-sm" onKeyDown={(e) => e.key === 'Enter' && changePassword()} />
             <p className="text-[11px] text-muted-foreground">{t('profile.description.atLeast8CharactersALongPassphraseIsStrongerThanA')}</p>
+            {keyCount !== null && keyCount > 0 && (
+              <div className="rounded-lg border p-2.5">
+                <label className="flex items-center gap-2 text-xs font-medium cursor-pointer">
+                  <Checkbox data-testid="revoke-api-keys" className="size-4" checked={revokeKeys} onCheckedChange={(v) => setRevokeKeys(v === true)} />
+                  {t('profile.label.alsoSignOutAppsAndApiKeysCountActive', { count: keyCount })}
+                </label>
+                <p className="text-[11px] text-muted-foreground mt-1 ps-6">{t('profile.description.appsThatUseAKeyStopWorkingUntilYouAddANewKey')}</p>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setPasswordModal(false)}>{t('common.cancel')}</Button>
-            <Button onClick={changePassword} disabled={saving}>
+            <Button onClick={changePassword} disabled={saving || keysLoading}>
               {saving ? <Loader2 className="size-4 animate-spin me-1.5" /> : null} {passwordVerb}
             </Button>
           </DialogFooter>

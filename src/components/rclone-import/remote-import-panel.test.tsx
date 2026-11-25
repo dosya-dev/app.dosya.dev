@@ -14,6 +14,8 @@ vi.mock('@/api/rclone-import', async (orig) => ({
   cancelJob: (...a: unknown[]) => cancelJobMock(...a),
 }));
 vi.mock('@/stores/workspace', () => ({ useWorkspace: (sel: (s: { activeId: string }) => unknown) => sel({ activeId: 'ws_1' }) }));
+// The VPN card checks GET /api/vpn through react-query; these renders have no QueryClient.
+vi.mock('@/hooks/use-vpn-available', () => ({ useVpnAvailable: () => false }));
 vi.mock('@/lib/toast', () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() } }));
 
 const { RemoteImportPanel } = await import('./remote-import-panel');
@@ -121,7 +123,9 @@ describe('RemoteImportPanel', () => {
 });
 
 describe('/integrations directory card', () => {
-  it('appears only when the API says remote import is on', async () => {
+  // The rollout flag came off the directory entry with the public cloud-import
+  // page (05524c5cda), so the card no longer waits on GET /api/rclone/backends.
+  it('shows the card whether or not the rollout check says on', async () => {
     const { default: IntegrationsPage } = await import('@/pages/integrations');
     const renderDir = async () => {
       container = document.createElement('div');
@@ -131,7 +135,7 @@ describe('/integrations directory card', () => {
       return container;
     };
     getBackendsMock.mockResolvedValue({ enabled: false, backends: [], entitlement: null });
-    expect((await renderDir()).querySelector('a[href="/integrations/remote-rclone"]')).toBeNull();
+    expect((await renderDir()).querySelector('a[href="/integrations/remote-rclone"]')).not.toBeNull();
     act(() => root?.unmount()); container?.remove();
     getBackendsMock.mockResolvedValue(meta(ent()));
     expect((await renderDir()).querySelector('a[href="/integrations/remote-rclone"]')).not.toBeNull();

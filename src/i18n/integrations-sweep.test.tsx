@@ -23,6 +23,8 @@ vi.mock('@/api/client', async (importOriginal) => {
 });
 
 const toasts: { kind: string; title: string; description?: string }[] = [];
+// The VPN card checks GET /api/vpn through react-query; these renders have no QueryClient.
+vi.mock('@/hooks/use-vpn-available', () => ({ useVpnAvailable: () => false }));
 vi.mock('@/lib/toast', () => ({
   toast: {
     success: (title: string, description?: string) => toasts.push({ kind: 'success', title, description }),

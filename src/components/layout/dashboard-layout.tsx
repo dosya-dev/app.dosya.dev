@@ -1,11 +1,14 @@
 import { API_BASE } from '@/api/client';
 import { sendAcquisition } from '@/lib/acquisition-context';
-import { useState, useEffect, useLayoutEffect, useRef, useCallback, Suspense } from 'react';
+import { syncAnalyticsAttribution } from '@/api/attribution';
+import { useState, useEffect, useLayoutEffect, useRef, useCallback, Suspense, lazy } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { SidebarProvider, SidebarInset } from '@/components/ui/sidebar';
 import { DashboardSidebar } from './dashboard-sidebar';
 import { DashboardTopbar } from './dashboard-topbar';
 import { DeletionBanner } from '@/components/deletion-banner';
+
+const PasskeyPrompt = lazy(() => import('@/components/passkey-prompt'));
 import { useWorkspace } from '@/stores/workspace';
 import { useSession } from '@/stores/session';
 import UploadDock from '@/components/uploads/upload-dock';
@@ -90,6 +93,10 @@ export function DashboardLayout() {
       }
       setAuthed(boot.authed);
       if (boot.authed) void sendAcquisition(import.meta.env.VITE_ACQUISITION_MEASUREMENT_ENABLED === 'true', API_BASE);
+      // The API's copy of this browser's analytics consent, so a withdrawal
+      // made on dosya.dev reaches the server before a delayed first payment
+      // is reported (api/attribution.ts). Sent only when it changed.
+      if (boot.authed) syncAnalyticsAttribution().catch(() => {});
       if (boot.authed && initialPathname.current === '/') {
         // A held redemption claim wins, and /redeem lives outside this layout.
         const pending = pendingPostAuthPath();
@@ -229,6 +236,7 @@ export function DashboardLayout() {
         {/* Above the scroll container on purpose: a pending deletion must stay
             visible while the user scrolls, not scroll away with the page. */}
         <DeletionBanner />
+        <Suspense fallback={null}><PasskeyPrompt /></Suspense>
         {/* The hairline pins to this wrapper's top edge, just under the topbar,
             and stays there while the content area below scrolls. */}
         <div className="relative flex-1 min-h-0 flex flex-col">

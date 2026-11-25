@@ -1,15 +1,26 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowRight, CopyX, ExternalLink, MapPin, type LucideIcon } from 'lucide-react';
+import { ArrowRight, CopyX, ExternalLink, MapPin, ShieldCheck, type LucideIcon } from 'lucide-react';
 import { INTEGRATIONS } from '@/lib/integrations';
 import { getBackends } from '@/api/rclone-import';
 import { useWorkspace } from '@/stores/workspace';
+import { useVpnAvailable } from '@/hooks/use-vpn-available';
 import { t, useT } from '@/lib/i18n';
 
 /** In-app tools surfaced here for discoverability - they live at their own
  *  routes (not /integrations/*), so they get a separate section below the
  *  protocol setup guides rather than an INTEGRATIONS entry. */
-const TOOLS: { to: string; title: string; description: string; tag: string; icon: LucideIcon }[] = [
+const TOOLS: { to: string; title: string; description: string; tag: string; icon: LucideIcon; vpn?: true }[] = [
+  // Shown only while GET /api/vpn answers for this user (rollout gate). The VPN
+  // has no sidebar entry; this card is how people reach it.
+  {
+    to: '/vpn',
+    get title() { return t('vpn.heading.vpn'); },
+    get description() { return t('vpn.description.pageIntro'); },
+    get tag() { return t('integrations.label.tool'); },
+    icon: ShieldCheck,
+    vpn: true,
+  },
   {
     to: '/duplicates',
     get title() { return t('integrations.heading.duplicateFinder'); },
@@ -39,6 +50,8 @@ export default function IntegrationsPage() {
     return () => { alive = false; };
   }, [workspaceId]);
   const visible = INTEGRATIONS.filter((it) => !it.rollout || rolloutOn);
+  const vpnAvailable = useVpnAvailable();
+  const tools = TOOLS.filter((tool) => !tool.vpn || vpnAvailable);
   return (
     <div className="mx-auto w-full max-w-5xl px-4 py-6">
       <div className="mb-6">
@@ -102,7 +115,7 @@ export default function IntegrationsPage() {
         </p>
       </div>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {TOOLS.map((tool) => (
+        {tools.map((tool) => (
           <div
             key={tool.to}
             className="group relative flex flex-col rounded-xl border bg-card p-4 transition-colors hover:border-foreground/20 hover:bg-muted/30"

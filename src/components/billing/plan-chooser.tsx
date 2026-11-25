@@ -35,11 +35,13 @@ function intervalWord(interval: "month" | "year", t: ReturnType<typeof useT>): s
  * used, but rendered as a Card directly on the billing page instead of a dialog.
  * Mounted only while open, so it initializes fresh from `initial` each time.
  */
-export function PlanChooser({ hasSubscription, trialEligible = false, initial, usedBytes, limitBytes, currentPlanId, mode = "plan", onUpdated, onClose, onEditReservations }: {
+export function PlanChooser({ hasSubscription, trialEligible = false, initial, initialCode, usedBytes, limitBytes, currentPlanId, mode = "plan", onUpdated, onClose, onEditReservations }: {
     hasSubscription: boolean;
     /** The account has never had a subscription: the first one starts with a 7-day free trial. */
     trialEligible?: boolean;
     initial: { interval: "month" | "year"; planId: string; addonQty: Record<string, number> };
+    /** A code to apply as soon as the plans load (dosya.dev/promo hand-off). */
+    initialCode?: string;
     usedBytes: number;
     /** Storage limit right now, so the thank-you page can show what the purchase adds. */
     limitBytes?: number;
@@ -173,10 +175,10 @@ export function PlanChooser({ hasSubscription, trialEligible = false, initial, u
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [hasSubscription, catalog, state.planId, state.interval, state.addonQty]);
 
-    const applyCoupon = async () => {
+    const applyCoupon = async (codeArg?: string) => {
         setCouponError(null);
         try {
-            const info = await validateCoupon(codeInput.trim(), state.interval, state.currency);
+            const info = await validateCoupon((codeArg ?? codeInput).trim(), state.interval, state.currency);
             // An amount code with no option in the cart's currency: checkout would refuse it.
             if (info.type === "amount" && (info.currency ?? "usd").toLowerCase() !== state.currency) {
                 setState((s) => ({ ...s, coupon: null }));
@@ -187,6 +189,17 @@ export function PlanChooser({ hasSubscription, trialEligible = false, initial, u
         }
         catch (e) { setState((s) => ({ ...s, coupon: null })); setCouponError(apiErrorMessage(e, t("common.error.invalidCode"))); }
     };
+
+    // The dosya.dev/promo hand-off: apply the carried code once the plans (and
+    // so the currency) are known, showing it in the field like a typed one.
+    const appliedInitialCode = useRef(false);
+    useEffect(() => {
+        if (!catalog || !initialCode || appliedInitialCode.current) return;
+        appliedInitialCode.current = true;
+        setCodeInput(initialCode);
+        void applyCoupon(initialCode);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [catalog]);
 
     const submit = async () => {
         if (!catalog) return;
@@ -201,6 +214,12 @@ export function PlanChooser({ hasSubscription, trialEligible = false, initial, u
             else { const { url } = await startCheckout(payload); window.location.href = url; }
         } catch (e) {
             const body = apiErrorBody(e);
+            if (body?.code === "store_subscription_active" || body?.code === "billing_conflict") {
+                // The plan is paid through a store: /billing re-fetches status and shows the locked or conflict layout.
+                onClose();
+                window.location.assign("/billing");
+                return;
+            }
             if (body?.code === "family_reservations_exceed_plan" && typeof body.reserved_bytes === "number" && typeof body.new_storage_bytes === "number") {
                 setReservationConflict({ reservedBytes: body.reserved_bytes, newBytes: body.new_storage_bytes, planName: selectedPlan?.name ?? "" });
                 setConflictOpen(true);
@@ -341,7 +360,7 @@ export function PlanChooser({ hasSubscription, trialEligible = false, initial, u
                             couponError={couponError}
                             codeInput={codeInput}
                             onCodeInput={setCodeInput}
-                            onApplyCoupon={applyCoupon}
+                            onApplyCoupon={() => { void applyCoupon(); }}
                             submitting={submitting}
                             submitDisabled={isPaid <= 0 || !planAvailableAtInterval || (isDowngrade && !confirmedDowngrade)}
                             ctaLabel={hasSubscription ? t("billing.action.updateSubscription") : offersTrial ? t("billing.action.start7DayFreeTrial") : t("billing.action.continueToPayment")}

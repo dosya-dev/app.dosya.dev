@@ -45,6 +45,7 @@ function mount() {
 const okConfig = {
   ok: true,
   documentServerUrl: 'https://docs.dosya.dev',
+  documentServerApiIntegrity: 'sha384-vKBEIKmuRbWNT1z6szXerVecZXT/AiMYSAV7jSBdTCAbyN680eg6Xjgoml3VGPZ6',
   config: {
     documentType: 'word',
     type: 'desktop',
@@ -71,6 +72,44 @@ describe('EditorPage', () => {
     expect(script?.src).toBe('https://docs.dosya.dev/web-apps/apps/api/documents/api.js');
     expect(container!.querySelector('#oo-editor')).toBeTruthy();
     expect(container!.textContent).toContain('report.docx');
+  });
+
+  // Bounty: api.js runs in the signed-in app origin, so it is pinned to the
+  // hash the API hands out, fetched in CORS mode (SRI needs it), and never
+  // loaded unpinned.
+  it('pins the DocsAPI script with the integrity value from the API, in CORS mode', async () => {
+    apiMock.mockResolvedValue(okConfig);
+    mount();
+    await act(async () => {});
+    const script = document.getElementById('onlyoffice-docsapi') as HTMLScriptElement | null;
+    expect(script?.integrity).toBe(okConfig.documentServerApiIntegrity);
+    expect(script?.crossOrigin).toBe('anonymous');
+  });
+
+  it.each([
+    ['missing', undefined],
+    ['empty', ''],
+    ['not an SRI value', 'md5-abc'],
+  ])('refuses to load api.js when the integrity value is %s, and shows the error card', async (_label, value) => {
+    apiMock.mockResolvedValue({ ...okConfig, documentServerApiIntegrity: value });
+    mount();
+    await act(async () => {});
+    expect(document.getElementById('onlyoffice-docsapi')).toBeNull();
+    expect(container!.querySelector('[data-testid="editor-error-overlay"]')).not.toBeNull();
+    expect(container!.textContent).toContain('could not be loaded');
+  });
+
+  it('replaces a leftover script tag pinned to another hash instead of reusing it', async () => {
+    const stale = document.createElement('script');
+    stale.id = 'onlyoffice-docsapi';
+    stale.integrity = 'sha384-old';
+    document.head.appendChild(stale);
+    apiMock.mockResolvedValue(okConfig);
+    mount();
+    await act(async () => {});
+    const script = document.getElementById('onlyoffice-docsapi') as HTMLScriptElement | null;
+    expect(script).not.toBe(stale);
+    expect(script?.integrity).toBe(okConfig.documentServerApiIntegrity);
   });
 
   it('shows a read-only badge in view mode', async () => {

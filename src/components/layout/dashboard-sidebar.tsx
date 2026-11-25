@@ -330,7 +330,7 @@ export function DashboardSidebar() {
         <SidebarGroup>
           <SidebarGroupContent>
             <SidebarMenu>
-              {navItems.filter((item) => !item.perm || can(item.perm)).map((item) => (
+              {navItems.filter((item) => (!item.perm || can(item.perm))).map((item) => (
                 <SidebarMenuItem key={item.url}>
                   <Link to={item.url} className="w-full">
                     <SidebarMenuButton className={NAV_BTN_CLASS} isActive={location.pathname === item.url || (item.url !== '/' && location.pathname.startsWith(item.url))}>

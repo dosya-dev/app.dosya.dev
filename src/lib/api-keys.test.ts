@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  type ApiKey,
+  type ApiKey, activeKeys, defaultRevokeKeys,
   buildCreateBody, describeDraft, draftFromKey, draftGuards, emptyDraft,
   filterKeys, formatActiveHours, formatLastUsed, isStale, isUnrestricted,
   keyGuards, restrictionCount, summarizeKeys,
@@ -164,5 +164,23 @@ describe('draftFromKey', () => {
     expect(d.hoursEnabled).toBe(true);
     expect([...d.days]).toEqual([1, 2]);
     expect(d.tz).toBe('UTC');
+  });
+});
+
+describe('activeKeys / defaultRevokeKeys (change-password dialog)', () => {
+  const k = (last_used_at: number | null, expires_at: number | null = null) => ({ last_used_at, expires_at });
+  it('counts only keys that have not expired', () => {
+    expect(activeKeys([k(NOW), k(NOW, NOW - 1), k(null, NOW + DAY)], NOW)).toHaveLength(2);
+  });
+  it('ticks when a working key is unused for over 30 days or never used', () => {
+    expect(defaultRevokeKeys([k(NOW), k(NOW - 31 * DAY)], NOW)).toBe(true);
+    expect(defaultRevokeKeys([k(null)], NOW)).toBe(true);
+  });
+  it('stays unticked when every working key was used in the last 30 days', () => {
+    expect(defaultRevokeKeys([k(NOW), k(NOW - 30 * DAY)], NOW)).toBe(false);
+  });
+  it('ignores an expired key, however stale', () => {
+    expect(defaultRevokeKeys([k(NOW), k(null, NOW - 1)], NOW)).toBe(false);
+    expect(defaultRevokeKeys([], NOW)).toBe(false);
   });
 });

@@ -9,11 +9,14 @@ import { RefundDialog } from '@/components/billing/refund-dialog';
 import { api, apiErrorMessage } from '@/api/client';
 import { activeTrialEnd, formatBytes, formatCents, formatGigabytes, isCurrency } from '@/lib/billing/cart-math';
 import { PlanChooser } from '@/components/billing/plan-chooser';
+import { readBillingIntent } from '@/lib/checkout-intent';
 import { Button } from '@/components/ui/button';
 import { CancelSubscriptionDialog } from '@/components/billing/cancel-dialog';
 import { Card } from '@/components/ui/card';
 import { FamilyCard } from '@/components/billing/family-card';
 import { AiProcessingCard } from '@/components/billing/ai-processing-card';
+import { StorePlanCard, storeLayout } from '@/components/billing/store-plan-card';
+import { StoreConflictCard } from '@/components/billing/store-conflict-card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
@@ -53,8 +56,12 @@ export default function BillingPage() {
   const [loading, setLoading] = useState(true);
   // ?upgrade=1 opens the plan chooser straight away, so "Upgrade now" elsewhere
   // in the app is one click rather than "land on billing, then find the button".
+  // ?plan=, ?interval= and ?promo= preselect the chooser: a purchase started on
+  // dosya.dev/promo before sign-up, or the promo page sending a subscriber here
+  // with its code (lib/checkout-intent.ts). A code alone also opens it.
+  const [intent] = useState(() => readBillingIntent(window.location.search));
   const [showChooser, setShowChooser] = useState(
-    () => new URLSearchParams(window.location.search).get('upgrade') === '1',
+    () => new URLSearchParams(window.location.search).get('upgrade') === '1' || !!intent.promo,
   );
   // "Add storage" must not be able to swap the plan: it opens the chooser with
   // the plan cards hidden. See the 2026-09-16 downgrade incident.
@@ -150,6 +157,14 @@ export default function BillingPage() {
 
   const { plan, usage, subscription: sub, interval } = data;
   const licenseGrants = data.license_grants ?? [];
+  // 'locked': the plan is billed by the App Store / Google Play and only changes there;
+  //   Stripe invoices, cancel, refund and portal are hidden.
+  // 'conflict': a Stripe base subscription is still active next to the store one, so the
+  //   side-by-side card shows both and the page keeps invoices, cancel, refund and portal
+  //   but nothing that adds a purchase. Chosen from billing state, not the open-conflict flag.
+  const layout = storeLayout(data);
+  const store = data.store;
+  const storeLocked = layout === 'locked' && !!store;
   const overBytes = usage.used_bytes - usage.limit_bytes;
   const overLimit = overBytes > 0;
   const usedShare = usage.limit_bytes > 0 ? Math.min(1, usage.used_bytes / usage.limit_bytes) : 0;
@@ -192,6 +207,51 @@ export default function BillingPage() {
   }
   const ledgerTotal = ledger.reduce((sum, row) => sum + row.bytes, 0);
 
+  // Usage bar, ledger and warning: the right column of the statement card, and a card of its own when a store bills the plan.
+  const usagePanel = (
+  <div className="p-5">
+    <div className="flex flex-wrap items-baseline justify-between gap-2">
+      <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">{t('billing.label.storageLedger')}</p>
+      <p className="text-xs text-muted-foreground">
+        {t('billing.description.usageusedLabelUsedOverlimitSelectTrueOverbytesOverOtherFormattedvalueFree', { usageUsed_label: usage.used_label, overLimit: String(overLimit), overBytes: formatGigabytes(overBytes), formattedValue: formatGigabytes(usage.limit_bytes - usage.used_bytes) })}
+      </p>
+    </div>
+
+    <dl className="mt-3 border-t border-dashed font-mono text-[13px]">
+      {ledger.map((row) => (
+        <div key={row.key} className="flex items-baseline justify-between gap-3 border-b border-dashed py-2">
+          <dt className="flex min-w-0 items-baseline gap-2">
+            <span className={cn('size-2 shrink-0 translate-y-[-1px] rounded-sm', SOURCE_COLORS[row.kind])} aria-hidden="true" />
+            <span className="truncate">{row.label}</span>
+            {row.detail && <span className="shrink-0 text-muted-foreground">· {row.detail}</span>}
+          </dt>
+          <dd className="shrink-0 tabular-nums">{formatGigabytes(row.bytes)}</dd>
+        </div>
+      ))}
+      <div className="flex items-baseline justify-between gap-3 border-t pt-2 font-bold">
+        <dt>{t('billing.label.totalLimit')}</dt>
+        <dd className="tabular-nums">{formatGigabytes(usage.limit_bytes)}</dd>
+      </div>
+    </dl>
+    {ledgerTotal !== usage.limit_bytes && (
+      <p className="mt-2 text-[11px] text-muted-foreground">
+        {t('billing.description.theTotalIsWhatYourAccountIsEntitledToALine')}
+      </p>
+    )}
+
+    <div className="mt-4 flex h-3 overflow-hidden rounded-full border bg-muted" role="img" aria-label={t('billing.accessibility.usageusedLabelUsedOfUsagelimitBytes', { usageUsed_label: usage.used_label, usageLimit_bytes: formatGigabytes(usage.limit_bytes) })}>
+      <span className={cn('h-full', overLimit ? 'bg-destructive' : 'bg-primary')} style={{ width: `${usedShare * 100}%` }} />
+      <span className="h-full bg-muted-foreground/25" style={{ width: `${(1 - usedShare) * 100}%` }} />
+    </div>
+    {!overLimit && usedShare >= 0.8 && (
+      <p className="mt-2 flex items-center gap-1.5 text-xs text-amber-600">
+        <AlertTriangle className="size-3.5" aria-hidden="true" />
+        {t('common.label.mathroundRemaining', { MathRound: Math.round((1 - usedShare) * 100) })}
+      </p>
+    )}
+  </div>
+  );
+
   return (
     <div className="mx-auto max-w-5xl space-y-4 p-4 sm:p-6">
       <h1 className="text-xl font-bold tracking-tight">{t('common.heading.billing')}</h1>
@@ -207,7 +267,7 @@ export default function BillingPage() {
           bar={<><span className="h-full bg-primary" style={{ width: '96%' }} /><span className="h-full bg-destructive" style={{ width: '4%' }} /></>}
           actions={(
             <>
-              {!isFamilyMember && <Button size="sm" onClick={() => openChooser('addons')}>{t('billing.action.addStorage')}</Button>}
+              {!isFamilyMember && layout === 'none' && <Button size="sm" onClick={() => openChooser('addons')}>{t('billing.action.addStorage')}</Button>}
               <Link to="/files" className="text-sm font-medium text-muted-foreground underline underline-offset-2">{t('billing.action.freeUpSpace')}</Link>
             </>
           )}
@@ -215,7 +275,7 @@ export default function BillingPage() {
         />
       )}
 
-      {sub.cancel_at_period_end && sub.current_period_end && (
+      {layout !== 'locked' && sub.cancel_at_period_end && sub.current_period_end && (
         <StateHero
           tone="amber"
           eyebrow={t('common.label.endsEndsat', { endsAt: longDate(sub.current_period_end) })}
@@ -233,8 +293,25 @@ export default function BillingPage() {
       )}
       {cancelError && <p dir="auto" className="text-xs text-red-600">{cancelError}</p>}
 
+      {layout === 'conflict' && store && (
+        <StoreConflictCard
+          store={store}
+          billing={data}
+          onCancel={() => setShowCancel(true)}
+          onRefund={openRefund}
+          openPortal={openPortal}
+        />
+      )}
+
+      {storeLocked && store && (
+        <>
+          <StorePlanCard store={store} plan={plan} />
+          <Card className="gap-0 overflow-hidden py-0" data-testid="store-usage">{usagePanel}</Card>
+        </>
+      )}
+
       {/* Statement: the subscription on the left, what it buys on the right. */}
-      <Card className="gap-0 overflow-hidden py-0">
+      {!storeLocked && <Card className="gap-0 overflow-hidden py-0">
         <div className="grid md:grid-cols-[320px_minmax(0,1fr)]">
           <div className="border-b p-5 md:border-b-0 md:border-e">
             <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">{t('billing.label.subscription')}</p>
@@ -275,7 +352,7 @@ export default function BillingPage() {
                   : <Badge variant="outline" className="text-[10px] text-muted-foreground">{hasSubscription ? sub.status ?? t('billing.status.inactive') : t('billing.status.noSubscription')}</Badge>}
             </div>
 
-            {isFamilyMember ? (
+            {layout === 'conflict' ? null : isFamilyMember ? (
               <p className="mt-4 text-xs text-muted-foreground">
                 {t('billing.description.youAreOnAFamilyPlanLeaveItFromTheFamily')}
               </p>
@@ -318,55 +395,15 @@ export default function BillingPage() {
             {portalError && <p dir="auto" className="mt-2 text-xs text-red-600">{portalError}</p>}
           </div>
 
-          <div className="p-5">
-            <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">{t('billing.label.storageLedger')}</p>
-              <p className="text-xs text-muted-foreground">
-                {t('billing.description.usageusedLabelUsedOverlimitSelectTrueOverbytesOverOtherFormattedvalueFree', { usageUsed_label: usage.used_label, overLimit: String(overLimit), overBytes: formatGigabytes(overBytes), formattedValue: formatGigabytes(usage.limit_bytes - usage.used_bytes) })}
-              </p>
-            </div>
-
-            <dl className="mt-3 border-t border-dashed font-mono text-[13px]">
-              {ledger.map((row) => (
-                <div key={row.key} className="flex items-baseline justify-between gap-3 border-b border-dashed py-2">
-                  <dt className="flex min-w-0 items-baseline gap-2">
-                    <span className={cn('size-2 shrink-0 translate-y-[-1px] rounded-sm', SOURCE_COLORS[row.kind])} aria-hidden="true" />
-                    <span className="truncate">{row.label}</span>
-                    {row.detail && <span className="shrink-0 text-muted-foreground">· {row.detail}</span>}
-                  </dt>
-                  <dd className="shrink-0 tabular-nums">{formatGigabytes(row.bytes)}</dd>
-                </div>
-              ))}
-              <div className="flex items-baseline justify-between gap-3 border-t pt-2 font-bold">
-                <dt>{t('billing.label.totalLimit')}</dt>
-                <dd className="tabular-nums">{formatGigabytes(usage.limit_bytes)}</dd>
-              </div>
-            </dl>
-            {ledgerTotal !== usage.limit_bytes && (
-              <p className="mt-2 text-[11px] text-muted-foreground">
-                {t('billing.description.theTotalIsWhatYourAccountIsEntitledToALine')}
-              </p>
-            )}
-
-            <div className="mt-4 flex h-3 overflow-hidden rounded-full border bg-muted" role="img" aria-label={t('billing.accessibility.usageusedLabelUsedOfUsagelimitBytes', { usageUsed_label: usage.used_label, usageLimit_bytes: formatGigabytes(usage.limit_bytes) })}>
-              <span className={cn('h-full', overLimit ? 'bg-destructive' : 'bg-primary')} style={{ width: `${usedShare * 100}%` }} />
-              <span className="h-full bg-muted-foreground/25" style={{ width: `${(1 - usedShare) * 100}%` }} />
-            </div>
-            {!overLimit && usedShare >= 0.8 && (
-              <p className="mt-2 flex items-center gap-1.5 text-xs text-amber-600">
-                <AlertTriangle className="size-3.5" aria-hidden="true" />
-                {t('common.label.mathroundRemaining', { MathRound: Math.round((1 - usedShare) * 100) })}
-              </p>
-            )}
-          </div>
+          {usagePanel}
         </div>
-      </Card>
+      </Card>}
 
       {/* AI processing units, account-wide, next to the storage statement.
           Renders nothing when the plan has no AI search. */}
       <AiProcessingCard />
 
-      {showChooser && !isFamilyMember && (
+      {showChooser && !isFamilyMember && layout === 'none' && (
         <PlanChooser
           hasSubscription={hasSubscription}
           trialEligible={!!data.trial_eligible}
@@ -374,9 +411,10 @@ export default function BillingPage() {
           limitBytes={usage.limit_bytes}
           currentPlanId={plan.id}
           mode={chooserMode}
+          initialCode={intent.promo}
           initial={{
-            interval,
-            planId: plan.id === 'free' ? (hasSubscription ? plan.id : 'starter') : plan.id,
+            interval: !hasSubscription && intent.interval ? intent.interval : interval,
+            planId: plan.id === 'free' ? (hasSubscription ? plan.id : (intent.planId ?? 'starter')) : plan.id,
             addonQty: Object.fromEntries(data.items.filter((i) => i.kind === 'addon').map((i) => [i.ref_id, i.quantity])),
           }}
           onUpdated={() => navigate('/checkout/success?change=1')}
@@ -391,9 +429,9 @@ export default function BillingPage() {
         />
       )}
 
-      <FamilyCard onChanged={reload} billing={data} />
+      {layout === 'none' && <FamilyCard onChanged={reload} billing={data} />}
 
-      <Card className="gap-0 overflow-hidden py-0">
+      {!storeLocked && <Card className="gap-0 overflow-hidden py-0">
         <div className="flex items-center justify-between gap-4 border-b px-5 py-3">
           <h2 className="text-sm font-semibold">{t('billing.heading.invoices')}</h2>
           {hasSubscription && (
@@ -424,7 +462,7 @@ export default function BillingPage() {
             </div>
           ))
         )}
-      </Card>
+      </Card>}
 
       {licenseGrants.length > 0 && (
         <Card className="gap-0 overflow-hidden py-0">

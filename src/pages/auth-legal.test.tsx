@@ -202,7 +202,10 @@ describe('auth pages - legal notices', () => {
     });
 
     expect(fetchMock).toHaveBeenCalled();
-    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    // The page first GETs /api/auth/signup for the email sign-up switch; the
+    // signup itself is the POST.
+    const [, init] = (fetchMock.mock.calls as unknown as [string, RequestInit | undefined][])
+      .find(([, i]) => i?.method === 'POST')! as [string, RequestInit];
     // The server rejects a signup without this field, so a client that never
     // sends it cannot create an account at all.
     expect(JSON.parse(init.body as string)).toMatchObject({ terms: true });

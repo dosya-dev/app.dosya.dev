@@ -39,7 +39,7 @@ afterEach(() => {
   validateCoupon.mockReset();
 });
 
-async function render(interval: 'month' | 'year' = 'year') {
+async function render(interval: 'month' | 'year' = 'year', initialCode?: string) {
   container = document.createElement('div');
   document.body.appendChild(container);
   root = createRoot(container);
@@ -49,6 +49,7 @@ async function render(interval: 'month' | 'year' = 'year') {
         hasSubscription={false}
         usedBytes={0}
         initial={{ interval, planId: 'pro', addonQty: {} }}
+        initialCode={initialCode}
         onUpdated={() => {}}
         onClose={() => {}}
       />,
@@ -121,5 +122,14 @@ describe('plan chooser promo code billing interval', () => {
     await click('Monthly');
 
     expect(container!.textContent).toContain('Code ANY10 applied');
+  });
+
+  it('applies a code carried from dosya.dev/promo once the plans load, without a click', async () => {
+    validateCoupon.mockResolvedValue(YEARLY_ONLY);
+    await render('year', 'YEAR60');
+
+    expect(validateCoupon).toHaveBeenCalledTimes(1);
+    expect(validateCoupon).toHaveBeenCalledWith('YEAR60', 'year', 'usd');
+    expect(container!.textContent).toContain('Code YEAR60 applied');
   });
 });

@@ -144,6 +144,23 @@ export function isStale(k: { last_used_at: number | null; created_at: number }, 
   return now - ref > STALE_AFTER_DAYS * DAY;
 }
 
+// The change-password dialog's "Also sign out apps and API keys" box.
+// Keys that still work (not expired) are the ones that count: an expired key
+// already authenticates nothing, so offering to remove it would be noise.
+export function activeKeys<K extends { expires_at: number | null }>(keys: K[], now = Math.floor(Date.now() / 1000)): K[] {
+  return keys.filter((k) => !keyExpired(k, now));
+}
+
+const REVOKE_HINT_DAYS = 30;
+
+// Ticked by default when any working key has gone quiet: never used, or not
+// used for 30 days. That is the key the owner may have forgotten, or one they
+// never made. When every key is in daily use the owner almost certainly knows
+// them all, and removing them would only break their own apps.
+export function defaultRevokeKeys(keys: { last_used_at: number | null; expires_at: number | null }[], now = Math.floor(Date.now() / 1000)): boolean {
+  return activeKeys(keys, now).some((k) => k.last_used_at === null || now - k.last_used_at > REVOKE_HINT_DAYS * DAY);
+}
+
 function countIpRanges(allowedIps: string | null | undefined): number {
   if (!allowedIps) return 0;
   return allowedIps.split(',').map((s) => s.trim()).filter(Boolean).length;

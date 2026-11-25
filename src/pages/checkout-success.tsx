@@ -10,6 +10,7 @@ import { MsStoreBadge } from '@/components/ms-store-badge';
 import { activeTrialEnd, formatBytes, formatGigabytes } from '@/lib/billing/cart-math';
 import { INTEGRATIONS, type IntegrationSlug } from '@/lib/integrations';
 import { clearStorageBeforePurchase, readStorageBeforePurchase, takeRecentPlanChange } from '@/lib/checkout-return';
+import { trackCheckoutComplete } from '@/lib/analytics';
 import { cn } from '@/lib/utils';
 import { t as tNow, useT, currentLocale } from '@/lib/i18n';
 import { richText } from '@/lib/rich-text';
@@ -208,6 +209,25 @@ export default function CheckoutSuccessPage() {
     });
     return () => { cancelled = true; if (timer) clearTimeout(timer); };
   }, [entry, attempt]);
+
+  // The funnel step, for Google Analytics: a checkout came back. Every
+  // checkout, a trial start included, once per page visit. The sale itself
+  // (`purchase`) is reported by the API from the Stripe webhook at the
+  // customer's FIRST positive payment, so a returning customer's new checkout
+  // never counts as a new customer and a buyer who closes this tab early is
+  // still counted. Only when the visitor accepted analytics.
+  const checkoutReported = useRef(false);
+  useEffect(() => {
+    if (checkoutReported.current || receipt?.kind !== 'checkout' || !receipt.paid || !receipt.currency || !status) return;
+    checkoutReported.current = true;
+    trackCheckoutComplete({
+      planId: status.plan.id,
+      interval: status.interval === 'year' ? 'year' : status.interval === 'month' ? 'month' : undefined,
+      currency: receipt.currency,
+      amountCents: receipt.amount ?? 0,
+      trial: receipt.amount === 0 && activeTrialEnd(status.subscription) !== null,
+    });
+  }, [receipt, status]);
 
   if (!entry.kind) return <Navigate to="/billing" replace />;
 

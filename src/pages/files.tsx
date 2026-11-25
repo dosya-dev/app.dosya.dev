@@ -62,7 +62,8 @@ import { FileInfoDialog, type InfoTarget } from '@/components/file-info-dialog';
 import { FileDetailPanel } from '@/components/file-detail-panel';
 import { ShareModal, type ShareTarget } from '@/components/share-modal';
 import { startArchiveDownload } from '@/lib/archive-download';
-import { purgeTrashedFolder, purgeSummary, bulkPurgeStillEmptying, bulkPurgeCancelled, partialProgressNote, purgeProgressOf, type PurgeResponse, type PurgeOutcome } from '@/lib/folder-purge';
+import { trashFolderInPasses } from '@/lib/folder-trash';
+import { purgeTrashedFolder, purgeSummary, bulkPurgeStillEmptying, bulkPurgeCancelled, partialProgressNote, purgeProgressOf, type PurgeResponse, type PurgeOutcome, type UnfinishedFolder } from '@/lib/folder-purge';
 import { FileViewer } from '@/components/file-viewer';
 import { LockModal, type LockTarget } from '@/components/lock-modal';
 import { FolderLockedPanel } from '@/components/folder-locked-panel';
@@ -914,6 +915,16 @@ export default function FilesPage() {
         const message = purgeSummary(outcome, deleteTarget.name);
         if (message.kind === 'success') toast.success(message.title, message.body);
         else toast.info(message.title, message.body);
+      } else if (deleteTarget.type === 'folder') {
+        // Moved over several passes so a big folder cannot hold up everything
+        // else in the workspace; the dialog counts the files as they go.
+        const outcome = await trashFolderInPasses(
+          deleteTarget.id,
+          (path) => api<PurgeResponse>(path, { method: 'DELETE' }),
+          setPurgeProgress,
+        );
+        if (outcome.complete) toast.success(t('common.feedback.deleted'), t('common.feedback.deletetargetnameWasDeleted', { deleteTargetName: deleteTarget.name }));
+        else toast.info(t('files.label.stillEmptying'), t('files.description.purgeprogresstolocalestringFilePurgeprogressPluralOneOtherSRemovedSoFar', { purgeProgressToLocaleString: formatNumber(outcome.filesAffected), purgeProgress: outcome.filesAffected }));
       } else {
         await api(ep, { method: 'DELETE' });
         // The twin gets its OWN try: by the time it runs the still is already
@@ -946,9 +957,12 @@ export default function FilesPage() {
       // over files that are gone for good. The dialog stays open with its
       // progress line intact for the same reason.
       const progress = purgeProgressOf(err);
+      if (progress && !deleteTarget.permanent) loadFiles();
       toast.error(
         t('common.error.deleteFailed'),
-        progress && progress.filesAffected > 0
+        progress && !deleteTarget.permanent
+          ? [reason, partialProgressNote([{ name: deleteTarget.name, filesAffected: progress.filesAffected, remaining: progress.remaining }])].filter(Boolean).join(' ')
+          : progress && progress.filesAffected > 0
           ? t('files.error.removedFilesaffectedtolocalestringFileProgressfilesaffectedPluralOneOtherSThenThePurge', { filesAffectedToLocaleString: formatNumber(progress.filesAffected), progressFilesAffected: progress.filesAffected, reason })
           : reason,
       );
@@ -1235,9 +1249,10 @@ export default function FilesPage() {
   // accident. `bulkDeleteConfirm` holds the pending mode; these two runners
   // are only ever reached from the dialog's confirm button.
   //
-  // 20 ids per batch-delete request: small enough that the progress bar moves
-  // visibly on a 100-item selection, large enough that request overhead stays
-  // a rounding error (the endpoint itself accepts up to 500).
+  // 20 file ids per batch-delete request: small enough that the progress bar
+  // moves visibly on a 100-item selection, large enough that request overhead
+  // stays a rounding error (the endpoint itself accepts up to 500). Folders go
+  // one at a time in bounded passes, as the single-folder delete does.
   const SOFT_DELETE_CHUNK = 20;
   const runBulkDelete = async () => {
     setBulkDeleteConfirm(null);
@@ -1251,24 +1266,46 @@ export default function FilesPage() {
     const total = fileIds.length + folderIds.length;
     let done = 0;
     let failed = 0;
+    let filesMoved = 0;
+    const partial: UnfinishedFolder[] = [];
     setBulkProgress({ done, total, permanent: false });
-    for (const chunk of chunkSelection(fileIds, folderIds, SOFT_DELETE_CHUNK)) {
-      const size = chunk.file_ids.length + chunk.folder_ids.length;
+    for (const chunk of chunkSelection(fileIds, [], SOFT_DELETE_CHUNK)) {
+      const size = chunk.file_ids.length;
       try {
         await api('/api/files/batch-delete', { method: 'POST', body: JSON.stringify({
           workspace_id: wsId,
           file_ids: chunk.file_ids,
-          folder_ids: chunk.folder_ids,
         }) });
       } catch { failed += size; }
       done += size;
       setBulkProgress({ done, total, permanent: false });
     }
+    for (const id of folderIds) {
+      const name = folders.find((f) => f.id === id)?.name ?? t('files.label.aFolder');
+      const before = filesMoved;
+      try {
+        const outcome = await trashFolderInPasses(
+          id,
+          (path) => api<PurgeResponse>(path, { method: 'DELETE' }),
+          (moved) => { filesMoved = before + moved; setBulkProgress({ done, total, permanent: false, filesMoved }); },
+        );
+        if (!outcome.complete) {
+          failed += 1;
+          partial.push({ name, filesAffected: outcome.filesAffected, remaining: outcome.remaining });
+        }
+      } catch (err) {
+        failed += 1;
+        const progress = purgeProgressOf(err);
+        if (progress) partial.push({ name, filesAffected: progress.filesAffected, remaining: progress.remaining });
+      }
+      done += 1;
+      setBulkProgress({ done, total, permanent: false, filesMoved });
+    }
     setBulkProgress(null);
     setBulkBusy(false);
     clearSelection(); loadFiles();
     if (failed === 0) toast.success(t('common.feedback.deleted'), t('files.feedback.totalPluralOneItemOtherItemsDeleted', { total }));
-    else toast.error(t('files.error.someItemsCouldNotBeDeleted'), t('files.error.totalfailedDeletedFailedFailed', { totalFailed: total - failed, failed }));
+    else toast.error(t('files.error.someItemsCouldNotBeDeleted'), [t('files.error.totalfailedDeletedFailedFailed', { totalFailed: total - failed, failed }), partialProgressNote(partial)].filter(Boolean).join(' '));
   };
 
   const bulkDownloadZip = async () => {

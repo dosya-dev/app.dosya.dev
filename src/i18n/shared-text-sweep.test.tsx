@@ -114,6 +114,8 @@ describe('EXTERNAL_KEYS', () => {
 describe('validation messages at their display sites', () => {
   it('sign up shows the e-mail and password messages in Turkish', async () => {
     apiMock.mockResolvedValue({ ok: false });
+    // The page asks GET /api/auth/signup before it shows the form (email sign-up switch).
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ ok: true, email_signup: true })));
     shown = await renderInLocale(<MemoryRouter initialEntries={['/sign-up']}><SignUpPage /></MemoryRouter>, 'tr');
     await flush();
     const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!;

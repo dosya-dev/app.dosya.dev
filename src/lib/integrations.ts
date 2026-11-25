@@ -227,6 +227,7 @@ export const INTEGRATIONS: IntegrationMeta[] = [
     get tag() { return t('common.label.import'); },
     icon: FileArchive,
     iconSrc: '/google-takeout-color.svg',
+    docsUrl: 'https://dosya.dev/integration/google-takeout/',
   },
   {
     slug: 'onedrive',
@@ -267,7 +268,7 @@ export const INTEGRATIONS: IntegrationMeta[] = [
     icon: FolderInput,
     iconSrc: '/rclone-color.svg',
     badge: Globe,
-    rollout: true,
+    docsUrl: 'https://dosya.dev/integration/cloud-import/',
   },
 ];
 
@@ -276,7 +277,8 @@ export function getIntegration(slug: string): IntegrationMeta | undefined {
 }
 
 // ---- rclone ----
-export const rcloneInstall = 'go install github.com/dosya-dev/rclone@latest';
+// The dosya backend ships in official rclone from v1.76.0.
+export const rcloneInstall = 'sudo -v ; curl https://rclone.org/install.sh | sudo bash';
 
 export function rcloneConfig(ctx: IntegrationCtx): string {
   return [

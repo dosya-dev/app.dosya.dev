@@ -10,6 +10,7 @@ vi.mock('@/api/client', async (importOriginal) => {
 });
 
 const { IntegrationsSection, IdentitySection, PasswordSection, DeleteAccountSection } = await import('./profile');
+const { toast } = await import('@/lib/toast');
 
 beforeAll(() => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -197,7 +198,116 @@ describe('PasswordSection', () => {
     const call = apiMock.mock.calls.find(([p]) => p === '/api/me/password') as [string, RequestInit] | undefined;
     expect(call).toBeTruthy();
     expect(call![1].method).toBe('PUT');
-    expect(JSON.parse(call![1].body as string)).toEqual({ new_password: 'Str0ng!Pass' });
+    // No key came back from the list, so there is nothing to ask about: keep.
+    expect(JSON.parse(call![1].body as string)).toEqual({ new_password: 'Str0ng!Pass', revoke_api_keys: false });
+  });
+
+  // PUT /api/me/password revokes every API key unless told
+  // `revoke_api_keys: false` (bug bounty 2026-11, report 08). The dialog
+  // asks, and always sends the field explicitly.
+  describe('"Also sign out apps and API keys"', () => {
+    const NOW = Math.floor(Date.now() / 1000);
+    const DAY = 86_400;
+    const key = (id: string, over: Partial<{ last_used_at: number | null; expires_at: number | null }> = {}) => ({
+      id, name: id, scope: 'full', key_prefix: 'abcd1234', created_at: NOW - 100 * DAY,
+      last_used_at: NOW - DAY, expires_at: null, s3_access_key_id: null, surfaces: null,
+      workspace_id: null, root_folder_id: null, allowed_ips: null, active_hours: null, ...over,
+    });
+    const box = () => document.body.querySelector('[data-testid="revoke-api-keys"]') as HTMLElement | null;
+    const putBody = () => {
+      const call = apiMock.mock.calls.find(([p]) => p === '/api/me/password') as [string, RequestInit] | undefined;
+      return call ? JSON.parse(call[1].body as string) : undefined;
+    };
+    function mockApi(list: unknown, put: unknown = { ok: true, revoked_api_keys: 0 }) {
+      apiMock.mockImplementation(async (path: string) => {
+        if (path === '/api/me/api-keys') {
+          if (list instanceof Error) throw list;
+          return list;
+        }
+        if (path === '/api/me/password') return put;
+        return { ok: true };
+      });
+    }
+    beforeAll(() => {
+      // base-ui Checkbox forwards a click with `new PointerEvent('click')`,
+      // which jsdom lacks (same polyfill as api-keys-section.test.tsx).
+      if (typeof window.PointerEvent === 'undefined') {
+        class PointerEventPolyfill extends MouseEvent {
+          pointerId = 0;
+          pointerType = 'mouse';
+        }
+        (window as unknown as { PointerEvent: typeof PointerEventPolyfill }).PointerEvent = PointerEventPolyfill;
+      }
+    });
+    async function open() {
+      await render(true);
+      await act(async () => { button('Change password')!.click(); });
+      await act(async () => { await Promise.resolve(); });
+    }
+    async function submit() {
+      type(document.body.querySelector('input[placeholder="Current password"]') as HTMLInputElement, 'old passphrase here');
+      type(document.body.querySelector('input[placeholder="New password"]') as HTMLInputElement, 'a much longer passphrase 42');
+      type(document.body.querySelector('input[placeholder="Confirm new password"]') as HTMLInputElement, 'a much longer passphrase 42');
+      await act(async () => { [...document.body.querySelectorAll('button')].filter((b) => b.textContent?.trim() === 'Change password').at(-1)!.click(); });
+    }
+
+    it('is ticked by default when a working key has gone 30 days unused, counts only working keys, and sends true', async () => {
+      const success = vi.spyOn(toast, 'success');
+      mockApi(
+        { ok: true, keys: [key('busy'), key('quiet', { last_used_at: NOW - 31 * DAY }), key('expired', { expires_at: NOW - DAY })] },
+        { ok: true, revoked_api_keys: 3 },
+      );
+      await open();
+      expect(document.body.textContent).toContain('Also sign out apps and API keys (2 active)');
+      expect(document.body.textContent).toContain('stop working until you create a new key for them');
+      await submit();
+      expect(putBody()).toMatchObject({ current_password: 'old passphrase here', revoke_api_keys: true });
+      expect(success).toHaveBeenCalledWith('Password changed', 'Your password has been updated. We removed 3 API keys.');
+      success.mockRestore();
+    });
+
+    it('is ticked by default for a key that was never used', async () => {
+      mockApi({ ok: true, keys: [key('fresh', { last_used_at: null })] });
+      await open();
+      await submit();
+      expect(putBody()).toMatchObject({ revoke_api_keys: true });
+    });
+
+    it('is unticked when every working key was used in the last 30 days, sends false, and the toast says nothing about keys', async () => {
+      const success = vi.spyOn(toast, 'success');
+      mockApi({ ok: true, keys: [key('a'), key('b', { last_used_at: NOW - 29 * DAY })] });
+      await open();
+      expect(document.body.textContent).toContain('(2 active)');
+      await submit();
+      expect(putBody()).toMatchObject({ revoke_api_keys: false });
+      expect(success).toHaveBeenCalledWith('Password changed', 'Your password has been updated.');
+      success.mockRestore();
+    });
+
+    it('can be ticked by hand', async () => {
+      mockApi({ ok: true, keys: [key('a')] });
+      await open();
+      await act(async () => { box()!.click(); });
+      await submit();
+      expect(putBody()).toMatchObject({ revoke_api_keys: true });
+    });
+
+    it('is hidden with no working key, and the change keeps keys', async () => {
+      mockApi({ ok: true, keys: [key('expired', { expires_at: NOW - DAY })] });
+      await open();
+      expect(box()).toBeNull();
+      expect(document.body.textContent).not.toContain('Also sign out apps');
+      await submit();
+      expect(putBody()).toMatchObject({ revoke_api_keys: false });
+    });
+
+    it('is hidden when the key list cannot be read, and falls back to the server default (revoke)', async () => {
+      mockApi(new Error('offline'));
+      await open();
+      expect(box()).toBeNull();
+      await submit();
+      expect(putBody()).toMatchObject({ revoke_api_keys: true });
+    });
   });
 
   // Fix round 1, MINOR (f): the composition rules ("upper and lower case, a

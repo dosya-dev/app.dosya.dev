@@ -7,6 +7,7 @@ export const API_BASE = import.meta.env.VITE_API_URL
 import { humanizeApiError } from './error-copy';
 import { notifyMaintenance } from '@/lib/maintenance-signal';
 import { notifyUnauthorized } from '@/lib/session-expiry';
+import { recordApiActivity } from '@/lib/analytics';
 import { t } from '@/lib/i18n';
 
 export class ApiError extends Error {
@@ -120,6 +121,10 @@ export async function api<T>(
     if (res.status === 401) notifyUnauthorized(path);
     throw new ApiError(res.status, text || res.statusText);
   }
+
+  // A succeeded write is an activity worth counting (lib/analytics-events.ts
+  // decides which); never let measurement break the call it measured.
+  try { recordApiActivity(options.method, path); } catch { /* measurement is optional */ }
 
   // A 204 (DELETE /api/e2ee/user-keys) has no body to parse: res.json() threw
   // "Unexpected end of JSON input" for a call that had succeeded, so a

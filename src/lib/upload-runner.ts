@@ -1,4 +1,5 @@
 import { API_BASE } from '@/api/client';
+import { trackUpload } from '@/lib/analytics';
 import { t } from '@/lib/i18n';
 import { useUploads } from '@/stores/uploads';
 import { createScheduler } from '@/lib/upload-scheduler';
@@ -316,6 +317,7 @@ async function uploadParts(
   if (!res.ok || !data.ok) throw new Error(data.error ?? t('common.error.completeFailedHttpResstatus', { resStatus: res.status }));
   if (bailIfCanceled(id)) return;
   markComplete(id, { bytesUploaded: file.size, fileId: data?.file?.id });
+  try { trackUpload(file.size); } catch { /* measurement is optional */ }
 }
 
 async function resumeParts(id: string, file: File, sessionId: string): Promise<void> {

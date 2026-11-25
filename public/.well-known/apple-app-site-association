@@ -8,5 +8,8 @@
         ]
       }
     ]
+  },
+  "webcredentials": {
+    "apps": ["53HFF44WQ8.dev.dosya.app"]
   }
 }

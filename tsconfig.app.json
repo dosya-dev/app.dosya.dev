@@ -24,6 +24,7 @@
     "paths": {
       "@/*": ["./src/*"],
       "@dosya-dev/e2ee-core": ["./vendor/e2ee-core/index.d.ts"],
+      "@dosya-dev/vpn-contract": ["./vendor/vpn-contract/vpn.ts"],
       "@dosya-dev/e2ee-client": ["./vendor/e2ee-client/index.d.ts"],
       "@dosya-dev/personas-engine": ["./vendor/personas-engine/index.d.ts"],
       "@dosya-dev/face-reader": ["./vendor/face-reader/face_reader.d.ts"],

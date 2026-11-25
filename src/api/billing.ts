@@ -1,4 +1,6 @@
 import { api } from "@/api/client";
+import { trackEvent } from "@/lib/analytics";
+import { syncAnalyticsAttribution } from "./attribution";
 
 export type Currency = "usd" | "eur";
 
@@ -56,7 +58,22 @@ export type ExternalLicenseGrantView = {
     /** Estimated next Gumroad charge, from the purchase date; null when unknown or ending. */
     renews_at: number | null;
 };
+/** The Apple / Google subscription, null unless one is serving. */
+export type StoreStatus = {
+    provider: "apple" | "google";
+    plan_id: string;
+    product_id: string;
+    expires_at: number | null;
+    grace_until: number | null;
+    will_renew: boolean;
+    period_type: string;
+    environment: "production" | "sandbox";
+    conflict: boolean;
+    manage_url: string;
+} | null;
+
 export type BillingStatus = {
+    store?: StoreStatus;
     plan: { id: string; name: string; storage_bytes: number; storage_label: string; price_monthly: number; price_yearly: number | null };
     usage: { used_bytes: number; used_label: string; limit_bytes: number; limit_label: string; pct: number };
     subscription: { status: string | null; current_period_end: number | null; has_subscription: boolean; cancel_at_period_end: boolean; grace_period_end: number | null; trial_end?: number | null };
@@ -114,10 +131,26 @@ export const syncBilling = () => api<{ ok: true }>("/api/billing/sync", { method
  */
 export const createPortalSession = () => api<{ ok: true; url: string }>("/api/billing/portal", { method: "POST" });
 
+/**
+ * Opens a Stripe Checkout session. First hands the API this browser's
+ * Analytics ids and consent (api/attribution.ts): the first payment that may
+ * follow, possibly days later after a trial, is reported server-side and
+ * needs them. Measurement never blocks a purchase: a failed write is ignored.
+ */
 export const startCheckout = (cart: CartPayload) =>
-    api<{ ok: true; url: string; trial?: boolean }>("/api/billing/checkout", { method: "POST", body: JSON.stringify(cart) });
+    syncAnalyticsAttribution(true).catch(() => false)
+        .then(() => api<{ ok: true; url: string; trial?: boolean }>("/api/billing/checkout", { method: "POST", body: JSON.stringify(cart) }))
+        .then((res) => {
+            // The plan and period chosen, before Stripe; purchase follows on the thank-you page.
+            trackEvent("begin_checkout", { plan_id: cart.plan_id, interval: cart.interval, currency: cart.currency ?? "usd", addons: cart.addons.length, coupon: Boolean(cart.promo_code) });
+            return res;
+        });
 export const updateSubscription = (cart: CartPayload) =>
-    api<{ ok: true }>("/api/billing/subscription", { method: "POST", body: JSON.stringify(cart) });
+    api<{ ok: true }>("/api/billing/subscription", { method: "POST", body: JSON.stringify(cart) })
+        .then((res) => {
+            trackEvent("plan_change", { plan_id: cart.plan_id, interval: cart.interval, addons: cart.addons.length });
+            return res;
+        });
 export const previewSubscription = (cart: CartPayload) =>
     api<{ ok: true; amount_due: number; currency: string }>("/api/billing/preview", { method: "POST", body: JSON.stringify(cart) });
 /**

@@ -46,6 +46,7 @@ const DesktopSetup = lazyChunk(() => import('@/pages/integrations/desktop'));
 const CliSetup = lazyChunk(() => import('@/pages/integrations/cli'));
 const RestApiSetup = lazyChunk(() => import('@/pages/integrations/rest-api'));
 const ExtensionSetup = lazyChunk(() => import('@/pages/integrations/extension'));
+const VpnPage = lazyChunk(() => import('@/pages/vpn'));
 const ZapierSetup = lazyChunk(() => import('@/pages/integrations/zapier'));
 const WordPressSetup = lazyChunk(() => import('@/pages/integrations/wordpress'));
 const N8nSetup = lazyChunk(() => import('@/pages/integrations/n8n'));
@@ -75,6 +76,7 @@ const EditorPage = lazyChunk(() => import('@/pages/editor'));
 // CodeMirror, marked and DOMPurify ride in this chunk only.
 const TextEditorPage = lazyChunk(() => import('@/pages/text-editor'));
 const ConnectExtensionPage = lazyChunk(() => import('@/pages/connect/extension'));
+const ConnectDesktopPasskeyPage = lazyChunk(() => import('@/pages/connect/desktop-passkey'));
 const ConnectLightroomPage = lazyChunk(() => import('@/pages/connect/lightroom'));
 const ConnectWordPressPage = lazyChunk(() => import('@/pages/connect/wordpress'));
 const ConnectAiPage = lazyChunk(() => import('@/pages/connect/ai'));
@@ -126,6 +128,7 @@ export const router = createBrowserRouter([
       { path: '/profile/:section?', element: <ProfilePage /> },
       { path: '/api-analytics', element: <ApiAnalyticsPage /> },
       { path: '/teams', element: <RequirePermission perm="access_team"><TeamsPage /></RequirePermission> },
+      { path: '/vpn', element: <VpnPage /> },
       { path: '/integrations', element: <IntegrationsPage /> },
       { path: '/integrations/rclone', element: <RcloneSetup /> },
       { path: '/integrations/webdav', element: <WebdavSetup /> },
@@ -178,6 +181,9 @@ export const router = createBrowserRouter([
   { path: '/connect/lightroom', element: <ConnectLightroomPage /> },
   { path: '/connect/ai', element: <ConnectAiPage /> },
   { path: '/connect/extension/done', element: <ConnectExtensionDonePage /> },
+  // Signed out by design: the desktop app opens this in a browser to run a
+  // passkey ceremony it cannot run in its own window.
+  { path: '/connect/desktop-passkey', element: <ConnectDesktopPasskeyPage /> },
   // Signing in a dosya TV app: its QR code opens /tv?code=..., and the typed
   // dosya.dev/tv redirects here. Outside DashboardLayout for the same reason
   // as the /connect pages; the page sends a signed-out visitor through /login.

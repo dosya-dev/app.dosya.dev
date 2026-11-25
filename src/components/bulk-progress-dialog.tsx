@@ -2,11 +2,15 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Progress } from '@/components/ui/progress';
 import { Button } from '@/components/ui/button';
 import { useT } from '@/lib/i18n';
+import { formatNumber } from '@/lib/format-locale';
 
 export interface BulkDeleteProgress {
   done: number;
   total: number;
   permanent: boolean;
+  /** Files moved so far out of selected folders. One big folder is a single
+   *  item, so the item count alone would sit still for the whole delete. */
+  filesMoved?: number;
 }
 
 /**
@@ -38,6 +42,11 @@ export function BulkProgressDialog({ progress, onCancel, cancelRequested }: {
           </DialogDescription>
         </DialogHeader>
         <Progress value={progress?.done ?? 0} max={Math.max(progress?.total ?? 0, 1)} />
+        {!!progress?.filesMoved && (
+          <p className="text-xs text-muted-foreground tabular-nums">
+            {t('files.description.purgeprogresstolocalestringFilePurgeprogressPluralOneOtherSRemovedSoFar', { purgeProgressToLocaleString: formatNumber(progress.filesMoved), purgeProgress: progress.filesMoved })}
+          </p>
+        )}
         {progress?.permanent && onCancel && (
           <DialogFooter>
             <Button variant="outline" onClick={onCancel} disabled={cancelRequested}>

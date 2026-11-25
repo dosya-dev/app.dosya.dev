@@ -1,7 +1,9 @@
-import { describe, it, expect, beforeAll, afterEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterEach, vi } from 'vitest';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { MemoryRouter } from 'react-router-dom';
+vi.mock('@/hooks/use-vpn-available', () => ({ useVpnAvailable: () => true }));
+
 import IntegrationsPage from './integrations';
 
 beforeAll(() => {
@@ -50,7 +52,8 @@ describe('IntegrationsPage long-label layout', () => {
 
   it('truncates tag pills with the full text in a title', () => {
     const el = render();
-    const pills = Array.from(el.querySelectorAll<HTMLElement>('span.rounded-full'));
+    // Text only: the corner badge on a logo tile is rounded too, but holds an icon.
+    const pills = Array.from(el.querySelectorAll<HTMLElement>('span.rounded-full')).filter((p) => p.textContent);
     expect(pills.length).toBeGreaterThan(0);
     for (const p of pills) {
       expect(p.className).toContain('truncate');

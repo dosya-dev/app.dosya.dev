@@ -368,8 +368,12 @@ export function isValidEntityName(name: unknown): name is string {
  *
  * Returns "" for an unusable name so the caller can apply its own fallback.
  */
-export function sanitizeIngestName(raw: string | null | undefined): string {
-    const name = (raw ?? "")
+export function sanitizeIngestName(raw: unknown): string {
+    // A name that is not a string (a number, an array, an object straight out
+    // of a JSON body) is unusable, not a crash: `(raw ?? "").trim` threw a
+    // TypeError and /api/upload/init answered 500 (Sentry 162690382).
+    if (typeof raw !== "string") return "";
+    const name = raw
         .trim()
         .replace(/[\/\\]/g, "_")
         // eslint-disable-next-line no-control-regex

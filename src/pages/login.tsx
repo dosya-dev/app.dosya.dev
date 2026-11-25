@@ -3,7 +3,8 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Loader2, Eye, EyeOff } from 'lucide-react';
+import { Loader2, Eye, EyeOff, KeyRound } from 'lucide-react';
+import { browserSupportsWebAuthn } from '@simplewebauthn/browser';
 import { API_BASE } from '@/api/client';
 import { PublicNav } from '@/components/public-nav';
 import { AlreadySignedInDialog } from '@/components/already-signed-in-dialog';
@@ -13,6 +14,7 @@ import { resolveTurnstileToken, turnstileFailureMessage, isTurnstileRejection } 
 import { LegalNotice } from '@/components/legal-notice';
 import { pendingPostAuthPath } from '@/lib/redemption-claim';
 import { consumePostAuthPath } from '@/lib/post-auth-path';
+import { passkeySignInError, signInWithPasskey } from '@/lib/passkey-sign-in';
 import { Logo } from "@/components/brand/logo";
 import { useT } from '@/lib/i18n';
 import { richText } from '@/lib/rich-text';
@@ -73,6 +75,8 @@ export default function LoginPage() {
   }, []);
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [passkeysSupported] = useState(() => browserSupportsWebAuthn());
+  const [passkeyBusy, setPasskeyBusy] = useState(false);
   // Which OAuth method was used last (for the "Last used" badge). Null when
   // this browser has never signed in - showing "Last used" over Google in that
   // case is a claim about the user's history that we simply do not have.
@@ -116,6 +120,18 @@ export default function LoginPage() {
       setError(t('common.error.canTReachTheServerCheckYourConnectionAnd'));
     }
     setLoading(false);
+  };
+
+  const handlePasskey = async () => {
+    setError('');
+    setPasskeyBusy(true);
+    const result = await signInWithPasskey();
+    if (result.status === 'ok') {
+      navigate(pendingPostAuthPath() ?? consumePostAuthPath() ?? result.data.redirect ?? '/');
+    } else {
+      setError(passkeySignInError(result, t));
+    }
+    setPasskeyBusy(false);
   };
 
   const handleGoogle = () => { try { localStorage.setItem('dosya_last_login_method', 'google'); } catch { /* */ } window.location.href = `${API_BASE}/api/auth/google`; };
@@ -184,6 +200,12 @@ export default function LoginPage() {
               </Button>
               {lastUsed === 'apple' && lastUsedBadge}
               </div>
+              {passkeysSupported && (
+                <Button variant="outline" className="w-full h-11 text-sm font-medium gap-2" onClick={handlePasskey} disabled={passkeyBusy}>
+                  {passkeyBusy ? <Loader2 className="size-5 animate-spin" /> : <KeyRound className="size-5" />}
+                  {t('sign-in.action.signInWithAPasskey')}
+                </Button>
+              )}
             </div>
 
             <div className="relative mb-6">

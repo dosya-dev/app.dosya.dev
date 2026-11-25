@@ -21,6 +21,12 @@ export interface UserProfile {
 export interface TfaStatus {
   method: string | null; totp_enabled: boolean; recovery_codes_remaining: number;
 }
+// A row of GET /api/me/passkeys. backed_up is SQLite's 0 or 1; timestamps are Unix seconds.
+export interface Passkey {
+  id: string; name: string; backed_up: number; created_at: number; last_used_at: number | null;
+}
+/** How this account proves itself to add a passkey: OAuth-only accounts have no password. */
+export type PasskeyProof = 'password' | 'code' | null;
 // Mirrors what GET /api/me/sessions actually returns. It previously declared
 // ip/user_agent/login_method/last_active_at - none of which the API sends - so every
 // row rendered "undefined · undefined · undefined NaN". `device`/`browser`/`meta` come

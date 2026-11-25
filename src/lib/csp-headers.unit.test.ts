@@ -17,14 +17,36 @@ function directive(name: string): string {
 }
 
 describe('web CSP invariants', () => {
+  // Google Analytics loads only after the banner's analytics choice (lib/analytics.ts),
+  // but once it does, the tag and its collection endpoints must be allowed or
+  // every consented visit silently reports nothing.
+  it('allows the consented Google Analytics tag and its collection hosts, narrowly', () => {
+    expect(directive('script-src')).toContain('https://www.googletagmanager.com');
+    expect(directive('connect-src')).toContain('https://*.google-analytics.com');
+    expect(directive('connect-src')).toContain('https://*.analytics.google.com');
+    expect(directive('connect-src')).toContain('https://www.google.com');
+    expect(directive('connect-src')).not.toContain('https://*.google.com');
+    expect(CSP).not.toContain('googlesyndication');
+  });
+
   it('allows framing blob: URLs (office preview builds one from the pdf response)', () => {
     expect(directive('frame-src')).toContain('blob:');
   });
 
   it('allows the document server for the editor iframe and its api.js', () => {
     expect(directive('frame-src')).toContain('https://docs.dosya.dev');
-    expect(directive('script-src')).toContain('https://docs.dosya.dev');
     expect(directive('connect-src')).toContain('https://docs.dosya.dev');
+  });
+
+  // Bounty: api.js runs in app.dosya.dev, where users are signed in. Granting
+  // the whole docs.dosya.dev host script authority meant any file a write bug
+  // on that host could place became script here. Only the loader is allowed.
+  it('grants script-src to the ONLYOFFICE api.js file only, never the whole docs host', () => {
+    const sources = directive('script-src').split(/\s+/);
+    expect(sources).toContain('https://docs.dosya.dev/web-apps/apps/api/documents/api.js');
+    expect(sources).not.toContain('https://docs.dosya.dev');
+    expect(sources).not.toContain('https://docs.dosya.dev/');
+    expect(sources.filter((s) => s.includes('docs.dosya.dev'))).toHaveLength(1);
   });
 
   it('keeps the api origin reachable for fetches and framed raw files', () => {
